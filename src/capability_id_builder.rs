@@ -33,13 +33,13 @@ impl CapabilityIdBuilder {
     }
 
     /// Add a segment to the capability ID
-    pub fn add_segment<S: AsRef<str>>(mut self, segment: S) -> Self {
+    pub fn sub<S: AsRef<str>>(mut self, segment: S) -> Self {
         self.segments.push(segment.as_ref().to_string());
         self
     }
 
     /// Add multiple segments to the capability ID
-    pub fn add_segments<I, S>(mut self, segments: I) -> Self
+    pub fn subs<I, S>(mut self, segments: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -72,7 +72,7 @@ impl CapabilityIdBuilder {
 
     /// Add a wildcard segment
     pub fn add_wildcard(self) -> Self {
-        self.add_segment("*")
+        self.sub("*")
     }
 
     /// Replace the last segment with a wildcard
@@ -173,9 +173,9 @@ mod tests {
     #[test]
     fn test_builder_basic_construction() {
         let capability_id = CapabilityIdBuilder::new()
-            .add_segment("data_processing")
-            .add_segment("transform")
-            .add_segment("json")
+            .sub("data_processing")
+            .sub("transform")
+            .sub("json")
             .build()
             .unwrap();
 
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn test_builder_add_wildcard() {
         let capability_id = CapabilityIdBuilder::new()
-            .add_segment("data_processing")
+            .sub("data_processing")
             .add_wildcard()
             .build()
             .unwrap();
@@ -235,10 +235,10 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_add_segments() {
+    fn test_builder_subs() {
         let capability_id = CapabilityIdBuilder::new()
-            .add_segments(vec!["data", "processing"])
-            .add_segment("json")
+            .subs(vec!["data", "processing"])
+            .sub("json")
             .build()
             .unwrap();
 
