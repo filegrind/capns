@@ -53,8 +53,8 @@ pub struct CapabilityArgument {
     
     pub description: String,
     
-    #[serde(rename = "cli_flag", skip_serializing_if = "Option::is_none")]
-    pub cli_flag: Option<String>,
+    #[serde(rename = "cli_flag")]
+    pub cli_flag: String,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<usize>,
@@ -200,8 +200,7 @@ pub struct Capability {
     pub metadata: HashMap<String, String>,
     
     /// Command string for CLI execution
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
+    pub command: String,
     
     /// Capability arguments
     #[serde(skip_serializing_if = "CapabilityArguments::is_empty", default)]
@@ -214,38 +213,30 @@ pub struct Capability {
 
 impl CapabilityArgument {
     /// Create a new capability argument
-    pub fn new(name: String, arg_type: ArgumentType, description: String) -> Self {
+    pub fn new(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
         Self {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            cli_flag,
             position: None,
             validation: ArgumentValidation::default(),
             default: None,
         }
     }
     
-    /// Create argument with CLI flag
+    /// Create argument with CLI flag (deprecated - use new() instead)
     pub fn with_cli_flag(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
-        Self {
-            name,
-            arg_type,
-            description,
-            cli_flag: Some(cli_flag),
-            position: None,
-            validation: ArgumentValidation::default(),
-            default: None,
-        }
+        Self::new(name, arg_type, description, cli_flag)
     }
     
     /// Create argument with position
-    pub fn with_position(name: String, arg_type: ArgumentType, description: String, position: usize) -> Self {
+    pub fn with_position(name: String, arg_type: ArgumentType, description: String, cli_flag: String, position: usize) -> Self {
         Self {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            cli_flag,
             position: Some(position),
             validation: ArgumentValidation::default(),
             default: None,
@@ -253,12 +244,12 @@ impl CapabilityArgument {
     }
     
     /// Create argument with validation
-    pub fn with_validation(name: String, arg_type: ArgumentType, description: String, validation: ArgumentValidation) -> Self {
+    pub fn with_validation(name: String, arg_type: ArgumentType, description: String, cli_flag: String, validation: ArgumentValidation) -> Self {
         Self {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            cli_flag,
             position: None,
             validation,
             default: None,
@@ -266,12 +257,12 @@ impl CapabilityArgument {
     }
     
     /// Create argument with default value
-    pub fn with_default(name: String, arg_type: ArgumentType, description: String, default: serde_json::Value) -> Self {
+    pub fn with_default(name: String, arg_type: ArgumentType, description: String, cli_flag: String, default: serde_json::Value) -> Self {
         Self {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            cli_flag,
             position: None,
             validation: ArgumentValidation::default(),
             default: Some(default),
@@ -283,7 +274,7 @@ impl CapabilityArgument {
         name: String,
         arg_type: ArgumentType,
         description: String,
-        cli_flag: Option<String>,
+        cli_flag: String,
         position: Option<usize>,
         validation: ArgumentValidation,
         default: Option<serde_json::Value>,
@@ -387,33 +378,33 @@ impl CapabilityArguments {
     pub fn get_flag_args(&self) -> Vec<&CapabilityArgument> {
         self.required.iter()
             .chain(self.optional.iter())
-            .filter(|arg| arg.cli_flag.is_some())
+            .filter(|arg| !arg.cli_flag.is_empty())
             .collect()
     }
 }
 
 impl Capability {
     /// Create a new capability
-    pub fn new(id: CapabilityId, version: String) -> Self {
+    pub fn new(id: CapabilityId, version: String, command: String) -> Self {
         Self {
             id,
             version,
             description: None,
             metadata: HashMap::new(),
-            command: None,
+            command,
             arguments: CapabilityArguments::new(),
             output: None,
         }
     }
 
     /// Create a new capability with description
-    pub fn with_description(id: CapabilityId, version: String, description: String) -> Self {
+    pub fn with_description(id: CapabilityId, version: String, command: String, description: String) -> Self {
         Self {
             id,
             version,
             description: Some(description),
             metadata: HashMap::new(),
-            command: None,
+            command,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -422,7 +413,8 @@ impl Capability {
     /// Create a new capability with metadata
     pub fn with_metadata(
         id: CapabilityId, 
-        version: String, 
+        version: String,
+        command: String,
         metadata: HashMap<String, String>
     ) -> Self {
         Self {
@@ -430,7 +422,7 @@ impl Capability {
             version,
             description: None,
             metadata,
-            command: None,
+            command,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -440,6 +432,7 @@ impl Capability {
     pub fn with_description_and_metadata(
         id: CapabilityId,
         version: String,
+        command: String,
         description: String,
         metadata: HashMap<String, String>,
     ) -> Self {
@@ -448,7 +441,7 @@ impl Capability {
             version,
             description: Some(description),
             metadata,
-            command: None,
+            command,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -458,6 +451,7 @@ impl Capability {
     pub fn with_arguments(
         id: CapabilityId,
         version: String,
+        command: String,
         arguments: CapabilityArguments,
     ) -> Self {
         Self {
@@ -465,27 +459,19 @@ impl Capability {
             version,
             description: None,
             metadata: HashMap::new(),
-            command: None,
+            command,
             arguments,
             output: None,
         }
     }
     
-    /// Create a new capability with command
+    /// Create a new capability with command (deprecated - use new() instead)
     pub fn with_command(
         id: CapabilityId,
         version: String,
         command: String,
     ) -> Self {
-        Self {
-            id,
-            version,
-            description: None,
-            metadata: HashMap::new(),
-            command: Some(command),
-            arguments: CapabilityArguments::new(),
-            output: None,
-        }
+        Self::new(id, version, command)
     }
     
     /// Create a fully specified capability
@@ -494,7 +480,7 @@ impl Capability {
         version: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
-        command: Option<String>,
+        command: String,
         arguments: CapabilityArguments,
         output: Option<CapabilityOutput>,
     ) -> Self {
@@ -548,14 +534,14 @@ impl Capability {
         self.metadata.contains_key(key)
     }
     
-    /// Get the command if defined
-    pub fn get_command(&self) -> Option<&String> {
-        self.command.as_ref()
+    /// Get the command
+    pub fn get_command(&self) -> &String {
+        &self.command
     }
     
     /// Set the command
     pub fn set_command(&mut self, command: String) {
-        self.command = Some(command);
+        self.command = command;
     }
     
     /// Get the arguments
