@@ -53,8 +53,8 @@ pub struct CapabilityArgument {
     
     pub description: String,
     
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
+    #[serde(rename = "cli_flag", skip_serializing_if = "Option::is_none")]
+    pub cli_flag: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<usize>,
@@ -219,7 +219,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            command: None,
+            cli_flag: None,
             position: None,
             validation: ArgumentValidation::default(),
             default: None,
@@ -227,12 +227,12 @@ impl CapabilityArgument {
     }
     
     /// Create argument with CLI flag
-    pub fn with_command(name: String, arg_type: ArgumentType, description: String, command: String) -> Self {
+    pub fn with_cli_flag(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
         Self {
             name,
             arg_type,
             description,
-            command: Some(command),
+            cli_flag: Some(cli_flag),
             position: None,
             validation: ArgumentValidation::default(),
             default: None,
@@ -245,7 +245,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            command: None,
+            cli_flag: None,
             position: Some(position),
             validation: ArgumentValidation::default(),
             default: None,
@@ -258,7 +258,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            command: None,
+            cli_flag: None,
             position: None,
             validation,
             default: None,
@@ -271,7 +271,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            command: None,
+            cli_flag: None,
             position: None,
             validation: ArgumentValidation::default(),
             default: Some(default),
@@ -283,7 +283,7 @@ impl CapabilityArgument {
         name: String,
         arg_type: ArgumentType,
         description: String,
-        command: Option<String>,
+        cli_flag: Option<String>,
         position: Option<usize>,
         validation: ArgumentValidation,
         default: Option<serde_json::Value>,
@@ -292,7 +292,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            command,
+            cli_flag,
             position,
             validation,
             default,
@@ -387,7 +387,7 @@ impl CapabilityArguments {
     pub fn get_flag_args(&self) -> Vec<&CapabilityArgument> {
         self.required.iter()
             .chain(self.optional.iter())
-            .filter(|arg| arg.command.is_some())
+            .filter(|arg| arg.cli_flag.is_some())
             .collect()
     }
 }
