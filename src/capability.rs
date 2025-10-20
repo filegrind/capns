@@ -8,6 +8,186 @@ use crate::capability_id::CapabilityId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Argument type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ArgumentType {
+    String,
+    Integer,
+    Number,
+    Boolean,
+    Array,
+    Object,
+    Binary,
+}
+
+/// Argument validation rules
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ArgumentValidation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_length: Option<usize>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<usize>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_values: Option<Vec<String>>,
+}
+
+/// Capability argument definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityArgument {
+    pub name: String,
+    
+    #[serde(rename = "type")]
+    pub arg_type: ArgumentType,
+    
+    pub description: String,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_flag: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<usize>,
+    
+    #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
+    pub validation: ArgumentValidation,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+}
+
+impl ArgumentValidation {
+    fn is_empty(&self) -> bool {
+        self.min.is_none() &&
+        self.max.is_none() &&
+        self.min_length.is_none() &&
+        self.max_length.is_none() &&
+        self.pattern.is_none() &&
+        self.allowed_values.is_none()
+    }
+}
+
+/// Capability arguments collection
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CapabilityArguments {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub required: Vec<CapabilityArgument>,
+    
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub optional: Vec<CapabilityArgument>,
+}
+
+/// Command interface definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandInterface {
+    pub cli_flag: String,
+    pub usage_pattern: String,
+}
+
+/// Output type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputType {
+    String,
+    Integer,
+    Number,
+    Boolean,
+    Array,
+    Object,
+    Binary,
+}
+
+/// Output definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityOutput {
+    #[serde(rename = "type")]
+    pub output_type: OutputType,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_ref: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    
+    #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
+    pub validation: ArgumentValidation,
+    
+    pub description: String,
+}
+
+impl CapabilityOutput {
+    /// Create a new output definition
+    pub fn new(output_type: OutputType, description: String) -> Self {
+        Self {
+            output_type,
+            description,
+            schema_ref: None,
+            content_type: None,
+            validation: ArgumentValidation::default(),
+        }
+    }
+    
+    /// Create output with content type
+    pub fn with_content_type(output_type: OutputType, description: String, content_type: String) -> Self {
+        Self {
+            output_type,
+            description,
+            content_type: Some(content_type),
+            schema_ref: None,
+            validation: ArgumentValidation::default(),
+        }
+    }
+    
+    /// Create output with schema reference
+    pub fn with_schema(output_type: OutputType, description: String, schema_ref: String) -> Self {
+        Self {
+            output_type,
+            description,
+            schema_ref: Some(schema_ref),
+            content_type: None,
+            validation: ArgumentValidation::default(),
+        }
+    }
+    
+    /// Create output with validation
+    pub fn with_validation(output_type: OutputType, description: String, validation: ArgumentValidation) -> Self {
+        Self {
+            output_type,
+            description,
+            validation,
+            schema_ref: None,
+            content_type: None,
+        }
+    }
+    
+    /// Create a fully specified output
+    pub fn with_full_definition(
+        output_type: OutputType,
+        description: String,
+        schema_ref: Option<String>,
+        content_type: Option<String>,
+        validation: ArgumentValidation,
+    ) -> Self {
+        Self {
+            output_type,
+            description,
+            schema_ref,
+            content_type,
+            validation,
+        }
+    }
+}
+
 /// Formal capability definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Capability {
@@ -24,6 +204,198 @@ pub struct Capability {
     /// Optional metadata as key-value pairs
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     pub metadata: HashMap<String, String>,
+    
+    /// Command interface definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_interface: Option<CommandInterface>,
+    
+    /// Capability arguments
+    #[serde(skip_serializing_if = "CapabilityArguments::is_empty", default)]
+    pub arguments: CapabilityArguments,
+    
+    /// Output definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<CapabilityOutput>,
+}
+
+impl CapabilityArgument {
+    /// Create a new capability argument
+    pub fn new(name: String, arg_type: ArgumentType, description: String) -> Self {
+        Self {
+            name,
+            arg_type,
+            description,
+            cli_flag: None,
+            position: None,
+            validation: ArgumentValidation::default(),
+            default: None,
+        }
+    }
+    
+    /// Create argument with CLI flag
+    pub fn with_cli_flag(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
+        Self {
+            name,
+            arg_type,
+            description,
+            cli_flag: Some(cli_flag),
+            position: None,
+            validation: ArgumentValidation::default(),
+            default: None,
+        }
+    }
+    
+    /// Create argument with position
+    pub fn with_position(name: String, arg_type: ArgumentType, description: String, position: usize) -> Self {
+        Self {
+            name,
+            arg_type,
+            description,
+            cli_flag: None,
+            position: Some(position),
+            validation: ArgumentValidation::default(),
+            default: None,
+        }
+    }
+    
+    /// Create argument with validation
+    pub fn with_validation(name: String, arg_type: ArgumentType, description: String, validation: ArgumentValidation) -> Self {
+        Self {
+            name,
+            arg_type,
+            description,
+            cli_flag: None,
+            position: None,
+            validation,
+            default: None,
+        }
+    }
+    
+    /// Create argument with default value
+    pub fn with_default(name: String, arg_type: ArgumentType, description: String, default: serde_json::Value) -> Self {
+        Self {
+            name,
+            arg_type,
+            description,
+            cli_flag: None,
+            position: None,
+            validation: ArgumentValidation::default(),
+            default: Some(default),
+        }
+    }
+    
+    /// Create a fully specified argument
+    pub fn with_full_definition(
+        name: String,
+        arg_type: ArgumentType,
+        description: String,
+        cli_flag: Option<String>,
+        position: Option<usize>,
+        validation: ArgumentValidation,
+        default: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            name,
+            arg_type,
+            description,
+            cli_flag,
+            position,
+            validation,
+            default,
+        }
+    }
+}
+
+impl ArgumentValidation {
+    /// Create validation with min/max numeric constraints
+    pub fn numeric_range(min: Option<f64>, max: Option<f64>) -> Self {
+        Self {
+            min,
+            max,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            allowed_values: None,
+        }
+    }
+    
+    /// Create validation with string length constraints
+    pub fn string_length(min_length: Option<usize>, max_length: Option<usize>) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length,
+            max_length,
+            pattern: None,
+            allowed_values: None,
+        }
+    }
+    
+    /// Create validation with pattern
+    pub fn pattern(pattern: String) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            pattern: Some(pattern),
+            allowed_values: None,
+        }
+    }
+    
+    /// Create validation with allowed values
+    pub fn allowed_values(values: Vec<String>) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            allowed_values: Some(values),
+        }
+    }
+}
+
+impl CapabilityArguments {
+    pub fn new() -> Self {
+        Self {
+            required: Vec::new(),
+            optional: Vec::new(),
+        }
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.required.is_empty() && self.optional.is_empty()
+    }
+    
+    pub fn add_required(&mut self, arg: CapabilityArgument) {
+        self.required.push(arg);
+    }
+    
+    pub fn add_optional(&mut self, arg: CapabilityArgument) {
+        self.optional.push(arg);
+    }
+    
+    pub fn find_argument(&self, name: &str) -> Option<&CapabilityArgument> {
+        self.required.iter().find(|arg| arg.name == name)
+            .or_else(|| self.optional.iter().find(|arg| arg.name == name))
+    }
+    
+    pub fn get_positional_args(&self) -> Vec<&CapabilityArgument> {
+        let mut args: Vec<&CapabilityArgument> = self.required.iter()
+            .chain(self.optional.iter())
+            .filter(|arg| arg.position.is_some())
+            .collect();
+        args.sort_by_key(|arg| arg.position.unwrap());
+        args
+    }
+    
+    pub fn get_flag_args(&self) -> Vec<&CapabilityArgument> {
+        self.required.iter()
+            .chain(self.optional.iter())
+            .filter(|arg| arg.cli_flag.is_some())
+            .collect()
+    }
 }
 
 impl Capability {
@@ -34,6 +406,9 @@ impl Capability {
             version,
             description: None,
             metadata: HashMap::new(),
+            command_interface: None,
+            arguments: CapabilityArguments::new(),
+            output: None,
         }
     }
 
@@ -44,6 +419,9 @@ impl Capability {
             version,
             description: Some(description),
             metadata: HashMap::new(),
+            command_interface: None,
+            arguments: CapabilityArguments::new(),
+            output: None,
         }
     }
 
@@ -58,6 +436,9 @@ impl Capability {
             version,
             description: None,
             metadata,
+            command_interface: None,
+            arguments: CapabilityArguments::new(),
+            output: None,
         }
     }
 
@@ -73,6 +454,64 @@ impl Capability {
             version,
             description: Some(description),
             metadata,
+            command_interface: None,
+            arguments: CapabilityArguments::new(),
+            output: None,
+        }
+    }
+    
+    /// Create a new capability with arguments
+    pub fn with_arguments(
+        id: CapabilityId,
+        version: String,
+        arguments: CapabilityArguments,
+    ) -> Self {
+        Self {
+            id,
+            version,
+            description: None,
+            metadata: HashMap::new(),
+            command_interface: None,
+            arguments,
+            output: None,
+        }
+    }
+    
+    /// Create a new capability with command interface
+    pub fn with_command_interface(
+        id: CapabilityId,
+        version: String,
+        command_interface: CommandInterface,
+    ) -> Self {
+        Self {
+            id,
+            version,
+            description: None,
+            metadata: HashMap::new(),
+            command_interface: Some(command_interface),
+            arguments: CapabilityArguments::new(),
+            output: None,
+        }
+    }
+    
+    /// Create a fully specified capability
+    pub fn with_full_definition(
+        id: CapabilityId,
+        version: String,
+        description: Option<String>,
+        metadata: HashMap<String, String>,
+        command_interface: Option<CommandInterface>,
+        arguments: CapabilityArguments,
+        output: Option<CapabilityOutput>,
+    ) -> Self {
+        Self {
+            id,
+            version,
+            description,
+            metadata,
+            command_interface,
+            arguments,
+            output,
         }
     }
     
@@ -114,98 +553,48 @@ impl Capability {
     pub fn has_metadata(&self, key: &str) -> bool {
         self.metadata.contains_key(key)
     }
-}
-
-/// Plugin capabilities collection
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginCapabilities {
-    pub capabilities: Vec<Capability>,
-}
-
-impl PluginCapabilities {
-    /// Create a new empty capabilities collection
-    pub fn new() -> Self {
-        Self {
-            capabilities: Vec::new(),
-        }
-    }
-
-    /// Create capabilities collection from a list of capabilities
-    pub fn from_capabilities(capabilities: Vec<Capability>) -> Self {
-        Self { capabilities }
-    }
-
-    /// Add a capability to the collection
-    pub fn add_capability(&mut self, capability: Capability) {
-        self.capabilities.push(capability);
-    }
-
-    /// Check if the plugin has a specific capability
-    pub fn can(&self, capability_request: &str) -> bool {
-        self.capabilities.iter().any(|c| c.matches_request(capability_request))
+    
+    /// Get the command interface if defined
+    pub fn get_command_interface(&self) -> Option<&CommandInterface> {
+        self.command_interface.as_ref()
     }
     
-    /// Get all capability identifiers as strings
-    pub fn get_capability_identifiers(&self) -> Vec<String> {
-        self.capabilities.iter().map(|c| c.id.to_string()).collect()
+    /// Set the command interface
+    pub fn set_command_interface(&mut self, command_interface: CommandInterface) {
+        self.command_interface = Some(command_interface);
     }
     
-    /// Find a capability by identifier
-    pub fn find_capability(&self, id: &str) -> Option<&Capability> {
-        let search_id = CapabilityId::from_string(id).ok()?;
-        self.capabilities.iter().find(|c| c.id == search_id)
+    /// Get the arguments
+    pub fn get_arguments(&self) -> &CapabilityArguments {
+        &self.arguments
     }
     
-    /// Find the most specific capability that can handle a request
-    pub fn find_best_capability(&self, request: &str) -> Option<&Capability> {
-        let request_id = CapabilityId::from_string(request).ok()?;
-        let capability_ids: Vec<CapabilityId> = self.capabilities.iter().map(|c| c.id.clone()).collect();
-        let best_id = crate::capability_id::CapabilityMatcher::find_best_match(&capability_ids, &request_id)?;
-        self.capabilities.iter().find(|c| &c.id == best_id)
+    /// Set the arguments
+    pub fn set_arguments(&mut self, arguments: CapabilityArguments) {
+        self.arguments = arguments;
     }
-
-    /// Get capabilities that have specific metadata
-    pub fn capabilities_with_metadata(&self, key: &str, value: Option<&str>) -> Vec<&Capability> {
-        self.capabilities
-            .iter()
-            .filter(|c| {
-                if let Some(expected_value) = value {
-                    c.get_metadata(key) == Some(&expected_value.to_string())
-                } else {
-                    c.has_metadata(key)
-                }
-            })
-            .collect()
+    
+    /// Add a required argument
+    pub fn add_required_argument(&mut self, arg: CapabilityArgument) {
+        self.arguments.add_required(arg);
     }
-
-    /// Get all unique metadata keys across all capabilities
-    pub fn get_all_metadata_keys(&self) -> Vec<String> {
-        let mut keys = Vec::new();
-        for capability in &self.capabilities {
-            for key in capability.metadata.keys() {
-                if !keys.contains(key) {
-                    keys.push(key.clone());
-                }
-            }
-        }
-        keys.sort();
-        keys
+    
+    /// Add an optional argument
+    pub fn add_optional_argument(&mut self, arg: CapabilityArgument) {
+        self.arguments.add_optional(arg);
     }
-
-    /// Get capabilities by version
-    pub fn capabilities_by_version(&self, version: &str) -> Vec<&Capability> {
-        self.capabilities
-            .iter()
-            .filter(|c| c.version == version)
-            .collect()
+    
+    /// Get the output definition if defined
+    pub fn get_output(&self) -> Option<&CapabilityOutput> {
+        self.output.as_ref()
+    }
+    
+    /// Set the output definition
+    pub fn set_output(&mut self, output: CapabilityOutput) {
+        self.output = Some(output);
     }
 }
 
-impl Default for PluginCapabilities {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -247,29 +636,4 @@ mod tests {
         assert!(!cap.matches_request("compute:*"));
     }
 
-    #[test]
-    fn test_plugin_capabilities() {
-        let mut capabilities = PluginCapabilities::new();
-        
-        let id1 = CapabilityId::from_string("data_processing:transform:json").unwrap();
-        let cap1 = Capability::new(id1, "1.0.0".to_string());
-        
-        let id2 = CapabilityId::from_string("data_processing:validate:*").unwrap();
-        let mut metadata = HashMap::new();
-        metadata.insert("formats".to_string(), "json,xml,yaml".to_string());
-        let cap2 = Capability::with_metadata(id2, "1.0.0".to_string(), metadata);
-        
-        capabilities.add_capability(cap1);
-        capabilities.add_capability(cap2);
-        
-        assert!(capabilities.can("data_processing:transform:json"));
-        assert!(capabilities.can("data_processing:validate:xml"));
-        assert!(!capabilities.can("compute:math"));
-        
-        let metadata_caps = capabilities.capabilities_with_metadata("formats", None);
-        assert_eq!(metadata_caps.len(), 1);
-        
-        let version_caps = capabilities.capabilities_by_version("1.0.0");
-        assert_eq!(version_caps.len(), 2);
-    }
 }
