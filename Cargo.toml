@@ -1,5 +1,5 @@
 [package]
-name = "capability_sdk"
+name = "capability-sdk"
 version = "0.1.0"
 edition = "2021"
 description = "Core capability identifier and definition system for LBVR plugins"
