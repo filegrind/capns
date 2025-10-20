@@ -7,7 +7,9 @@
 pub mod capability_id;
 pub mod capability_id_builder;
 pub mod capability;
+pub mod validation;
 
 pub use capability_id::*;
 pub use capability_id_builder::*;
 pub use capability::*;
+pub use validation::*;
