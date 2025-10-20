@@ -54,7 +54,7 @@ pub struct CapabilityArgument {
     pub description: String,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cli_flag: Option<String>,
+    pub command: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<usize>,
@@ -87,12 +87,6 @@ pub struct CapabilityArguments {
     pub optional: Vec<CapabilityArgument>,
 }
 
-/// Command interface definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandInterface {
-    pub cli_flag: String,
-    pub usage_pattern: String,
-}
 
 /// Output type enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -205,9 +199,9 @@ pub struct Capability {
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     pub metadata: HashMap<String, String>,
     
-    /// Command interface definition
+    /// Command string for CLI execution
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub command_interface: Option<CommandInterface>,
+    pub command: Option<String>,
     
     /// Capability arguments
     #[serde(skip_serializing_if = "CapabilityArguments::is_empty", default)]
@@ -225,7 +219,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            command: None,
             position: None,
             validation: ArgumentValidation::default(),
             default: None,
@@ -233,12 +227,12 @@ impl CapabilityArgument {
     }
     
     /// Create argument with CLI flag
-    pub fn with_cli_flag(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
+    pub fn with_command(name: String, arg_type: ArgumentType, description: String, command: String) -> Self {
         Self {
             name,
             arg_type,
             description,
-            cli_flag: Some(cli_flag),
+            command: Some(command),
             position: None,
             validation: ArgumentValidation::default(),
             default: None,
@@ -251,7 +245,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            command: None,
             position: Some(position),
             validation: ArgumentValidation::default(),
             default: None,
@@ -264,7 +258,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            command: None,
             position: None,
             validation,
             default: None,
@@ -277,7 +271,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            cli_flag: None,
+            command: None,
             position: None,
             validation: ArgumentValidation::default(),
             default: Some(default),
@@ -289,7 +283,7 @@ impl CapabilityArgument {
         name: String,
         arg_type: ArgumentType,
         description: String,
-        cli_flag: Option<String>,
+        command: Option<String>,
         position: Option<usize>,
         validation: ArgumentValidation,
         default: Option<serde_json::Value>,
@@ -298,7 +292,7 @@ impl CapabilityArgument {
             name,
             arg_type,
             description,
-            cli_flag,
+            command,
             position,
             validation,
             default,
@@ -393,7 +387,7 @@ impl CapabilityArguments {
     pub fn get_flag_args(&self) -> Vec<&CapabilityArgument> {
         self.required.iter()
             .chain(self.optional.iter())
-            .filter(|arg| arg.cli_flag.is_some())
+            .filter(|arg| arg.command.is_some())
             .collect()
     }
 }
@@ -406,7 +400,7 @@ impl Capability {
             version,
             description: None,
             metadata: HashMap::new(),
-            command_interface: None,
+            command: None,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -419,7 +413,7 @@ impl Capability {
             version,
             description: Some(description),
             metadata: HashMap::new(),
-            command_interface: None,
+            command: None,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -436,7 +430,7 @@ impl Capability {
             version,
             description: None,
             metadata,
-            command_interface: None,
+            command: None,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -454,7 +448,7 @@ impl Capability {
             version,
             description: Some(description),
             metadata,
-            command_interface: None,
+            command: None,
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -471,24 +465,24 @@ impl Capability {
             version,
             description: None,
             metadata: HashMap::new(),
-            command_interface: None,
+            command: None,
             arguments,
             output: None,
         }
     }
     
-    /// Create a new capability with command interface
-    pub fn with_command_interface(
+    /// Create a new capability with command
+    pub fn with_command(
         id: CapabilityId,
         version: String,
-        command_interface: CommandInterface,
+        command: String,
     ) -> Self {
         Self {
             id,
             version,
             description: None,
             metadata: HashMap::new(),
-            command_interface: Some(command_interface),
+            command: Some(command),
             arguments: CapabilityArguments::new(),
             output: None,
         }
@@ -500,7 +494,7 @@ impl Capability {
         version: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
-        command_interface: Option<CommandInterface>,
+        command: Option<String>,
         arguments: CapabilityArguments,
         output: Option<CapabilityOutput>,
     ) -> Self {
@@ -509,7 +503,7 @@ impl Capability {
             version,
             description,
             metadata,
-            command_interface,
+            command,
             arguments,
             output,
         }
@@ -554,14 +548,14 @@ impl Capability {
         self.metadata.contains_key(key)
     }
     
-    /// Get the command interface if defined
-    pub fn get_command_interface(&self) -> Option<&CommandInterface> {
-        self.command_interface.as_ref()
+    /// Get the command if defined
+    pub fn get_command(&self) -> Option<&String> {
+        self.command.as_ref()
     }
     
-    /// Set the command interface
-    pub fn set_command_interface(&mut self, command_interface: CommandInterface) {
-        self.command_interface = Some(command_interface);
+    /// Set the command
+    pub fn set_command(&mut self, command: String) {
+        self.command = Some(command);
     }
     
     /// Get the arguments

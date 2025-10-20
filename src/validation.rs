@@ -489,10 +489,10 @@ impl CapabilityValidator {
         }
         
         // Validate CLI flag uniqueness
-        let mut cli_flags = std::collections::HashSet::new();
+        let mut commands = std::collections::HashSet::new();
         for arg in capability.arguments.required.iter().chain(capability.arguments.optional.iter()) {
-            if let Some(flag) = &arg.cli_flag {
-                if !cli_flags.insert(flag) {
+            if let Some(flag) = &arg.command {
+                if !commands.insert(flag) {
                     return Err(ValidationError::InvalidCapabilitySchema {
                         capability_id: capability_id.clone(),
                         issue: format!("Duplicate CLI flag '{}' for argument '{}'", flag, arg.name),
