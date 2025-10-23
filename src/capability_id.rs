@@ -69,6 +69,13 @@ impl CapabilityId {
         self.components.iter().take_while(|&c| c != "*").count()
     }
 
+    /// Check if this capability produces binary output
+    /// 
+    /// Binary capabilities are identified by the "bin:" prefix convention
+    pub fn is_binary(&self) -> bool {
+        self.components.first().map_or(false, |c| c == "bin")
+    }
+
     /// Check if this capability is compatible with another
     /// 
     /// Two capabilities are compatible if:
