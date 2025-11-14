@@ -12,16 +12,16 @@ use std::fmt;
 pub enum ValidationError {
     /// Unknown capability requested
     UnknownCapability {
-        capability_id: String,
+        capability_key: String,
     },
     /// Missing required argument
     MissingRequiredArgument {
-        capability_id: String,
+        capability_key: String,
         argument_name: String,
     },
     /// Invalid argument type
     InvalidArgumentType {
-        capability_id: String,
+        capability_key: String,
         argument_name: String,
         expected_type: ArgumentType,
         actual_type: String,
@@ -29,38 +29,38 @@ pub enum ValidationError {
     },
     /// Argument validation rule violation
     ArgumentValidationFailed {
-        capability_id: String,
+        capability_key: String,
         argument_name: String,
         validation_rule: String,
         actual_value: Value,
     },
     /// Invalid output type
     InvalidOutputType {
-        capability_id: String,
+        capability_key: String,
         expected_type: OutputType,
         actual_type: String,
         actual_value: Value,
     },
     /// Output validation rule violation
     OutputValidationFailed {
-        capability_id: String,
+        capability_key: String,
         validation_rule: String,
         actual_value: Value,
     },
     /// Malformed capability schema
     InvalidCapabilitySchema {
-        capability_id: String,
+        capability_key: String,
         issue: String,
     },
     /// Too many arguments provided
     TooManyArguments {
-        capability_id: String,
+        capability_key: String,
         max_expected: usize,
         actual_count: usize,
     },
     /// JSON parsing error
     JsonParseError {
-        capability_id: String,
+        capability_key: String,
         error: String,
     },
 }
@@ -68,37 +68,37 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValidationError::UnknownCapability { capability_id } => {
-                write!(f, "Unknown capability '{}' - capability not registered or advertised", capability_id)
+            ValidationError::UnknownCapability { capability_key } => {
+                write!(f, "Unknown capability '{}' - capability not registered or advertised", capability_key)
             }
-            ValidationError::MissingRequiredArgument { capability_id, argument_name } => {
-                write!(f, "Capability '{}' requires argument '{}' but it was not provided", capability_id, argument_name)
+            ValidationError::MissingRequiredArgument { capability_key, argument_name } => {
+                write!(f, "Capability '{}' requires argument '{}' but it was not provided", capability_key, argument_name)
             }
-            ValidationError::InvalidArgumentType { capability_id, argument_name, expected_type, actual_type, actual_value } => {
+            ValidationError::InvalidArgumentType { capability_key, argument_name, expected_type, actual_type, actual_value } => {
                 write!(f, "Capability '{}' argument '{}' expects type '{:?}' but received '{}' with value: {}", 
-                       capability_id, argument_name, expected_type, actual_type, actual_value)
+                       capability_key, argument_name, expected_type, actual_type, actual_value)
             }
-            ValidationError::ArgumentValidationFailed { capability_id, argument_name, validation_rule, actual_value } => {
+            ValidationError::ArgumentValidationFailed { capability_key, argument_name, validation_rule, actual_value } => {
                 write!(f, "Capability '{}' argument '{}' failed validation rule '{}' with value: {}", 
-                       capability_id, argument_name, validation_rule, actual_value)
+                       capability_key, argument_name, validation_rule, actual_value)
             }
-            ValidationError::InvalidOutputType { capability_id, expected_type, actual_type, actual_value } => {
+            ValidationError::InvalidOutputType { capability_key, expected_type, actual_type, actual_value } => {
                 write!(f, "Capability '{}' output expects type '{:?}' but received '{}' with value: {}", 
-                       capability_id, expected_type, actual_type, actual_value)
+                       capability_key, expected_type, actual_type, actual_value)
             }
-            ValidationError::OutputValidationFailed { capability_id, validation_rule, actual_value } => {
+            ValidationError::OutputValidationFailed { capability_key, validation_rule, actual_value } => {
                 write!(f, "Capability '{}' output failed validation rule '{}' with value: {}", 
-                       capability_id, validation_rule, actual_value)
+                       capability_key, validation_rule, actual_value)
             }
-            ValidationError::InvalidCapabilitySchema { capability_id, issue } => {
-                write!(f, "Capability '{}' has invalid schema: {}", capability_id, issue)
+            ValidationError::InvalidCapabilitySchema { capability_key, issue } => {
+                write!(f, "Capability '{}' has invalid schema: {}", capability_key, issue)
             }
-            ValidationError::TooManyArguments { capability_id, max_expected, actual_count } => {
+            ValidationError::TooManyArguments { capability_key, max_expected, actual_count } => {
                 write!(f, "Capability '{}' expects at most {} arguments but received {}", 
-                       capability_id, max_expected, actual_count)
+                       capability_key, max_expected, actual_count)
             }
-            ValidationError::JsonParseError { capability_id, error } => {
-                write!(f, "Capability '{}' JSON parsing failed: {}", capability_id, error)
+            ValidationError::JsonParseError { capability_key, error } => {
+                write!(f, "Capability '{}' JSON parsing failed: {}", capability_key, error)
             }
         }
     }
@@ -115,14 +115,14 @@ impl InputValidator {
         capability: &Capability,
         arguments: &[Value],
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         let args = &capability.arguments;
         
         // Check if too many arguments provided
         let max_args = args.required.len() + args.optional.len();
         if arguments.len() > max_args {
             return Err(ValidationError::TooManyArguments {
-                capability_id,
+                capability_key,
                 max_expected: max_args,
                 actual_count: arguments.len(),
             });
@@ -132,7 +132,7 @@ impl InputValidator {
         for (index, req_arg) in args.required.iter().enumerate() {
             if index >= arguments.len() {
                 return Err(ValidationError::MissingRequiredArgument {
-                    capability_id: capability_id.clone(),
+                    capability_key: capability_key.clone(),
                     argument_name: req_arg.name.clone(),
                 });
             }
@@ -157,7 +157,7 @@ impl InputValidator {
         arg_def: &CapabilityArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         
         // Type validation
         Self::validate_argument_type(capability, arg_def, value)?;
@@ -173,7 +173,7 @@ impl InputValidator {
         arg_def: &CapabilityArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         let actual_type = Self::get_json_type_name(value);
         
         let type_matches = match (&arg_def.arg_type, value) {
@@ -189,7 +189,7 @@ impl InputValidator {
         
         if !type_matches {
             return Err(ValidationError::InvalidArgumentType {
-                capability_id,
+                capability_key,
                 argument_name: arg_def.name.clone(),
                 expected_type: arg_def.arg_type.clone(),
                 actual_type,
@@ -205,7 +205,7 @@ impl InputValidator {
         arg_def: &CapabilityArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         let validation = &arg_def.validation;
         
         // Numeric validation
@@ -213,7 +213,7 @@ impl InputValidator {
             if let Some(num) = value.as_f64() {
                 if num < min {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_id,
+                        capability_key,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
@@ -226,7 +226,7 @@ impl InputValidator {
             if let Some(num) = value.as_f64() {
                 if num > max {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_id,
+                        capability_key,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
@@ -240,7 +240,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_id,
+                        capability_key,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("minimum length {}", min_length),
                         actual_value: value.clone(),
@@ -253,7 +253,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_id,
+                        capability_key,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("maximum length {}", max_length),
                         actual_value: value.clone(),
@@ -268,7 +268,7 @@ impl InputValidator {
                 if let Ok(regex) = regex::Regex::new(pattern) {
                     if !regex.is_match(s) {
                         return Err(ValidationError::ArgumentValidationFailed {
-                            capability_id,
+                            capability_key,
                             argument_name: arg_def.name.clone(),
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
@@ -283,7 +283,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_id,
+                        capability_key,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
@@ -322,11 +322,11 @@ impl OutputValidator {
         capability: &Capability,
         output: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         
         let output_def = capability.get_output()
             .ok_or_else(|| ValidationError::InvalidCapabilitySchema {
-                capability_id: capability_id.clone(),
+                capability_key: capability_key.clone(),
                 issue: "No output definition specified".to_string(),
             })?;
         
@@ -344,7 +344,7 @@ impl OutputValidator {
         output_def: &CapabilityOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         let actual_type = InputValidator::get_json_type_name(value);
         
         let type_matches = match (&output_def.output_type, value) {
@@ -360,7 +360,7 @@ impl OutputValidator {
         
         if !type_matches {
             return Err(ValidationError::InvalidOutputType {
-                capability_id,
+                capability_key,
                 expected_type: output_def.output_type.clone(),
                 actual_type,
                 actual_value: value.clone(),
@@ -375,7 +375,7 @@ impl OutputValidator {
         output_def: &CapabilityOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         let validation = &output_def.validation;
         
         // Apply same validation rules as arguments
@@ -383,7 +383,7 @@ impl OutputValidator {
             if let Some(num) = value.as_f64() {
                 if num < min {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_id,
+                        capability_key,
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
                     });
@@ -395,7 +395,7 @@ impl OutputValidator {
             if let Some(num) = value.as_f64() {
                 if num > max {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_id,
+                        capability_key,
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
                     });
@@ -407,7 +407,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_id,
+                        capability_key,
                         validation_rule: format!("minimum length {}", min_length),
                         actual_value: value.clone(),
                     });
@@ -419,7 +419,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_id,
+                        capability_key,
                         validation_rule: format!("maximum length {}", max_length),
                         actual_value: value.clone(),
                     });
@@ -432,7 +432,7 @@ impl OutputValidator {
                 if let Ok(regex) = regex::Regex::new(pattern) {
                     if !regex.is_match(s) {
                         return Err(ValidationError::OutputValidationFailed {
-                            capability_id,
+                            capability_key,
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
                         });
@@ -445,7 +445,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_id,
+                        capability_key,
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
                     });
@@ -463,13 +463,13 @@ pub struct CapabilityValidator;
 impl CapabilityValidator {
     /// Validate a capability definition itself
     pub fn validate_capability(capability: &Capability) -> Result<(), ValidationError> {
-        let capability_id = capability.id_string();
+        let capability_key = capability.id_string();
         
         // Validate that required arguments don't have default values
         for arg in &capability.arguments.required {
             if arg.default.is_some() {
                 return Err(ValidationError::InvalidCapabilitySchema {
-                    capability_id: capability_id.clone(),
+                    capability_key: capability_key.clone(),
                     issue: format!("Required argument '{}' cannot have a default value", arg.name),
                 });
             }
@@ -481,7 +481,7 @@ impl CapabilityValidator {
             if let Some(pos) = arg.position {
                 if !positions.insert(pos) {
                     return Err(ValidationError::InvalidCapabilitySchema {
-                        capability_id: capability_id.clone(),
+                        capability_key: capability_key.clone(),
                         issue: format!("Duplicate argument position {} for argument '{}'", pos, arg.name),
                     });
                 }
@@ -495,7 +495,7 @@ impl CapabilityValidator {
             if !flag.is_empty() {
                 if !cli_flags.insert(flag) {
                     return Err(ValidationError::InvalidCapabilitySchema {
-                        capability_id: capability_id.clone(),
+                        capability_key: capability_key.clone(),
                         issue: format!("Duplicate CLI flag '{}' for argument '{}'", flag, arg.name),
                     });
                 }
@@ -526,19 +526,19 @@ impl SchemaValidator {
     }
 
     /// Get a capability by ID
-    pub fn get_capability(&self, capability_id: &str) -> Option<&Capability> {
-        self.capabilities.get(capability_id)
+    pub fn get_capability(&self, capability_key: &str) -> Option<&Capability> {
+        self.capabilities.get(capability_key)
     }
 
     /// Validate arguments against a capability's input schema
     pub fn validate_inputs(
         &self,
-        capability_id: &str,
+        capability_key: &str,
         arguments: &[serde_json::Value],
     ) -> Result<(), ValidationError> {
-        let capability = self.get_capability(capability_id)
+        let capability = self.get_capability(capability_key)
             .ok_or_else(|| ValidationError::UnknownCapability {
-                capability_id: capability_id.to_string(),
+                capability_key: capability_key.to_string(),
             })?;
 
         InputValidator::validate_arguments(capability, arguments)
@@ -547,12 +547,12 @@ impl SchemaValidator {
     /// Validate output against a capability's output schema
     pub fn validate_output(
         &self,
-        capability_id: &str,
+        capability_key: &str,
         output: &serde_json::Value,
     ) -> Result<(), ValidationError> {
-        let capability = self.get_capability(capability_id)
+        let capability = self.get_capability(capability_key)
             .ok_or_else(|| ValidationError::UnknownCapability {
-                capability_id: capability_id.to_string(),
+                capability_key: capability_key.to_string(),
             })?;
 
         OutputValidator::validate_output(capability, output)
@@ -576,12 +576,12 @@ impl Default for SchemaValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapabilityId, CapabilityArguments};
+    use crate::{CapabilityKey, CapabilityArguments};
     use serde_json::json;
 
     #[test]
     fn test_input_validation_success() {
-        let id = CapabilityId::from_string("test:capability").unwrap();
+        let id = CapabilityKey::from_string("test:capability").unwrap();
         let mut capability = Capability::new(id, "1.0.0".to_string());
         
         let mut args = CapabilityArguments::new();
@@ -600,7 +600,7 @@ mod tests {
     
     #[test]
     fn test_input_validation_missing_required() {
-        let id = CapabilityId::from_string("test:capability").unwrap();
+        let id = CapabilityKey::from_string("test:capability").unwrap();
         let mut capability = Capability::new(id, "1.0.0".to_string());
         
         let mut args = CapabilityArguments::new();
@@ -626,7 +626,7 @@ mod tests {
     
     #[test]
     fn test_input_validation_wrong_type() {
-        let id = CapabilityId::from_string("test:capability").unwrap();
+        let id = CapabilityKey::from_string("test:capability").unwrap();
         let mut capability = Capability::new(id, "1.0.0".to_string());
         
         let mut args = CapabilityArguments::new();

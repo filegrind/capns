@@ -3,15 +3,15 @@
 //! Provides a fluent builder interface for constructing and manipulating capability identifiers.
 //! This replaces manual creation and manipulation of capability IDs with a type-safe API.
 
-use crate::capability_id::{CapabilityId, CapabilityIdError};
+use crate::capability_key::{CapabilityKey, CapabilityKeyError};
 
-/// Builder for constructing CapabilityId instances with a fluent API
+/// Builder for constructing CapabilityKey instances with a fluent API
 #[derive(Debug, Clone)]
-pub struct CapabilityIdBuilder {
+pub struct CapabilityKeyBuilder {
     segments: Vec<String>,
 }
 
-impl CapabilityIdBuilder {
+impl CapabilityKeyBuilder {
     /// Create a new empty builder
     pub fn new() -> Self {
         Self {
@@ -20,16 +20,16 @@ impl CapabilityIdBuilder {
     }
 
     /// Create a builder starting with a base capability ID
-    pub fn from_capability_id(capability_id: &CapabilityId) -> Self {
+    pub fn from_capability_key(capability_key: &CapabilityKey) -> Self {
         Self {
-            segments: capability_id.components.clone(),
+            segments: capability_key.components.clone(),
         }
     }
 
     /// Create a builder from a capability string
-    pub fn from_string(s: &str) -> Result<Self, CapabilityIdError> {
-        let capability_id = CapabilityId::from_string(s)?;
-        Ok(Self::from_capability_id(&capability_id))
+    pub fn from_string(s: &str) -> Result<Self, CapabilityKeyError> {
+        let capability_key = CapabilityKey::from_string(s)?;
+        Ok(Self::from_capability_key(&capability_key))
     }
 
     /// Add a segment to the capability ID
@@ -116,53 +116,53 @@ impl CapabilityIdBuilder {
         self
     }
 
-    /// Build the final CapabilityId
-    pub fn build(self) -> Result<CapabilityId, CapabilityIdError> {
+    /// Build the final CapabilityKey
+    pub fn build(self) -> Result<CapabilityKey, CapabilityKeyError> {
         if self.segments.is_empty() {
-            return Err(CapabilityIdError::Empty);
+            return Err(CapabilityKeyError::Empty);
         }
-        Ok(CapabilityId::new(self.segments))
+        Ok(CapabilityKey::new(self.segments))
     }
 
-    /// Build the final CapabilityId as a string
-    pub fn build_string(self) -> Result<String, CapabilityIdError> {
-        let capability_id = self.build()?;
-        Ok(capability_id.to_string())
+    /// Build the final CapabilityKey as a string
+    pub fn build_string(self) -> Result<String, CapabilityKeyError> {
+        let capability_key = self.build()?;
+        Ok(capability_key.to_string())
     }
 }
 
-impl Default for CapabilityIdBuilder {
+impl Default for CapabilityKeyBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
 /// Convenience trait for creating builders from various types
-pub trait IntoCapabilityIdBuilder {
-    fn into_builder(self) -> Result<CapabilityIdBuilder, CapabilityIdError>;
+pub trait IntoCapabilityKeyBuilder {
+    fn into_builder(self) -> Result<CapabilityKeyBuilder, CapabilityKeyError>;
 }
 
-impl IntoCapabilityIdBuilder for &str {
-    fn into_builder(self) -> Result<CapabilityIdBuilder, CapabilityIdError> {
-        CapabilityIdBuilder::from_string(self)
+impl IntoCapabilityKeyBuilder for &str {
+    fn into_builder(self) -> Result<CapabilityKeyBuilder, CapabilityKeyError> {
+        CapabilityKeyBuilder::from_string(self)
     }
 }
 
-impl IntoCapabilityIdBuilder for String {
-    fn into_builder(self) -> Result<CapabilityIdBuilder, CapabilityIdError> {
-        CapabilityIdBuilder::from_string(&self)
+impl IntoCapabilityKeyBuilder for String {
+    fn into_builder(self) -> Result<CapabilityKeyBuilder, CapabilityKeyError> {
+        CapabilityKeyBuilder::from_string(&self)
     }
 }
 
-impl IntoCapabilityIdBuilder for &CapabilityId {
-    fn into_builder(self) -> Result<CapabilityIdBuilder, CapabilityIdError> {
-        Ok(CapabilityIdBuilder::from_capability_id(self))
+impl IntoCapabilityKeyBuilder for &CapabilityKey {
+    fn into_builder(self) -> Result<CapabilityKeyBuilder, CapabilityKeyError> {
+        Ok(CapabilityKeyBuilder::from_capability_key(self))
     }
 }
 
-impl IntoCapabilityIdBuilder for CapabilityId {
-    fn into_builder(self) -> Result<CapabilityIdBuilder, CapabilityIdError> {
-        Ok(CapabilityIdBuilder::from_capability_id(&self))
+impl IntoCapabilityKeyBuilder for CapabilityKey {
+    fn into_builder(self) -> Result<CapabilityKeyBuilder, CapabilityKeyError> {
+        Ok(CapabilityKeyBuilder::from_capability_key(&self))
     }
 }
 
@@ -172,107 +172,107 @@ mod tests {
 
     #[test]
     fn test_builder_basic_construction() {
-        let capability_id = CapabilityIdBuilder::new()
+        let capability_key = CapabilityKeyBuilder::new()
             .sub("data_processing")
             .sub("transform")
             .sub("json")
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "data_processing:transform:json");
+        assert_eq!(capability_key.to_string(), "data_processing:transform:json");
     }
 
     #[test]
     fn test_builder_from_string() {
-        let builder = CapabilityIdBuilder::from_string("extract:metadata:pdf").unwrap();
-        let capability_id = builder.build().unwrap();
+        let builder = CapabilityKeyBuilder::from_string("extract:metadata:pdf").unwrap();
+        let capability_key = builder.build().unwrap();
 
-        assert_eq!(capability_id.to_string(), "extract:metadata:pdf");
+        assert_eq!(capability_key.to_string(), "extract:metadata:pdf");
     }
 
     #[test]
     fn test_builder_make_more_general() {
-        let capability_id = CapabilityIdBuilder::from_string("data_processing:transform:json")
+        let capability_key = CapabilityKeyBuilder::from_string("data_processing:transform:json")
             .unwrap()
             .make_more_general()
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "data_processing:transform");
+        assert_eq!(capability_key.to_string(), "data_processing:transform");
     }
 
     #[test]
     fn test_builder_make_wildcard() {
-        let capability_id = CapabilityIdBuilder::from_string("data_processing:transform:json")
+        let capability_key = CapabilityKeyBuilder::from_string("data_processing:transform:json")
             .unwrap()
             .make_wildcard()
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "data_processing:transform:*");
+        assert_eq!(capability_key.to_string(), "data_processing:transform:*");
     }
 
     #[test]
     fn test_builder_add_wildcard() {
-        let capability_id = CapabilityIdBuilder::new()
+        let capability_key = CapabilityKeyBuilder::new()
             .sub("data_processing")
             .add_wildcard()
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "data_processing:*");
+        assert_eq!(capability_key.to_string(), "data_processing:*");
     }
 
     #[test]
     fn test_builder_replace_segment() {
-        let capability_id = CapabilityIdBuilder::from_string("extract:metadata:pdf")
+        let capability_key = CapabilityKeyBuilder::from_string("extract:metadata:pdf")
             .unwrap()
             .replace_segment(2, "xml")
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "extract:metadata:xml");
+        assert_eq!(capability_key.to_string(), "extract:metadata:xml");
     }
 
     #[test]
     fn test_builder_subs() {
-        let capability_id = CapabilityIdBuilder::new()
+        let capability_key = CapabilityKeyBuilder::new()
             .subs(vec!["data", "processing"])
             .sub("json")
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "data:processing:json");
+        assert_eq!(capability_key.to_string(), "data:processing:json");
     }
 
     #[test]
     fn test_builder_make_general_to_level() {
-        let capability_id = CapabilityIdBuilder::from_string("a:b:c:d:e")
+        let capability_key = CapabilityKeyBuilder::from_string("a:b:c:d:e")
             .unwrap()
             .make_general_to_level(2)
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "a:b");
+        assert_eq!(capability_key.to_string(), "a:b");
     }
 
     #[test]
     fn test_builder_make_wildcard_from_level() {
-        let capability_id = CapabilityIdBuilder::from_string("data:processing:transform:json")
+        let capability_key = CapabilityKeyBuilder::from_string("data:processing:transform:json")
             .unwrap()
             .make_wildcard_from_level(2)
             .build()
             .unwrap();
 
-        assert_eq!(capability_id.to_string(), "data:processing:*");
+        assert_eq!(capability_key.to_string(), "data:processing:*");
     }
 
     #[test]
     fn test_into_builder_trait() {
-        let capability_id1 = "extract:metadata:pdf".into_builder().unwrap().build().unwrap();
-        let capability_id2 = String::from("extract:metadata:pdf").into_builder().unwrap().build().unwrap();
+        let capability_key1 = "extract:metadata:pdf".into_builder().unwrap().build().unwrap();
+        let capability_key2 = String::from("extract:metadata:pdf").into_builder().unwrap().build().unwrap();
 
-        assert_eq!(capability_id1.to_string(), "extract:metadata:pdf");
-        assert_eq!(capability_id2.to_string(), "extract:metadata:pdf");
+        assert_eq!(capability_key1.to_string(), "extract:metadata:pdf");
+        assert_eq!(capability_key2.to_string(), "extract:metadata:pdf");
     }
 }

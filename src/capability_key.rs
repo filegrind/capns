@@ -15,21 +15,21 @@ use std::str::FromStr;
 /// - `file_handling:*`
 /// - `*`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CapabilityId {
+pub struct CapabilityKey {
     /// The hierarchical components of the capability identifier
     pub components: Vec<String>,
 }
 
-impl CapabilityId {
+impl CapabilityKey {
     /// Create a new capability identifier from components
     pub fn new(components: Vec<String>) -> Self {
         Self { components }
     }
 
     /// Create a capability identifier from a string representation
-    pub fn from_string(s: &str) -> Result<Self, CapabilityIdError> {
+    pub fn from_string(s: &str) -> Result<Self, CapabilityKeyError> {
         if s.is_empty() {
-            return Err(CapabilityIdError::Empty);
+            return Err(CapabilityKeyError::Empty);
         }
 
         let components: Vec<String> = s.split(':')
@@ -39,10 +39,10 @@ impl CapabilityId {
         // Validate components
         for component in &components {
             if component.is_empty() {
-                return Err(CapabilityIdError::EmptyComponent);
+                return Err(CapabilityKeyError::EmptyComponent);
             }
             if component.contains(char::is_whitespace) {
-                return Err(CapabilityIdError::InvalidCharacter(component.clone()));
+                return Err(CapabilityKeyError::InvalidCharacter(component.clone()));
             }
         }
 
@@ -82,7 +82,7 @@ impl CapabilityId {
     /// 1. They are identical
     /// 2. One is a prefix of the other with wildcard matching
     /// 3. Both have wildcards that can match
-    pub fn is_compatible_with(&self, other: &CapabilityId) -> bool {
+    pub fn is_compatible_with(&self, other: &CapabilityKey) -> bool {
         let max_len = self.components.len().max(other.components.len());
         
         for i in 0..max_len {
@@ -124,7 +124,7 @@ impl CapabilityId {
     /// Check if this capability is more specific than another compatible capability
     /// 
     /// Returns true if both are compatible and this capability is more specific
-    pub fn is_more_specific_than(&self, other: &CapabilityId) -> bool {
+    pub fn is_more_specific_than(&self, other: &CapabilityKey) -> bool {
         if !self.is_compatible_with(other) {
             return false;
         }
@@ -136,7 +136,7 @@ impl CapabilityId {
     /// 
     /// This is used when a request comes in with a capability identifier
     /// and we need to see if this capability can handle it
-    pub fn can_handle(&self, request: &CapabilityId) -> bool {
+    pub fn can_handle(&self, request: &CapabilityKey) -> bool {
         // A capability can handle a request if the request is compatible
         // and the capability is at least as specific as needed
         if !self.is_compatible_with(request) {
@@ -153,18 +153,18 @@ impl CapabilityId {
     }
 
     /// Get the parent capability identifier (remove last component)
-    pub fn parent(&self) -> Option<CapabilityId> {
+    pub fn parent(&self) -> Option<CapabilityKey> {
         if self.components.len() <= 1 {
             return None;
         }
         
         let mut parent_components = self.components.clone();
         parent_components.pop();
-        Some(CapabilityId::new(parent_components))
+        Some(CapabilityKey::new(parent_components))
     }
 
     /// Get all ancestor capability identifiers (all parents up to root)
-    pub fn ancestors(&self) -> Vec<CapabilityId> {
+    pub fn ancestors(&self) -> Vec<CapabilityKey> {
         let mut ancestors = Vec::new();
         let mut current = self.parent();
         
@@ -177,7 +177,7 @@ impl CapabilityId {
     }
 
     /// Check if this capability is a child of another
-    pub fn is_child_of(&self, parent: &CapabilityId) -> bool {
+    pub fn is_child_of(&self, parent: &CapabilityKey) -> bool {
         if self.components.len() != parent.components.len() + 1 {
             return false;
         }
@@ -192,53 +192,53 @@ impl CapabilityId {
     }
 
     /// Create a wildcard version of this capability at a specific level
-    pub fn wildcard_at_level(&self, level: usize) -> CapabilityId {
+    pub fn wildcard_at_level(&self, level: usize) -> CapabilityKey {
         let mut components = self.components.clone();
         
         // Truncate to the specified level and add wildcard
         components.truncate(level);
         components.push("*".to_string());
         
-        CapabilityId::new(components)
+        CapabilityKey::new(components)
     }
 }
 
 /// Errors that can occur when parsing capability identifiers
 #[derive(Debug, Clone, PartialEq)]
-pub enum CapabilityIdError {
+pub enum CapabilityKeyError {
     Empty,
     EmptyComponent,
     InvalidCharacter(String),
 }
 
-impl fmt::Display for CapabilityIdError {
+impl fmt::Display for CapabilityKeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CapabilityIdError::Empty => write!(f, "Capability identifier cannot be empty"),
-            CapabilityIdError::EmptyComponent => write!(f, "Capability identifier cannot have empty components"),
-            CapabilityIdError::InvalidCharacter(comp) => write!(f, "Invalid character in component: {}", comp),
+            CapabilityKeyError::Empty => write!(f, "Capability identifier cannot be empty"),
+            CapabilityKeyError::EmptyComponent => write!(f, "Capability identifier cannot have empty components"),
+            CapabilityKeyError::InvalidCharacter(comp) => write!(f, "Invalid character in component: {}", comp),
         }
     }
 }
 
-impl std::error::Error for CapabilityIdError {}
+impl std::error::Error for CapabilityKeyError {}
 
-impl FromStr for CapabilityId {
-    type Err = CapabilityIdError;
+impl FromStr for CapabilityKey {
+    type Err = CapabilityKeyError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        CapabilityId::from_string(s)
+        CapabilityKey::from_string(s)
     }
 }
 
-impl fmt::Display for CapabilityId {
+impl fmt::Display for CapabilityKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string())
     }
 }
 
 // Serde serialization support
-impl Serialize for CapabilityId {
+impl Serialize for CapabilityKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -247,13 +247,13 @@ impl Serialize for CapabilityId {
     }
 }
 
-impl<'de> Deserialize<'de> for CapabilityId {
-    fn deserialize<D>(deserializer: D) -> Result<CapabilityId, D::Error>
+impl<'de> Deserialize<'de> for CapabilityKey {
+    fn deserialize<D>(deserializer: D) -> Result<CapabilityKey, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        CapabilityId::from_string(&s).map_err(serde::de::Error::custom)
+        CapabilityKey::from_string(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -263,9 +263,9 @@ pub struct CapabilityMatcher;
 impl CapabilityMatcher {
     /// Find the most specific capability that can handle a request
     pub fn find_best_match<'a>(
-        capabilities: &'a [CapabilityId],
-        request: &CapabilityId,
-    ) -> Option<&'a CapabilityId> {
+        capabilities: &'a [CapabilityKey],
+        request: &CapabilityKey,
+    ) -> Option<&'a CapabilityKey> {
         capabilities
             .iter()
             .filter(|cap| cap.can_handle(request))
@@ -274,10 +274,10 @@ impl CapabilityMatcher {
 
     /// Find all capabilities that can handle a request, sorted by specificity
     pub fn find_all_matches<'a>(
-        capabilities: &'a [CapabilityId],
-        request: &CapabilityId,
-    ) -> Vec<&'a CapabilityId> {
-        let mut matches: Vec<&CapabilityId> = capabilities
+        capabilities: &'a [CapabilityKey],
+        request: &CapabilityKey,
+    ) -> Vec<&'a CapabilityKey> {
+        let mut matches: Vec<&CapabilityKey> = capabilities
             .iter()
             .filter(|cap| cap.can_handle(request))
             .collect();
@@ -288,7 +288,7 @@ impl CapabilityMatcher {
     }
 
     /// Check if two capability sets are compatible
-    pub fn are_compatible(caps1: &[CapabilityId], caps2: &[CapabilityId]) -> bool {
+    pub fn are_compatible(caps1: &[CapabilityKey], caps2: &[CapabilityKey]) -> bool {
         caps1.iter().any(|c1| {
             caps2.iter().any(|c2| c1.is_compatible_with(c2))
         })
@@ -300,29 +300,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_capability_id_creation() {
-        let cap = CapabilityId::from_string("file_handling:thumbnail_generation:pdf").unwrap();
+    fn test_capability_key_creation() {
+        let cap = CapabilityKey::from_string("file_handling:thumbnail_generation:pdf").unwrap();
         assert_eq!(cap.components, vec!["file_handling", "thumbnail_generation", "pdf"]);
         assert_eq!(cap.to_string(), "file_handling:thumbnail_generation:pdf");
     }
 
     #[test]
     fn test_wildcard_detection() {
-        let wildcard = CapabilityId::from_string("file_handling:*").unwrap();
+        let wildcard = CapabilityKey::from_string("file_handling:*").unwrap();
         assert!(wildcard.is_wildcard());
         assert!(!wildcard.is_fully_specified());
 
-        let specific = CapabilityId::from_string("file_handling:pdf").unwrap();
+        let specific = CapabilityKey::from_string("file_handling:pdf").unwrap();
         assert!(!specific.is_wildcard());
         assert!(specific.is_fully_specified());
     }
 
     #[test]
     fn test_specificity() {
-        let cap1 = CapabilityId::from_string("file_handling").unwrap();
-        let cap2 = CapabilityId::from_string("file_handling:thumbnail").unwrap();
-        let cap3 = CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap();
-        let cap4 = CapabilityId::from_string("file_handling:*").unwrap();
+        let cap1 = CapabilityKey::from_string("file_handling").unwrap();
+        let cap2 = CapabilityKey::from_string("file_handling:thumbnail").unwrap();
+        let cap3 = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
+        let cap4 = CapabilityKey::from_string("file_handling:*").unwrap();
 
         assert_eq!(cap1.specificity(), 1);
         assert_eq!(cap2.specificity(), 2);
@@ -332,10 +332,10 @@ mod tests {
 
     #[test]
     fn test_compatibility() {
-        let specific = CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap();
-        let wildcard1 = CapabilityId::from_string("file_handling:thumbnail:*").unwrap();
-        let wildcard2 = CapabilityId::from_string("file_handling:*").unwrap();
-        let unrelated = CapabilityId::from_string("data_processing:transform").unwrap();
+        let specific = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
+        let wildcard1 = CapabilityKey::from_string("file_handling:thumbnail:*").unwrap();
+        let wildcard2 = CapabilityKey::from_string("file_handling:*").unwrap();
+        let unrelated = CapabilityKey::from_string("data_processing:transform").unwrap();
 
         assert!(specific.is_compatible_with(&wildcard1));
         assert!(specific.is_compatible_with(&wildcard2));
@@ -346,11 +346,11 @@ mod tests {
 
     #[test]
     fn test_can_handle() {
-        let capability = CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap();
-        let request1 = CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap();
-        let request2 = CapabilityId::from_string("file_handling:thumbnail:*").unwrap();
-        let request3 = CapabilityId::from_string("file_handling:*").unwrap();
-        let request4 = CapabilityId::from_string("data_processing:*").unwrap();
+        let capability = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
+        let request1 = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
+        let request2 = CapabilityKey::from_string("file_handling:thumbnail:*").unwrap();
+        let request3 = CapabilityKey::from_string("file_handling:*").unwrap();
+        let request4 = CapabilityKey::from_string("data_processing:*").unwrap();
 
         assert!(capability.can_handle(&request1));
         assert!(capability.can_handle(&request2));
@@ -361,12 +361,12 @@ mod tests {
     #[test]
     fn test_best_match() {
         let capabilities = vec![
-            CapabilityId::from_string("file_handling:*").unwrap(),
-            CapabilityId::from_string("file_handling:thumbnail:*").unwrap(),
-            CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap(),
+            CapabilityKey::from_string("file_handling:*").unwrap(),
+            CapabilityKey::from_string("file_handling:thumbnail:*").unwrap(),
+            CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap(),
         ];
 
-        let request = CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap();
+        let request = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
         let best = CapabilityMatcher::find_best_match(&capabilities, &request).unwrap();
         
         assert_eq!(best.to_string(), "file_handling:thumbnail:pdf");
@@ -374,8 +374,8 @@ mod tests {
 
     #[test]
     fn test_parent_child() {
-        let child = CapabilityId::from_string("file_handling:thumbnail:pdf").unwrap();
-        let parent = CapabilityId::from_string("file_handling:thumbnail").unwrap();
+        let child = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
+        let parent = CapabilityKey::from_string("file_handling:thumbnail").unwrap();
         
         assert!(child.is_child_of(&parent));
         assert_eq!(child.parent().unwrap(), parent);

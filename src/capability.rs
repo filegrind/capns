@@ -4,7 +4,7 @@
 //! the capability identifier, versioning, and metadata. Capabilities are general-purpose
 //! and do not assume any specific domain like files or documents.
 
-use crate::capability_id::CapabilityId;
+use crate::capability_key::CapabilityKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -186,7 +186,7 @@ impl CapabilityOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Capability {
     /// Formal capability identifier with hierarchical naming
-    pub id: CapabilityId,
+    pub id: CapabilityKey,
     
     /// Capability version
     pub version: String,
@@ -385,7 +385,7 @@ impl CapabilityArguments {
 
 impl Capability {
     /// Create a new capability
-    pub fn new(id: CapabilityId, version: String, command: String) -> Self {
+    pub fn new(id: CapabilityKey, version: String, command: String) -> Self {
         Self {
             id,
             version,
@@ -398,7 +398,7 @@ impl Capability {
     }
 
     /// Create a new capability with description
-    pub fn with_description(id: CapabilityId, version: String, command: String, description: String) -> Self {
+    pub fn with_description(id: CapabilityKey, version: String, command: String, description: String) -> Self {
         Self {
             id,
             version,
@@ -412,7 +412,7 @@ impl Capability {
 
     /// Create a new capability with metadata
     pub fn with_metadata(
-        id: CapabilityId, 
+        id: CapabilityKey, 
         version: String,
         command: String,
         metadata: HashMap<String, String>
@@ -430,7 +430,7 @@ impl Capability {
 
     /// Create a new capability with description and metadata
     pub fn with_description_and_metadata(
-        id: CapabilityId,
+        id: CapabilityKey,
         version: String,
         command: String,
         description: String,
@@ -449,7 +449,7 @@ impl Capability {
     
     /// Create a new capability with arguments
     pub fn with_arguments(
-        id: CapabilityId,
+        id: CapabilityKey,
         version: String,
         command: String,
         arguments: CapabilityArguments,
@@ -467,7 +467,7 @@ impl Capability {
     
     /// Create a new capability with command (deprecated - use new() instead)
     pub fn with_command(
-        id: CapabilityId,
+        id: CapabilityKey,
         version: String,
         command: String,
     ) -> Self {
@@ -476,7 +476,7 @@ impl Capability {
     
     /// Create a fully specified capability
     pub fn with_full_definition(
-        id: CapabilityId,
+        id: CapabilityKey,
         version: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
@@ -497,7 +497,7 @@ impl Capability {
     
     /// Check if this capability matches a request string
     pub fn matches_request(&self, request: &str) -> bool {
-        let request_id = CapabilityId::from_string(request).expect("Invalid capability identifier in request");
+        let request_id = CapabilityKey::from_string(request).expect("Invalid capability identifier in request");
         self.id.can_handle(&request_id)
     }
 
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn test_capability_creation() {
-        let id = CapabilityId::from_string("data_processing:transform:json").unwrap();
+        let id = CapabilityKey::from_string("data_processing:transform:json").unwrap();
         let cap = Capability::new(id, "1.0.0".to_string());
         
         assert_eq!(cap.id_string(), "data_processing:transform:json");
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_capability_with_metadata() {
-        let id = CapabilityId::from_string("compute:math:arithmetic").unwrap();
+        let id = CapabilityKey::from_string("compute:math:arithmetic").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
@@ -607,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_capability_matching() {
-        let id = CapabilityId::from_string("data_processing:transform:json").unwrap();
+        let id = CapabilityKey::from_string("data_processing:transform:json").unwrap();
         let cap = Capability::new(id, "1.0.0".to_string());
         
         assert!(cap.matches_request("data_processing:transform:json"));
