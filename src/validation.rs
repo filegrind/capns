@@ -3,7 +3,7 @@
 //! This module provides strict validation of inputs and outputs against
 //! capability schemas, ensuring adherence to advertised specifications.
 
-use crate::{Capability, CapabilityArgument, CapabilityOutput, ArgumentType, OutputType, ArgumentValidation};
+use crate::{Capability, CapabilityArgument, CapabilityOutput, ArgumentType, OutputType};
 use serde_json::Value;
 use std::fmt;
 
