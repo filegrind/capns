@@ -582,22 +582,22 @@ mod tests {
 
     #[test]
     fn test_capability_creation() {
-        let id = CapabilityKey::from_string("data_processing:transform:json").unwrap();
-        let cap = Capability::new(id, "1.0.0".to_string());
+        let id = CapabilityKey::from_string("action=transform;format=json;type=data_processing").unwrap();
+        let cap = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        assert_eq!(cap.id_string(), "data_processing:transform:json");
+        assert_eq!(cap.id_string(), "action=transform;format=json;type=data_processing");
         assert_eq!(cap.version, "1.0.0");
         assert!(cap.metadata.is_empty());
     }
 
     #[test]
     fn test_capability_with_metadata() {
-        let id = CapabilityKey::from_string("compute:math:arithmetic").unwrap();
+        let id = CapabilityKey::from_string("action=arithmetic;type=compute;subtype=math").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
         
-        let cap = Capability::with_metadata(id, "2.1.0".to_string(), metadata);
+        let cap = Capability::with_metadata(id, "2.1.0".to_string(), "test-command".to_string(), metadata);
         
         assert_eq!(cap.get_metadata("precision"), Some(&"double".to_string()));
         assert_eq!(cap.get_metadata("operations"), Some(&"add,subtract,multiply,divide".to_string()));
@@ -607,13 +607,13 @@ mod tests {
 
     #[test]
     fn test_capability_matching() {
-        let id = CapabilityKey::from_string("data_processing:transform:json").unwrap();
-        let cap = Capability::new(id, "1.0.0".to_string());
+        let id = CapabilityKey::from_string("action=transform;format=json;type=data_processing").unwrap();
+        let cap = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        assert!(cap.matches_request("data_processing:transform:json"));
-        assert!(cap.matches_request("data_processing:transform:*"));
-        assert!(cap.matches_request("data_processing:*"));
-        assert!(!cap.matches_request("compute:*"));
+        assert!(cap.matches_request("action=transform;format=json;type=data_processing"));
+        assert!(cap.matches_request("action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
+        assert!(cap.matches_request("type=data_processing")); // Request is subset, cap has all required tags
+        assert!(!cap.matches_request("type=compute"));
     }
 
 }

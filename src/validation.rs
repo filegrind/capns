@@ -581,14 +581,15 @@ mod tests {
 
     #[test]
     fn test_input_validation_success() {
-        let id = CapabilityKey::from_string("test:capability").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string());
+        let id = CapabilityKey::from_string("type=test;action=capability").unwrap();
+        let mut capability = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapabilityArguments::new();
         args.add_required(CapabilityArgument::new(
             "file_path".to_string(),
             ArgumentType::String,
             "Path to file".to_string(),
+            "--file".to_string(),
         ));
         
         capability.set_arguments(args);
@@ -600,14 +601,15 @@ mod tests {
     
     #[test]
     fn test_input_validation_missing_required() {
-        let id = CapabilityKey::from_string("test:capability").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string());
+        let id = CapabilityKey::from_string("type=test;action=capability").unwrap();
+        let mut capability = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapabilityArguments::new();
         args.add_required(CapabilityArgument::new(
             "file_path".to_string(),
             ArgumentType::String,
             "Path to file".to_string(),
+            "--file".to_string(),
         ));
         
         capability.set_arguments(args);
@@ -626,14 +628,15 @@ mod tests {
     
     #[test]
     fn test_input_validation_wrong_type() {
-        let id = CapabilityKey::from_string("test:capability").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string());
+        let id = CapabilityKey::from_string("type=test;action=capability").unwrap();
+        let mut capability = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapabilityArguments::new();
         args.add_required(CapabilityArgument::new(
             "width".to_string(),
             ArgumentType::Integer,
             "Width value".to_string(),
+            "--width".to_string(),
         ));
         
         capability.set_arguments(args);

@@ -1,130 +1,176 @@
-//! Formal Capability Identifier System
+//! Flat Tag-Based Capability Identifier System
 //!
-//! This module provides a reference implementation for hierarchical capability identifiers
-//! with wildcard support, compatibility checking, and specificity comparison.
+//! This module provides a flat, tag-based capability identifier system that replaces
+//! hierarchical naming with key-value tags to handle cross-cutting concerns and
+//! multi-dimensional capability classification.
 
 use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-/// A formal capability identifier with hierarchical naming and wildcard support
-/// 
+/// A capability identifier using flat, ordered tags
+///
 /// Examples:
-/// - `file_handling:thumbnail_generation:pdf`
-/// - `file_handling:thumbnail_generation:*`
-/// - `file_handling:*`
-/// - `*`
+/// - `action=generate;format=pdf;output=binary;target=thumbnail;type=document`
+/// - `action=extract;target=metadata;type=document`
+/// - `action=analysis;format=en;type=inference`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapabilityKey {
-    /// The hierarchical components of the capability identifier
-    pub components: Vec<String>,
+    /// The tags that define this capability, stored in sorted order for canonical representation
+    pub tags: BTreeMap<String, String>,
 }
 
 impl CapabilityKey {
-    /// Create a new capability identifier from components
-    pub fn new(components: Vec<String>) -> Self {
-        Self { components }
+    /// Create a new capability identifier from tags
+    pub fn new(tags: BTreeMap<String, String>) -> Self {
+        Self { tags }
+    }
+
+    /// Create an empty capability identifier
+    pub fn empty() -> Self {
+        Self {
+            tags: BTreeMap::new(),
+        }
     }
 
     /// Create a capability identifier from a string representation
+    ///
+    /// Format: `key1=value1;key2=value2;...`
+    /// Tags are automatically sorted alphabetically for canonical form
     pub fn from_string(s: &str) -> Result<Self, CapabilityKeyError> {
         if s.is_empty() {
             return Err(CapabilityKeyError::Empty);
         }
 
-        let components: Vec<String> = s.split(':')
-            .map(|c| c.trim().to_string())
-            .collect();
+        let mut tags = BTreeMap::new();
 
-        // Validate components
-        for component in &components {
-            if component.is_empty() {
-                return Err(CapabilityKeyError::EmptyComponent);
+        for tag_str in s.split(';') {
+            let tag_str = tag_str.trim();
+            if tag_str.is_empty() {
+                continue;
             }
-            if component.contains(char::is_whitespace) {
-                return Err(CapabilityKeyError::InvalidCharacter(component.clone()));
+
+            let parts: Vec<&str> = tag_str.split('=').collect();
+            if parts.len() != 2 {
+                return Err(CapabilityKeyError::InvalidTagFormat(tag_str.to_string()));
             }
+
+            let key = parts[0].trim();
+            let value = parts[1].trim();
+
+            if key.is_empty() || value.is_empty() {
+                return Err(CapabilityKeyError::EmptyTagComponent(tag_str.to_string()));
+            }
+
+            // Validate key and value characters
+            if !Self::is_valid_tag_component(key) || !Self::is_valid_tag_component(value) {
+                return Err(CapabilityKeyError::InvalidCharacter(tag_str.to_string()));
+            }
+
+            tags.insert(key.to_string(), value.to_string());
         }
 
-        Ok(Self { components })
+        if tags.is_empty() {
+            return Err(CapabilityKeyError::Empty);
+        }
+
+        Ok(Self { tags })
     }
 
-    /// Get the string representation of this capability identifier
+    /// Validate that a tag component contains only allowed characters
+    fn is_valid_tag_component(s: &str) -> bool {
+        s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '*')
+    }
+
+    /// Get the canonical string representation of this capability identifier
+    ///
+    /// Tags are sorted alphabetically for consistent representation
     pub fn to_string(&self) -> String {
-        self.components.join(":")
+        self.tags
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
+            .join(";")
     }
 
-    /// Check if this capability is a wildcard (ends with "*")
-    pub fn is_wildcard(&self) -> bool {
-        self.components.last().map_or(false, |c| c == "*")
+    /// Get a specific tag value
+    pub fn get_tag(&self, key: &str) -> Option<&String> {
+        self.tags.get(key)
     }
 
-    /// Check if this capability is fully specified (no wildcards)
-    pub fn is_fully_specified(&self) -> bool {
-        !self.components.iter().any(|c| c == "*")
+    /// Check if this capability has a specific tag with a specific value
+    pub fn has_tag(&self, key: &str, value: &str) -> bool {
+        self.tags.get(key).map_or(false, |v| v == value)
     }
 
-    /// Get the specificity level (number of non-wildcard components)
-    pub fn specificity(&self) -> usize {
-        self.components.iter().take_while(|&c| c != "*").count()
+    /// Add or update a tag
+    pub fn with_tag(mut self, key: String, value: String) -> Self {
+        self.tags.insert(key, value);
+        self
     }
 
-    /// Check if this capability produces binary output
-    /// 
-    /// Binary capabilities are identified by the "bin:" prefix convention
-    pub fn is_binary(&self) -> bool {
-        self.components.first().map_or(false, |c| c == "bin")
+    /// Remove a tag
+    pub fn without_tag(mut self, key: &str) -> Self {
+        self.tags.remove(key);
+        self
     }
 
-    /// Check if this capability is compatible with another
-    /// 
-    /// Two capabilities are compatible if:
-    /// 1. They are identical
-    /// 2. One is a prefix of the other with wildcard matching
-    /// 3. Both have wildcards that can match
-    pub fn is_compatible_with(&self, other: &CapabilityKey) -> bool {
-        let max_len = self.components.len().max(other.components.len());
-        
-        for i in 0..max_len {
-            let self_component = self.components.get(i);
-            let other_component = other.components.get(i);
-            
-            match (self_component, other_component) {
-                // Both have components at this level
-                (Some(self_comp), Some(other_comp)) => {
-                    if self_comp == "*" || other_comp == "*" {
-                        // Wildcard matches anything
+    /// Check if this capability matches another based on tag compatibility
+    ///
+    /// A capability matches a request if:
+    /// - For each tag in the request: capability has same value, wildcard (*), or missing tag
+    /// - For each tag in the capability: if request is missing that tag, that's fine (capability is more specific)
+    /// Missing tags are treated as wildcards (less specific, can handle any value).
+    pub fn matches(&self, request: &CapabilityKey) -> bool {
+        // Check all tags that the request specifies
+        for (request_key, request_value) in &request.tags {
+            match self.tags.get(request_key) {
+                Some(cap_value) => {
+                    if cap_value == "*" {
+                        // Capability has wildcard - can handle any value
                         continue;
-                    } else if self_comp == other_comp {
-                        // Exact match
+                    }
+                    if request_value == "*" {
+                        // Request accepts any value - capability's specific value matches
                         continue;
-                    } else {
-                        // Different non-wildcard components - not compatible
+                    }
+                    if cap_value != request_value {
+                        // Capability has specific value that doesn't match request's specific value
                         return false;
                     }
                 }
-                // One has more components than the other
-                (Some(comp), None) | (None, Some(comp)) => {
-                    // Compatible only if the shorter one ended with a wildcard
-                    if comp == "*" {
-                        return true;
-                    }
-                    // Check if the shorter capability had a trailing wildcard
-                    let shorter = if self_component.is_some() { other } else { self };
-                    return shorter.is_wildcard();
+                None => {
+                    // Missing tag in capability is treated as wildcard - can handle any value
+                    continue;
                 }
-                // Both are None (shouldn't happen in this loop)
-                (None, None) => break,
             }
         }
         
+        // If capability has additional specific tags that request doesn't specify, that's fine
+        // The capability is just more specific than needed
         true
     }
 
-    /// Check if this capability is more specific than another compatible capability
-    /// 
-    /// Returns true if both are compatible and this capability is more specific
+    /// Check if this capability can handle a request
+    ///
+    /// This is used when a request comes in with a capability identifier
+    /// and we need to see if this capability can fulfill it
+    pub fn can_handle(&self, request: &CapabilityKey) -> bool {
+        self.matches(request)
+    }
+
+    /// Calculate specificity score for capability matching
+    ///
+    /// More specific capabilities have higher scores and are preferred
+    pub fn specificity(&self) -> usize {
+        // Count non-wildcard tags
+        self.tags.values().filter(|v| v.as_str() != "*").count()
+    }
+
+    /// Check if this capability is more specific than another
     pub fn is_more_specific_than(&self, other: &CapabilityKey) -> bool {
+        // First check if they're compatible
         if !self.is_compatible_with(other) {
             return false;
         }
@@ -132,74 +178,93 @@ impl CapabilityKey {
         self.specificity() > other.specificity()
     }
 
-    /// Check if this capability matches a request pattern
-    /// 
-    /// This is used when a request comes in with a capability identifier
-    /// and we need to see if this capability can handle it
-    pub fn can_handle(&self, request: &CapabilityKey) -> bool {
-        // A capability can handle a request if the request is compatible
-        // and the capability is at least as specific as needed
-        if !self.is_compatible_with(request) {
-            return false;
-        }
+    /// Check if this capability is compatible with another
+    ///
+    /// Two capabilities are compatible if they can potentially match
+    /// the same types of requests (considering wildcards and missing tags as wildcards)
+    pub fn is_compatible_with(&self, other: &CapabilityKey) -> bool {
+        // Get all unique tag keys from both capabilities
+        let mut all_keys = self.tags.keys().cloned().collect::<std::collections::HashSet<_>>();
+        all_keys.extend(other.tags.keys().cloned());
 
-        // If request is fully specified, we must match exactly or be more general
-        if request.is_fully_specified() {
-            return self.is_compatible_with(request);
-        }
-
-        // If request has wildcards, we can handle it if we're compatible
-        true
-    }
-
-    /// Get the parent capability identifier (remove last component)
-    pub fn parent(&self) -> Option<CapabilityKey> {
-        if self.components.len() <= 1 {
-            return None;
-        }
-        
-        let mut parent_components = self.components.clone();
-        parent_components.pop();
-        Some(CapabilityKey::new(parent_components))
-    }
-
-    /// Get all ancestor capability identifiers (all parents up to root)
-    pub fn ancestors(&self) -> Vec<CapabilityKey> {
-        let mut ancestors = Vec::new();
-        let mut current = self.parent();
-        
-        while let Some(parent) = current {
-            ancestors.push(parent.clone());
-            current = parent.parent();
-        }
-        
-        ancestors
-    }
-
-    /// Check if this capability is a child of another
-    pub fn is_child_of(&self, parent: &CapabilityKey) -> bool {
-        if self.components.len() != parent.components.len() + 1 {
-            return false;
-        }
-        
-        for (i, parent_comp) in parent.components.iter().enumerate() {
-            if parent_comp != "*" && &self.components[i] != parent_comp {
-                return false;
+        for key in all_keys {
+            match (self.tags.get(&key), other.tags.get(&key)) {
+                (Some(v1), Some(v2)) => {
+                    // Both have the tag - they must match or one must be wildcard
+                    if v1 != "*" && v2 != "*" && v1 != v2 {
+                        return false;
+                    }
+                }
+                (Some(_), None) | (None, Some(_)) => {
+                    // One has the tag, the other doesn't - missing tag is wildcard, so compatible
+                    continue;
+                }
+                (None, None) => {
+                    // Neither has the tag - shouldn't happen in this loop
+                    continue;
+                }
             }
         }
-        
+
         true
     }
 
-    /// Create a wildcard version of this capability at a specific level
-    pub fn wildcard_at_level(&self, level: usize) -> CapabilityKey {
-        let mut components = self.components.clone();
-        
-        // Truncate to the specified level and add wildcard
-        components.truncate(level);
-        components.push("*".to_string());
-        
-        CapabilityKey::new(components)
+    /// Get the type of this capability (convenience method)
+    pub fn capability_type(&self) -> Option<&String> {
+        self.get_tag("type")
+    }
+
+    /// Get the action of this capability (convenience method)
+    pub fn action(&self) -> Option<&String> {
+        self.get_tag("action")
+    }
+
+    /// Get the target of this capability (convenience method)
+    pub fn target(&self) -> Option<&String> {
+        self.get_tag("target")
+    }
+
+    /// Get the format of this capability (convenience method)
+    pub fn format(&self) -> Option<&String> {
+        self.get_tag("format")
+    }
+
+    /// Get the output type of this capability (convenience method)
+    pub fn output(&self) -> Option<&String> {
+        self.get_tag("output")
+    }
+
+    /// Check if this capability produces binary output
+    pub fn is_binary(&self) -> bool {
+        self.has_tag("output", "binary")
+    }
+
+    /// Create a wildcard version by replacing specific values with wildcards
+    pub fn with_wildcard_tag(mut self, key: &str) -> Self {
+        if self.tags.contains_key(key) {
+            self.tags.insert(key.to_string(), "*".to_string());
+        }
+        self
+    }
+
+    /// Create a subset capability with only specified tags
+    pub fn subset(&self, keys: &[&str]) -> Self {
+        let mut tags = BTreeMap::new();
+        for &key in keys {
+            if let Some(value) = self.tags.get(key) {
+                tags.insert(key.to_string(), value.clone());
+            }
+        }
+        Self { tags }
+    }
+
+    /// Merge with another capability (other takes precedence for conflicts)
+    pub fn merge(&self, other: &CapabilityKey) -> Self {
+        let mut tags = self.tags.clone();
+        for (key, value) in &other.tags {
+            tags.insert(key.clone(), value.clone());
+        }
+        Self { tags }
     }
 }
 
@@ -207,16 +272,26 @@ impl CapabilityKey {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CapabilityKeyError {
     Empty,
-    EmptyComponent,
+    InvalidTagFormat(String),
+    EmptyTagComponent(String),
     InvalidCharacter(String),
 }
 
 impl fmt::Display for CapabilityKeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CapabilityKeyError::Empty => write!(f, "Capability identifier cannot be empty"),
-            CapabilityKeyError::EmptyComponent => write!(f, "Capability identifier cannot have empty components"),
-            CapabilityKeyError::InvalidCharacter(comp) => write!(f, "Invalid character in component: {}", comp),
+            CapabilityKeyError::Empty => {
+                write!(f, "Capability identifier cannot be empty")
+            }
+            CapabilityKeyError::InvalidTagFormat(tag) => {
+                write!(f, "Invalid tag format (must be key=value): {}", tag)
+            }
+            CapabilityKeyError::EmptyTagComponent(tag) => {
+                write!(f, "Tag key or value cannot be empty: {}", tag)
+            }
+            CapabilityKeyError::InvalidCharacter(tag) => {
+                write!(f, "Invalid character in tag (use alphanumeric, _, -): {}", tag)
+            }
         }
     }
 }
@@ -289,9 +364,68 @@ impl CapabilityMatcher {
 
     /// Check if two capability sets are compatible
     pub fn are_compatible(caps1: &[CapabilityKey], caps2: &[CapabilityKey]) -> bool {
-        caps1.iter().any(|c1| {
-            caps2.iter().any(|c2| c1.is_compatible_with(c2))
-        })
+        caps1
+            .iter()
+            .any(|c1| caps2.iter().any(|c2| c1.is_compatible_with(c2)))
+    }
+}
+
+/// Builder for creating capability keys fluently
+pub struct CapabilityKeyBuilder {
+    tags: BTreeMap<String, String>,
+}
+
+impl CapabilityKeyBuilder {
+    pub fn new() -> Self {
+        Self {
+            tags: BTreeMap::new(),
+        }
+    }
+
+    pub fn tag(mut self, key: &str, value: &str) -> Self {
+        self.tags.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    pub fn type_tag(self, value: &str) -> Self {
+        self.tag("type", value)
+    }
+
+    pub fn action(self, value: &str) -> Self {
+        self.tag("action", value)
+    }
+
+    pub fn target(self, value: &str) -> Self {
+        self.tag("target", value)
+    }
+
+    pub fn format(self, value: &str) -> Self {
+        self.tag("format", value)
+    }
+
+    pub fn output(self, value: &str) -> Self {
+        self.tag("output", value)
+    }
+
+    pub fn binary_output(self) -> Self {
+        self.output("binary")
+    }
+
+    pub fn json_output(self) -> Self {
+        self.output("json")
+    }
+
+    pub fn build(self) -> Result<CapabilityKey, CapabilityKeyError> {
+        if self.tags.is_empty() {
+            return Err(CapabilityKeyError::Empty);
+        }
+        Ok(CapabilityKey::new(self.tags))
+    }
+}
+
+impl Default for CapabilityKeyBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -301,83 +435,137 @@ mod tests {
 
     #[test]
     fn test_capability_key_creation() {
-        let cap = CapabilityKey::from_string("file_handling:thumbnail_generation:pdf").unwrap();
-        assert_eq!(cap.components, vec!["file_handling", "thumbnail_generation", "pdf"]);
-        assert_eq!(cap.to_string(), "file_handling:thumbnail_generation:pdf");
+        let cap = CapabilityKey::from_string("action=generate;format=pdf;target=thumbnail;type=document").unwrap();
+        assert_eq!(cap.get_tag("type"), Some(&"document".to_string()));
+        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
+        assert_eq!(cap.get_tag("format"), Some(&"pdf".to_string()));
     }
 
     #[test]
-    fn test_wildcard_detection() {
-        let wildcard = CapabilityKey::from_string("file_handling:*").unwrap();
-        assert!(wildcard.is_wildcard());
-        assert!(!wildcard.is_fully_specified());
+    fn test_canonical_string_format() {
+        let cap = CapabilityKey::from_string("type=document;action=generate;target=thumbnail;format=pdf").unwrap();
+        // Should be sorted alphabetically
+        assert_eq!(cap.to_string(), "action=generate;format=pdf;target=thumbnail;type=document");
+    }
 
-        let specific = CapabilityKey::from_string("file_handling:pdf").unwrap();
-        assert!(!specific.is_wildcard());
-        assert!(specific.is_fully_specified());
+    #[test]
+    fn test_tag_matching() {
+        let cap = CapabilityKey::from_string("action=generate;format=pdf;target=thumbnail;type=document").unwrap();
+        
+        // Exact match
+        let request1 = CapabilityKey::from_string("action=generate;format=pdf;target=thumbnail;type=document").unwrap();
+        assert!(cap.matches(&request1));
+        
+        // Subset match
+        let request2 = CapabilityKey::from_string("type=document;action=generate").unwrap();
+        assert!(cap.matches(&request2));
+        
+        // Wildcard request should match specific capability  
+        let request3 = CapabilityKey::from_string("type=document;format=*").unwrap();
+        assert!(cap.matches(&request3)); // Capability has format=pdf, request accepts any format
+        
+        // No match - conflicting value
+        let request4 = CapabilityKey::from_string("type=image").unwrap();
+        assert!(!cap.matches(&request4));
+    }
+
+    #[test]
+    fn test_missing_tag_handling() {
+        let cap = CapabilityKey::from_string("type=document;action=generate").unwrap();
+        
+        // Request with tag should match capability without tag (treated as wildcard)
+        let request1 = CapabilityKey::from_string("type=document;format=pdf").unwrap();
+        assert!(cap.matches(&request1)); // cap missing format tag = wildcard, can handle any format
+        
+        // But capability with extra tags can match subset requests
+        let cap2 = CapabilityKey::from_string("type=document;action=generate;format=pdf").unwrap();
+        let request2 = CapabilityKey::from_string("type=document;action=generate").unwrap();
+        assert!(cap2.matches(&request2));
     }
 
     #[test]
     fn test_specificity() {
-        let cap1 = CapabilityKey::from_string("file_handling").unwrap();
-        let cap2 = CapabilityKey::from_string("file_handling:thumbnail").unwrap();
-        let cap3 = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
-        let cap4 = CapabilityKey::from_string("file_handling:*").unwrap();
-
+        let cap1 = CapabilityKey::from_string("type=document").unwrap();
+        let cap2 = CapabilityKey::from_string("type=document;action=generate").unwrap();
+        let cap3 = CapabilityKey::from_string("type=document;action=*;format=pdf").unwrap();
+        
         assert_eq!(cap1.specificity(), 1);
         assert_eq!(cap2.specificity(), 2);
-        assert_eq!(cap3.specificity(), 3);
-        assert_eq!(cap4.specificity(), 1);
+        assert_eq!(cap3.specificity(), 2); // wildcard doesn't count
+        
+        assert!(cap2.is_more_specific_than(&cap1));
+    }
+
+    #[test]
+    fn test_builder() {
+        let cap = CapabilityKeyBuilder::new()
+            .type_tag("document")
+            .action("generate")
+            .target("thumbnail")
+            .format("pdf")
+            .binary_output()
+            .build()
+            .unwrap();
+        
+        assert_eq!(cap.capability_type(), Some(&"document".to_string()));
+        assert_eq!(cap.action(), Some(&"generate".to_string()));
+        assert!(cap.is_binary());
     }
 
     #[test]
     fn test_compatibility() {
-        let specific = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
-        let wildcard1 = CapabilityKey::from_string("file_handling:thumbnail:*").unwrap();
-        let wildcard2 = CapabilityKey::from_string("file_handling:*").unwrap();
-        let unrelated = CapabilityKey::from_string("data_processing:transform").unwrap();
-
-        assert!(specific.is_compatible_with(&wildcard1));
-        assert!(specific.is_compatible_with(&wildcard2));
-        assert!(wildcard1.is_compatible_with(&specific));
-        assert!(wildcard2.is_compatible_with(&specific));
-        assert!(!specific.is_compatible_with(&unrelated));
-    }
-
-    #[test]
-    fn test_can_handle() {
-        let capability = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
-        let request1 = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
-        let request2 = CapabilityKey::from_string("file_handling:thumbnail:*").unwrap();
-        let request3 = CapabilityKey::from_string("file_handling:*").unwrap();
-        let request4 = CapabilityKey::from_string("data_processing:*").unwrap();
-
-        assert!(capability.can_handle(&request1));
-        assert!(capability.can_handle(&request2));
-        assert!(capability.can_handle(&request3));
-        assert!(!capability.can_handle(&request4));
+        let cap1 = CapabilityKey::from_string("type=document;action=generate;format=pdf").unwrap();
+        let cap2 = CapabilityKey::from_string("type=document;action=generate;format=*").unwrap();
+        let cap3 = CapabilityKey::from_string("type=image;action=generate").unwrap();
+        
+        assert!(cap1.is_compatible_with(&cap2));
+        assert!(cap2.is_compatible_with(&cap1));
+        assert!(!cap1.is_compatible_with(&cap3));
+        
+        // Missing tags are treated as wildcards for compatibility
+        let cap4 = CapabilityKey::from_string("type=document;action=generate").unwrap();
+        assert!(cap1.is_compatible_with(&cap4));
+        assert!(cap4.is_compatible_with(&cap1));
     }
 
     #[test]
     fn test_best_match() {
         let capabilities = vec![
-            CapabilityKey::from_string("file_handling:*").unwrap(),
-            CapabilityKey::from_string("file_handling:thumbnail:*").unwrap(),
-            CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap(),
+            CapabilityKey::from_string("type=document").unwrap(),
+            CapabilityKey::from_string("type=document;action=generate").unwrap(),
+            CapabilityKey::from_string("type=document;action=generate;format=pdf").unwrap(),
         ];
-
-        let request = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
+        
+        let request = CapabilityKey::from_string("type=document;action=generate").unwrap();
         let best = CapabilityMatcher::find_best_match(&capabilities, &request).unwrap();
         
-        assert_eq!(best.to_string(), "file_handling:thumbnail:pdf");
+        // Most specific capability that can handle the request
+        assert_eq!(best.to_string(), "action=generate;format=pdf;type=document");
     }
 
     #[test]
-    fn test_parent_child() {
-        let child = CapabilityKey::from_string("file_handling:thumbnail:pdf").unwrap();
-        let parent = CapabilityKey::from_string("file_handling:thumbnail").unwrap();
+    fn test_merge_and_subset() {
+        let cap1 = CapabilityKey::from_string("type=document;action=generate").unwrap();
+        let cap2 = CapabilityKey::from_string("format=pdf;output=binary").unwrap();
         
-        assert!(child.is_child_of(&parent));
-        assert_eq!(child.parent().unwrap(), parent);
+        let merged = cap1.merge(&cap2);
+        assert_eq!(merged.to_string(), "action=generate;format=pdf;output=binary;type=document");
+        
+        let subset = merged.subset(&["type", "format"]);
+        assert_eq!(subset.to_string(), "format=pdf;type=document");
+    }
+
+    #[test]
+    fn test_wildcard_tag() {
+        let cap = CapabilityKey::from_string("type=document;format=pdf").unwrap();
+        let wildcarded = cap.clone().with_wildcard_tag("format");
+        
+        assert_eq!(wildcarded.to_string(), "format=*;type=document");
+        
+        // Test that wildcarded capability can match more requests
+        let request = CapabilityKey::from_string("type=document;format=jpg").unwrap();
+        assert!(!cap.matches(&request));
+        assert!(wildcarded.matches(&CapabilityKey::from_string("type=document;format=*").unwrap()));
     }
 }
