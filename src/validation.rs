@@ -1,27 +1,27 @@
-//! Capability schema validation infrastructure
+//! Cap schema validation infrastructure
 //!
 //! This module provides strict validation of inputs and outputs against
-//! capability schemas, ensuring adherence to advertised specifications.
+//! cap schemas, ensuring adherence to advertised specifications.
 
-use crate::{Capability, CapabilityArgument, CapabilityOutput, ArgumentType, OutputType};
+use crate::{Cap, CapArgument, CapOutput, ArgumentType, OutputType};
 use serde_json::Value;
 use std::fmt;
 
 /// Validation error types with descriptive failure information
 #[derive(Debug, Clone)]
 pub enum ValidationError {
-    /// Unknown capability requested
-    UnknownCapability {
-        capability_key: String,
+    /// Unknown cap requested
+    UnknownCap {
+        cap_card: String,
     },
     /// Missing required argument
     MissingRequiredArgument {
-        capability_key: String,
+        cap_card: String,
         argument_name: String,
     },
     /// Invalid argument type
     InvalidArgumentType {
-        capability_key: String,
+        cap_card: String,
         argument_name: String,
         expected_type: ArgumentType,
         actual_type: String,
@@ -29,38 +29,38 @@ pub enum ValidationError {
     },
     /// Argument validation rule violation
     ArgumentValidationFailed {
-        capability_key: String,
+        cap_card: String,
         argument_name: String,
         validation_rule: String,
         actual_value: Value,
     },
     /// Invalid output type
     InvalidOutputType {
-        capability_key: String,
+        cap_card: String,
         expected_type: OutputType,
         actual_type: String,
         actual_value: Value,
     },
     /// Output validation rule violation
     OutputValidationFailed {
-        capability_key: String,
+        cap_card: String,
         validation_rule: String,
         actual_value: Value,
     },
-    /// Malformed capability schema
-    InvalidCapabilitySchema {
-        capability_key: String,
+    /// Malformed cap schema
+    InvalidCapSchema {
+        cap_card: String,
         issue: String,
     },
     /// Too many arguments provided
     TooManyArguments {
-        capability_key: String,
+        cap_card: String,
         max_expected: usize,
         actual_count: usize,
     },
     /// JSON parsing error
     JsonParseError {
-        capability_key: String,
+        cap_card: String,
         error: String,
     },
 }
@@ -68,37 +68,37 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValidationError::UnknownCapability { capability_key } => {
-                write!(f, "Unknown capability '{}' - capability not registered or advertised", capability_key)
+            ValidationError::UnknownCap { cap_card } => {
+                write!(f, "Unknown cap '{}' - cap not registered or advertised", cap_card)
             }
-            ValidationError::MissingRequiredArgument { capability_key, argument_name } => {
-                write!(f, "Capability '{}' requires argument '{}' but it was not provided", capability_key, argument_name)
+            ValidationError::MissingRequiredArgument { cap_card, argument_name } => {
+                write!(f, "Cap '{}' requires argument '{}' but it was not provided", cap_card, argument_name)
             }
-            ValidationError::InvalidArgumentType { capability_key, argument_name, expected_type, actual_type, actual_value } => {
-                write!(f, "Capability '{}' argument '{}' expects type '{:?}' but received '{}' with value: {}", 
-                       capability_key, argument_name, expected_type, actual_type, actual_value)
+            ValidationError::InvalidArgumentType { cap_card, argument_name, expected_type, actual_type, actual_value } => {
+                write!(f, "Cap '{}' argument '{}' expects type '{:?}' but received '{}' with value: {}", 
+                       cap_card, argument_name, expected_type, actual_type, actual_value)
             }
-            ValidationError::ArgumentValidationFailed { capability_key, argument_name, validation_rule, actual_value } => {
-                write!(f, "Capability '{}' argument '{}' failed validation rule '{}' with value: {}", 
-                       capability_key, argument_name, validation_rule, actual_value)
+            ValidationError::ArgumentValidationFailed { cap_card, argument_name, validation_rule, actual_value } => {
+                write!(f, "Cap '{}' argument '{}' failed validation rule '{}' with value: {}", 
+                       cap_card, argument_name, validation_rule, actual_value)
             }
-            ValidationError::InvalidOutputType { capability_key, expected_type, actual_type, actual_value } => {
-                write!(f, "Capability '{}' output expects type '{:?}' but received '{}' with value: {}", 
-                       capability_key, expected_type, actual_type, actual_value)
+            ValidationError::InvalidOutputType { cap_card, expected_type, actual_type, actual_value } => {
+                write!(f, "Cap '{}' output expects type '{:?}' but received '{}' with value: {}", 
+                       cap_card, expected_type, actual_type, actual_value)
             }
-            ValidationError::OutputValidationFailed { capability_key, validation_rule, actual_value } => {
-                write!(f, "Capability '{}' output failed validation rule '{}' with value: {}", 
-                       capability_key, validation_rule, actual_value)
+            ValidationError::OutputValidationFailed { cap_card, validation_rule, actual_value } => {
+                write!(f, "Cap '{}' output failed validation rule '{}' with value: {}", 
+                       cap_card, validation_rule, actual_value)
             }
-            ValidationError::InvalidCapabilitySchema { capability_key, issue } => {
-                write!(f, "Capability '{}' has invalid schema: {}", capability_key, issue)
+            ValidationError::InvalidCapSchema { cap_card, issue } => {
+                write!(f, "Cap '{}' has invalid schema: {}", cap_card, issue)
             }
-            ValidationError::TooManyArguments { capability_key, max_expected, actual_count } => {
-                write!(f, "Capability '{}' expects at most {} arguments but received {}", 
-                       capability_key, max_expected, actual_count)
+            ValidationError::TooManyArguments { cap_card, max_expected, actual_count } => {
+                write!(f, "Cap '{}' expects at most {} arguments but received {}", 
+                       cap_card, max_expected, actual_count)
             }
-            ValidationError::JsonParseError { capability_key, error } => {
-                write!(f, "Capability '{}' JSON parsing failed: {}", capability_key, error)
+            ValidationError::JsonParseError { cap_card, error } => {
+                write!(f, "Cap '{}' JSON parsing failed: {}", cap_card, error)
             }
         }
     }
@@ -110,19 +110,19 @@ impl std::error::Error for ValidationError {}
 pub struct InputValidator;
 
 impl InputValidator {
-    /// Validate arguments against capability input schema
+    /// Validate arguments against cap input schema
     pub fn validate_arguments(
-        capability: &Capability,
+        cap: &Cap,
         arguments: &[Value],
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
-        let args = &capability.arguments;
+        let cap_card = cap.id_string();
+        let args = &cap.arguments;
         
         // Check if too many arguments provided
         let max_args = args.required.len() + args.optional.len();
         if arguments.len() > max_args {
             return Err(ValidationError::TooManyArguments {
-                capability_key,
+                cap_card,
                 max_expected: max_args,
                 actual_count: arguments.len(),
             });
@@ -132,12 +132,12 @@ impl InputValidator {
         for (index, req_arg) in args.required.iter().enumerate() {
             if index >= arguments.len() {
                 return Err(ValidationError::MissingRequiredArgument {
-                    capability_key: capability_key.clone(),
+                    cap_card: cap_card.clone(),
                     argument_name: req_arg.name.clone(),
                 });
             }
             
-            Self::validate_single_argument(capability, req_arg, &arguments[index])?;
+            Self::validate_single_argument(cap, req_arg, &arguments[index])?;
         }
         
         // Validate optional arguments if provided
@@ -145,7 +145,7 @@ impl InputValidator {
         for (index, opt_arg) in args.optional.iter().enumerate() {
             let arg_index = required_count + index;
             if arg_index < arguments.len() {
-                Self::validate_single_argument(capability, opt_arg, &arguments[arg_index])?;
+                Self::validate_single_argument(cap, opt_arg, &arguments[arg_index])?;
             }
         }
         
@@ -153,27 +153,27 @@ impl InputValidator {
     }
     
     fn validate_single_argument(
-        capability: &Capability,
-        arg_def: &CapabilityArgument,
+        cap: &Cap,
+        arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+        let cap_card = cap.id_string();
         
         // Type validation
-        Self::validate_argument_type(capability, arg_def, value)?;
+        Self::validate_argument_type(cap, arg_def, value)?;
         
         // Validation rules
-        Self::validate_argument_rules(capability, arg_def, value)?;
+        Self::validate_argument_rules(cap, arg_def, value)?;
         
         Ok(())
     }
     
     fn validate_argument_type(
-        capability: &Capability,
-        arg_def: &CapabilityArgument,
+        cap: &Cap,
+        arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+        let cap_card = cap.id_string();
         let actual_type = Self::get_json_type_name(value);
         
         let type_matches = match (&arg_def.arg_type, value) {
@@ -189,7 +189,7 @@ impl InputValidator {
         
         if !type_matches {
             return Err(ValidationError::InvalidArgumentType {
-                capability_key,
+                cap_card,
                 argument_name: arg_def.name.clone(),
                 expected_type: arg_def.arg_type.clone(),
                 actual_type,
@@ -201,11 +201,11 @@ impl InputValidator {
     }
     
     fn validate_argument_rules(
-        capability: &Capability,
-        arg_def: &CapabilityArgument,
+        cap: &Cap,
+        arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+        let cap_card = cap.id_string();
         let validation = &arg_def.validation;
         
         // Numeric validation
@@ -213,7 +213,7 @@ impl InputValidator {
             if let Some(num) = value.as_f64() {
                 if num < min {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_key,
+                        cap_card,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
@@ -226,7 +226,7 @@ impl InputValidator {
             if let Some(num) = value.as_f64() {
                 if num > max {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_key,
+                        cap_card,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
@@ -240,7 +240,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_key,
+                        cap_card,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("minimum length {}", min_length),
                         actual_value: value.clone(),
@@ -253,7 +253,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_key,
+                        cap_card,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("maximum length {}", max_length),
                         actual_value: value.clone(),
@@ -268,7 +268,7 @@ impl InputValidator {
                 if let Ok(regex) = regex::Regex::new(pattern) {
                     if !regex.is_match(s) {
                         return Err(ValidationError::ArgumentValidationFailed {
-                            capability_key,
+                            cap_card,
                             argument_name: arg_def.name.clone(),
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
@@ -283,7 +283,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        capability_key,
+                        cap_card,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
@@ -317,34 +317,34 @@ impl InputValidator {
 pub struct OutputValidator;
 
 impl OutputValidator {
-    /// Validate output against capability output schema
+    /// Validate output against cap output schema
     pub fn validate_output(
-        capability: &Capability,
+        cap: &Cap,
         output: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+        let cap_card = cap.id_string();
         
-        let output_def = capability.get_output()
-            .ok_or_else(|| ValidationError::InvalidCapabilitySchema {
-                capability_key: capability_key.clone(),
+        let output_def = cap.get_output()
+            .ok_or_else(|| ValidationError::InvalidCapSchema {
+                cap_card: cap_card.clone(),
                 issue: "No output definition specified".to_string(),
             })?;
         
         // Type validation
-        Self::validate_output_type(capability, output_def, output)?;
+        Self::validate_output_type(cap, output_def, output)?;
         
         // Validation rules
-        Self::validate_output_rules(capability, output_def, output)?;
+        Self::validate_output_rules(cap, output_def, output)?;
         
         Ok(())
     }
     
     fn validate_output_type(
-        capability: &Capability,
-        output_def: &CapabilityOutput,
+        cap: &Cap,
+        output_def: &CapOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+        let cap_card = cap.id_string();
         let actual_type = InputValidator::get_json_type_name(value);
         
         let type_matches = match (&output_def.output_type, value) {
@@ -360,7 +360,7 @@ impl OutputValidator {
         
         if !type_matches {
             return Err(ValidationError::InvalidOutputType {
-                capability_key,
+                cap_card,
                 expected_type: output_def.output_type.clone(),
                 actual_type,
                 actual_value: value.clone(),
@@ -371,11 +371,11 @@ impl OutputValidator {
     }
     
     fn validate_output_rules(
-        capability: &Capability,
-        output_def: &CapabilityOutput,
+        cap: &Cap,
+        output_def: &CapOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+        let cap_card = cap.id_string();
         let validation = &output_def.validation;
         
         // Apply same validation rules as arguments
@@ -383,7 +383,7 @@ impl OutputValidator {
             if let Some(num) = value.as_f64() {
                 if num < min {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_key,
+                        cap_card,
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
                     });
@@ -395,7 +395,7 @@ impl OutputValidator {
             if let Some(num) = value.as_f64() {
                 if num > max {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_key,
+                        cap_card,
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
                     });
@@ -407,7 +407,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_key,
+                        cap_card,
                         validation_rule: format!("minimum length {}", min_length),
                         actual_value: value.clone(),
                     });
@@ -419,7 +419,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_key,
+                        cap_card,
                         validation_rule: format!("maximum length {}", max_length),
                         actual_value: value.clone(),
                     });
@@ -432,7 +432,7 @@ impl OutputValidator {
                 if let Ok(regex) = regex::Regex::new(pattern) {
                     if !regex.is_match(s) {
                         return Err(ValidationError::OutputValidationFailed {
-                            capability_key,
+                            cap_card,
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
                         });
@@ -445,7 +445,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::OutputValidationFailed {
-                        capability_key,
+                        cap_card,
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
                     });
@@ -457,19 +457,19 @@ impl OutputValidator {
     }
 }
 
-/// Capability schema validator
-pub struct CapabilityValidator;
+/// Cap schema validator
+pub struct CapValidator;
 
-impl CapabilityValidator {
-    /// Validate a capability definition itself
-    pub fn validate_capability(capability: &Capability) -> Result<(), ValidationError> {
-        let capability_key = capability.id_string();
+impl CapValidator {
+    /// Validate a cap definition itself
+    pub fn validate_cap(cap: &Cap) -> Result<(), ValidationError> {
+        let cap_card = cap.id_string();
         
         // Validate that required arguments don't have default values
-        for arg in &capability.arguments.required {
+        for arg in &cap.arguments.required {
             if arg.default.is_some() {
-                return Err(ValidationError::InvalidCapabilitySchema {
-                    capability_key: capability_key.clone(),
+                return Err(ValidationError::InvalidCapSchema {
+                    cap_card: cap_card.clone(),
                     issue: format!("Required argument '{}' cannot have a default value", arg.name),
                 });
             }
@@ -477,11 +477,11 @@ impl CapabilityValidator {
         
         // Validate argument position uniqueness
         let mut positions = std::collections::HashSet::new();
-        for arg in capability.arguments.required.iter().chain(capability.arguments.optional.iter()) {
+        for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
             if let Some(pos) = arg.position {
                 if !positions.insert(pos) {
-                    return Err(ValidationError::InvalidCapabilitySchema {
-                        capability_key: capability_key.clone(),
+                    return Err(ValidationError::InvalidCapSchema {
+                        cap_card: cap_card.clone(),
                         issue: format!("Duplicate argument position {} for argument '{}'", pos, arg.name),
                     });
                 }
@@ -490,12 +490,12 @@ impl CapabilityValidator {
         
         // Validate CLI flag uniqueness
         let mut cli_flags = std::collections::HashSet::new();
-        for arg in capability.arguments.required.iter().chain(capability.arguments.optional.iter()) {
+        for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
             let flag = &arg.cli_flag;
             if !flag.is_empty() {
                 if !cli_flags.insert(flag) {
-                    return Err(ValidationError::InvalidCapabilitySchema {
-                        capability_key: capability_key.clone(),
+                    return Err(ValidationError::InvalidCapSchema {
+                        cap_card: cap_card.clone(),
                         issue: format!("Duplicate CLI flag '{}' for argument '{}'", flag, arg.name),
                     });
                 }
@@ -509,61 +509,61 @@ impl CapabilityValidator {
 /// Main validation coordinator that orchestrates input and output validation
 #[derive(Debug, Clone)]
 pub struct SchemaValidator {
-    capabilities: std::collections::HashMap<String, Capability>,
+    caps: std::collections::HashMap<String, Cap>,
 }
 
 impl SchemaValidator {
     pub fn new() -> Self {
         Self {
-            capabilities: std::collections::HashMap::new(),
+            caps: std::collections::HashMap::new(),
         }
     }
 
-    /// Register a capability schema for validation
-    pub fn register_capability(&mut self, capability: Capability) {
-        let id = capability.id_string();
-        self.capabilities.insert(id, capability);
+    /// Register a cap schema for validation
+    pub fn register_cap(&mut self, cap: Cap) {
+        let id = cap.id_string();
+        self.caps.insert(id, cap);
     }
 
-    /// Get a capability by ID
-    pub fn get_capability(&self, capability_key: &str) -> Option<&Capability> {
-        self.capabilities.get(capability_key)
+    /// Get a cap by ID
+    pub fn get_cap(&self, cap_card: &str) -> Option<&Cap> {
+        self.caps.get(cap_card)
     }
 
-    /// Validate arguments against a capability's input schema
+    /// Validate arguments against a cap's input schema
     pub fn validate_inputs(
         &self,
-        capability_key: &str,
+        cap_card: &str,
         arguments: &[serde_json::Value],
     ) -> Result<(), ValidationError> {
-        let capability = self.get_capability(capability_key)
-            .ok_or_else(|| ValidationError::UnknownCapability {
-                capability_key: capability_key.to_string(),
+        let cap = self.get_cap(cap_card)
+            .ok_or_else(|| ValidationError::UnknownCap {
+                cap_card: cap_card.to_string(),
             })?;
 
-        InputValidator::validate_arguments(capability, arguments)
+        InputValidator::validate_arguments(cap, arguments)
     }
 
-    /// Validate output against a capability's output schema
+    /// Validate output against a cap's output schema
     pub fn validate_output(
         &self,
-        capability_key: &str,
+        cap_card: &str,
         output: &serde_json::Value,
     ) -> Result<(), ValidationError> {
-        let capability = self.get_capability(capability_key)
-            .ok_or_else(|| ValidationError::UnknownCapability {
-                capability_key: capability_key.to_string(),
+        let cap = self.get_cap(cap_card)
+            .ok_or_else(|| ValidationError::UnknownCap {
+                cap_card: cap_card.to_string(),
             })?;
 
-        OutputValidator::validate_output(capability, output)
+        OutputValidator::validate_output(cap, output)
     }
 
-    /// Validate a capability definition itself
-    pub fn validate_capability_schema(
+    /// Validate a cap definition itself
+    pub fn validate_cap_schema(
         &self,
-        capability: &Capability,
+        cap: &Cap,
     ) -> Result<(), ValidationError> {
-        CapabilityValidator::validate_capability(capability)
+        CapValidator::validate_cap(cap)
     }
 }
 
@@ -576,47 +576,47 @@ impl Default for SchemaValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapabilityKey, CapabilityArguments};
+    use crate::{CapCard, CapArguments};
     use serde_json::json;
 
     #[test]
     fn test_input_validation_success() {
-        let id = CapabilityKey::from_string("type=test;action=capability").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
+        let id = CapCard::from_string("type=test;action=cap").unwrap();
+        let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        let mut args = CapabilityArguments::new();
-        args.add_required(CapabilityArgument::new(
+        let mut args = CapArguments::new();
+        args.add_required(CapArgument::new(
             "file_path".to_string(),
             ArgumentType::String,
             "Path to file".to_string(),
             "--file".to_string(),
         ));
         
-        capability.set_arguments(args);
+        cap.set_arguments(args);
         
         let input_args = vec![json!("/path/to/file.txt")];
         
-        assert!(InputValidator::validate_arguments(&capability, &input_args).is_ok());
+        assert!(InputValidator::validate_arguments(&cap, &input_args).is_ok());
     }
     
     #[test]
     fn test_input_validation_missing_required() {
-        let id = CapabilityKey::from_string("type=test;action=capability").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
+        let id = CapCard::from_string("type=test;action=cap").unwrap();
+        let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        let mut args = CapabilityArguments::new();
-        args.add_required(CapabilityArgument::new(
+        let mut args = CapArguments::new();
+        args.add_required(CapArgument::new(
             "file_path".to_string(),
             ArgumentType::String,
             "Path to file".to_string(),
             "--file".to_string(),
         ));
         
-        capability.set_arguments(args);
+        cap.set_arguments(args);
         
         let input_args = vec![]; // Missing required argument
         
-        let result = InputValidator::validate_arguments(&capability, &input_args);
+        let result = InputValidator::validate_arguments(&cap, &input_args);
         assert!(result.is_err());
         
         if let Err(ValidationError::MissingRequiredArgument { argument_name, .. }) = result {
@@ -628,22 +628,22 @@ mod tests {
     
     #[test]
     fn test_input_validation_wrong_type() {
-        let id = CapabilityKey::from_string("type=test;action=capability").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
+        let id = CapCard::from_string("type=test;action=cap").unwrap();
+        let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        let mut args = CapabilityArguments::new();
-        args.add_required(CapabilityArgument::new(
+        let mut args = CapArguments::new();
+        args.add_required(CapArgument::new(
             "width".to_string(),
             ArgumentType::Integer,
             "Width value".to_string(),
             "--width".to_string(),
         ));
         
-        capability.set_arguments(args);
+        cap.set_arguments(args);
         
         let input_args = vec![json!("not_a_number")]; // Wrong type
         
-        let result = InputValidator::validate_arguments(&capability, &input_args);
+        let result = InputValidator::validate_arguments(&cap, &input_args);
         assert!(result.is_err());
         
         if let Err(ValidationError::InvalidArgumentType { expected_type, .. }) = result {

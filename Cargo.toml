@@ -2,7 +2,7 @@
 name = "capdef"
 version = "0.1.0"
 edition = "2021"
-description = "Core capability identifier and definition system for LBVR plugins"
+description = "Core cap identifier and definition system for LBVR plugins"
 authors = ["LBVR Team"]
 
 [dependencies]

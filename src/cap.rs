@@ -1,10 +1,10 @@
-//! Formal capability definition
+//! Formal cap definition
 //!
-//! This module defines the structure for formal capability definitions that include
-//! the capability identifier, versioning, and metadata. Capabilities are general-purpose
+//! This module defines the structure for formal cap definitions that include
+//! the cap identifier, versioning, and metadata. Caps are general-purpose
 //! and do not assume any specific domain like files or documents.
 
-use crate::capability_key::CapabilityKey;
+use crate::cap_card::CapCard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -43,9 +43,9 @@ pub struct ArgumentValidation {
     pub allowed_values: Option<Vec<String>>,
 }
 
-/// Capability argument definition
+/// Cap argument definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityArgument {
+pub struct CapArgument {
     pub name: String,
     
     #[serde(rename = "type")]
@@ -77,14 +77,14 @@ impl ArgumentValidation {
     }
 }
 
-/// Capability arguments collection
+/// Cap arguments collection
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CapabilityArguments {
+pub struct CapArguments {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub required: Vec<CapabilityArgument>,
+    pub required: Vec<CapArgument>,
     
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub optional: Vec<CapabilityArgument>,
+    pub optional: Vec<CapArgument>,
 }
 
 
@@ -103,7 +103,7 @@ pub enum OutputType {
 
 /// Output definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityOutput {
+pub struct CapOutput {
     #[serde(rename = "type")]
     pub output_type: OutputType,
     
@@ -119,7 +119,7 @@ pub struct CapabilityOutput {
     pub description: String,
 }
 
-impl CapabilityOutput {
+impl CapOutput {
     /// Create a new output definition
     pub fn new(output_type: OutputType, description: String) -> Self {
         Self {
@@ -182,13 +182,13 @@ impl CapabilityOutput {
     }
 }
 
-/// Formal capability definition
+/// Formal cap definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Capability {
-    /// Formal capability identifier with hierarchical naming
-    pub id: CapabilityKey,
+pub struct Cap {
+    /// Formal cap identifier with hierarchical naming
+    pub id: CapCard,
     
-    /// Capability version
+    /// Cap version
     pub version: String,
     
     /// Optional description
@@ -202,21 +202,21 @@ pub struct Capability {
     /// Command string for CLI execution
     pub command: String,
     
-    /// Capability arguments
-    #[serde(skip_serializing_if = "CapabilityArguments::is_empty", default)]
-    pub arguments: CapabilityArguments,
+    /// Cap arguments
+    #[serde(skip_serializing_if = "CapArguments::is_empty", default)]
+    pub arguments: CapArguments,
     
     /// Output definition
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output: Option<CapabilityOutput>,
+    pub output: Option<CapOutput>,
     
-    /// Whether this capability accepts input via stdin
+    /// Whether this cap accepts input via stdin
     #[serde(default)]
     pub accepts_stdin: bool,
 }
 
-impl CapabilityArgument {
-    /// Create a new capability argument
+impl CapArgument {
+    /// Create a new cap argument
     pub fn new(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
         Self {
             name,
@@ -345,7 +345,7 @@ impl ArgumentValidation {
     }
 }
 
-impl CapabilityArguments {
+impl CapArguments {
     pub fn new() -> Self {
         Self {
             required: Vec::new(),
@@ -357,21 +357,21 @@ impl CapabilityArguments {
         self.required.is_empty() && self.optional.is_empty()
     }
     
-    pub fn add_required(&mut self, arg: CapabilityArgument) {
+    pub fn add_required(&mut self, arg: CapArgument) {
         self.required.push(arg);
     }
     
-    pub fn add_optional(&mut self, arg: CapabilityArgument) {
+    pub fn add_optional(&mut self, arg: CapArgument) {
         self.optional.push(arg);
     }
     
-    pub fn find_argument(&self, name: &str) -> Option<&CapabilityArgument> {
+    pub fn find_argument(&self, name: &str) -> Option<&CapArgument> {
         self.required.iter().find(|arg| arg.name == name)
             .or_else(|| self.optional.iter().find(|arg| arg.name == name))
     }
     
-    pub fn get_positional_args(&self) -> Vec<&CapabilityArgument> {
-        let mut args: Vec<&CapabilityArgument> = self.required.iter()
+    pub fn get_positional_args(&self) -> Vec<&CapArgument> {
+        let mut args: Vec<&CapArgument> = self.required.iter()
             .chain(self.optional.iter())
             .filter(|arg| arg.position.is_some())
             .collect();
@@ -379,7 +379,7 @@ impl CapabilityArguments {
         args
     }
     
-    pub fn get_flag_args(&self) -> Vec<&CapabilityArgument> {
+    pub fn get_flag_args(&self) -> Vec<&CapArgument> {
         self.required.iter()
             .chain(self.optional.iter())
             .filter(|arg| !arg.cli_flag.is_empty())
@@ -387,38 +387,38 @@ impl CapabilityArguments {
     }
 }
 
-impl Capability {
-    /// Create a new capability
-    pub fn new(id: CapabilityKey, version: String, command: String) -> Self {
+impl Cap {
+    /// Create a new cap
+    pub fn new(id: CapCard, version: String, command: String) -> Self {
         Self {
             id,
             version,
             description: None,
             metadata: HashMap::new(),
             command,
-            arguments: CapabilityArguments::new(),
+            arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
         }
     }
 
-    /// Create a new capability with description
-    pub fn with_description(id: CapabilityKey, version: String, command: String, description: String) -> Self {
+    /// Create a new cap with description
+    pub fn with_description(id: CapCard, version: String, command: String, description: String) -> Self {
         Self {
             id,
             version,
             description: Some(description),
             metadata: HashMap::new(),
             command,
-            arguments: CapabilityArguments::new(),
+            arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
         }
     }
 
-    /// Create a new capability with metadata
+    /// Create a new cap with metadata
     pub fn with_metadata(
-        id: CapabilityKey, 
+        id: CapCard, 
         version: String,
         command: String,
         metadata: HashMap<String, String>
@@ -429,15 +429,15 @@ impl Capability {
             description: None,
             metadata,
             command,
-            arguments: CapabilityArguments::new(),
+            arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
         }
     }
 
-    /// Create a new capability with description and metadata
+    /// Create a new cap with description and metadata
     pub fn with_description_and_metadata(
-        id: CapabilityKey,
+        id: CapCard,
         version: String,
         command: String,
         description: String,
@@ -449,18 +449,18 @@ impl Capability {
             description: Some(description),
             metadata,
             command,
-            arguments: CapabilityArguments::new(),
+            arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
         }
     }
     
-    /// Create a new capability with arguments
+    /// Create a new cap with arguments
     pub fn with_arguments(
-        id: CapabilityKey,
+        id: CapCard,
         version: String,
         command: String,
-        arguments: CapabilityArguments,
+        arguments: CapArguments,
     ) -> Self {
         Self {
             id,
@@ -474,24 +474,24 @@ impl Capability {
         }
     }
     
-    /// Create a new capability with command (deprecated - use new() instead)
+    /// Create a new cap with command (deprecated - use new() instead)
     pub fn with_command(
-        id: CapabilityKey,
+        id: CapCard,
         version: String,
         command: String,
     ) -> Self {
         Self::new(id, version, command)
     }
     
-    /// Create a fully specified capability
+    /// Create a fully specified cap
     pub fn with_full_definition(
-        id: CapabilityKey,
+        id: CapCard,
         version: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
         command: String,
-        arguments: CapabilityArguments,
-        output: Option<CapabilityOutput>,
+        arguments: CapArguments,
+        output: Option<CapOutput>,
     ) -> Self {
         Self {
             id,
@@ -505,19 +505,19 @@ impl Capability {
         }
     }
     
-    /// Check if this capability matches a request string
+    /// Check if this cap matches a request string
     pub fn matches_request(&self, request: &str) -> bool {
-        let request_id = CapabilityKey::from_string(request).expect("Invalid capability identifier in request");
+        let request_id = CapCard::from_string(request).expect("Invalid cap identifier in request");
         self.id.can_handle(&request_id)
     }
 
-    /// Get the capability identifier as a string
+    /// Get the cap identifier as a string
     pub fn id_string(&self) -> String {
         self.id.to_string()
     }
 
-    /// Check if this capability is more specific than another for the same request
-    pub fn is_more_specific_than(&self, other: &Capability, request: &str) -> bool {
+    /// Check if this cap is more specific than another for the same request
+    pub fn is_more_specific_than(&self, other: &Cap, request: &str) -> bool {
         if !self.matches_request(request) || !other.matches_request(request) {
             return false;
         }
@@ -539,7 +539,7 @@ impl Capability {
         self.metadata.remove(key)
     }
 
-    /// Check if this capability has specific metadata
+    /// Check if this cap has specific metadata
     pub fn has_metadata(&self, key: &str) -> bool {
         self.metadata.contains_key(key)
     }
@@ -555,32 +555,32 @@ impl Capability {
     }
     
     /// Get the arguments
-    pub fn get_arguments(&self) -> &CapabilityArguments {
+    pub fn get_arguments(&self) -> &CapArguments {
         &self.arguments
     }
     
     /// Set the arguments
-    pub fn set_arguments(&mut self, arguments: CapabilityArguments) {
+    pub fn set_arguments(&mut self, arguments: CapArguments) {
         self.arguments = arguments;
     }
     
     /// Add a required argument
-    pub fn add_required_argument(&mut self, arg: CapabilityArgument) {
+    pub fn add_required_argument(&mut self, arg: CapArgument) {
         self.arguments.add_required(arg);
     }
     
     /// Add an optional argument
-    pub fn add_optional_argument(&mut self, arg: CapabilityArgument) {
+    pub fn add_optional_argument(&mut self, arg: CapArgument) {
         self.arguments.add_optional(arg);
     }
     
     /// Get the output definition if defined
-    pub fn get_output(&self) -> Option<&CapabilityOutput> {
+    pub fn get_output(&self) -> Option<&CapOutput> {
         self.output.as_ref()
     }
     
     /// Set the output definition
-    pub fn set_output(&mut self, output: CapabilityOutput) {
+    pub fn set_output(&mut self, output: CapOutput) {
         self.output = Some(output);
     }
 }
@@ -591,9 +591,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_capability_creation() {
-        let id = CapabilityKey::from_string("action=transform;format=json;type=data_processing").unwrap();
-        let cap = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
+    fn test_cap_creation() {
+        let id = CapCard::from_string("action=transform;format=json;type=data_processing").unwrap();
+        let cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         assert_eq!(cap.id_string(), "action=transform;format=json;type=data_processing");
         assert_eq!(cap.version, "1.0.0");
@@ -601,13 +601,13 @@ mod tests {
     }
 
     #[test]
-    fn test_capability_with_metadata() {
-        let id = CapabilityKey::from_string("action=arithmetic;type=compute;subtype=math").unwrap();
+    fn test_cap_with_metadata() {
+        let id = CapCard::from_string("action=arithmetic;type=compute;subtype=math").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
         
-        let cap = Capability::with_metadata(id, "2.1.0".to_string(), "test-command".to_string(), metadata);
+        let cap = Cap::with_metadata(id, "2.1.0".to_string(), "test-command".to_string(), metadata);
         
         assert_eq!(cap.get_metadata("precision"), Some(&"double".to_string()));
         assert_eq!(cap.get_metadata("operations"), Some(&"add,subtract,multiply,divide".to_string()));
@@ -616,9 +616,9 @@ mod tests {
     }
 
     #[test]
-    fn test_capability_matching() {
-        let id = CapabilityKey::from_string("action=transform;format=json;type=data_processing").unwrap();
-        let cap = Capability::new(id, "1.0.0".to_string(), "test-command".to_string());
+    fn test_cap_matching() {
+        let id = CapCard::from_string("action=transform;format=json;type=data_processing").unwrap();
+        let cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         assert!(cap.matches_request("action=transform;format=json;type=data_processing"));
         assert!(cap.matches_request("action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
@@ -627,11 +627,11 @@ mod tests {
     }
 
     #[test]
-    fn test_capability_accepts_stdin() {
-        let id = CapabilityKey::from_string("action=generate;target=embeddings;type=document").unwrap();
-        let mut cap = Capability::new(id, "1.0.0".to_string(), "generate".to_string());
+    fn test_cap_accepts_stdin() {
+        let id = CapCard::from_string("action=generate;target=embeddings;type=document").unwrap();
+        let mut cap = Cap::new(id, "1.0.0".to_string(), "generate".to_string());
         
-        // By default, capabilities should not accept stdin
+        // By default, caps should not accept stdin
         assert!(!cap.accepts_stdin);
         
         // Enable stdin support
@@ -640,7 +640,7 @@ mod tests {
         
         // Test serialization/deserialization preserves the field
         let serialized = serde_json::to_string(&cap).unwrap();
-        let deserialized: Capability = serde_json::from_str(&serialized).unwrap();
+        let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
         assert_eq!(cap.accepts_stdin, deserialized.accepts_stdin);
     }
 

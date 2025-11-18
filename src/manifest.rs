@@ -1,14 +1,14 @@
-//! Unified capability-based manifest interface
+//! Unified cap-based manifest interface
 //! 
-//! This module defines the unified manifest interface with standardized capability-based declarations.
+//! This module defines the unified manifest interface with standardized cap-based declarations.
 //! This replaces the separate ProviderManifest and PluginManifest types with a single canonical format.
 
-use crate::Capability;
+use crate::Cap;
 use serde::{Deserialize, Serialize};
 
-/// Unified capability manifest for --manifest output
+/// Unified cap manifest for --manifest output
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityManifest {
+pub struct CapManifest {
     /// Component name
     pub name: String,
     
@@ -18,27 +18,27 @@ pub struct CapabilityManifest {
     /// Component description
     pub description: String,
     
-    /// Component capabilities with formal definitions
-    pub capabilities: Vec<Capability>,
+    /// Component caps with formal definitions
+    pub caps: Vec<Cap>,
     
     /// Component author/maintainer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
 }
 
-impl CapabilityManifest {
-    /// Create a new capability manifest
+impl CapManifest {
+    /// Create a new cap manifest
     pub fn new(
         name: String,
         version: String,
         description: String,
-        capabilities: Vec<Capability>,
+        caps: Vec<Cap>,
     ) -> Self {
         Self {
             name,
             version,
             description,
-            capabilities,
+            caps,
             author: None,
         }
     }
@@ -53,65 +53,65 @@ impl CapabilityManifest {
 /// Trait for components to provide metadata about themselves
 pub trait ComponentMetadata {
     /// Get component manifest
-    fn component_manifest(&self) -> CapabilityManifest;
+    fn component_manifest(&self) -> CapManifest;
     
-    /// Get component capabilities
-    fn capabilities(&self) -> Vec<Capability> {
-        self.component_manifest().capabilities
+    /// Get component caps
+    fn caps(&self) -> Vec<Cap> {
+        self.component_manifest().caps
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapabilityKey, Capability};
+    use crate::{CapCard, Cap};
     use std::collections::HashMap;
 
     #[test]
-    fn test_capability_manifest_creation() {
-        let id = CapabilityKey::from_string("action=extract;target=metadata;type=document").unwrap();
-        let capability = Capability::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
+    fn test_cap_manifest_creation() {
+        let id = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
         
-        let manifest = CapabilityManifest::new(
+        let manifest = CapManifest::new(
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             "A test component for validation".to_string(),
-            vec![capability],
+            vec![cap],
         );
         
         assert_eq!(manifest.name, "TestComponent");
         assert_eq!(manifest.version, "0.1.0");
         assert_eq!(manifest.description, "A test component for validation");
-        assert_eq!(manifest.capabilities.len(), 1);
+        assert_eq!(manifest.caps.len(), 1);
         assert!(manifest.author.is_none());
     }
 
     #[test]
-    fn test_capability_manifest_with_author() {
-        let id = CapabilityKey::from_string("action=extract;target=metadata;type=document").unwrap();
-        let capability = Capability::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
+    fn test_cap_manifest_with_author() {
+        let id = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
         
-        let manifest = CapabilityManifest::new(
+        let manifest = CapManifest::new(
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             "A test component for validation".to_string(),
-            vec![capability],
+            vec![cap],
         ).with_author("Test Author".to_string());
         
         assert_eq!(manifest.author, Some("Test Author".to_string()));
     }
 
     #[test]
-    fn test_capability_manifest_json_serialization() {
-        let id = CapabilityKey::from_string("action=extract;target=metadata;type=document").unwrap();
-        let mut capability = Capability::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
-        capability.accepts_stdin = true;
+    fn test_cap_manifest_json_serialization() {
+        let id = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let mut cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
+        cap.accepts_stdin = true;
         
-        let manifest = CapabilityManifest::new(
+        let manifest = CapManifest::new(
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             "A test component for validation".to_string(),
-            vec![capability],
+            vec![cap],
         ).with_author("Test Author".to_string());
         
         // Test serialization
@@ -122,77 +122,77 @@ mod tests {
         assert!(json.contains("\"accepts_stdin\":true"));
         
         // Test deserialization
-        let deserialized: CapabilityManifest = serde_json::from_str(&json).unwrap();
+        let deserialized: CapManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.name, manifest.name);
         assert_eq!(deserialized.version, manifest.version);
         assert_eq!(deserialized.description, manifest.description);
         assert_eq!(deserialized.author, manifest.author);
-        assert_eq!(deserialized.capabilities.len(), manifest.capabilities.len());
-        assert_eq!(deserialized.capabilities[0].accepts_stdin, manifest.capabilities[0].accepts_stdin);
+        assert_eq!(deserialized.caps.len(), manifest.caps.len());
+        assert_eq!(deserialized.caps[0].accepts_stdin, manifest.caps[0].accepts_stdin);
     }
 
     #[test]
-    fn test_capability_manifest_required_fields() {
+    fn test_cap_manifest_required_fields() {
         // Test that deserialization fails when required fields are missing
         let invalid_json = r#"{"name": "TestComponent"}"#;
-        let result: Result<CapabilityManifest, _> = serde_json::from_str(invalid_json);
+        let result: Result<CapManifest, _> = serde_json::from_str(invalid_json);
         assert!(result.is_err());
         
         let invalid_json2 = r#"{"name": "TestComponent", "version": "1.0.0"}"#;
-        let result2: Result<CapabilityManifest, _> = serde_json::from_str(invalid_json2);
+        let result2: Result<CapManifest, _> = serde_json::from_str(invalid_json2);
         assert!(result2.is_err());
     }
 
     #[test]
-    fn test_capability_manifest_with_multiple_capabilities() {
-        let id1 = CapabilityKey::from_string("action=extract;target=metadata;type=document").unwrap();
-        let capability1 = Capability::new(id1, "1.0.0".to_string(), "extract-metadata".to_string());
+    fn test_cap_manifest_with_multiple_caps() {
+        let id1 = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let cap1 = Cap::new(id1, "1.0.0".to_string(), "extract-metadata".to_string());
         
-        let id2 = CapabilityKey::from_string("action=extract;target=outline;type=document").unwrap();
+        let id2 = CapCard::from_string("action=extract;target=outline;type=document").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("supports_toc".to_string(), "true".to_string());
-        let capability2 = Capability::with_metadata(id2, "1.0.0".to_string(), "extract-outline".to_string(), metadata);
+        let cap2 = Cap::with_metadata(id2, "1.0.0".to_string(), "extract-outline".to_string(), metadata);
         
-        let manifest = CapabilityManifest::new(
+        let manifest = CapManifest::new(
             "MultiCapComponent".to_string(),
             "1.0.0".to_string(),
-            "Component with multiple capabilities".to_string(),
-            vec![capability1, capability2],
+            "Component with multiple caps".to_string(),
+            vec![cap1, cap2],
         );
         
-        assert_eq!(manifest.capabilities.len(), 2);
-        assert_eq!(manifest.capabilities[0].id_string(), "action=extract;target=metadata;type=document");
-        assert_eq!(manifest.capabilities[1].id_string(), "action=extract;target=outline;type=document");
-        assert!(manifest.capabilities[1].has_metadata("supports_toc"));
+        assert_eq!(manifest.caps.len(), 2);
+        assert_eq!(manifest.caps[0].id_string(), "action=extract;target=metadata;type=document");
+        assert_eq!(manifest.caps[1].id_string(), "action=extract;target=outline;type=document");
+        assert!(manifest.caps[1].has_metadata("supports_toc"));
     }
 
     #[test]
-    fn test_capability_manifest_empty_capabilities() {
-        let manifest = CapabilityManifest::new(
+    fn test_cap_manifest_empty_caps() {
+        let manifest = CapManifest::new(
             "EmptyComponent".to_string(),
             "1.0.0".to_string(),
-            "Component with no capabilities".to_string(),
+            "Component with no caps".to_string(),
             vec![],
         );
         
-        assert_eq!(manifest.capabilities.len(), 0);
+        assert_eq!(manifest.caps.len(), 0);
         
         // Should still serialize/deserialize correctly
         let json = serde_json::to_string(&manifest).unwrap();
-        let deserialized: CapabilityManifest = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.capabilities.len(), 0);
+        let deserialized: CapManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.caps.len(), 0);
     }
 
     #[test]
-    fn test_capability_manifest_optional_author_field() {
-        let id = CapabilityKey::from_string("action=validate;type=file").unwrap();
-        let capability = Capability::new(id, "1.0.0".to_string(), "validate".to_string());
+    fn test_cap_manifest_optional_author_field() {
+        let id = CapCard::from_string("action=validate;type=file").unwrap();
+        let cap = Cap::new(id, "1.0.0".to_string(), "validate".to_string());
         
-        let manifest_without_author = CapabilityManifest::new(
+        let manifest_without_author = CapManifest::new(
             "ValidatorComponent".to_string(),
             "1.0.0".to_string(),
             "File validation component".to_string(),
-            vec![capability],
+            vec![cap],
         );
         
         // Serialize manifest without author
@@ -200,7 +200,7 @@ mod tests {
         assert!(!json.contains("\"author\""));
         
         // Should deserialize correctly
-        let deserialized: CapabilityManifest = serde_json::from_str(&json).unwrap();
+        let deserialized: CapManifest = serde_json::from_str(&json).unwrap();
         assert!(deserialized.author.is_none());
     }
 
@@ -208,33 +208,33 @@ mod tests {
     fn test_component_metadata_trait() {
         struct TestComponent {
             name: String,
-            capabilities: Vec<Capability>,
+            caps: Vec<Cap>,
         }
         
         impl ComponentMetadata for TestComponent {
-            fn component_manifest(&self) -> CapabilityManifest {
-                CapabilityManifest::new(
+            fn component_manifest(&self) -> CapManifest {
+                CapManifest::new(
                     self.name.clone(),
                     "1.0.0".to_string(),
                     "Test component implementation".to_string(),
-                    self.capabilities.clone(),
+                    self.caps.clone(),
                 )
             }
         }
         
-        let id = CapabilityKey::from_string("action=test;type=component").unwrap();
-        let capability = Capability::new(id, "1.0.0".to_string(), "test".to_string());
+        let id = CapCard::from_string("action=test;type=component").unwrap();
+        let cap = Cap::new(id, "1.0.0".to_string(), "test".to_string());
         
         let component = TestComponent {
             name: "TestImpl".to_string(),
-            capabilities: vec![capability],
+            caps: vec![cap],
         };
         
         let manifest = component.component_manifest();
         assert_eq!(manifest.name, "TestImpl");
         
-        let capabilities = component.capabilities();
-        assert_eq!(capabilities.len(), 1);
-        assert_eq!(capabilities[0].id_string(), "action=test;type=component");
+        let caps = component.caps();
+        assert_eq!(caps.len(), 1);
+        assert_eq!(caps[0].id_string(), "action=test;type=component");
     }
 }
