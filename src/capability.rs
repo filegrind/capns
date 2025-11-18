@@ -209,6 +209,10 @@ pub struct Capability {
     /// Output definition
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<CapabilityOutput>,
+    
+    /// Whether this capability accepts input via stdin
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub accepts_stdin: bool,
 }
 
 impl CapabilityArgument {
@@ -394,6 +398,7 @@ impl Capability {
             command,
             arguments: CapabilityArguments::new(),
             output: None,
+            accepts_stdin: false,
         }
     }
 
@@ -407,6 +412,7 @@ impl Capability {
             command,
             arguments: CapabilityArguments::new(),
             output: None,
+            accepts_stdin: false,
         }
     }
 
@@ -425,6 +431,7 @@ impl Capability {
             command,
             arguments: CapabilityArguments::new(),
             output: None,
+            accepts_stdin: false,
         }
     }
 
@@ -444,6 +451,7 @@ impl Capability {
             command,
             arguments: CapabilityArguments::new(),
             output: None,
+            accepts_stdin: false,
         }
     }
     
@@ -462,6 +470,7 @@ impl Capability {
             command,
             arguments,
             output: None,
+            accepts_stdin: false,
         }
     }
     
@@ -492,6 +501,7 @@ impl Capability {
             command,
             arguments,
             output,
+            accepts_stdin: false,
         }
     }
     
@@ -614,6 +624,24 @@ mod tests {
         assert!(cap.matches_request("action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
         assert!(cap.matches_request("type=data_processing")); // Request is subset, cap has all required tags
         assert!(!cap.matches_request("type=compute"));
+    }
+
+    #[test]
+    fn test_capability_accepts_stdin() {
+        let id = CapabilityKey::from_string("action=generate;target=embeddings;type=document").unwrap();
+        let mut cap = Capability::new(id, "1.0.0".to_string(), "generate".to_string());
+        
+        // By default, capabilities should not accept stdin
+        assert!(!cap.accepts_stdin);
+        
+        // Enable stdin support
+        cap.accepts_stdin = true;
+        assert!(cap.accepts_stdin);
+        
+        // Test serialization/deserialization preserves the field
+        let serialized = serde_json::to_string(&cap).unwrap();
+        let deserialized: Capability = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(cap.accepts_stdin, deserialized.accepts_stdin);
     }
 
 }
