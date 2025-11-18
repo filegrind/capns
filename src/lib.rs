@@ -6,8 +6,10 @@
 
 pub mod capability_key;
 pub mod capability;
+pub mod manifest;
 pub mod validation;
 
 pub use capability_key::*;
 pub use capability::*;
+pub use manifest::*;
 pub use validation::*;
