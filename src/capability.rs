@@ -211,7 +211,7 @@ pub struct Capability {
     pub output: Option<CapabilityOutput>,
     
     /// Whether this capability accepts input via stdin
-    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    #[serde(default)]
     pub accepts_stdin: bool,
 }
 
