@@ -150,7 +150,7 @@ mod tests {
         
         let id2 = CapCard::from_string("action=extract;target=outline;type=document").unwrap();
         let mut metadata = HashMap::new();
-        metadata.insert("supports_toc".to_string(), "true".to_string());
+        metadata.insert("supports_outline".to_string(), "true".to_string());
         let cap2 = Cap::with_metadata(id2, "1.0.0".to_string(), "extract-outline".to_string(), metadata);
         
         let manifest = CapManifest::new(
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(manifest.caps.len(), 2);
         assert_eq!(manifest.caps[0].id_string(), "action=extract;target=metadata;type=document");
         assert_eq!(manifest.caps[1].id_string(), "action=extract;target=outline;type=document");
-        assert!(manifest.caps[1].has_metadata("supports_toc"));
+        assert!(manifest.caps[1].has_metadata("supports_outline"));
     }
 
     #[test]
