@@ -12,8 +12,8 @@ use std::str::FromStr;
 /// A cap identifier using flat, ordered tags
 ///
 /// Examples:
-/// - `action=generate;format=pdf;output=binary;target=thumbnail;type=document`
-/// - `action=extract;target=metadata;type=document`
+/// - `action=generate;format=pdf;output=binary;target=thumbnail;`
+/// - `action=extract;target=metadata;`
 /// - `action=analysis;format=en;type=inference`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapCard {
@@ -85,7 +85,7 @@ impl CapCard {
 
     /// Get the canonical string representation of this cap identifier
     ///
-    /// Tags are sorted alphabetically for consistent representation
+    /// Tags are already sorted alphabetically due to BTreeMap
     pub fn to_string(&self) -> String {
         self.tags
             .iter()
@@ -207,36 +207,6 @@ impl CapCard {
         }
 
         true
-    }
-
-    /// Get the type of this cap (convenience method)
-    pub fn cap_type(&self) -> Option<&String> {
-        self.get_tag("type")
-    }
-
-    /// Get the action of this cap (convenience method)
-    pub fn action(&self) -> Option<&String> {
-        self.get_tag("action")
-    }
-
-    /// Get the target of this cap (convenience method)
-    pub fn target(&self) -> Option<&String> {
-        self.get_tag("target")
-    }
-
-    /// Get the format of this cap (convenience method)
-    pub fn format(&self) -> Option<&String> {
-        self.get_tag("format")
-    }
-
-    /// Get the output type of this cap (convenience method)
-    pub fn output(&self) -> Option<&String> {
-        self.get_tag("output")
-    }
-
-    /// Check if this cap produces binary output
-    pub fn is_binary(&self) -> bool {
-        self.has_tag("output", "binary")
     }
 
     /// Create a wildcard version by replacing specific values with wildcards
@@ -387,34 +357,6 @@ impl CapCardBuilder {
         self
     }
 
-    pub fn type_tag(self, value: &str) -> Self {
-        self.tag("type", value)
-    }
-
-    pub fn action(self, value: &str) -> Self {
-        self.tag("action", value)
-    }
-
-    pub fn target(self, value: &str) -> Self {
-        self.tag("target", value)
-    }
-
-    pub fn format(self, value: &str) -> Self {
-        self.tag("format", value)
-    }
-
-    pub fn output(self, value: &str) -> Self {
-        self.tag("output", value)
-    }
-
-    pub fn binary_output(self) -> Self {
-        self.output("binary")
-    }
-
-    pub fn json_output(self) -> Self {
-        self.output("json")
-    }
-
     pub fn build(self) -> Result<CapCard, CapCardError> {
         if self.tags.is_empty() {
             return Err(CapCardError::Empty);
@@ -435,8 +377,7 @@ mod tests {
 
     #[test]
     fn test_cap_card_creation() {
-        let cap = CapCard::from_string("action=generate;format=pdf;target=thumbnail;type=document").unwrap();
-        assert_eq!(cap.get_tag("type"), Some(&"document".to_string()));
+        let cap = CapCard::from_string("action=generate;format=pdf;target=thumbnail;").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
         assert_eq!(cap.get_tag("format"), Some(&"pdf".to_string()));
@@ -444,87 +385,86 @@ mod tests {
 
     #[test]
     fn test_canonical_string_format() {
-        let cap = CapCard::from_string("type=document;action=generate;target=thumbnail;format=pdf").unwrap();
+        let cap = CapCard::from_string("action=generate;target=thumbnail;format=pdf").unwrap();
         // Should be sorted alphabetically
-        assert_eq!(cap.to_string(), "action=generate;format=pdf;target=thumbnail;type=document");
+        assert_eq!(cap.to_string(), "action=generate;format=pdf;target=thumbnail");
     }
 
     #[test]
     fn test_tag_matching() {
-        let cap = CapCard::from_string("action=generate;format=pdf;target=thumbnail;type=document").unwrap();
+        let cap = CapCard::from_string("action=generate;format=pdf;target=thumbnail;").unwrap();
         
         // Exact match
-        let request1 = CapCard::from_string("action=generate;format=pdf;target=thumbnail;type=document").unwrap();
+        let request1 = CapCard::from_string("action=generate;format=pdf;target=thumbnail;").unwrap();
         assert!(cap.matches(&request1));
         
         // Subset match
-        let request2 = CapCard::from_string("type=document;action=generate").unwrap();
+        let request2 = CapCard::from_string("action=generate").unwrap();
         assert!(cap.matches(&request2));
         
         // Wildcard request should match specific cap  
-        let request3 = CapCard::from_string("type=document;format=*").unwrap();
+        let request3 = CapCard::from_string("format=*").unwrap();
         assert!(cap.matches(&request3)); // Cap has format=pdf, request accepts any format
         
         // No match - conflicting value
-        let request4 = CapCard::from_string("type=image").unwrap();
+        let request4 = CapCard::from_string("action=extract").unwrap(); // Different action should not match
         assert!(!cap.matches(&request4));
     }
 
     #[test]
     fn test_missing_tag_handling() {
-        let cap = CapCard::from_string("type=document;action=generate").unwrap();
+        let cap = CapCard::from_string("action=generate").unwrap();
         
         // Request with tag should match cap without tag (treated as wildcard)
-        let request1 = CapCard::from_string("type=document;format=pdf").unwrap();
+        let request1 = CapCard::from_string("format=pdf").unwrap();
         assert!(cap.matches(&request1)); // cap missing format tag = wildcard, can handle any format
         
         // But cap with extra tags can match subset requests
-        let cap2 = CapCard::from_string("type=document;action=generate;format=pdf").unwrap();
-        let request2 = CapCard::from_string("type=document;action=generate").unwrap();
+        let cap2 = CapCard::from_string("action=generate;format=pdf").unwrap();
+        let request2 = CapCard::from_string("action=generate").unwrap();
         assert!(cap2.matches(&request2));
     }
 
     #[test]
     fn test_specificity() {
-        let cap1 = CapCard::from_string("type=document").unwrap();
-        let cap2 = CapCard::from_string("type=document;action=generate").unwrap();
-        let cap3 = CapCard::from_string("type=document;action=*;format=pdf").unwrap();
+        let cap1 = CapCard::from_string("type=general").unwrap();
+        let cap2 = CapCard::from_string("action=generate").unwrap();
+        let cap3 = CapCard::from_string("action=*;format=pdf").unwrap();
         
         assert_eq!(cap1.specificity(), 1);
-        assert_eq!(cap2.specificity(), 2);
-        assert_eq!(cap3.specificity(), 2); // wildcard doesn't count
+        assert_eq!(cap2.specificity(), 1);
+        assert_eq!(cap3.specificity(), 1); // wildcard doesn't count
         
-        assert!(cap2.is_more_specific_than(&cap1));
+        assert!(!cap2.is_more_specific_than(&cap1)); // Different tags, not compatible
     }
 
     #[test]
     fn test_builder() {
         let cap = CapCardBuilder::new()
-            .type_tag("document")
-            .action("generate")
-            .target("thumbnail")
-            .format("pdf")
-            .binary_output()
+            
+            .tag("action", "generate")
+            .tag("target", "thumbnail")
+            .tag("format", "pdf")
+            .tag("output", "binary")
             .build()
             .unwrap();
         
-        assert_eq!(cap.cap_type(), Some(&"document".to_string()));
-        assert_eq!(cap.action(), Some(&"generate".to_string()));
-        assert!(cap.is_binary());
+        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("output"), Some(&"binary".to_string()));
     }
 
     #[test]
     fn test_compatibility() {
-        let cap1 = CapCard::from_string("type=document;action=generate;format=pdf").unwrap();
-        let cap2 = CapCard::from_string("type=document;action=generate;format=*").unwrap();
-        let cap3 = CapCard::from_string("type=image;action=generate").unwrap();
+        let cap1 = CapCard::from_string("action=generate;format=pdf").unwrap();
+        let cap2 = CapCard::from_string("action=generate;format=*").unwrap();
+        let cap3 = CapCard::from_string("type=image;action=extract").unwrap();
         
         assert!(cap1.is_compatible_with(&cap2));
         assert!(cap2.is_compatible_with(&cap1));
         assert!(!cap1.is_compatible_with(&cap3));
         
         // Missing tags are treated as wildcards for compatibility
-        let cap4 = CapCard::from_string("type=document;action=generate").unwrap();
+        let cap4 = CapCard::from_string("action=generate").unwrap();
         assert!(cap1.is_compatible_with(&cap4));
         assert!(cap4.is_compatible_with(&cap1));
     }
@@ -532,40 +472,40 @@ mod tests {
     #[test]
     fn test_best_match() {
         let caps = vec![
-            CapCard::from_string("type=document").unwrap(),
-            CapCard::from_string("type=document;action=generate").unwrap(),
-            CapCard::from_string("type=document;action=generate;format=pdf").unwrap(),
+            CapCard::from_string("action=*").unwrap(),
+            CapCard::from_string("action=generate").unwrap(),
+            CapCard::from_string("action=generate;format=pdf").unwrap(),
         ];
         
-        let request = CapCard::from_string("type=document;action=generate").unwrap();
+        let request = CapCard::from_string("action=generate").unwrap();
         let best = CapMatcher::find_best_match(&caps, &request).unwrap();
         
         // Most specific cap that can handle the request
-        assert_eq!(best.to_string(), "action=generate;format=pdf;type=document");
+        assert_eq!(best.to_string(), "action=generate;format=pdf");
     }
 
     #[test]
     fn test_merge_and_subset() {
-        let cap1 = CapCard::from_string("type=document;action=generate").unwrap();
+        let cap1 = CapCard::from_string("action=generate").unwrap();
         let cap2 = CapCard::from_string("format=pdf;output=binary").unwrap();
         
         let merged = cap1.merge(&cap2);
-        assert_eq!(merged.to_string(), "action=generate;format=pdf;output=binary;type=document");
+        assert_eq!(merged.to_string(), "action=generate;format=pdf;output=binary");
         
         let subset = merged.subset(&["type", "format"]);
-        assert_eq!(subset.to_string(), "format=pdf;type=document");
+        assert_eq!(subset.to_string(), "format=pdf");
     }
 
     #[test]
     fn test_wildcard_tag() {
-        let cap = CapCard::from_string("type=document;format=pdf").unwrap();
+        let cap = CapCard::from_string("format=pdf").unwrap();
         let wildcarded = cap.clone().with_wildcard_tag("format");
         
-        assert_eq!(wildcarded.to_string(), "format=*;type=document");
+        assert_eq!(wildcarded.to_string(), "format=*");
         
         // Test that wildcarded cap can match more requests
-        let request = CapCard::from_string("type=document;format=jpg").unwrap();
+        let request = CapCard::from_string("format=jpg").unwrap();
         assert!(!cap.matches(&request));
-        assert!(wildcarded.matches(&CapCard::from_string("type=document;format=*").unwrap()));
+        assert!(wildcarded.matches(&CapCard::from_string("format=*").unwrap()));
     }
 }

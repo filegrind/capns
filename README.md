@@ -28,18 +28,18 @@ Cap cards use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
 
 **Examples:**
 ```
-action=extract;target=metadata;type=document;format=pdf
+action=extract;target=metadata;format=pdf
 action=conversation;language=en;type=inference
-action=generate;target=thumbnail;type=document;format=epub;output=binary
+action=generate;target=thumbnail;format=epub;output=binary
 ```
 
 **Wildcards:**
-- Use `*` to match any value: `action=extract;format=*;type=document`
+- Use `*` to match any value: `action=extract;format=*;`
 - Wildcards enable flexible cap requests
 
 **Specificity:**
 - More specific caps are preferred over general ones
-- `action=extract;format=pdf;type=document` is more specific than `action=extract;type=document`
+- `action=extract;format=pdf;` is more specific than `action=extract;`
 
 ### Cap Definitions
 
@@ -98,11 +98,11 @@ Core implementation with full feature set.
 use capdef::{CapCard, Cap, CapCardBuilder};
 
 // Create cap card
-let key = CapCard::from_string("action=extract;target=metadata;type=document")?;
+let key = CapCard::from_string("action=extract;target=metadata;")?;
 
 // Build cap card with builder pattern
 let key = CapCardBuilder::new()
-    .type_tag("document")
+    
     .action("extract")
     .target("metadata")
     .format("pdf")
@@ -119,11 +119,10 @@ Feature-complete Go implementation.
 import "github.com/lbvr/capdef-go"
 
 // Create cap card
-key, err := capdef.NewCapCardFromString("action=extract;target=metadata;type=document")
+key, err := capdef.NewCapCardFromString("action=extract;target=metadata;")
 
 // Build with builder pattern
 key, err = capdef.NewCapCardBuilder().
-    Type("document").
     Action("extract").
     Target("metadata").
     Format("pdf").
@@ -143,13 +142,12 @@ Native Objective-C/Swift implementation for Apple platforms.
 
 // Create cap card
 NSError *error;
-CSCapCard *key = [CSCapCard fromString:@"action=extract;target=metadata;type=document" 
+CSCapCard *key = [CSCapCard fromString:@"action=extract;target=metadata;" 
                                              error:&error];
 
 // Build with builder pattern
 CSCapCardBuilder *builder = [CSCapCardBuilder new];
-CSCapCard *key = [[[[[builder type:@"document"] 
-                            action:@"extract"] 
+CSCapCard *key = [[[[builder action:@"extract"] 
                            target:@"metadata"] 
                           format:@"pdf"] 
                          build];
@@ -166,8 +164,8 @@ CSCap *cap = [CSCap capWithId:key
 
 ```rust
 // Check if cap can handle request
-let cap_card = CapCard::from_string("action=extract;target=metadata;type=document;format=pdf")?;
-let request_key = CapCard::from_string("action=extract;type=document")?;
+let cap_card = CapCard::from_string("action=extract;target=metadata;format=pdf")?;
+let request_key = CapCard::from_string("action=extract;")?;
 
 if cap_card.can_handle(&request_key) {
     println!("Cap can handle this request");
@@ -177,8 +175,8 @@ if cap_card.can_handle(&request_key) {
 ### Specificity Comparison
 
 ```rust
-let general = CapCard::from_string("action=extract;type=document")?;
-let specific = CapCard::from_string("action=extract;type=document;format=pdf")?;
+let general = CapCard::from_string("action=extract;")?;
+let specific = CapCard::from_string("action=extract;format=pdf")?;
 
 if specific.is_more_specific_than(&general) {
     println!("Specific cap preferred");
@@ -203,15 +201,15 @@ let key = CapCardBuilder::new()
 Common cap patterns are predefined:
 
 **Document Processing:**
-- `action=extract;target=metadata;type=document;format={pdf,txt,md,...}`
-- `action=extract;target=pages;type=document;format={pdf,epub,...}`
-- `action=extract;target=outline;type=document;format={pdf,...}`
-- `action=generate;target=thumbnail;type=document;format={pdf,epub,...};output=binary`
+- `action=extract;target=metadata;format={pdf,txt,md,...}`
+- `action=extract;target=pages;format={pdf,epub,...}`
+- `action=extract;target=outline;format={pdf,...}`
+- `action=generate;target=thumbnail;format={pdf,epub,...};output=binary`
 
 **AI/ML Inference:**
 - `action={conversation,analysis,embedding};type=inference;language={en,es,multilingual,...}`
-- `action=generate;target=embeddings;type=document`
-- `action=dimensions;target=embeddings;type=document`
+- `action=generate;target=embeddings;`
+- `action=dimensions;target=embeddings;`
 
 **File Operations:**
 - `action=validate;type=file`
@@ -253,7 +251,7 @@ let cap = extract_metadata_cap();
 provider_registry.register_cap("pdf-provider", cap);
 
 // Find best provider for cap
-let caller = provider_registry.can("action=extract;target=metadata;type=document;format=pdf")?;
+let caller = provider_registry.can("action=extract;target=metadata;format=pdf")?;
 let result = caller.call(args).await?;
 ```
 
@@ -269,7 +267,7 @@ let cap = extract_metadata_cap();
 
 // Customize for specific file type
 let mut pdf_cap = cap.clone();
-pdf_cap.id = CapCard::from_string("action=extract;target=metadata;type=document;format=pdf")?;
+pdf_cap.id = CapCard::from_string("action=extract;target=metadata;format=pdf")?;
 ```
 
 ## Validation

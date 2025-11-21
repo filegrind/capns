@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_creation() {
-        let id = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let id = CapCard::from_string("action=extract;target=metadata;").unwrap();
         let cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
         
         let manifest = CapManifest::new(
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_with_author() {
-        let id = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let id = CapCard::from_string("action=extract;target=metadata;").unwrap();
         let cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
         
         let manifest = CapManifest::new(
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_json_serialization() {
-        let id = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let id = CapCard::from_string("action=extract;target=metadata;").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
         cap.accepts_stdin = true;
         
@@ -145,10 +145,10 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_with_multiple_caps() {
-        let id1 = CapCard::from_string("action=extract;target=metadata;type=document").unwrap();
+        let id1 = CapCard::from_string("action=extract;target=metadata;").unwrap();
         let cap1 = Cap::new(id1, "1.0.0".to_string(), "extract-metadata".to_string());
         
-        let id2 = CapCard::from_string("action=extract;target=outline;type=document").unwrap();
+        let id2 = CapCard::from_string("action=extract;target=outline;").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("supports_outline".to_string(), "true".to_string());
         let cap2 = Cap::with_metadata(id2, "1.0.0".to_string(), "extract-outline".to_string(), metadata);
@@ -161,8 +161,8 @@ mod tests {
         );
         
         assert_eq!(manifest.caps.len(), 2);
-        assert_eq!(manifest.caps[0].id_string(), "action=extract;target=metadata;type=document");
-        assert_eq!(manifest.caps[1].id_string(), "action=extract;target=outline;type=document");
+        assert_eq!(manifest.caps[0].id_string(), "action=extract;target=metadata");
+        assert_eq!(manifest.caps[1].id_string(), "action=extract;target=outline");
         assert!(manifest.caps[1].has_metadata("supports_outline"));
     }
 
