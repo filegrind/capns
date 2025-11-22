@@ -12,7 +12,7 @@ use std::str::FromStr;
 /// A cap identifier using flat, ordered tags
 ///
 /// Examples:
-/// - `action=generate;format=pdf;output=binary;target=thumbnail;`
+/// - `action=generate;ext=pdf;output=binary;target=thumbnail;`
 /// - `action=extract;target=metadata;`
 /// - `action=analysis;format=en;type=inference`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -377,25 +377,25 @@ mod tests {
 
     #[test]
     fn test_cap_card_creation() {
-        let cap = CapCard::from_string("action=generate;format=pdf;target=thumbnail;").unwrap();
+        let cap = CapCard::from_string("action=generate;ext=pdf;target=thumbnail;").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
-        assert_eq!(cap.get_tag("format"), Some(&"pdf".to_string()));
+        assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
     }
 
     #[test]
     fn test_canonical_string_format() {
-        let cap = CapCard::from_string("action=generate;target=thumbnail;format=pdf").unwrap();
+        let cap = CapCard::from_string("action=generate;target=thumbnail;ext=pdf").unwrap();
         // Should be sorted alphabetically
-        assert_eq!(cap.to_string(), "action=generate;format=pdf;target=thumbnail");
+        assert_eq!(cap.to_string(), "action=generate;ext=pdf;target=thumbnail");
     }
 
     #[test]
     fn test_tag_matching() {
-        let cap = CapCard::from_string("action=generate;format=pdf;target=thumbnail;").unwrap();
+        let cap = CapCard::from_string("action=generate;ext=pdf;target=thumbnail;").unwrap();
         
         // Exact match
-        let request1 = CapCard::from_string("action=generate;format=pdf;target=thumbnail;").unwrap();
+        let request1 = CapCard::from_string("action=generate;ext=pdf;target=thumbnail;").unwrap();
         assert!(cap.matches(&request1));
         
         // Subset match
@@ -404,7 +404,7 @@ mod tests {
         
         // Wildcard request should match specific cap  
         let request3 = CapCard::from_string("format=*").unwrap();
-        assert!(cap.matches(&request3)); // Cap has format=pdf, request accepts any format
+        assert!(cap.matches(&request3)); // Cap has ext=pdf, request accepts any format
         
         // No match - conflicting value
         let request4 = CapCard::from_string("action=extract").unwrap(); // Different action should not match
@@ -416,11 +416,11 @@ mod tests {
         let cap = CapCard::from_string("action=generate").unwrap();
         
         // Request with tag should match cap without tag (treated as wildcard)
-        let request1 = CapCard::from_string("format=pdf").unwrap();
+        let request1 = CapCard::from_string("ext=pdf").unwrap();
         assert!(cap.matches(&request1)); // cap missing format tag = wildcard, can handle any format
         
         // But cap with extra tags can match subset requests
-        let cap2 = CapCard::from_string("action=generate;format=pdf").unwrap();
+        let cap2 = CapCard::from_string("action=generate;ext=pdf").unwrap();
         let request2 = CapCard::from_string("action=generate").unwrap();
         assert!(cap2.matches(&request2));
     }
@@ -429,7 +429,7 @@ mod tests {
     fn test_specificity() {
         let cap1 = CapCard::from_string("type=general").unwrap();
         let cap2 = CapCard::from_string("action=generate").unwrap();
-        let cap3 = CapCard::from_string("action=*;format=pdf").unwrap();
+        let cap3 = CapCard::from_string("action=*;ext=pdf").unwrap();
         
         assert_eq!(cap1.specificity(), 1);
         assert_eq!(cap2.specificity(), 1);
@@ -444,7 +444,7 @@ mod tests {
             
             .tag("action", "generate")
             .tag("target", "thumbnail")
-            .tag("format", "pdf")
+            .tag("ext", "pdf")
             .tag("output", "binary")
             .build()
             .unwrap();
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_compatibility() {
-        let cap1 = CapCard::from_string("action=generate;format=pdf").unwrap();
+        let cap1 = CapCard::from_string("action=generate;ext=pdf").unwrap();
         let cap2 = CapCard::from_string("action=generate;format=*").unwrap();
         let cap3 = CapCard::from_string("type=image;action=extract").unwrap();
         
@@ -474,32 +474,32 @@ mod tests {
         let caps = vec![
             CapCard::from_string("action=*").unwrap(),
             CapCard::from_string("action=generate").unwrap(),
-            CapCard::from_string("action=generate;format=pdf").unwrap(),
+            CapCard::from_string("action=generate;ext=pdf").unwrap(),
         ];
         
         let request = CapCard::from_string("action=generate").unwrap();
         let best = CapMatcher::find_best_match(&caps, &request).unwrap();
         
         // Most specific cap that can handle the request
-        assert_eq!(best.to_string(), "action=generate;format=pdf");
+        assert_eq!(best.to_string(), "action=generate;ext=pdf");
     }
 
     #[test]
     fn test_merge_and_subset() {
         let cap1 = CapCard::from_string("action=generate").unwrap();
-        let cap2 = CapCard::from_string("format=pdf;output=binary").unwrap();
+        let cap2 = CapCard::from_string("ext=pdf;output=binary").unwrap();
         
         let merged = cap1.merge(&cap2);
-        assert_eq!(merged.to_string(), "action=generate;format=pdf;output=binary");
+        assert_eq!(merged.to_string(), "action=generate;ext=pdf;output=binary");
         
-        let subset = merged.subset(&["type", "format"]);
-        assert_eq!(subset.to_string(), "format=pdf");
+        let subset = merged.subset(&["type", "ext"]);
+        assert_eq!(subset.to_string(), "ext=pdf");
     }
 
     #[test]
     fn test_wildcard_tag() {
-        let cap = CapCard::from_string("format=pdf").unwrap();
-        let wildcarded = cap.clone().with_wildcard_tag("format");
+        let cap = CapCard::from_string("ext=pdf").unwrap();
+        let wildcarded = cap.clone().with_wildcard_tag("ext");
         
         assert_eq!(wildcarded.to_string(), "format=*");
         

@@ -28,7 +28,7 @@ Cap cards use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
 
 **Examples:**
 ```
-action=extract;target=metadata;format=pdf
+action=extract;target=metadata;ext=pdf
 action=conversation;language=en;type=inference
 action=generate;target=thumbnail;format=epub;output=binary
 ```
@@ -39,7 +39,7 @@ action=generate;target=thumbnail;format=epub;output=binary
 
 **Specificity:**
 - More specific caps are preferred over general ones
-- `action=extract;format=pdf;` is more specific than `action=extract;`
+- `action=extract;ext=pdf;` is more specific than `action=extract;`
 
 ### Cap Definitions
 
@@ -164,7 +164,7 @@ CSCap *cap = [CSCap capWithId:key
 
 ```rust
 // Check if cap can handle request
-let cap_card = CapCard::from_string("action=extract;target=metadata;format=pdf")?;
+let cap_card = CapCard::from_string("action=extract;target=metadata;ext=pdf")?;
 let request_key = CapCard::from_string("action=extract;")?;
 
 if cap_card.can_handle(&request_key) {
@@ -176,7 +176,7 @@ if cap_card.can_handle(&request_key) {
 
 ```rust
 let general = CapCard::from_string("action=extract;")?;
-let specific = CapCard::from_string("action=extract;format=pdf")?;
+let specific = CapCard::from_string("action=extract;ext=pdf")?;
 
 if specific.is_more_specific_than(&general) {
     println!("Specific cap preferred");
@@ -251,7 +251,7 @@ let cap = extract_metadata_cap();
 provider_registry.register_cap("pdf-provider", cap);
 
 // Find best provider for cap
-let caller = provider_registry.can("action=extract;target=metadata;format=pdf")?;
+let caller = provider_registry.can("action=extract;target=metadata;ext=pdf")?;
 let result = caller.call(args).await?;
 ```
 
@@ -267,7 +267,7 @@ let cap = extract_metadata_cap();
 
 // Customize for specific file type
 let mut pdf_cap = cap.clone();
-pdf_cap.id = CapCard::from_string("action=extract;target=metadata;format=pdf")?;
+pdf_cap.id = CapCard::from_string("action=extract;target=metadata;ext=pdf")?;
 ```
 
 ## Validation
