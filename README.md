@@ -116,7 +116,7 @@ let cap = Cap::new(key, "1.0.0".to_string(), "extract-metadata".to_string());
 Feature-complete Go implementation.
 
 ```go
-import "github.com/lbvr/capdef-go"
+import "github.com/fmio/capdef-go"
 
 // Create cap card
 key, err := capdef.NewCapCardFromString("action=extract;target=metadata;")
@@ -335,8 +335,8 @@ swift test
 capdef/              # Rust implementation
 capdef-go/           # Go implementation  
 capdef-objc/         # Objective-C implementation
-lbvr-plugin-sdk/     # Plugin development SDK
-lbvr-provider-sdk/   # Provider development SDK
+fmio-plugin-sdk/     # Plugin development SDK
+fmio-provider-sdk/   # Provider development SDK
 ```
 
 ## Dependencies
