@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_cap_accepts_stdin() {
-        let id = CapCard::from_string("action=generate;target=embeddings;").unwrap();
+        let id = CapCard::from_string("action=generate;target=embeddings").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "generate".to_string());
         
         // By default, caps should not accept stdin
