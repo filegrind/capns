@@ -29,7 +29,7 @@ Cap cards use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
 **Examples:**
 ```
 action=extract;target=metadata;ext=pdf
-action=conversation;language=en;type=inference
+action=conversation;language=en;type=constrained
 action=generate;target=thumbnail;format=epub;output=binary
 ```
 
@@ -207,7 +207,7 @@ Common cap patterns are predefined:
 - `action=generate;target=thumbnail;format={pdf,epub,...};output=binary`
 
 **AI/ML Inference:**
-- `action={conversation,analysis,embedding};type=inference;language={en,es,multilingual,...}`
+- `action={conversation,analysis,embedding};type=constrained;language={en,es,multilingual,...}`
 - `action=generate;target=embeddings;`
 - `action=dimensions;target=embeddings;`
 

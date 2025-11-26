@@ -14,7 +14,7 @@ use std::str::FromStr;
 /// Examples:
 /// - `action=generate;ext=pdf;output=binary;target=thumbnail;`
 /// - `action=extract;target=metadata;`
-/// - `action=analysis;format=en;type=inference`
+/// - `action=analysis;format=en;type=constrained`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapCard {
     /// The tags that define this cap, stored in sorted order for canonical representation
@@ -239,7 +239,7 @@ impl CapCard {
 }
 
 /// Errors that can occur when parsing cap identifiers
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CapCardError {
     Empty,
     InvalidTagFormat(String),
