@@ -29,7 +29,7 @@ Cap cards use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
 **Examples:**
 ```
 action=extract;target=metadata;ext=pdf
-action=conversation;language=en;type=constrained
+action=conversation;language=en;type=unconstrained
 action=generate;target=thumbnail;format=epub;output=binary
 ```
 
