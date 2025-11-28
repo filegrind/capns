@@ -1,10 +1,10 @@
-# CapDef - Cap Definition System
+# CapNs - Cap Definition System
 
 A cap identifier and definition system for plugin architectures, supporting tag-based cap matching with wildcard patterns and specificity comparison.
 
 ## Overview
 
-CapDef provides a formal system for defining, matching, and managing caps across distributed plugin systems. It uses a flat tag-based naming scheme that supports wildcards, specificity comparison, and validation of cap arguments and outputs.
+CapNs provides a formal system for defining, matching, and managing caps across distributed plugin systems. It uses a flat tag-based naming scheme that supports wildcards, specificity comparison, and validation of cap arguments and outputs.
 
 The system is designed for scenarios where:
 - Multiple providers can implement the same cap 
@@ -89,13 +89,13 @@ pub struct CapArgument {
 
 ## Language Implementations
 
-CapDef is implemented in multiple languages for cross-platform compatibility:
+CapNs is implemented in multiple languages for cross-platform compatibility:
 
-### Rust (`capdef`)
+### Rust (`capns`)
 Core implementation with full feature set.
 
 ```rust
-use capdef::{CapCard, Cap, CapCardBuilder};
+use capns::{CapCard, Cap, CapCardBuilder};
 
 // Create cap card
 let key = CapCard::from_string("cap:action=extract;target=metadata;")?;
@@ -112,28 +112,28 @@ let key = CapCardBuilder::new()
 let cap = Cap::new(key, "1.0.0".to_string(), "extract-metadata".to_string());
 ```
 
-### Go (`capdef-go`)
+### Go (`capns-go`)
 Feature-complete Go implementation.
 
 ```go
-import "github.com/fmio/capdef-go"
+import "github.com/fmio/capns-go"
 
 // Create cap card
-key, err := capdef.NewCapCardFromString("cap:action=extract;target=metadata;")
+key, err := capns.NewCapCardFromString("cap:action=extract;target=metadata;")
 
 // Build with builder pattern
-key, err = capdef.NewCapCardBuilder().
+key, err = capns.NewCapCardBuilder().
     Action("extract").
     Target("metadata").
     Format("pdf").
     Build()
 
 // Create cap
-cap := capdef.NewCap(key, "1.0.0", "extract-metadata")
+cap := capns.NewCap(key, "1.0.0", "extract-metadata")
 cap.AcceptsStdin = true
 ```
 
-### Objective-C (`capdef-objc`)
+### Objective-C (`capns-objc`)
 Native Objective-C/Swift implementation for Apple platforms.
 
 ```objc
@@ -260,7 +260,7 @@ let result = caller.call(args).await?;
 Standard caps are provided for common operations:
 
 ```rust
-use capdef_plugin_sdk::standard::*;
+use capns_plugin_sdk::standard::*;
 
 // Use predefined cap
 let cap = extract_metadata_cap();
@@ -272,7 +272,7 @@ pdf_cap.id = CapCard::from_string("cap:action=extract;target=metadata;ext=pdf")?
 
 ## Validation
 
-CapDef includes validation for:
+CapNs includes validation for:
 - **Cap card format** - Ensures proper tag=value syntax
 - **Argument types** - Validates JSON arguments against cap schema
 - **Required fields** - Checks for mandatory arguments
@@ -332,9 +332,9 @@ swift test
 ## Project Structure
 
 ```
-capdef/              # Rust implementation
-capdef-go/           # Go implementation  
-capdef-objc/         # Objective-C implementation
+capns/              # Rust implementation
+capns-go/           # Go implementation  
+capns-objc/         # Objective-C implementation
 fmio-plugin-sdk/     # Plugin development SDK
 fmio-provider-sdk/   # Provider development SDK
 ```
