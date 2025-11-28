@@ -14,9 +14,9 @@ The system is designed for scenarios where:
 
 ## Architecture
 
-### Cap Cards
+### Cap URNs
 
-Cap cards use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
+Cap URNs use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
 
 **Core Tags:**
 - `type` - The cap domain (e.g., `document`, `inference`, `file`)
@@ -47,7 +47,7 @@ Full cap definitions include metadata, arguments, output schemas, and execution 
 
 ```rust
 pub struct Cap {
-    pub id: CapCard,
+    pub id: CapUrn,
     pub version: String,
     pub description: Option<String>,
     pub metadata: HashMap<String, String>,
@@ -95,13 +95,13 @@ CapNs is implemented in multiple languages for cross-platform compatibility:
 Core implementation with full feature set.
 
 ```rust
-use capns::{CapCard, Cap, CapCardBuilder};
+use capns::{CapUrn, Cap, CapUrnBuilder};
 
-// Create cap card
-let key = CapCard::from_string("cap:action=extract;target=metadata;")?;
+// Create cap URN
+let key = CapUrn::from_string("cap:action=extract;target=metadata;")?;
 
-// Build cap card with builder pattern
-let key = CapCardBuilder::new()
+// Build cap URN with builder pattern
+let key = CapUrnBuilder::new()
     
     .action("extract")
     .target("metadata")
@@ -118,11 +118,11 @@ Feature-complete Go implementation.
 ```go
 import "github.com/fmio/capns-go"
 
-// Create cap card
-key, err := capns.NewCapCardFromString("cap:action=extract;target=metadata;")
+// Create cap URN
+key, err := capns.NewCapUrnFromString("cap:action=extract;target=metadata;")
 
 // Build with builder pattern
-key, err = capns.NewCapCardBuilder().
+key, err = capns.NewCapUrnBuilder().
     Action("extract").
     Target("metadata").
     Format("pdf").
@@ -138,16 +138,16 @@ Native Objective-C/Swift implementation for Apple platforms.
 
 ```objc
 #import "CSCap.h"
-#import "CSCapCard.h"
+#import "CSCapUrn.h"
 
-// Create cap card
+// Create cap URN
 NSError *error;
-CSCapCard *key = [CSCapCard fromString:@"cap:action=extract;target=metadata;" 
+CSCapUrn *key = [CSCapUrn fromString:@"cap:action=extract;target=metadata;" 
                                              error:&error];
 
 // Build with builder pattern
-CSCapCardBuilder *builder = [CSCapCardBuilder new];
-CSCapCard *key = [[[[builder action:@"extract"] 
+CSCapUrnBuilder *builder = [CSCapUrnBuilder new];
+CSCapUrn *key = [[[[builder action:@"extract"] 
                            target:@"metadata"] 
                           format:@"pdf"] 
                          build];
@@ -164,10 +164,10 @@ CSCap *cap = [CSCap capWithId:key
 
 ```rust
 // Check if cap can handle request
-let cap_card = CapCard::from_string("cap:action=extract;target=metadata;ext=pdf")?;
-let request_key = CapCard::from_string("action=extract;")?;
+let cap_urn = CapUrn::from_string("cap:action=extract;target=metadata;ext=pdf")?;
+let request_key = CapUrn::from_string("action=extract;")?;
 
-if cap_card.can_handle(&request_key) {
+if cap_urn.can_handle(&request_key) {
     println!("Cap can handle this request");
 }
 ```
@@ -175,8 +175,8 @@ if cap_card.can_handle(&request_key) {
 ### Specificity Comparison
 
 ```rust
-let general = CapCard::from_string("action=extract;")?;
-let specific = CapCard::from_string("cap:action=extract;ext=pdf")?;
+let general = CapUrn::from_string("action=extract;")?;
+let specific = CapUrn::from_string("cap:action=extract;ext=pdf")?;
 
 if specific.is_more_specific_than(&general) {
     println!("Specific cap preferred");
@@ -188,7 +188,7 @@ if specific.is_more_specific_than(&general) {
 All implementations support fluent builder APIs:
 
 ```rust
-let key = CapCardBuilder::new()
+let key = CapUrnBuilder::new()
     .type_tag("inference")
     .action("conversation")
     .tag("language", "en")
@@ -267,13 +267,13 @@ let cap = extract_metadata_cap();
 
 // Customize for specific file type
 let mut pdf_cap = cap.clone();
-pdf_cap.id = CapCard::from_string("cap:action=extract;target=metadata;ext=pdf")?;
+pdf_cap.id = CapUrn::from_string("cap:action=extract;target=metadata;ext=pdf")?;
 ```
 
 ## Validation
 
 CapNs includes validation for:
-- **Cap card format** - Ensures proper tag=value syntax
+- **Cap URN format** - Ensures proper tag=value syntax
 - **Argument types** - Validates JSON arguments against cap schema
 - **Required fields** - Checks for mandatory arguments
 - **Value constraints** - Enforces min/max, patterns, allowed values
@@ -311,7 +311,7 @@ Common error scenarios:
 ## Testing
 
 All implementations include test suites covering:
-- Cap card creation and parsing
+- Cap URN creation and parsing
 - Matching and specificity algorithms
 - Builder pattern functionality
 - Serialization/deserialization

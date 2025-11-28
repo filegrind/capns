@@ -12,16 +12,16 @@ use std::fmt;
 pub enum ValidationError {
     /// Unknown cap requested
     UnknownCap {
-        cap_card: String,
+        cap_urn: String,
     },
     /// Missing required argument
     MissingRequiredArgument {
-        cap_card: String,
+        cap_urn: String,
         argument_name: String,
     },
     /// Invalid argument type
     InvalidArgumentType {
-        cap_card: String,
+        cap_urn: String,
         argument_name: String,
         expected_type: ArgumentType,
         actual_type: String,
@@ -29,38 +29,38 @@ pub enum ValidationError {
     },
     /// Argument validation rule violation
     ArgumentValidationFailed {
-        cap_card: String,
+        cap_urn: String,
         argument_name: String,
         validation_rule: String,
         actual_value: Value,
     },
     /// Invalid output type
     InvalidOutputType {
-        cap_card: String,
+        cap_urn: String,
         expected_type: OutputType,
         actual_type: String,
         actual_value: Value,
     },
     /// Output validation rule violation
     OutputValidationFailed {
-        cap_card: String,
+        cap_urn: String,
         validation_rule: String,
         actual_value: Value,
     },
     /// Malformed cap schema
     InvalidCapSchema {
-        cap_card: String,
+        cap_urn: String,
         issue: String,
     },
     /// Too many arguments provided
     TooManyArguments {
-        cap_card: String,
+        cap_urn: String,
         max_expected: usize,
         actual_count: usize,
     },
     /// JSON parsing error
     JsonParseError {
-        cap_card: String,
+        cap_urn: String,
         error: String,
     },
 }
@@ -68,37 +68,37 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValidationError::UnknownCap { cap_card } => {
-                write!(f, "Unknown cap '{}' - cap not registered or advertised", cap_card)
+            ValidationError::UnknownCap { cap_urn } => {
+                write!(f, "Unknown cap '{}' - cap not registered or advertised", cap_urn)
             }
-            ValidationError::MissingRequiredArgument { cap_card, argument_name } => {
-                write!(f, "Cap '{}' requires argument '{}' but it was not provided", cap_card, argument_name)
+            ValidationError::MissingRequiredArgument { cap_urn, argument_name } => {
+                write!(f, "Cap '{}' requires argument '{}' but it was not provided", cap_urn, argument_name)
             }
-            ValidationError::InvalidArgumentType { cap_card, argument_name, expected_type, actual_type, actual_value } => {
+            ValidationError::InvalidArgumentType { cap_urn, argument_name, expected_type, actual_type, actual_value } => {
                 write!(f, "Cap '{}' argument '{}' expects type '{:?}' but received '{}' with value: {}", 
-                       cap_card, argument_name, expected_type, actual_type, actual_value)
+                       cap_urn, argument_name, expected_type, actual_type, actual_value)
             }
-            ValidationError::ArgumentValidationFailed { cap_card, argument_name, validation_rule, actual_value } => {
+            ValidationError::ArgumentValidationFailed { cap_urn, argument_name, validation_rule, actual_value } => {
                 write!(f, "Cap '{}' argument '{}' failed validation rule '{}' with value: {}", 
-                       cap_card, argument_name, validation_rule, actual_value)
+                       cap_urn, argument_name, validation_rule, actual_value)
             }
-            ValidationError::InvalidOutputType { cap_card, expected_type, actual_type, actual_value } => {
+            ValidationError::InvalidOutputType { cap_urn, expected_type, actual_type, actual_value } => {
                 write!(f, "Cap '{}' output expects type '{:?}' but received '{}' with value: {}", 
-                       cap_card, expected_type, actual_type, actual_value)
+                       cap_urn, expected_type, actual_type, actual_value)
             }
-            ValidationError::OutputValidationFailed { cap_card, validation_rule, actual_value } => {
+            ValidationError::OutputValidationFailed { cap_urn, validation_rule, actual_value } => {
                 write!(f, "Cap '{}' output failed validation rule '{}' with value: {}", 
-                       cap_card, validation_rule, actual_value)
+                       cap_urn, validation_rule, actual_value)
             }
-            ValidationError::InvalidCapSchema { cap_card, issue } => {
-                write!(f, "Cap '{}' has invalid schema: {}", cap_card, issue)
+            ValidationError::InvalidCapSchema { cap_urn, issue } => {
+                write!(f, "Cap '{}' has invalid schema: {}", cap_urn, issue)
             }
-            ValidationError::TooManyArguments { cap_card, max_expected, actual_count } => {
+            ValidationError::TooManyArguments { cap_urn, max_expected, actual_count } => {
                 write!(f, "Cap '{}' expects at most {} arguments but received {}", 
-                       cap_card, max_expected, actual_count)
+                       cap_urn, max_expected, actual_count)
             }
-            ValidationError::JsonParseError { cap_card, error } => {
-                write!(f, "Cap '{}' JSON parsing failed: {}", cap_card, error)
+            ValidationError::JsonParseError { cap_urn, error } => {
+                write!(f, "Cap '{}' JSON parsing failed: {}", cap_urn, error)
             }
         }
     }
@@ -115,14 +115,14 @@ impl InputValidator {
         cap: &Cap,
         arguments: &[Value],
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         let args = &cap.arguments;
         
         // Check if too many arguments provided
         let max_args = args.required.len() + args.optional.len();
         if arguments.len() > max_args {
             return Err(ValidationError::TooManyArguments {
-                cap_card,
+                cap_urn,
                 max_expected: max_args,
                 actual_count: arguments.len(),
             });
@@ -132,7 +132,7 @@ impl InputValidator {
         for (index, req_arg) in args.required.iter().enumerate() {
             if index >= arguments.len() {
                 return Err(ValidationError::MissingRequiredArgument {
-                    cap_card: cap_card.clone(),
+                    cap_urn: cap_urn.clone(),
                     argument_name: req_arg.name.clone(),
                 });
             }
@@ -157,7 +157,7 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         
         // Type validation
         Self::validate_argument_type(cap, arg_def, value)?;
@@ -173,7 +173,7 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         let actual_type = Self::get_json_type_name(value);
         
         let type_matches = match (&arg_def.arg_type, value) {
@@ -189,7 +189,7 @@ impl InputValidator {
         
         if !type_matches {
             return Err(ValidationError::InvalidArgumentType {
-                cap_card,
+                cap_urn,
                 argument_name: arg_def.name.clone(),
                 expected_type: arg_def.arg_type.clone(),
                 actual_type,
@@ -205,7 +205,7 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         let validation = &arg_def.validation;
         
         // Numeric validation
@@ -213,7 +213,7 @@ impl InputValidator {
             if let Some(num) = value.as_f64() {
                 if num < min {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        cap_card,
+                        cap_urn,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
@@ -226,7 +226,7 @@ impl InputValidator {
             if let Some(num) = value.as_f64() {
                 if num > max {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        cap_card,
+                        cap_urn,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
@@ -240,7 +240,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        cap_card,
+                        cap_urn,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("minimum length {}", min_length),
                         actual_value: value.clone(),
@@ -253,7 +253,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        cap_card,
+                        cap_urn,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("maximum length {}", max_length),
                         actual_value: value.clone(),
@@ -268,7 +268,7 @@ impl InputValidator {
                 if let Ok(regex) = regex::Regex::new(pattern) {
                     if !regex.is_match(s) {
                         return Err(ValidationError::ArgumentValidationFailed {
-                            cap_card,
+                            cap_urn,
                             argument_name: arg_def.name.clone(),
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
@@ -283,7 +283,7 @@ impl InputValidator {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::ArgumentValidationFailed {
-                        cap_card,
+                        cap_urn,
                         argument_name: arg_def.name.clone(),
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
@@ -322,11 +322,11 @@ impl OutputValidator {
         cap: &Cap,
         output: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         
         let output_def = cap.get_output()
             .ok_or_else(|| ValidationError::InvalidCapSchema {
-                cap_card: cap_card.clone(),
+                cap_urn: cap_urn.clone(),
                 issue: "No output definition specified".to_string(),
             })?;
         
@@ -344,7 +344,7 @@ impl OutputValidator {
         output_def: &CapOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         let actual_type = InputValidator::get_json_type_name(value);
         
         let type_matches = match (&output_def.output_type, value) {
@@ -360,7 +360,7 @@ impl OutputValidator {
         
         if !type_matches {
             return Err(ValidationError::InvalidOutputType {
-                cap_card,
+                cap_urn,
                 expected_type: output_def.output_type.clone(),
                 actual_type,
                 actual_value: value.clone(),
@@ -375,7 +375,7 @@ impl OutputValidator {
         output_def: &CapOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         let validation = &output_def.validation;
         
         // Apply same validation rules as arguments
@@ -383,7 +383,7 @@ impl OutputValidator {
             if let Some(num) = value.as_f64() {
                 if num < min {
                     return Err(ValidationError::OutputValidationFailed {
-                        cap_card,
+                        cap_urn,
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
                     });
@@ -395,7 +395,7 @@ impl OutputValidator {
             if let Some(num) = value.as_f64() {
                 if num > max {
                     return Err(ValidationError::OutputValidationFailed {
-                        cap_card,
+                        cap_urn,
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
                     });
@@ -407,7 +407,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
                     return Err(ValidationError::OutputValidationFailed {
-                        cap_card,
+                        cap_urn,
                         validation_rule: format!("minimum length {}", min_length),
                         actual_value: value.clone(),
                     });
@@ -419,7 +419,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
                     return Err(ValidationError::OutputValidationFailed {
-                        cap_card,
+                        cap_urn,
                         validation_rule: format!("maximum length {}", max_length),
                         actual_value: value.clone(),
                     });
@@ -432,7 +432,7 @@ impl OutputValidator {
                 if let Ok(regex) = regex::Regex::new(pattern) {
                     if !regex.is_match(s) {
                         return Err(ValidationError::OutputValidationFailed {
-                            cap_card,
+                            cap_urn,
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
                         });
@@ -445,7 +445,7 @@ impl OutputValidator {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::OutputValidationFailed {
-                        cap_card,
+                        cap_urn,
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
                     });
@@ -463,13 +463,13 @@ pub struct CapValidator;
 impl CapValidator {
     /// Validate a cap definition itself
     pub fn validate_cap(cap: &Cap) -> Result<(), ValidationError> {
-        let cap_card = cap.id_string();
+        let cap_urn = cap.id_string();
         
         // Validate that required arguments don't have default values
         for arg in &cap.arguments.required {
             if arg.default.is_some() {
                 return Err(ValidationError::InvalidCapSchema {
-                    cap_card: cap_card.clone(),
+                    cap_urn: cap_urn.clone(),
                     issue: format!("Required argument '{}' cannot have a default value", arg.name),
                 });
             }
@@ -481,7 +481,7 @@ impl CapValidator {
             if let Some(pos) = arg.position {
                 if !positions.insert(pos) {
                     return Err(ValidationError::InvalidCapSchema {
-                        cap_card: cap_card.clone(),
+                        cap_urn: cap_urn.clone(),
                         issue: format!("Duplicate argument position {} for argument '{}'", pos, arg.name),
                     });
                 }
@@ -495,7 +495,7 @@ impl CapValidator {
             if !flag.is_empty() {
                 if !cli_flags.insert(flag) {
                     return Err(ValidationError::InvalidCapSchema {
-                        cap_card: cap_card.clone(),
+                        cap_urn: cap_urn.clone(),
                         issue: format!("Duplicate CLI flag '{}' for argument '{}'", flag, arg.name),
                     });
                 }
@@ -526,19 +526,19 @@ impl SchemaValidator {
     }
 
     /// Get a cap by ID
-    pub fn get_cap(&self, cap_card: &str) -> Option<&Cap> {
-        self.caps.get(cap_card)
+    pub fn get_cap(&self, cap_urn: &str) -> Option<&Cap> {
+        self.caps.get(cap_urn)
     }
 
     /// Validate arguments against a cap's input schema
     pub fn validate_inputs(
         &self,
-        cap_card: &str,
+        cap_urn: &str,
         arguments: &[serde_json::Value],
     ) -> Result<(), ValidationError> {
-        let cap = self.get_cap(cap_card)
+        let cap = self.get_cap(cap_urn)
             .ok_or_else(|| ValidationError::UnknownCap {
-                cap_card: cap_card.to_string(),
+                cap_urn: cap_urn.to_string(),
             })?;
 
         InputValidator::validate_arguments(cap, arguments)
@@ -547,12 +547,12 @@ impl SchemaValidator {
     /// Validate output against a cap's output schema
     pub fn validate_output(
         &self,
-        cap_card: &str,
+        cap_urn: &str,
         output: &serde_json::Value,
     ) -> Result<(), ValidationError> {
-        let cap = self.get_cap(cap_card)
+        let cap = self.get_cap(cap_urn)
             .ok_or_else(|| ValidationError::UnknownCap {
-                cap_card: cap_card.to_string(),
+                cap_urn: cap_urn.to_string(),
             })?;
 
         OutputValidator::validate_output(cap, output)
@@ -576,12 +576,12 @@ impl Default for SchemaValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapCard, CapArguments};
+    use crate::{CapUrn, CapArguments};
     use serde_json::json;
 
     #[test]
     fn test_input_validation_success() {
-        let id = CapCard::from_string("cap:type=test;action=cap").unwrap();
+        let id = CapUrn::from_string("cap:type=test;action=cap").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
@@ -601,7 +601,7 @@ mod tests {
     
     #[test]
     fn test_input_validation_missing_required() {
-        let id = CapCard::from_string("cap:type=test;action=cap").unwrap();
+        let id = CapUrn::from_string("cap:type=test;action=cap").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
@@ -628,7 +628,7 @@ mod tests {
     
     #[test]
     fn test_input_validation_wrong_type() {
-        let id = CapCard::from_string("cap:type=test;action=cap").unwrap();
+        let id = CapUrn::from_string("cap:type=test;action=cap").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();

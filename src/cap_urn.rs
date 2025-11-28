@@ -16,12 +16,12 @@ use std::str::FromStr;
 /// - `action=extract;target=metadata;`
 /// - `action=analysis;format=en;type=constrained`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CapCard {
+pub struct CapUrn {
     /// The tags that define this cap, stored in sorted order for canonical representation
     pub tags: BTreeMap<String, String>,
 }
 
-impl CapCard {
+impl CapUrn {
     /// Create a new cap identifier from tags
     pub fn new(tags: BTreeMap<String, String>) -> Self {
         Self { tags }
@@ -40,20 +40,20 @@ impl CapCard {
     /// The "cap:" prefix is mandatory
     /// Trailing semicolons are optional and ignored
     /// Tags are automatically sorted alphabetically for canonical form
-    pub fn from_string(s: &str) -> Result<Self, CapCardError> {
+    pub fn from_string(s: &str) -> Result<Self, CapUrnError> {
         if s.is_empty() {
-            return Err(CapCardError::Empty);
+            return Err(CapUrnError::Empty);
         }
 
         // Ensure "cap:" prefix is present
         if !s.starts_with("cap:") {
-            return Err(CapCardError::MissingCapPrefix);
+            return Err(CapUrnError::MissingCapPrefix);
         }
 
         // Remove the "cap:" prefix
         let tags_part = &s[4..];
         if tags_part.is_empty() {
-            return Err(CapCardError::Empty);
+            return Err(CapUrnError::Empty);
         }
 
         let mut tags = BTreeMap::new();
@@ -69,26 +69,26 @@ impl CapCard {
 
             let parts: Vec<&str> = tag_str.split('=').collect();
             if parts.len() != 2 {
-                return Err(CapCardError::InvalidTagFormat(tag_str.to_string()));
+                return Err(CapUrnError::InvalidTagFormat(tag_str.to_string()));
             }
 
             let key = parts[0].trim();
             let value = parts[1].trim();
 
             if key.is_empty() || value.is_empty() {
-                return Err(CapCardError::EmptyTagComponent(tag_str.to_string()));
+                return Err(CapUrnError::EmptyTagComponent(tag_str.to_string()));
             }
 
             // Validate key and value characters
             if !Self::is_valid_tag_component(key) || !Self::is_valid_tag_component(value) {
-                return Err(CapCardError::InvalidCharacter(tag_str.to_string()));
+                return Err(CapUrnError::InvalidCharacter(tag_str.to_string()));
             }
 
             tags.insert(key.to_string(), value.to_string());
         }
 
         if tags.is_empty() {
-            return Err(CapCardError::Empty);
+            return Err(CapUrnError::Empty);
         }
 
         Ok(Self { tags })
@@ -141,7 +141,7 @@ impl CapCard {
     /// - For each tag in the request: cap has same value, wildcard (*), or missing tag
     /// - For each tag in the cap: if request is missing that tag, that's fine (cap is more specific)
     /// Missing tags are treated as wildcards (less specific, can handle any value).
-    pub fn matches(&self, request: &CapCard) -> bool {
+    pub fn matches(&self, request: &CapUrn) -> bool {
         // Check all tags that the request specifies
         for (request_key, request_value) in &request.tags {
             match self.tags.get(request_key) {
@@ -175,7 +175,7 @@ impl CapCard {
     ///
     /// This is used when a request comes in with a cap identifier
     /// and we need to see if this cap can fulfill it
-    pub fn can_handle(&self, request: &CapCard) -> bool {
+    pub fn can_handle(&self, request: &CapUrn) -> bool {
         self.matches(request)
     }
 
@@ -188,7 +188,7 @@ impl CapCard {
     }
 
     /// Check if this cap is more specific than another
-    pub fn is_more_specific_than(&self, other: &CapCard) -> bool {
+    pub fn is_more_specific_than(&self, other: &CapUrn) -> bool {
         // First check if they're compatible
         if !self.is_compatible_with(other) {
             return false;
@@ -201,7 +201,7 @@ impl CapCard {
     ///
     /// Two caps are compatible if they can potentially match
     /// the same types of requests (considering wildcards and missing tags as wildcards)
-    pub fn is_compatible_with(&self, other: &CapCard) -> bool {
+    pub fn is_compatible_with(&self, other: &CapUrn) -> bool {
         // Get all unique tag keys from both caps
         let mut all_keys = self.tags.keys().cloned().collect::<std::collections::HashSet<_>>();
         all_keys.extend(other.tags.keys().cloned());
@@ -248,7 +248,7 @@ impl CapCard {
     }
 
     /// Merge with another cap (other takes precedence for conflicts)
-    pub fn merge(&self, other: &CapCard) -> Self {
+    pub fn merge(&self, other: &CapUrn) -> Self {
         let mut tags = self.tags.clone();
         for (key, value) in &other.tags {
             tags.insert(key.clone(), value.clone());
@@ -259,7 +259,7 @@ impl CapCard {
 
 /// Errors that can occur when parsing cap identifiers
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CapCardError {
+pub enum CapUrnError {
     Empty,
     MissingCapPrefix,
     InvalidTagFormat(String),
@@ -267,46 +267,46 @@ pub enum CapCardError {
     InvalidCharacter(String),
 }
 
-impl fmt::Display for CapCardError {
+impl fmt::Display for CapUrnError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CapCardError::Empty => {
+            CapUrnError::Empty => {
                 write!(f, "Cap identifier cannot be empty")
             }
-            CapCardError::MissingCapPrefix => {
+            CapUrnError::MissingCapPrefix => {
                 write!(f, "Cap identifier must start with 'cap:'")
             }
-            CapCardError::InvalidTagFormat(tag) => {
+            CapUrnError::InvalidTagFormat(tag) => {
                 write!(f, "Invalid tag format (must be key=value): {}", tag)
             }
-            CapCardError::EmptyTagComponent(tag) => {
+            CapUrnError::EmptyTagComponent(tag) => {
                 write!(f, "Tag key or value cannot be empty: {}", tag)
             }
-            CapCardError::InvalidCharacter(tag) => {
+            CapUrnError::InvalidCharacter(tag) => {
                 write!(f, "Invalid character in tag (use alphanumeric, _, -, *): {}", tag)
             }
         }
     }
 }
 
-impl std::error::Error for CapCardError {}
+impl std::error::Error for CapUrnError {}
 
-impl FromStr for CapCard {
-    type Err = CapCardError;
+impl FromStr for CapUrn {
+    type Err = CapUrnError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        CapCard::from_string(s)
+        CapUrn::from_string(s)
     }
 }
 
-impl fmt::Display for CapCard {
+impl fmt::Display for CapUrn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string())
     }
 }
 
 // Serde serialization support
-impl Serialize for CapCard {
+impl Serialize for CapUrn {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -315,13 +315,13 @@ impl Serialize for CapCard {
     }
 }
 
-impl<'de> Deserialize<'de> for CapCard {
-    fn deserialize<D>(deserializer: D) -> Result<CapCard, D::Error>
+impl<'de> Deserialize<'de> for CapUrn {
+    fn deserialize<D>(deserializer: D) -> Result<CapUrn, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        CapCard::from_string(&s).map_err(serde::de::Error::custom)
+        CapUrn::from_string(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -331,9 +331,9 @@ pub struct CapMatcher;
 impl CapMatcher {
     /// Find the most specific cap that can handle a request
     pub fn find_best_match<'a>(
-        caps: &'a [CapCard],
-        request: &CapCard,
-    ) -> Option<&'a CapCard> {
+        caps: &'a [CapUrn],
+        request: &CapUrn,
+    ) -> Option<&'a CapUrn> {
         caps
             .iter()
             .filter(|cap| cap.can_handle(request))
@@ -342,10 +342,10 @@ impl CapMatcher {
 
     /// Find all caps that can handle a request, sorted by specificity
     pub fn find_all_matches<'a>(
-        caps: &'a [CapCard],
-        request: &CapCard,
-    ) -> Vec<&'a CapCard> {
-        let mut matches: Vec<&CapCard> = caps
+        caps: &'a [CapUrn],
+        request: &CapUrn,
+    ) -> Vec<&'a CapUrn> {
+        let mut matches: Vec<&CapUrn> = caps
             .iter()
             .filter(|cap| cap.can_handle(request))
             .collect();
@@ -356,19 +356,19 @@ impl CapMatcher {
     }
 
     /// Check if two cap sets are compatible
-    pub fn are_compatible(caps1: &[CapCard], caps2: &[CapCard]) -> bool {
+    pub fn are_compatible(caps1: &[CapUrn], caps2: &[CapUrn]) -> bool {
         caps1
             .iter()
             .any(|c1| caps2.iter().any(|c2| c1.is_compatible_with(c2)))
     }
 }
 
-/// Builder for creating cap cards fluently
-pub struct CapCardBuilder {
+/// Builder for creating cap URNs fluently
+pub struct CapUrnBuilder {
     tags: BTreeMap<String, String>,
 }
 
-impl CapCardBuilder {
+impl CapUrnBuilder {
     pub fn new() -> Self {
         Self {
             tags: BTreeMap::new(),
@@ -380,15 +380,15 @@ impl CapCardBuilder {
         self
     }
 
-    pub fn build(self) -> Result<CapCard, CapCardError> {
+    pub fn build(self) -> Result<CapUrn, CapUrnError> {
         if self.tags.is_empty() {
-            return Err(CapCardError::Empty);
+            return Err(CapUrnError::Empty);
         }
-        Ok(CapCard::new(self.tags))
+        Ok(CapUrn::new(self.tags))
     }
 }
 
-impl Default for CapCardBuilder {
+impl Default for CapUrnBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -399,8 +399,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cap_card_creation() {
-        let cap = CapCard::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+    fn test_cap_urn_creation() {
+        let cap = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
         assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
@@ -409,18 +409,18 @@ mod tests {
     #[test]
     fn test_cap_prefix_required() {
         // Missing cap: prefix should fail
-        assert!(CapCard::from_string("action=generate;ext=pdf").is_err());
+        assert!(CapUrn::from_string("action=generate;ext=pdf").is_err());
         
         // Valid cap: prefix should work
-        let cap = CapCard::from_string("cap:action=generate;ext=pdf").unwrap();
+        let cap = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
     }
 
     #[test]
     fn test_trailing_semicolon_equivalence() {
         // Both with and without trailing semicolon should be equivalent
-        let cap1 = CapCard::from_string("cap:action=generate;ext=pdf").unwrap();
-        let cap2 = CapCard::from_string("cap:action=generate;ext=pdf;").unwrap();
+        let cap1 = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
+        let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf;").unwrap();
         
         // They should be equal
         assert_eq!(cap1, cap2);
@@ -449,51 +449,51 @@ mod tests {
 
     #[test]
     fn test_canonical_string_format() {
-        let cap = CapCard::from_string("cap:action=generate;target=thumbnail;ext=pdf").unwrap();
+        let cap = CapUrn::from_string("cap:action=generate;target=thumbnail;ext=pdf").unwrap();
         // Should be sorted alphabetically and have no trailing semicolon in canonical form
         assert_eq!(cap.to_string(), "cap:action=generate;ext=pdf;target=thumbnail");
     }
 
     #[test]
     fn test_tag_matching() {
-        let cap = CapCard::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        let cap = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
         
         // Exact match
-        let request1 = CapCard::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        let request1 = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
         assert!(cap.matches(&request1));
         
         // Subset match
-        let request2 = CapCard::from_string("cap:action=generate").unwrap();
+        let request2 = CapUrn::from_string("cap:action=generate").unwrap();
         assert!(cap.matches(&request2));
         
         // Wildcard request should match specific cap  
-        let request3 = CapCard::from_string("cap:ext=*").unwrap();
+        let request3 = CapUrn::from_string("cap:ext=*").unwrap();
         assert!(cap.matches(&request3)); // Cap has ext=pdf, request accepts any ext
         
         // No match - conflicting value
-        let request4 = CapCard::from_string("cap:action=extract").unwrap(); // Different action should not match
+        let request4 = CapUrn::from_string("cap:action=extract").unwrap(); // Different action should not match
         assert!(!cap.matches(&request4));
     }
 
     #[test]
     fn test_missing_tag_handling() {
-        let cap = CapCard::from_string("cap:action=generate").unwrap();
+        let cap = CapUrn::from_string("cap:action=generate").unwrap();
         
         // Request with tag should match cap without tag (treated as wildcard)
-        let request1 = CapCard::from_string("cap:ext=pdf").unwrap();
+        let request1 = CapUrn::from_string("cap:ext=pdf").unwrap();
         assert!(cap.matches(&request1)); // cap missing ext tag = wildcard, can handle any ext
         
         // But cap with extra tags can match subset requests
-        let cap2 = CapCard::from_string("cap:action=generate;ext=pdf").unwrap();
-        let request2 = CapCard::from_string("cap:action=generate").unwrap();
+        let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
+        let request2 = CapUrn::from_string("cap:action=generate").unwrap();
         assert!(cap2.matches(&request2));
     }
 
     #[test]
     fn test_specificity() {
-        let cap1 = CapCard::from_string("cap:type=general").unwrap();
-        let cap2 = CapCard::from_string("cap:action=generate").unwrap();
-        let cap3 = CapCard::from_string("cap:action=*;ext=pdf").unwrap();
+        let cap1 = CapUrn::from_string("cap:type=general").unwrap();
+        let cap2 = CapUrn::from_string("cap:action=generate").unwrap();
+        let cap3 = CapUrn::from_string("cap:action=*;ext=pdf").unwrap();
         
         assert_eq!(cap1.specificity(), 1);
         assert_eq!(cap2.specificity(), 1);
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_builder() {
-        let cap = CapCardBuilder::new()
+        let cap = CapUrnBuilder::new()
             
             .tag("action", "generate")
             .tag("target", "thumbnail")
@@ -519,16 +519,16 @@ mod tests {
 
     #[test]
     fn test_compatibility() {
-        let cap1 = CapCard::from_string("cap:action=generate;ext=pdf").unwrap();
-        let cap2 = CapCard::from_string("cap:action=generate;format=*").unwrap();
-        let cap3 = CapCard::from_string("cap:type=image;action=extract").unwrap();
+        let cap1 = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
+        let cap2 = CapUrn::from_string("cap:action=generate;format=*").unwrap();
+        let cap3 = CapUrn::from_string("cap:type=image;action=extract").unwrap();
         
         assert!(cap1.is_compatible_with(&cap2));
         assert!(cap2.is_compatible_with(&cap1));
         assert!(!cap1.is_compatible_with(&cap3));
         
         // Missing tags are treated as wildcards for compatibility
-        let cap4 = CapCard::from_string("cap:action=generate").unwrap();
+        let cap4 = CapUrn::from_string("cap:action=generate").unwrap();
         assert!(cap1.is_compatible_with(&cap4));
         assert!(cap4.is_compatible_with(&cap1));
     }
@@ -536,12 +536,12 @@ mod tests {
     #[test]
     fn test_best_match() {
         let caps = vec![
-            CapCard::from_string("cap:action=*").unwrap(),
-            CapCard::from_string("cap:action=generate").unwrap(),
-            CapCard::from_string("cap:action=generate;ext=pdf").unwrap(),
+            CapUrn::from_string("cap:action=*").unwrap(),
+            CapUrn::from_string("cap:action=generate").unwrap(),
+            CapUrn::from_string("cap:action=generate;ext=pdf").unwrap(),
         ];
         
-        let request = CapCard::from_string("cap:action=generate").unwrap();
+        let request = CapUrn::from_string("cap:action=generate").unwrap();
         let best = CapMatcher::find_best_match(&caps, &request).unwrap();
         
         // Most specific cap that can handle the request
@@ -550,8 +550,8 @@ mod tests {
 
     #[test]
     fn test_merge_and_subset() {
-        let cap1 = CapCard::from_string("cap:action=generate").unwrap();
-        let cap2 = CapCard::from_string("cap:ext=pdf;output=binary").unwrap();
+        let cap1 = CapUrn::from_string("cap:action=generate").unwrap();
+        let cap2 = CapUrn::from_string("cap:ext=pdf;output=binary").unwrap();
         
         let merged = cap1.merge(&cap2);
         assert_eq!(merged.to_string(), "cap:action=generate;ext=pdf;output=binary");
@@ -562,14 +562,14 @@ mod tests {
 
     #[test]
     fn test_wildcard_tag() {
-        let cap = CapCard::from_string("cap:ext=pdf").unwrap();
+        let cap = CapUrn::from_string("cap:ext=pdf").unwrap();
         let wildcarded = cap.clone().with_wildcard_tag("ext");
         
         assert_eq!(wildcarded.to_string(), "cap:ext=*");
         
         // Test that wildcarded cap can match more requests
-        let request = CapCard::from_string("cap:ext=jpg").unwrap();
+        let request = CapUrn::from_string("cap:ext=jpg").unwrap();
         assert!(!cap.matches(&request));
-        assert!(wildcarded.matches(&CapCard::from_string("cap:ext=*").unwrap()));
+        assert!(wildcarded.matches(&CapUrn::from_string("cap:ext=*").unwrap()));
     }
 }

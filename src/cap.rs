@@ -4,7 +4,7 @@
 //! the cap identifier, versioning, and metadata. Caps are general-purpose
 //! and do not assume any specific domain like files or documents.
 
-use crate::cap_card::CapCard;
+use crate::cap_urn::CapUrn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -186,7 +186,7 @@ impl CapOutput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cap {
     /// Formal cap identifier with hierarchical naming
-    pub id: CapCard,
+    pub id: CapUrn,
     
     /// Cap version
     pub version: String,
@@ -389,7 +389,7 @@ impl CapArguments {
 
 impl Cap {
     /// Create a new cap
-    pub fn new(id: CapCard, version: String, command: String) -> Self {
+    pub fn new(id: CapUrn, version: String, command: String) -> Self {
         Self {
             id,
             version,
@@ -403,7 +403,7 @@ impl Cap {
     }
 
     /// Create a new cap with description
-    pub fn with_description(id: CapCard, version: String, command: String, description: String) -> Self {
+    pub fn with_description(id: CapUrn, version: String, command: String, description: String) -> Self {
         Self {
             id,
             version,
@@ -418,7 +418,7 @@ impl Cap {
 
     /// Create a new cap with metadata
     pub fn with_metadata(
-        id: CapCard, 
+        id: CapUrn, 
         version: String,
         command: String,
         metadata: HashMap<String, String>
@@ -437,7 +437,7 @@ impl Cap {
 
     /// Create a new cap with description and metadata
     pub fn with_description_and_metadata(
-        id: CapCard,
+        id: CapUrn,
         version: String,
         command: String,
         description: String,
@@ -457,7 +457,7 @@ impl Cap {
     
     /// Create a new cap with arguments
     pub fn with_arguments(
-        id: CapCard,
+        id: CapUrn,
         version: String,
         command: String,
         arguments: CapArguments,
@@ -476,7 +476,7 @@ impl Cap {
     
     /// Create a new cap with command (deprecated - use new() instead)
     pub fn with_command(
-        id: CapCard,
+        id: CapUrn,
         version: String,
         command: String,
     ) -> Self {
@@ -485,7 +485,7 @@ impl Cap {
     
     /// Create a fully specified cap
     pub fn with_full_definition(
-        id: CapCard,
+        id: CapUrn,
         version: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
@@ -507,7 +507,7 @@ impl Cap {
     
     /// Check if this cap matches a request string
     pub fn matches_request(&self, request: &str) -> bool {
-        let request_id = CapCard::from_string(request).expect("Invalid cap identifier in request");
+        let request_id = CapUrn::from_string(request).expect("Invalid cap identifier in request");
         self.id.can_handle(&request_id)
     }
 
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_cap_creation() {
-        let id = CapCard::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
+        let id = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         assert_eq!(cap.id_string(), "cap:action=transform;format=json;type=data_processing");
@@ -602,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_cap_with_metadata() {
-        let id = CapCard::from_string("cap:action=arithmetic;type=compute;subtype=math").unwrap();
+        let id = CapUrn::from_string("cap:action=arithmetic;type=compute;subtype=math").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn test_cap_matching() {
-        let id = CapCard::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
+        let id = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         assert!(cap.matches_request("cap:action=transform;format=json;type=data_processing"));
@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_cap_accepts_stdin() {
-        let id = CapCard::from_string("cap:action=generate;target=embeddings").unwrap();
+        let id = CapUrn::from_string("cap:action=generate;target=embeddings").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "generate".to_string());
         
         // By default, caps should not accept stdin
