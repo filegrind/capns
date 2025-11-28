@@ -98,7 +98,7 @@ Core implementation with full feature set.
 use capdef::{CapCard, Cap, CapCardBuilder};
 
 // Create cap card
-let key = CapCard::from_string("action=extract;target=metadata;")?;
+let key = CapCard::from_string("cap:action=extract;target=metadata;")?;
 
 // Build cap card with builder pattern
 let key = CapCardBuilder::new()
@@ -119,7 +119,7 @@ Feature-complete Go implementation.
 import "github.com/fmio/capdef-go"
 
 // Create cap card
-key, err := capdef.NewCapCardFromString("action=extract;target=metadata;")
+key, err := capdef.NewCapCardFromString("cap:action=extract;target=metadata;")
 
 // Build with builder pattern
 key, err = capdef.NewCapCardBuilder().
@@ -142,7 +142,7 @@ Native Objective-C/Swift implementation for Apple platforms.
 
 // Create cap card
 NSError *error;
-CSCapCard *key = [CSCapCard fromString:@"action=extract;target=metadata;" 
+CSCapCard *key = [CSCapCard fromString:@"cap:action=extract;target=metadata;" 
                                              error:&error];
 
 // Build with builder pattern
@@ -164,7 +164,7 @@ CSCap *cap = [CSCap capWithId:key
 
 ```rust
 // Check if cap can handle request
-let cap_card = CapCard::from_string("action=extract;target=metadata;ext=pdf")?;
+let cap_card = CapCard::from_string("cap:action=extract;target=metadata;ext=pdf")?;
 let request_key = CapCard::from_string("action=extract;")?;
 
 if cap_card.can_handle(&request_key) {
@@ -176,7 +176,7 @@ if cap_card.can_handle(&request_key) {
 
 ```rust
 let general = CapCard::from_string("action=extract;")?;
-let specific = CapCard::from_string("action=extract;ext=pdf")?;
+let specific = CapCard::from_string("cap:action=extract;ext=pdf")?;
 
 if specific.is_more_specific_than(&general) {
     println!("Specific cap preferred");
@@ -251,7 +251,7 @@ let cap = extract_metadata_cap();
 provider_registry.register_cap("pdf-provider", cap);
 
 // Find best provider for cap
-let caller = provider_registry.can("action=extract;target=metadata;ext=pdf")?;
+let caller = provider_registry.can("cap:action=extract;target=metadata;ext=pdf")?;
 let result = caller.call(args).await?;
 ```
 
@@ -267,7 +267,7 @@ let cap = extract_metadata_cap();
 
 // Customize for specific file type
 let mut pdf_cap = cap.clone();
-pdf_cap.id = CapCard::from_string("action=extract;target=metadata;ext=pdf")?;
+pdf_cap.id = CapCard::from_string("cap:action=extract;target=metadata;ext=pdf")?;
 ```
 
 ## Validation

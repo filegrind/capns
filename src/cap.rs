@@ -592,17 +592,17 @@ mod tests {
 
     #[test]
     fn test_cap_creation() {
-        let id = CapCard::from_string("action=transform;format=json;type=data_processing").unwrap();
+        let id = CapCard::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        assert_eq!(cap.id_string(), "action=transform;format=json;type=data_processing");
+        assert_eq!(cap.id_string(), "cap:action=transform;format=json;type=data_processing");
         assert_eq!(cap.version, "1.0.0");
         assert!(cap.metadata.is_empty());
     }
 
     #[test]
     fn test_cap_with_metadata() {
-        let id = CapCard::from_string("action=arithmetic;type=compute;subtype=math").unwrap();
+        let id = CapCard::from_string("cap:action=arithmetic;type=compute;subtype=math").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
@@ -617,18 +617,18 @@ mod tests {
 
     #[test]
     fn test_cap_matching() {
-        let id = CapCard::from_string("action=transform;format=json;type=data_processing").unwrap();
+        let id = CapCard::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
-        assert!(cap.matches_request("action=transform;format=json;type=data_processing"));
-        assert!(cap.matches_request("action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
-        assert!(cap.matches_request("type=data_processing")); // Request is subset, cap has all required tags
-        assert!(!cap.matches_request("type=compute"));
+        assert!(cap.matches_request("cap:action=transform;format=json;type=data_processing"));
+        assert!(cap.matches_request("cap:action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
+        assert!(cap.matches_request("cap:type=data_processing")); // Request is subset, cap has all required tags
+        assert!(!cap.matches_request("cap:type=compute"));
     }
 
     #[test]
     fn test_cap_accepts_stdin() {
-        let id = CapCard::from_string("action=generate;target=embeddings").unwrap();
+        let id = CapCard::from_string("cap:action=generate;target=embeddings").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "generate".to_string());
         
         // By default, caps should not accept stdin

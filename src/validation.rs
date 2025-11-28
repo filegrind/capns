@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_input_validation_success() {
-        let id = CapCard::from_string("type=test;action=cap").unwrap();
+        let id = CapCard::from_string("cap:type=test;action=cap").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
@@ -601,7 +601,7 @@ mod tests {
     
     #[test]
     fn test_input_validation_missing_required() {
-        let id = CapCard::from_string("type=test;action=cap").unwrap();
+        let id = CapCard::from_string("cap:type=test;action=cap").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
@@ -628,7 +628,7 @@ mod tests {
     
     #[test]
     fn test_input_validation_wrong_type() {
-        let id = CapCard::from_string("type=test;action=cap").unwrap();
+        let id = CapCard::from_string("cap:type=test;action=cap").unwrap();
         let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
