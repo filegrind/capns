@@ -2,7 +2,7 @@
 name = "capns"
 version = "0.1.0"
 edition = "2021"
-description = "Core cap identifier and definition system for FMIO plugins"
+description = "Core cap URN and definition system for FMIO plugins"
 authors = ["FMIO Team"]
 
 [dependencies]

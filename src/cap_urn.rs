@@ -1,6 +1,6 @@
 //! Flat Tag-Based Cap Identifier System
 //!
-//! This module provides a flat, tag-based cap identifier system that replaces
+//! This module provides a flat, tag-based cap URN system that replaces
 //! hierarchical naming with key-value tags to handle cross-cutting concerns and
 //! multi-dimensional cap classification.
 
@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-/// A cap identifier using flat, ordered tags
+/// A cap URN using flat, ordered tags
 ///
 /// Examples:
 /// - `action=generate;ext=pdf;output=binary;target=thumbnail;`
@@ -22,19 +22,19 @@ pub struct CapUrn {
 }
 
 impl CapUrn {
-    /// Create a new cap identifier from tags
+    /// Create a new cap URN from tags
     pub fn new(tags: BTreeMap<String, String>) -> Self {
         Self { tags }
     }
 
-    /// Create an empty cap identifier
+    /// Create an empty cap URN
     pub fn empty() -> Self {
         Self {
             tags: BTreeMap::new(),
         }
     }
 
-    /// Create a cap identifier from a string representation
+    /// Create a cap URN from a string representation
     ///
     /// Format: `cap:key1=value1;key2=value2;...`
     /// The "cap:" prefix is mandatory
@@ -99,7 +99,7 @@ impl CapUrn {
         s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '*')
     }
 
-    /// Get the canonical string representation of this cap identifier
+    /// Get the canonical string representation of this cap URN
     ///
     /// Always includes "cap:" prefix
     /// Tags are already sorted alphabetically due to BTreeMap
@@ -173,7 +173,7 @@ impl CapUrn {
 
     /// Check if this cap can handle a request
     ///
-    /// This is used when a request comes in with a cap identifier
+    /// This is used when a request comes in with a cap URN
     /// and we need to see if this cap can fulfill it
     pub fn can_handle(&self, request: &CapUrn) -> bool {
         self.matches(request)
@@ -257,7 +257,7 @@ impl CapUrn {
     }
 }
 
-/// Errors that can occur when parsing cap identifiers
+/// Errors that can occur when parsing cap URNs
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CapUrnError {
     Empty,

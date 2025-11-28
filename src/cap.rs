@@ -1,7 +1,7 @@
 //! Formal cap definition
 //!
 //! This module defines the structure for formal cap definitions that include
-//! the cap identifier, versioning, and metadata. Caps are general-purpose
+//! the cap URN, versioning, and metadata. Caps are general-purpose
 //! and do not assume any specific domain like files or documents.
 
 use crate::cap_urn::CapUrn;
@@ -185,7 +185,7 @@ impl CapOutput {
 /// Formal cap definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cap {
-    /// Formal cap identifier with hierarchical naming
+    /// Formal cap URN with hierarchical naming
     pub id: CapUrn,
     
     /// Cap version
@@ -507,11 +507,11 @@ impl Cap {
     
     /// Check if this cap matches a request string
     pub fn matches_request(&self, request: &str) -> bool {
-        let request_id = CapUrn::from_string(request).expect("Invalid cap identifier in request");
+        let request_id = CapUrn::from_string(request).expect("Invalid cap URN in request");
         self.id.can_handle(&request_id)
     }
 
-    /// Get the cap identifier as a string
+    /// Get the cap URN as a string
     pub fn id_string(&self) -> String {
         self.id.to_string()
     }

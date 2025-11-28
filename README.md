@@ -1,6 +1,6 @@
 # CapNs - Cap Definition System
 
-A cap identifier and definition system for plugin architectures, supporting tag-based cap matching with wildcard patterns and specificity comparison.
+A cap URN and definition system for plugin architectures, supporting tag-based cap matching with wildcard patterns and specificity comparison.
 
 ## Overview
 
@@ -59,7 +59,7 @@ pub struct Cap {
 ```
 
 **Key Fields:**
-- `id` - The cap identifier using tag-based format
+- `id` - The cap URN using tag-based format
 - `command` - CLI command or method name for execution
 - `arguments` - Required and optional argument definitions with validation
 - `output` - Output schema and type information

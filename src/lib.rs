@@ -1,6 +1,6 @@
-//! Cap SDK - Core cap identifier and definition system
+//! Cap SDK - Core cap URN and definition system
 //!
-//! This library provides the fundamental cap identifier system used across
+//! This library provides the fundamental cap URN system used across
 //! all FMIO plugins and providers. It defines the formal structure for cap
 //! identifiers with flat tag-based naming, wildcard support, and specificity comparison.
 
