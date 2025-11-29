@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  URN: {}", cap.urn_string());
             println!("  Version: {}", cap.version);
             println!("  Command: {}", cap.command);
-            println!("  Description: {}", cap.description.as_ref().unwrap_or(&"None".to_string()));
+            println!("  Description: {}", cap.cap_description.as_ref().unwrap_or(&"None".to_string()));
             println!("  Accepts Stdin: {}", cap.accepts_stdin);
             
             if !cap.arguments.required.is_empty() {
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             
             if let Some(output) = &cap.output {
-                println!("  Output: {:?} - {}", output.output_type, output.description);
+                println!("  Output: {:?} - {}", output.output_type, output.output_description);
             }
         },
         Err(e) => {

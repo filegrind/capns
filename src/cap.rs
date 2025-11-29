@@ -48,10 +48,9 @@ pub struct ArgumentValidation {
 pub struct CapArgument {
     pub name: String,
     
-    #[serde(alias = "arg_type", rename = "type")]
     pub arg_type: ArgumentType,
     
-    pub description: String,
+    pub arg_description: String,
     
     #[serde(rename = "cli_flag")]
     pub cli_flag: String,
@@ -63,7 +62,7 @@ pub struct CapArgument {
     pub validation: ArgumentValidation,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub default: Option<serde_json::Value>,
+    pub default_value: Option<serde_json::Value>,
 }
 
 impl ArgumentValidation {
@@ -104,7 +103,6 @@ pub enum OutputType {
 /// Output definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapOutput {
-    #[serde(alias = "output_type", rename = "type")]
     pub output_type: OutputType,
     
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -116,7 +114,7 @@ pub struct CapOutput {
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
     pub validation: ArgumentValidation,
     
-    pub description: String,
+    pub output_description: String,
 }
 
 impl CapOutput {
@@ -124,7 +122,7 @@ impl CapOutput {
     pub fn new(output_type: OutputType, description: String) -> Self {
         Self {
             output_type,
-            description,
+            output_description: description,
             schema_ref: None,
             content_type: None,
             validation: ArgumentValidation::default(),
@@ -135,7 +133,7 @@ impl CapOutput {
     pub fn with_content_type(output_type: OutputType, description: String, content_type: String) -> Self {
         Self {
             output_type,
-            description,
+            output_description: description,
             content_type: Some(content_type),
             schema_ref: None,
             validation: ArgumentValidation::default(),
@@ -146,7 +144,7 @@ impl CapOutput {
     pub fn with_schema(output_type: OutputType, description: String, schema_ref: String) -> Self {
         Self {
             output_type,
-            description,
+            output_description: description,
             schema_ref: Some(schema_ref),
             content_type: None,
             validation: ArgumentValidation::default(),
@@ -157,7 +155,7 @@ impl CapOutput {
     pub fn with_validation(output_type: OutputType, description: String, validation: ArgumentValidation) -> Self {
         Self {
             output_type,
-            description,
+            output_description: description,
             validation,
             schema_ref: None,
             content_type: None,
@@ -174,7 +172,7 @@ impl CapOutput {
     ) -> Self {
         Self {
             output_type,
-            description,
+            output_description: description,
             schema_ref,
             content_type,
             validation,
@@ -184,7 +182,6 @@ impl CapOutput {
 
 /// Formal cap definition
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "lowercase")]
 pub struct Cap {
     /// Formal cap URN with hierarchical naming
     pub urn: CapUrn,
@@ -194,7 +191,7 @@ pub struct Cap {
     
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    pub cap_description: Option<String>,
     
     /// Optional metadata as key-value pairs
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
@@ -226,7 +223,7 @@ impl<'de> Deserialize<'de> for Cap {
         struct CapRegistry {
             urn: serde_json::Value,  // Can be either string or object
             version: String,
-            description: Option<String>,
+            cap_description: Option<String>,
             #[serde(default)]
             metadata: HashMap<String, String>,
             command: String,
@@ -263,7 +260,7 @@ impl<'de> Deserialize<'de> for Cap {
         Ok(Cap {
             urn,
             version: registry_cap.version,
-            description: registry_cap.description,
+            cap_description: registry_cap.cap_description,
             metadata: registry_cap.metadata,
             command: registry_cap.command,
             arguments: registry_cap.arguments,
@@ -279,11 +276,11 @@ impl CapArgument {
         Self {
             name,
             arg_type,
-            description,
+            arg_description: description,
             cli_flag,
             position: None,
             validation: ArgumentValidation::default(),
-            default: None,
+            default_value: None,
         }
     }
     
@@ -297,11 +294,11 @@ impl CapArgument {
         Self {
             name,
             arg_type,
-            description,
+            arg_description: description,
             cli_flag,
             position: Some(position),
             validation: ArgumentValidation::default(),
-            default: None,
+            default_value: None,
         }
     }
     
@@ -310,11 +307,11 @@ impl CapArgument {
         Self {
             name,
             arg_type,
-            description,
+            arg_description: description,
             cli_flag,
             position: None,
             validation,
-            default: None,
+            default_value: None,
         }
     }
     
@@ -323,11 +320,11 @@ impl CapArgument {
         Self {
             name,
             arg_type,
-            description,
+            arg_description: description,
             cli_flag,
             position: None,
             validation: ArgumentValidation::default(),
-            default: Some(default),
+            default_value: Some(default),
         }
     }
     
@@ -344,11 +341,11 @@ impl CapArgument {
         Self {
             name,
             arg_type,
-            description,
+            arg_description: description,
             cli_flag,
             position,
             validation,
-            default,
+            default_value: default,
         }
     }
 }
@@ -451,7 +448,7 @@ impl Cap {
         Self {
             urn,
             version,
-            description: None,
+            cap_description: None,
             metadata: HashMap::new(),
             command,
             arguments: CapArguments::new(),
@@ -465,7 +462,7 @@ impl Cap {
         Self {
             urn,
             version,
-            description: Some(description),
+            cap_description: Some(description),
             metadata: HashMap::new(),
             command,
             arguments: CapArguments::new(),
@@ -484,7 +481,7 @@ impl Cap {
         Self {
             urn,
             version,
-            description: None,
+            cap_description: None,
             metadata,
             command,
             arguments: CapArguments::new(),
@@ -504,7 +501,7 @@ impl Cap {
         Self {
             urn,
             version,
-            description: Some(description),
+            cap_description: Some(description),
             metadata,
             command,
             arguments: CapArguments::new(),
@@ -523,7 +520,7 @@ impl Cap {
         Self {
             urn,
             version,
-            description: None,
+            cap_description: None,
             metadata: HashMap::new(),
             command,
             arguments,
@@ -554,7 +551,7 @@ impl Cap {
         Self {
             urn,
             version,
-            description,
+            cap_description: description,
             metadata,
             command,
             arguments,

@@ -465,7 +465,7 @@ impl CapValidator {
         
         // Validate that required arguments don't have default values
         for arg in &cap.arguments.required {
-            if arg.default.is_some() {
+            if arg.default_value.is_some() {
                 return Err(ValidationError::InvalidCapSchema {
                     cap_urn: cap_urn.clone(),
                     issue: format!("Required argument '{}' cannot have a default value", arg.name),

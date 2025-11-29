@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  URN: {}", cap.urn_string());
     println!("  Version: {}", cap.version);
     println!("  Command: {}", cap.command);
-    if let Some(desc) = &cap.description {
+    if let Some(desc) = &cap.cap_description {
         println!("  Description: {}", desc);
     }
     
