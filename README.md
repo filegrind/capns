@@ -153,7 +153,7 @@ CSCapUrn *key = [[[[builder action:@"extract"]
                          build];
 
 // Create cap
-CSCap *cap = [CSCap capWithId:key
+CSCap *cap = [CSCap capWithUrn:key
                                                   version:@"1.0.0"
                                                   command:@"extract-metadata"];
 ```
@@ -267,7 +267,7 @@ let cap = extract_metadata_cap();
 
 // Customize for specific file type
 let mut pdf_cap = cap.clone();
-pdf_cap.id = CapUrn::from_string("cap:action=extract;target=metadata;ext=pdf")?;
+pdf_cap.urn = CapUrn::from_string("cap:action=extract;target=metadata;ext=pdf")?;
 ```
 
 ## Validation

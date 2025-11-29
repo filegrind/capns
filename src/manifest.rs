@@ -69,8 +69,8 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_creation() {
-        let id = CapUrn::from_string("cap:action=extract;target=metadata;").unwrap();
-        let cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
+        let urn = CapUrn::from_string("cap:action=extract;target=metadata;").unwrap();
+        let cap = Cap::new(urn, "1.0.0".to_string(), "extract-metadata".to_string());
         
         let manifest = CapManifest::new(
             "TestComponent".to_string(),
@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_with_author() {
-        let id = CapUrn::from_string("cap:action=extract;target=metadata;").unwrap();
-        let cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
+        let urn = CapUrn::from_string("cap:action=extract;target=metadata;").unwrap();
+        let cap = Cap::new(urn, "1.0.0".to_string(), "extract-metadata".to_string());
         
         let manifest = CapManifest::new(
             "TestComponent".to_string(),
@@ -103,8 +103,8 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_json_serialization() {
-        let id = CapUrn::from_string("cap:action=extract;target=metadata;").unwrap();
-        let mut cap = Cap::new(id, "1.0.0".to_string(), "extract-metadata".to_string());
+        let urn = CapUrn::from_string("cap:action=extract;target=metadata;").unwrap();
+        let mut cap = Cap::new(urn, "1.0.0".to_string(), "extract-metadata".to_string());
         cap.accepts_stdin = true;
         
         let manifest = CapManifest::new(
@@ -161,8 +161,8 @@ mod tests {
         );
         
         assert_eq!(manifest.caps.len(), 2);
-        assert_eq!(manifest.caps[0].id_string(), "cap:action=extract;target=metadata");
-        assert_eq!(manifest.caps[1].id_string(), "cap:action=extract;target=outline");
+        assert_eq!(manifest.caps[0].urn_string(), "cap:action=extract;target=metadata");
+        assert_eq!(manifest.caps[1].urn_string(), "cap:action=extract;target=outline");
         assert!(manifest.caps[1].has_metadata("supports_outline"));
     }
 
@@ -185,8 +185,8 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_optional_author_field() {
-        let id = CapUrn::from_string("cap:action=validate;type=file").unwrap();
-        let cap = Cap::new(id, "1.0.0".to_string(), "validate".to_string());
+        let urn = CapUrn::from_string("cap:action=validate;type=file").unwrap();
+        let cap = Cap::new(urn, "1.0.0".to_string(), "validate".to_string());
         
         let manifest_without_author = CapManifest::new(
             "ValidatorComponent".to_string(),
@@ -222,8 +222,8 @@ mod tests {
             }
         }
         
-        let id = CapUrn::from_string("cap:action=test;type=component").unwrap();
-        let cap = Cap::new(id, "1.0.0".to_string(), "test".to_string());
+        let urn = CapUrn::from_string("cap:action=test;type=component").unwrap();
+        let cap = Cap::new(urn, "1.0.0".to_string(), "test".to_string());
         
         let component = TestComponent {
             name: "TestImpl".to_string(),
@@ -235,6 +235,6 @@ mod tests {
         
         let caps = component.caps();
         assert_eq!(caps.len(), 1);
-        assert_eq!(caps[0].id_string(), "cap:action=test;type=component");
+        assert_eq!(caps[0].urn_string(), "cap:action=test;type=component");
     }
 }

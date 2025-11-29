@@ -115,7 +115,7 @@ impl InputValidator {
         cap: &Cap,
         arguments: &[Value],
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         let args = &cap.arguments;
         
         // Check if too many arguments provided
@@ -157,7 +157,7 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         
         // Type validation
         Self::validate_argument_type(cap, arg_def, value)?;
@@ -173,7 +173,7 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         let actual_type = Self::get_json_type_name(value);
         
         let type_matches = match (&arg_def.arg_type, value) {
@@ -205,7 +205,7 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         let validation = &arg_def.validation;
         
         // Numeric validation
@@ -322,7 +322,7 @@ impl OutputValidator {
         cap: &Cap,
         output: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         
         let output_def = cap.get_output()
             .ok_or_else(|| ValidationError::InvalidCapSchema {
@@ -344,7 +344,7 @@ impl OutputValidator {
         output_def: &CapOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         let actual_type = InputValidator::get_json_type_name(value);
         
         let type_matches = match (&output_def.output_type, value) {
@@ -375,7 +375,7 @@ impl OutputValidator {
         output_def: &CapOutput,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         let validation = &output_def.validation;
         
         // Apply same validation rules as arguments
@@ -463,7 +463,7 @@ pub struct CapValidator;
 impl CapValidator {
     /// Validate a cap definition itself
     pub fn validate_cap(cap: &Cap) -> Result<(), ValidationError> {
-        let cap_urn = cap.id_string();
+        let cap_urn = cap.urn_string();
         
         // Validate that required arguments don't have default values
         for arg in &cap.arguments.required {
@@ -521,11 +521,11 @@ impl SchemaValidator {
 
     /// Register a cap schema for validation
     pub fn register_cap(&mut self, cap: Cap) {
-        let id = cap.id_string();
-        self.caps.insert(id, cap);
+        let urn = cap.urn_string();
+        self.caps.insert(urn, cap);
     }
 
-    /// Get a cap by ID
+    /// Get a cap by URN
     pub fn get_cap(&self, cap_urn: &str) -> Option<&Cap> {
         self.caps.get(cap_urn)
     }
@@ -581,8 +581,8 @@ mod tests {
 
     #[test]
     fn test_input_validation_success() {
-        let id = CapUrn::from_string("cap:type=test;action=cap").unwrap();
-        let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
+        let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
+        let mut cap = Cap::new(urn, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
@@ -601,8 +601,8 @@ mod tests {
     
     #[test]
     fn test_input_validation_missing_required() {
-        let id = CapUrn::from_string("cap:type=test;action=cap").unwrap();
-        let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
+        let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
+        let mut cap = Cap::new(urn, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
@@ -628,8 +628,8 @@ mod tests {
     
     #[test]
     fn test_input_validation_wrong_type() {
-        let id = CapUrn::from_string("cap:type=test;action=cap").unwrap();
-        let mut cap = Cap::new(id, "1.0.0".to_string(), "test-command".to_string());
+        let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
+        let mut cap = Cap::new(urn, "1.0.0".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
