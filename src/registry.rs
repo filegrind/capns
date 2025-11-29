@@ -1,8 +1,10 @@
 use crate::Cap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const REGISTRY_BASE_URL: &str = "https://capns.org";
@@ -29,20 +31,34 @@ impl CacheEntry {
 pub struct CapRegistry {
     client: reqwest::Client,
     cache_dir: PathBuf,
+    cached_caps: Arc<Mutex<HashMap<String, Cap>>>,
 }
 
 impl CapRegistry {
-    /// Get a cap from registry or cache. Never returns None - either returns a Cap or an error.
+    /// Get a cap from in-memory cache or fetch from registry
     pub async fn get_cap(&self, urn: &str) -> Result<Cap, RegistryError> {
-        // Try cache first
-        match self.load_from_cache(urn) {
-            Ok(cap) => return Ok(cap),
-            Err(RegistryError::NotFound(_)) => {
-                // Cache miss or expired, fetch from registry
-                return self.fetch_from_registry(urn).await;
-            },
-            Err(e) => return Err(e), // Other cache errors are real errors
+        // Check in-memory cache first
+        {
+            let cached_caps = self.cached_caps.lock().map_err(|e| {
+                RegistryError::CacheError(format!("Failed to lock cache: {}", e))
+            })?;
+            if let Some(cap) = cached_caps.get(urn) {
+                return Ok(cap.clone());
+            }
         }
+        
+        // Not in cache, fetch from registry and update in-memory cache
+        let cap = self.fetch_from_registry(urn).await?;
+        
+        // Update in-memory cache
+        {
+            let mut cached_caps = self.cached_caps.lock().map_err(|e| {
+                RegistryError::CacheError(format!("Failed to lock cache for update: {}", e))
+            })?;
+            cached_caps.insert(urn.to_string(), cap.clone());
+        }
+        
+        Ok(cap)
     }
 
     /// Get multiple caps at once - fails if any cap is not available
@@ -54,34 +70,12 @@ impl CapRegistry {
         Ok(caps)
     }
 
-    /// Get all currently cached caps
+    /// Get all currently cached caps from in-memory cache
     pub async fn get_cached_caps(&self) -> Result<Vec<Cap>, RegistryError> {
-        let mut caps = Vec::new();
-        if !self.cache_dir.exists() {
-            return Ok(caps);
-        }
-        
-        for entry in fs::read_dir(&self.cache_dir).map_err(|e| {
-            RegistryError::CacheError(format!("Failed to read cache directory: {}", e))
-        })? {
-            let entry = entry.map_err(|e| {
-                RegistryError::CacheError(format!("Failed to read cache entry: {}", e))
-            })?;
-            
-            if let Some(extension) = entry.path().extension() {
-                if extension == "json" {
-                    if let Some(stem) = entry.path().file_stem() {
-                        if let Some(filename) = stem.to_str() {
-                            // Try to load each cached cap, skip expired ones silently
-                            if let Ok(cap) = self.load_from_cache(&format!("cached-{}", filename)) {
-                                caps.push(cap);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Ok(caps)
+        let cached_caps = self.cached_caps.lock().map_err(|e| {
+            RegistryError::CacheError(format!("Failed to lock cache: {}", e))
+        })?;
+        Ok(cached_caps.values().cloned().collect())
     }
 
     pub fn new() -> Result<Self, RegistryError> {
@@ -97,7 +91,11 @@ impl CapRegistry {
                 RegistryError::HttpError(format!("Failed to create HTTP client: {}", e))
             })?;
 
-        Ok(Self { client, cache_dir })
+        // Load all cached caps into memory
+        let cached_caps_map = Self::load_all_cached_caps(&cache_dir)?;
+        let cached_caps = Arc::new(Mutex::new(cached_caps_map));
+
+        Ok(Self { client, cache_dir, cached_caps })
     }
 
     fn get_cache_dir() -> Result<PathBuf, RegistryError> {
@@ -119,25 +117,43 @@ impl CapRegistry {
         self.cache_dir.join(format!("{}.json", key))
     }
 
-    fn load_from_cache(&self, urn: &str) -> Result<Cap, RegistryError> {
-        let cache_file = self.cache_file_path(urn);
-        if !cache_file.exists() {
-            return Err(RegistryError::NotFound(format!("Cap '{}' not found in cache", urn)));
-        }
-
-        let content = fs::read_to_string(&cache_file)
-            .map_err(|e| RegistryError::CacheError(format!("Failed to read cache file: {}", e)))?;
+    fn load_all_cached_caps(cache_dir: &PathBuf) -> Result<HashMap<String, Cap>, RegistryError> {
+        let mut caps = HashMap::new();
         
-        let cache_entry: CacheEntry = serde_json::from_str(&content)
-            .map_err(|e| RegistryError::CacheError(format!("Failed to parse cache file: {}", e)))?;
-
-        if cache_entry.is_expired() {
-            fs::remove_file(&cache_file)
-                .map_err(|e| RegistryError::CacheError(format!("Failed to remove expired cache file: {}", e)))?;
-            return Err(RegistryError::NotFound(format!("Cached cap '{}' has expired", urn)));
+        if !cache_dir.exists() {
+            return Ok(caps);
         }
+        
+        for entry in fs::read_dir(cache_dir).map_err(|e| {
+            RegistryError::CacheError(format!("Failed to read cache directory: {}", e))
+        })? {
+            let entry = entry.map_err(|e| {
+                RegistryError::CacheError(format!("Failed to read cache entry: {}", e))
+            })?;
+            
+            let path = entry.path();
+            if let Some(extension) = path.extension() {
+                if extension == "json" {
+                    let content = fs::read_to_string(&path)
+                        .map_err(|e| RegistryError::CacheError(format!("Failed to read cache file {:?}: {}", path, e)))?;
+                    
+                    let cache_entry: CacheEntry = serde_json::from_str(&content)
+                        .map_err(|e| RegistryError::CacheError(format!("Failed to parse cache file {:?}: {}", path, e)))?;
 
-        Ok(cache_entry.definition)
+                    if cache_entry.is_expired() {
+                        // Remove expired cache file
+                        fs::remove_file(&path)
+                            .map_err(|e| RegistryError::CacheError(format!("Failed to remove expired cache file {:?}: {}", path, e)))?;
+                        continue;
+                    }
+
+                    let urn = cache_entry.definition.urn_string();
+                    caps.insert(urn, cache_entry.definition);
+                }
+            }
+        }
+        
+        Ok(caps)
     }
 
     fn save_to_cache(&self, cap: &Cap) -> Result<(), RegistryError> {
@@ -219,9 +235,18 @@ impl CapRegistry {
     }
 
     pub fn clear_cache(&self) -> Result<(), RegistryError> {
+        // Clear in-memory cache
+        {
+            let mut cached_caps = self.cached_caps.lock().map_err(|e| {
+                RegistryError::CacheError(format!("Failed to lock cache for clearing: {}", e))
+            })?;
+            cached_caps.clear();
+        }
+        
+        // Clear filesystem cache
         if self.cache_dir.exists() {
             fs::remove_dir_all(&self.cache_dir)
-                .map_err(|e| RegistryError::CacheError(format!("Failed to clear cache: {}", e)))?;
+                .map_err(|e| RegistryError::CacheError(format!("Failed to clear cache directory: {}", e)))?;
             fs::create_dir_all(&self.cache_dir).map_err(|e| {
                 RegistryError::CacheError(format!("Failed to recreate cache directory: {}", e))
             })?;
