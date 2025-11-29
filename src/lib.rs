@@ -8,8 +8,10 @@ pub mod cap_urn;
 pub mod cap;
 pub mod manifest;
 pub mod validation;
+pub mod registry;
 
 pub use cap_urn::*;
 pub use cap::*;
 pub use manifest::*;
 pub use validation::*;
+pub use registry::*;

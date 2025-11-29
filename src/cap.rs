@@ -5,7 +5,7 @@
 //! and do not assume any specific domain like files or documents.
 
 use crate::cap_urn::CapUrn;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 /// Argument type enumeration
@@ -48,7 +48,7 @@ pub struct ArgumentValidation {
 pub struct CapArgument {
     pub name: String,
     
-    #[serde(rename = "type")]
+    #[serde(alias = "arg_type", rename = "type")]
     pub arg_type: ArgumentType,
     
     pub description: String,
@@ -104,7 +104,7 @@ pub enum OutputType {
 /// Output definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapOutput {
-    #[serde(rename = "type")]
+    #[serde(alias = "output_type", rename = "type")]
     pub output_type: OutputType,
     
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -183,7 +183,8 @@ impl CapOutput {
 }
 
 /// Formal cap definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub struct Cap {
     /// Formal cap URN with hierarchical naming
     pub urn: CapUrn,
@@ -213,6 +214,63 @@ pub struct Cap {
     /// Whether this cap accepts input via stdin
     #[serde(default)]
     pub accepts_stdin: bool,
+}
+
+// Custom deserializer to handle registry format where urn is an object
+impl<'de> Deserialize<'de> for Cap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct CapRegistry {
+            urn: serde_json::Value,  // Can be either string or object
+            version: String,
+            description: Option<String>,
+            #[serde(default)]
+            metadata: HashMap<String, String>,
+            command: String,
+            #[serde(default)]
+            arguments: CapArguments,
+            output: Option<CapOutput>,
+            #[serde(default)]
+            accepts_stdin: bool,
+        }
+
+        let registry_cap = CapRegistry::deserialize(deserializer)?;
+        
+        // Handle urn field - can be string or object with tags
+        let urn = match registry_cap.urn {
+            serde_json::Value::String(urn_str) => {
+                CapUrn::from_string(&urn_str).map_err(serde::de::Error::custom)?
+            },
+            serde_json::Value::Object(urn_obj) => {
+                if let Some(tags) = urn_obj.get("tags").and_then(|t| t.as_object()) {
+                    let mut urn_builder = crate::cap_urn::CapUrnBuilder::new();
+                    for (key, value) in tags {
+                        if let Some(val_str) = value.as_str() {
+                            urn_builder = urn_builder.tag(key, val_str);
+                        }
+                    }
+                    urn_builder.build().map_err(serde::de::Error::custom)?
+                } else {
+                    return Err(serde::de::Error::custom("Invalid urn object format"));
+                }
+            },
+            _ => return Err(serde::de::Error::custom("urn must be string or object")),
+        };
+
+        Ok(Cap {
+            urn,
+            version: registry_cap.version,
+            description: registry_cap.description,
+            metadata: registry_cap.metadata,
+            command: registry_cap.command,
+            arguments: registry_cap.arguments,
+            output: registry_cap.output,
+            accepts_stdin: registry_cap.accepts_stdin,
+        })
+    }
 }
 
 impl CapArgument {

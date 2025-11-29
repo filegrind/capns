@@ -157,8 +157,6 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        let cap_urn = cap.urn_string();
-        
         // Type validation
         Self::validate_argument_type(cap, arg_def, value)?;
         
@@ -652,4 +650,27 @@ mod tests {
             panic!("Expected InvalidArgumentType error");
         }
     }
+}
+
+/// Validate cap arguments against canonical definition
+pub async fn validate_cap_arguments(registry: &crate::registry::CapRegistry, cap_urn: &str, arguments: &[Value]) -> Result<(), ValidationError> {
+    let canonical_cap = registry.get_cap(cap_urn).await
+        .map_err(|_| ValidationError::UnknownCap { cap_urn: cap_urn.to_string() })?;
+    InputValidator::validate_arguments(&canonical_cap, arguments)
+}
+
+/// Validate cap output against canonical definition
+pub async fn validate_cap_output(registry: &crate::registry::CapRegistry, cap_urn: &str, output: &Value) -> Result<(), ValidationError> {
+    let canonical_cap = registry.get_cap(cap_urn).await
+        .map_err(|_| ValidationError::UnknownCap { cap_urn: cap_urn.to_string() })?;
+    OutputValidator::validate_output(&canonical_cap, output)
+}
+
+/// Validate that a local cap matches its canonical definition
+pub async fn validate_cap_canonical(registry: &crate::registry::CapRegistry, cap: &Cap) -> Result<(), ValidationError> {
+    registry.validate_cap(cap).await
+        .map_err(|e| ValidationError::InvalidCapSchema {
+            cap_urn: cap.urn_string(),
+            issue: e.to_string(),
+        })
 }
