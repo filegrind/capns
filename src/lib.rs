@@ -9,9 +9,11 @@ pub mod cap;
 pub mod manifest;
 pub mod validation;
 pub mod registry;
+pub mod standard;
 
 pub use cap_urn::*;
 pub use cap::*;
 pub use manifest::*;
 pub use validation::*;
 pub use registry::*;
+pub use standard::*;
