@@ -6,7 +6,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing registry cap parsing...");
     
     // Create a registry client
-    let registry = CapRegistry::new()?;
+    let registry = CapRegistry::new().await?;
     
     // Test with the problematic cap URN
     let cap_urn = "cap:action=bitlogic;language=en;type=constrained";

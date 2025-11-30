@@ -22,7 +22,7 @@ use capns::{CapRegistry, RegistryValidator};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simple: Get a ready-to-use cap
-    let registry = CapRegistry::new()?;
+    let registry = CapRegistry::new().await?;
     let cap = registry.get_cap("cap:action=extract;target=metadata").await?;
     println!("Got cap: {}", cap.urn_string());
     
@@ -247,7 +247,7 @@ int main() {
 ### Before (Complex)
 ```rust
 // Had to understand registry internals
-let registry = CapRegistry::new()?;
+let registry = CapRegistry::new().await?;
 let registry_def = registry.get_cap_definition(urn).await?;
 let cap = registry.create_cap_from_registry(urn).await?;
 ```
@@ -255,7 +255,7 @@ let cap = registry.create_cap_from_registry(urn).await?;
 ### After (Simple)
 ```rust
 // Just get the cap you need
-let registry = CapRegistry::new()?;
+let registry = CapRegistry::new().await?;
 let cap = registry.get_cap(urn).await?; // Ready to use!
 ```
 

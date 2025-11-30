@@ -1,4 +1,5 @@
 use crate::Cap;
+use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -9,6 +10,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const REGISTRY_BASE_URL: &str = "https://capns.org";
 const CACHE_DURATION_HOURS: u64 = 24;
+
+// Bundle standard capabilities at compile time
+static STANDARD_CAPS: Dir = include_dir!("$CARGO_MANIFEST_DIR/standard");
 
 /// Normalize a Cap URN for consistent lookups and caching
 /// This ensures that URNs with different tag ordering or trailing semicolons
@@ -69,6 +73,115 @@ pub struct CapRegistry {
 }
 
 impl CapRegistry {
+    /// Create a new CapRegistry with standard capabilities bundled
+    pub async fn new() -> Result<Self, RegistryError> {
+        let client = reqwest::Client::new();
+		let cache_dir = Self::get_cache_dir()?;
+		
+        fs::create_dir_all(&cache_dir).map_err(|e| {
+            RegistryError::CacheError(format!("Failed to create cache directory: {}", e))
+        })?;
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| {
+                RegistryError::HttpError(format!("Failed to create HTTP client: {}", e))
+            })?;
+
+        // Load all cached caps into memory
+        let cached_caps_map = Self::load_all_cached_caps(&cache_dir)?;
+        let cached_caps = Arc::new(Mutex::new(cached_caps_map));
+        
+        let registry = Self {
+            client,
+            cache_dir,
+            cached_caps,
+        };
+        
+        // Copy bundled standard capabilities to cache if they don't exist
+        registry.install_standard_caps().await?;
+        
+        Ok(registry)
+    }
+    
+    /// Install bundled standard capabilities to cache directory if they don't exist
+    async fn install_standard_caps(&self) -> Result<(), RegistryError> {
+        for file in STANDARD_CAPS.files() {
+            // Get filename without extension for URN construction
+            let filename = file.path().file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| RegistryError::CacheError(
+                    format!("Invalid filename: {:?}", file.path())
+                ))?;
+            
+            // Parse the JSON content to get the Cap definition
+            let content = file.contents_utf8()
+                .ok_or_else(|| RegistryError::CacheError(
+                    format!("File is not valid UTF-8: {:?}", file.path())
+                ))?;
+            
+            let cap: Cap = serde_json::from_str(content).map_err(|e| {
+                RegistryError::ParseError(format!("Failed to parse bundled cap {}: {}", filename, e))
+            })?;
+            
+            // Get normalized URN from the cap definition
+            let urn = cap.urn_string();
+            let normalized_urn = normalize_cap_urn(&urn);
+            
+            // Check if this capability is already cached
+            let cache_file = self.cache_file_path(&normalized_urn);
+            if !cache_file.exists() {
+                // Create cache entry with current timestamp
+                let cache_entry = CacheEntry {
+                    definition: cap.clone(),
+                    cached_at: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    ttl_hours: CACHE_DURATION_HOURS,
+                };
+                
+                let cache_content = serde_json::to_string_pretty(&cache_entry).map_err(|e| {
+                    RegistryError::CacheError(format!("Failed to serialize standard cap {}: {}", filename, e))
+                })?;
+                
+                fs::write(&cache_file, cache_content).map_err(|e| {
+                    RegistryError::CacheError(format!("Failed to write standard cap to cache {}: {}", filename, e))
+                })?;
+                
+                // Also add to in-memory cache
+                if let Ok(mut cached_caps) = self.cached_caps.lock() {
+                    cached_caps.insert(normalized_urn.clone(), cap);
+                }
+                
+                eprintln!("Installed standard capability: {}", normalized_urn);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get all bundled standard capabilities without network access
+    pub fn get_standard_caps(&self) -> Result<Vec<Cap>, RegistryError> {
+        let mut caps = Vec::new();
+        
+        for file in STANDARD_CAPS.files() {
+            let content = file.contents_utf8()
+                .ok_or_else(|| RegistryError::CacheError(
+                    format!("File is not valid UTF-8: {:?}", file.path())
+                ))?;
+            
+            let cap: Cap = serde_json::from_str(content).map_err(|e| {
+                RegistryError::ParseError(format!("Failed to parse bundled cap: {}", e))
+            })?;
+            
+            caps.push(cap);
+        }
+        
+        Ok(caps)
+    }
+
     /// Get a cap from in-memory cache or fetch from registry
     pub async fn get_cap(&self, urn: &str) -> Result<Cap, RegistryError> {
         let normalized_urn = normalize_cap_urn(urn);
@@ -112,26 +225,6 @@ impl CapRegistry {
             RegistryError::CacheError(format!("Failed to lock cache: {}", e))
         })?;
         Ok(cached_caps.values().cloned().collect())
-    }
-
-    pub fn new() -> Result<Self, RegistryError> {
-        let cache_dir = Self::get_cache_dir()?;
-        fs::create_dir_all(&cache_dir).map_err(|e| {
-            RegistryError::CacheError(format!("Failed to create cache directory: {}", e))
-        })?;
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|e| {
-                RegistryError::HttpError(format!("Failed to create HTTP client: {}", e))
-            })?;
-
-        // Load all cached caps into memory
-        let cached_caps_map = Self::load_all_cached_caps(&cache_dir)?;
-        let cached_caps = Arc::new(Mutex::new(cached_caps_map));
-
-        Ok(Self { client, cache_dir, cached_caps })
     }
 
     fn get_cache_dir() -> Result<PathBuf, RegistryError> {
@@ -319,13 +412,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_creation() {
-        let registry = CapRegistry::new().unwrap();
+        let registry = CapRegistry::new().await.unwrap();
         assert!(registry.cache_dir.exists());
     }
 
     #[tokio::test]
     async fn test_cache_key_generation() {
-        let registry = CapRegistry::new().unwrap();
+        let registry = CapRegistry::new().await.unwrap();
         let key1 = registry.cache_key("cap:action=extract;target=metadata");
         let key2 = registry.cache_key("cap:action=extract;target=metadata");
         let key3 = registry.cache_key("cap:action=different");
