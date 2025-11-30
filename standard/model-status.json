@@ -1,0 +1,55 @@
+{
+  "urn": {
+    "tags": {
+      "action": "status",
+      "type": "model"
+    }
+  },
+  "version": "1.0.0",
+  "command": "status",
+  "cap_description": "Check the status and health of a specific model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier to check status for",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "detailed",
+        "arg_type": "boolean",
+        "arg_description": "Include detailed diagnostics and metrics",
+        "cli_flag": "--detailed",
+        "default_value": false
+      },
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format",
+        "cli_flag": "--format",
+        "default_value": "json",
+        "validation": {
+          "allowed_values": [
+            "json",
+            "text"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Model status including health, performance metrics and configuration",
+    "content_type": "application/json"
+  }
+}

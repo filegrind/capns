@@ -1,0 +1,61 @@
+{
+  "urn": {
+    "tags": {
+      "action": "analysis",
+      "language": "en",
+      "type": "constrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "llm_inference",
+  "cap_description": "Analyze, extract, and process information from English text",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "text",
+        "arg_type": "string",
+        "arg_description": "Text to analyze",
+        "cli_flag": "--text",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 32768
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "analysis_type",
+        "arg_type": "string",
+        "arg_description": "Type of analysis to perform",
+        "cli_flag": "--analysis-type",
+        "default_value": "summary",
+        "validation": {
+          "allowed_values": [
+            "sentiment",
+            "entities",
+            "keywords",
+            "summary",
+            "structure"
+          ]
+        }
+      },
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Additional context for analysis",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 8192
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Analysis results with confidence scoring",
+    "content_type": "application/json"
+  }
+}

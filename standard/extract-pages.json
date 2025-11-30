@@ -1,0 +1,55 @@
+{
+  "urn": {
+    "tags": {
+      "action": "extract",
+      "target": "pages",
+      "ext": "pdf"
+    }
+  },
+  "version": "1.0.0",
+  "command": "extract-pages",
+  "cap_description": "Extract structured page content from the document",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the document file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "output",
+        "arg_type": "string",
+        "arg_description": "Write output to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      },
+      {
+        "name": "page_range",
+        "arg_type": "string",
+        "arg_description": "Page range to extract (e.g., '1-5' or '10-')",
+        "cli_flag": "--page-range",
+        "validation": {
+          "pattern": "^\\d+(-\\d*)?$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Structured page content extracted from the document",
+    "schema_ref": "document-pages.json",
+    "content_type": "application/json"
+  }
+}

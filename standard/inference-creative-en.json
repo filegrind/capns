@@ -1,0 +1,124 @@
+{
+  "urn": {
+    "tags": {
+      "action": "creative",
+      "language": "en",
+      "type": "unconstrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "llm_inference",
+  "cap_description": "Creative writing and content generation in English",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "prompt",
+        "arg_type": "string",
+        "arg_description": "Creative writing prompt or brief",
+        "cli_flag": "--prompt",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 8192
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "genre",
+        "arg_type": "string",
+        "arg_description": "Genre or style of creative content",
+        "cli_flag": "--genre",
+        "default_value": "fiction",
+        "validation": {
+          "allowed_values": [
+            "fiction",
+            "poetry",
+            "essay",
+            "story",
+            "dialogue",
+            "script",
+            "article",
+            "blog",
+            "marketing",
+            "technical",
+            "academic"
+          ]
+        }
+      },
+      {
+        "name": "tone",
+        "arg_type": "string",
+        "arg_description": "Tone or mood for the creative content",
+        "cli_flag": "--tone",
+        "default_value": "conversational",
+        "validation": {
+          "allowed_values": [
+            "formal",
+            "casual",
+            "humorous",
+            "serious",
+            "dramatic",
+            "playful",
+            "professional",
+            "academic",
+            "conversational"
+          ]
+        }
+      },
+      {
+        "name": "length",
+        "arg_type": "string",
+        "arg_description": "Desired length of creative output",
+        "cli_flag": "--length",
+        "default_value": "medium",
+        "validation": {
+          "allowed_values": [
+            "short",
+            "medium",
+            "long",
+            "extended"
+          ]
+        }
+      },
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Background context or inspiration",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 16384
+        }
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for creative output",
+        "cli_flag": "--max-tokens",
+        "default_value": 3000,
+        "validation": {
+          "min": 100,
+          "max": 8192
+        }
+      },
+      {
+        "name": "creativity_level",
+        "arg_type": "number",
+        "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
+        "cli_flag": "--creativity-level",
+        "default_value": 0.8,
+        "validation": {
+          "min": 0,
+          "max": 1
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Creative written content with metadata",
+    "content_type": "application/json"
+  }
+}

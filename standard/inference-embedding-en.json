@@ -1,0 +1,58 @@
+{
+  "urn": {
+    "tags": {
+      "action": "embedding",
+      "language": "en",
+      "type": "constrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "llm_inference",
+  "cap_description": "Generate semantic embeddings for English text",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "text",
+        "arg_type": "string",
+        "arg_description": "Text to generate embeddings for",
+        "cli_flag": "--text",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 8192
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "normalize",
+        "arg_type": "boolean",
+        "arg_description": "Whether to normalize the embedding vectors",
+        "cli_flag": "--normalize",
+        "default_value": true
+      },
+      {
+        "name": "pooling_type",
+        "arg_type": "string",
+        "arg_description": "Pooling strategy for embedding generation",
+        "cli_flag": "--pooling-type",
+        "default_value": "mean",
+        "validation": {
+          "allowed_values": [
+            "mean",
+            "cls",
+            "last",
+            "max"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Dense vector embedding representation with metadata",
+    "content_type": "application/json"
+  }
+}

@@ -6,7 +6,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Capns Registry Example");
     
     // Create a registry client
-    let registry = CapRegistry::new()?;
+    let registry = CapRegistry::new().await?;
     
     // Get a canonical cap definition from registry
     let cap_urn = "cap:action=extract;target=metadata";

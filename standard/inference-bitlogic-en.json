@@ -1,0 +1,79 @@
+{
+  "urn": {
+    "tags": {
+      "action": "bitlogic",
+      "language": "en",
+      "type": "constrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "llm_inference",
+  "cap_description": "Logical reasoning and binary decision tasks in English",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "query",
+        "arg_type": "string",
+        "arg_description": "Logical query or decision problem",
+        "cli_flag": "--query",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 16384
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Context and facts for logical reasoning",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 32768
+        }
+      },
+      {
+        "name": "decision_type",
+        "arg_type": "string",
+        "arg_description": "Type of logical decision required",
+        "cli_flag": "--decision-type",
+        "default_value": "binary",
+        "validation": {
+          "allowed_values": [
+            "binary",
+            "classification",
+            "reasoning",
+            "verification",
+            "comparison"
+          ]
+        }
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for reasoning output",
+        "cli_flag": "--max-tokens",
+        "default_value": 1000,
+        "validation": {
+          "min": 10,
+          "max": 4096
+        }
+      },
+      {
+        "name": "require_explanation",
+        "arg_type": "boolean",
+        "arg_description": "Whether to include reasoning explanation",
+        "cli_flag": "--require-explanation",
+        "default_value": true
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Logical decision with reasoning explanation and confidence",
+    "content_type": "application/json"
+  }
+}

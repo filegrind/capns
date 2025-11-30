@@ -1,0 +1,137 @@
+{
+  "urn": {
+    "tags": {
+      "action": "translation",
+      "language": "en",
+      "type": "unconstrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "llm_inference",
+  "cap_description": "Language translation from and to English",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "text",
+        "arg_type": "string",
+        "arg_description": "Text to translate",
+        "cli_flag": "--text",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 32768
+        }
+      },
+      {
+        "name": "source_language",
+        "arg_type": "string",
+        "arg_description": "Source language code",
+        "cli_flag": "--source-language",
+        "position": 1,
+        "validation": {
+          "allowed_values": [
+            "auto",
+            "en",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "pt",
+            "ru",
+            "zh",
+            "ja",
+            "ko",
+            "ar",
+            "hi",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "fi"
+          ]
+        }
+      },
+      {
+        "name": "target_language",
+        "arg_type": "string",
+        "arg_description": "Target language code",
+        "cli_flag": "--target-language",
+        "position": 2,
+        "validation": {
+          "allowed_values": [
+            "en",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "pt",
+            "ru",
+            "zh",
+            "ja",
+            "ko",
+            "ar",
+            "hi",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "fi"
+          ]
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Context to improve translation accuracy",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 8192
+        }
+      },
+      {
+        "name": "style",
+        "arg_type": "string",
+        "arg_description": "Translation style preference",
+        "cli_flag": "--style",
+        "default_value": "natural",
+        "validation": {
+          "allowed_values": [
+            "formal",
+            "informal",
+            "literal",
+            "natural",
+            "technical",
+            "creative"
+          ]
+        }
+      },
+      {
+        "name": "preserve_formatting",
+        "arg_type": "boolean",
+        "arg_description": "Whether to preserve text formatting",
+        "cli_flag": "--preserve-formatting",
+        "default_value": true
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for translation output",
+        "cli_flag": "--max-tokens",
+        "default_value": 4096,
+        "validation": {
+          "min": 50,
+          "max": 8192
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Translated text with language detection and confidence metrics",
+    "content_type": "application/json"
+  }
+}

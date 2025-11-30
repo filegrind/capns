@@ -1,0 +1,107 @@
+{
+  "urn": {
+    "tags": {
+      "action": "codegeneration",
+      "language": "en",
+      "type": "unconstrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "llm_inference",
+  "cap_description": "Code generation and programming tasks in English",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "prompt",
+        "arg_type": "string",
+        "arg_description": "Code generation prompt or specification",
+        "cli_flag": "--prompt",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 16384
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "language",
+        "arg_type": "string",
+        "arg_description": "Programming language for code generation",
+        "cli_flag": "--language",
+        "default_value": "rust",
+        "validation": {
+          "allowed_values": [
+            "rust",
+            "python",
+            "javascript",
+            "typescript",
+            "go",
+            "java",
+            "c",
+            "cpp",
+            "swift",
+            "kotlin",
+            "sql",
+            "shell",
+            "html",
+            "css",
+            "json",
+            "yaml",
+            "toml"
+          ]
+        }
+      },
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Existing code context or codebase information",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 65536
+        }
+      },
+      {
+        "name": "style",
+        "arg_type": "string",
+        "arg_description": "Coding style or framework preferences",
+        "cli_flag": "--style",
+        "validation": {
+          "max_length": 4096
+        }
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for generated code",
+        "cli_flag": "--max-tokens",
+        "default_value": 4096,
+        "validation": {
+          "min": 100,
+          "max": 8192
+        }
+      },
+      {
+        "name": "include_tests",
+        "arg_type": "boolean",
+        "arg_description": "Whether to include unit tests",
+        "cli_flag": "--include-tests",
+        "default_value": false
+      },
+      {
+        "name": "include_comments",
+        "arg_type": "boolean",
+        "arg_description": "Whether to include code comments",
+        "cli_flag": "--include-comments",
+        "default_value": true
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Generated code with optional tests and documentation",
+    "content_type": "application/json"
+  }
+}

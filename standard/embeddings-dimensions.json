@@ -1,0 +1,35 @@
+{
+  "urn": {
+    "tags": {
+      "action": "dimensions",
+      "target": "embeddings"
+    }
+  },
+  "version": "1.0.0",
+  "command": "dimensions",
+  "cap_description": "Get the dimensionality of generated embeddings for a specific model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "optional": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model name to check dimensions for",
+        "cli_flag": "--model",
+        "default_value": "sentence-transformers/all-MiniLM-L6-v2",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "integer",
+    "output_description": "Dimensionality of the generated embeddings",
+    "content_type": "application/json",
+    "validation": {
+      "min": 1
+    }
+  }
+}

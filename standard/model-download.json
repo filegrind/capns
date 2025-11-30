@@ -1,0 +1,65 @@
+{
+  "urn": {
+    "tags": {
+      "action": "download",
+      "type": "model"
+    }
+  },
+  "version": "1.0.0",
+  "command": "download",
+  "cap_description": "Download machine learning models from various repositories",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier to download",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "repository",
+        "arg_type": "string",
+        "arg_description": "Repository to download from",
+        "cli_flag": "--repository",
+        "default_value": "huggingface",
+        "validation": {
+          "allowed_values": [
+            "huggingface",
+            "local",
+            "custom"
+          ]
+        }
+      },
+      {
+        "name": "force",
+        "arg_type": "boolean",
+        "arg_description": "Force download even if model exists",
+        "cli_flag": "--force",
+        "default_value": false
+      },
+      {
+        "name": "cache_dir",
+        "arg_type": "string",
+        "arg_description": "Custom cache directory for model storage",
+        "cli_flag": "--cache-dir",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Download result with model path and metadata",
+    "content_type": "application/json"
+  }
+}

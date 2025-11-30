@@ -1,0 +1,65 @@
+{
+  "urn": {
+    "tags": {
+      "action": "load",
+      "type": "model"
+    }
+  },
+  "version": "1.0.0",
+  "command": "load",
+  "cap_description": "Load a model into memory for inference operations",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier or path to load",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "device",
+        "arg_type": "string",
+        "arg_description": "Device to load model on",
+        "cli_flag": "--device",
+        "default_value": "cpu",
+        "validation": {
+          "allowed_values": [
+            "cpu",
+            "cuda",
+            "mps",
+            "auto"
+          ]
+        }
+      },
+      {
+        "name": "precision",
+        "arg_type": "string",
+        "arg_description": "Model precision/quantization level",
+        "cli_flag": "--precision",
+        "default_value": "float32",
+        "validation": {
+          "allowed_values": [
+            "float32",
+            "float16",
+            "int8",
+            "int4"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Load result with model handle and configuration",
+    "content_type": "application/json"
+  }
+}

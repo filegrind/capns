@@ -1,0 +1,63 @@
+{
+  "urn": {
+    "tags": {
+      "action": "management",
+      "type": "model"
+    }
+  },
+  "version": "1.0.0",
+  "command": "manage",
+  "cap_description": "General model management operations including installation, configuration and lifecycle",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "operation",
+        "arg_type": "string",
+        "arg_description": "Management operation to perform",
+        "cli_flag": "--operation",
+        "position": 0,
+        "validation": {
+          "allowed_values": [
+            "init",
+            "config",
+            "validate",
+            "cleanup",
+            "info"
+          ]
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier or path",
+        "cli_flag": "--model",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      },
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format for information display",
+        "cli_flag": "--format",
+        "default_value": "json",
+        "validation": {
+          "allowed_values": [
+            "json",
+            "text",
+            "yaml"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Management operation result with status and details",
+    "content_type": "application/json"
+  }
+}
