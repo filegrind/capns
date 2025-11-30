@@ -10,6 +10,40 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const REGISTRY_BASE_URL: &str = "https://capns.org";
 const CACHE_DURATION_HOURS: u64 = 24;
 
+/// Normalize a Cap URN for consistent lookups and caching
+/// This ensures that URNs with different tag ordering or trailing semicolons
+/// are treated as the same capability
+fn normalize_cap_urn(urn: &str) -> String {
+    // Remove cap: prefix
+    let tags_string = urn.strip_prefix("cap:").unwrap_or(urn);
+    
+    // Remove trailing semicolon if present
+    let clean_tags_string = tags_string.trim_end_matches(';');
+    
+    // Split into tag pairs and filter out empty ones
+    let tag_pairs: Vec<&str> = clean_tags_string.split(';')
+        .filter(|pair| !pair.trim().is_empty())
+        .collect();
+    
+    // Parse into key-value pairs
+    let mut tags = std::collections::BTreeMap::new(); // BTreeMap for sorted keys
+    for pair in tag_pairs {
+        if let Some((key, value)) = pair.split_once('=') {
+            tags.insert(key.trim(), value.trim());
+        }
+    }
+    
+    // Rebuild normalized CAPURN with sorted tags
+    if tags.is_empty() {
+        "cap:".to_string()
+    } else {
+        let sorted_tags: Vec<String> = tags.iter()
+            .map(|(key, value)| format!("{}={}", key, value))
+            .collect();
+        format!("cap:{}", sorted_tags.join(";"))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CacheEntry {
     definition: Cap,
@@ -37,12 +71,14 @@ pub struct CapRegistry {
 impl CapRegistry {
     /// Get a cap from in-memory cache or fetch from registry
     pub async fn get_cap(&self, urn: &str) -> Result<Cap, RegistryError> {
+        let normalized_urn = normalize_cap_urn(urn);
+        
         // Check in-memory cache first
         {
             let cached_caps = self.cached_caps.lock().map_err(|e| {
                 RegistryError::CacheError(format!("Failed to lock cache: {}", e))
             })?;
-            if let Some(cap) = cached_caps.get(urn) {
+            if let Some(cap) = cached_caps.get(&normalized_urn) {
                 return Ok(cap.clone());
             }
         }
@@ -55,7 +91,7 @@ impl CapRegistry {
             let mut cached_caps = self.cached_caps.lock().map_err(|e| {
                 RegistryError::CacheError(format!("Failed to lock cache for update: {}", e))
             })?;
-            cached_caps.insert(urn.to_string(), cap.clone());
+            cached_caps.insert(normalized_urn.clone(), cap.clone());
         }
         
         Ok(cap)
@@ -107,13 +143,14 @@ impl CapRegistry {
     }
 
     fn cache_key(&self, urn: &str) -> String {
+        let normalized_urn = normalize_cap_urn(urn);
         let mut hasher = Sha256::new();
-        hasher.update(urn.as_bytes());
+        hasher.update(normalized_urn.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 
     fn cache_file_path(&self, urn: &str) -> PathBuf {
-        let key = self.cache_key(urn);
+        let key: String = self.cache_key(urn);
         self.cache_dir.join(format!("{}.json", key))
     }
 
@@ -148,7 +185,8 @@ impl CapRegistry {
                     }
 
                     let urn = cache_entry.definition.urn_string();
-                    caps.insert(urn, cache_entry.definition);
+                    let normalized_urn = normalize_cap_urn(&urn);
+                    caps.insert(normalized_urn, cache_entry.definition);
                 }
             }
         }
@@ -179,7 +217,8 @@ impl CapRegistry {
     }
 
     async fn fetch_from_registry(&self, urn: &str) -> Result<Cap, RegistryError> {
-        let url = format!("{}/{}", REGISTRY_BASE_URL, urn);
+        let normalized_urn = normalize_cap_urn(urn);
+        let url = format!("{}/{}", REGISTRY_BASE_URL, normalized_urn);
         let response = self.client.get(&url).send().await.map_err(|e| {
             RegistryError::HttpError(format!("Failed to fetch from registry: {}", e))
         })?;
