@@ -1,0 +1,81 @@
+{
+  "urn": {
+    "tags": {
+      "action": "query",
+      "target": "structured",
+      "output": "json",
+      "language": "en",
+      "type": "constrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "structured_query",
+  "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "query_name",
+        "arg_type": "string",
+        "arg_description": "Name of the structured query to execute",
+        "cli_flag": "--query-name",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 128,
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        }
+      },
+      {
+        "name": "substitutions",
+        "arg_type": "object",
+        "arg_description": "Template substitutions for the query prompt",
+        "cli_flag": "--substitutions",
+        "position": 1
+      }
+    ],
+    "optional": [
+      {
+        "name": "language",
+        "arg_type": "string",
+        "arg_description": "Language code for the query processing",
+        "cli_flag": "--language",
+        "default_value": "en",
+        "validation": {
+          "allowed_values": [
+            "en",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "pt",
+            "ru",
+            "zh",
+            "ja",
+            "ko"
+          ]
+        }
+      },
+      {
+        "name": "schema_variables",
+        "arg_type": "object",
+        "arg_description": "Variables for dynamic schema generation",
+        "cli_flag": "--schema-variables",
+        "default_value": {}
+      },
+      {
+        "name": "callback_enabled",
+        "arg_type": "boolean",
+        "arg_description": "Whether to enable streaming callback updates",
+        "cli_flag": "--callback",
+        "default_value": false
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Structured JSON response conforming to the query's schema",
+    "content_type": "application/json"
+  }
+}

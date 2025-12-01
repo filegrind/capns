@@ -1,0 +1,92 @@
+{
+  "urn": {
+    "tags": {
+      "action": "choose",
+      "target": "bit",
+      "output": "boolean",
+      "language": "en",
+      "type": "constrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "bit_choice",
+  "cap_description": "Make binary (yes/no, true/false) decisions based on content and questions",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "content",
+        "arg_type": "string",
+        "arg_description": "Content to analyze for the binary decision",
+        "cli_flag": "--content",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 65536
+        }
+      },
+      {
+        "name": "question",
+        "arg_type": "string",
+        "arg_description": "Binary question to answer about the content",
+        "cli_flag": "--question",
+        "position": 1,
+        "validation": {
+          "min_length": 5,
+          "max_length": 512
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "language",
+        "arg_type": "string",
+        "arg_description": "Language code for processing",
+        "cli_flag": "--language",
+        "default_value": "en",
+        "validation": {
+          "allowed_values": [
+            "en",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "pt",
+            "ru",
+            "zh",
+            "ja",
+            "ko"
+          ]
+        }
+      },
+      {
+        "name": "max_content_length",
+        "arg_type": "number",
+        "arg_description": "Maximum content length to consider (for context window management)",
+        "cli_flag": "--max-content-length",
+        "default_value": 2048,
+        "validation": {
+          "min": 256,
+          "max": 131072
+        }
+      },
+      {
+        "name": "confidence_threshold",
+        "arg_type": "number",
+        "arg_description": "Minimum confidence threshold for decision",
+        "cli_flag": "--confidence-threshold",
+        "default_value": 0.7,
+        "validation": {
+          "min": 0,
+          "max": 1
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Binary decision result with boolean answer",
+    "content_type": "application/json"
+  }
+}
