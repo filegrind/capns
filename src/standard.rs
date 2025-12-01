@@ -13,144 +13,11 @@ use std::{collections::HashMap, sync::Arc};
 // LLM CAPABILITIES
 // =============================================================================
 
-/// Create the standard conversation cap with full argument definition
-pub fn llm_conversation_cap() -> Cap {
-    let id = CapUrn::from_string("cap:action=conversation;type=unconstrained")
-        .expect("Invalid cap URN");
-
-    let command = "conversation".to_string();
-    let mut arguments = CapArguments::new();
-
-    // Optional language argument
-    let language_arg = CapArgument {
-        name: "language".to_string(),
-        arg_type: ArgumentType::String,
-        arg_description: "Target language for conversation".to_string(),
-        cli_flag: "--language".to_string(),
-        position: None,
-        validation: ArgumentValidation {
-            allowed_values: Some(vec![
-                "en".to_string(), "es".to_string(), "fr".to_string(), 
-                "de".to_string(), "zh".to_string(), "ja".to_string(),
-                "ko".to_string(), "it".to_string(), "pt".to_string(),
-                "ru".to_string(), "ar".to_string()
-            ]),
-            ..Default::default()
-        },
-        default_value: Some(serde_json::Value::String("en".to_string())),
-    };
-    arguments.add_optional(language_arg);
-
-    let output = CapOutput {
-        output_type: OutputType::String,
-        schema_ref: None,
-        content_type: Some("text/plain".to_string()),
-        validation: ArgumentValidation::default(),
-        output_description: "Generated conversational response".to_string(),
-    };
-
-    Cap::with_full_definition(
-        id,
-        "1.0.0".to_string(),
-        Some("Interactive conversational text generation".to_string()),
-        HashMap::new(),
-        command,
-        arguments,
-        Some(output),
-    )
-}
-
 /// Convenience function to get conversation cap from registry with language
 pub async fn llm_conversation(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
     let urn = CapUrnBuilder::new()
         .tag("action", "conversation")
         .tag("type", "unconstrained")
-        .tag("language", lang_code)
-        .build()
-        .map_err(|e| RegistryError::ValidationError(format!("Failed to build cap URN: {}", e)))?;
-    
-    registry.get_cap(&urn.to_string()).await
-}
-
-/// Create the standard analysis cap with full argument definition
-pub fn llm_analysis_cap() -> Cap {
-    let id = CapUrn::from_string("cap:action=analysis;type=constrained")
-        .expect("Invalid cap URN");
-
-    let command = "analysis".to_string();
-    let mut arguments = CapArguments::new();
-
-    // Required text argument
-    let text_arg = CapArgument {
-        name: "text".to_string(),
-        arg_type: ArgumentType::String,
-        arg_description: "Text to analyze".to_string(),
-        cli_flag: "--text".to_string(),
-        position: Some(0),
-        validation: ArgumentValidation {
-            min_length: Some(1),
-            ..Default::default()
-        },
-        default_value: None,
-    };
-    arguments.add_required(text_arg);
-
-    // Optional language argument
-    let language_arg = CapArgument {
-        name: "language".to_string(),
-        arg_type: ArgumentType::String,
-        arg_description: "Target language for analysis".to_string(),
-        cli_flag: "--language".to_string(),
-        position: None,
-        validation: ArgumentValidation {
-            allowed_values: Some(vec![
-                "en".to_string(), "es".to_string(), "fr".to_string(), 
-                "de".to_string(), "zh".to_string(), "ja".to_string(),
-                "ko".to_string(), "it".to_string(), "pt".to_string(),
-                "ru".to_string(), "ar".to_string()
-            ]),
-            ..Default::default()
-        },
-        default_value: Some(serde_json::Value::String("en".to_string())),
-    };
-    arguments.add_optional(language_arg);
-
-    let output = CapOutput {
-        output_type: OutputType::Object,
-        schema_ref: None,
-        content_type: Some("application/json".to_string()),
-        validation: ArgumentValidation::default(),
-        output_description: "Structured analysis of the input text".to_string(),
-    };
-
-    Cap::with_full_definition(
-        id,
-        "1.0.0".to_string(),
-        Some("Analyze text content and extract insights".to_string()),
-        HashMap::new(),
-        command,
-        arguments,
-        Some(output),
-    )
-}
-
-/// Convenience function to get analysis cap from registry with language
-pub async fn llm_analysis(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
-    let urn = CapUrnBuilder::new()
-        .tag("action", "analysis")
-        .tag("type", "constrained")
-        .tag("language", lang_code)
-        .build()
-        .map_err(|e| RegistryError::ValidationError(format!("Failed to build cap URN: {}", e)))?;
-    
-    registry.get_cap(&urn.to_string()).await
-}
-
-/// Convenience function to get bitlogic cap from registry with language
-pub async fn llm_bitlogic(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
-    let urn = CapUrnBuilder::new()
-        .tag("action", "bitlogic")
-        .tag("type", "constrained")
         .tag("language", lang_code)
         .build()
         .map_err(|e| RegistryError::ValidationError(format!("Failed to build cap URN: {}", e)))?;
@@ -394,6 +261,18 @@ pub async fn bit_choice_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Resu
 		.tag("action", "choose")
 		.tag("target", "bit")
 		.tag("output", "boolean")
+		.tag("language", lang_code)
+		.tag("type", "constrained")
+		.build()
+		.map_err(|e| RegistryError::ValidationError(format!("Failed to build cap URN: {}", e)))?;
+	registry.get_cap(&urn.to_string()).await
+}
+
+pub async fn bit_choices_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+	let urn = CapUrnBuilder::new()
+		.tag("action", "choose")
+		.tag("target", "bits")
+		.tag("output", "booleans")
 		.tag("language", lang_code)
 		.tag("type", "constrained")
 		.build()
