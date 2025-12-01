@@ -186,8 +186,6 @@ pub struct Cap {
     /// Formal cap URN with hierarchical naming
     pub urn: CapUrn,
     
-    /// Cap version
-    pub version: String,
     
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,7 +220,6 @@ impl<'de> Deserialize<'de> for Cap {
         #[derive(Deserialize)]
         struct CapRegistry {
             urn: serde_json::Value,  // Can be either string or object
-            version: String,
             cap_description: Option<String>,
             #[serde(default)]
             metadata: HashMap<String, String>,
@@ -259,7 +256,6 @@ impl<'de> Deserialize<'de> for Cap {
 
         Ok(Cap {
             urn,
-            version: registry_cap.version,
             cap_description: registry_cap.cap_description,
             metadata: registry_cap.metadata,
             command: registry_cap.command,
@@ -444,10 +440,9 @@ impl CapArguments {
 
 impl Cap {
     /// Create a new cap
-    pub fn new(urn: CapUrn, version: String, command: String) -> Self {
+    pub fn new(urn: CapUrn, command: String) -> Self {
         Self {
             urn,
-            version,
             cap_description: None,
             metadata: HashMap::new(),
             command,
@@ -458,10 +453,9 @@ impl Cap {
     }
 
     /// Create a new cap with description
-    pub fn with_description(urn: CapUrn, version: String, command: String, description: String) -> Self {
+    pub fn with_description(urn: CapUrn, command: String, description: String) -> Self {
         Self {
             urn,
-            version,
             cap_description: Some(description),
             metadata: HashMap::new(),
             command,
@@ -474,13 +468,11 @@ impl Cap {
     /// Create a new cap with metadata
     pub fn with_metadata(
         urn: CapUrn, 
-        version: String,
         command: String,
         metadata: HashMap<String, String>
     ) -> Self {
         Self {
             urn,
-            version,
             cap_description: None,
             metadata,
             command,
@@ -493,14 +485,12 @@ impl Cap {
     /// Create a new cap with description and metadata
     pub fn with_description_and_metadata(
         urn: CapUrn,
-        version: String,
         command: String,
         description: String,
         metadata: HashMap<String, String>,
     ) -> Self {
         Self {
             urn,
-            version,
             cap_description: Some(description),
             metadata,
             command,
@@ -513,13 +503,11 @@ impl Cap {
     /// Create a new cap with arguments
     pub fn with_arguments(
         urn: CapUrn,
-        version: String,
         command: String,
         arguments: CapArguments,
     ) -> Self {
         Self {
             urn,
-            version,
             cap_description: None,
             metadata: HashMap::new(),
             command,
@@ -532,16 +520,14 @@ impl Cap {
     /// Create a new cap with command (deprecated - use new() instead)
     pub fn with_command(
         urn: CapUrn,
-        version: String,
         command: String,
     ) -> Self {
-        Self::new(urn, version, command)
+        Self::new(urn, command)
     }
     
     /// Create a fully specified cap
     pub fn with_full_definition(
         urn: CapUrn,
-        version: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
         command: String,
@@ -550,7 +536,6 @@ impl Cap {
     ) -> Self {
         Self {
             urn,
-            version,
             cap_description: description,
             metadata,
             command,
@@ -648,10 +633,9 @@ mod tests {
     #[test]
     fn test_cap_creation() {
         let urn = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
-        let cap = Cap::new(urn, "1.0.0".to_string(), "test-command".to_string());
+        let cap = Cap::new(urn, "test-command".to_string());
         
         assert_eq!(cap.urn_string(), "cap:action=transform;format=json;type=data_processing");
-        assert_eq!(cap.version, "1.0.0");
         assert!(cap.metadata.is_empty());
     }
 
@@ -662,7 +646,7 @@ mod tests {
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
         
-        let cap = Cap::with_metadata(urn, "2.1.0".to_string(), "test-command".to_string(), metadata);
+        let cap = Cap::with_metadata(urn, "test-command".to_string(), metadata);
         
         assert_eq!(cap.get_metadata("precision"), Some(&"double".to_string()));
         assert_eq!(cap.get_metadata("operations"), Some(&"add,subtract,multiply,divide".to_string()));
@@ -673,7 +657,7 @@ mod tests {
     #[test]
     fn test_cap_matching() {
         let urn = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
-        let cap = Cap::new(urn, "1.0.0".to_string(), "test-command".to_string());
+        let cap = Cap::new(urn, "test-command".to_string());
         
         assert!(cap.matches_request("cap:action=transform;format=json;type=data_processing"));
         assert!(cap.matches_request("cap:action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
@@ -684,7 +668,7 @@ mod tests {
     #[test]
     fn test_cap_accepts_stdin() {
         let urn = CapUrn::from_string("cap:action=generate;target=embeddings").unwrap();
-        let mut cap = Cap::new(urn, "1.0.0".to_string(), "generate".to_string());
+        let mut cap = Cap::new(urn, "generate".to_string());
         
         // By default, caps should not accept stdin
         assert!(!cap.accepts_stdin);

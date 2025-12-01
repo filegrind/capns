@@ -8,7 +8,6 @@
       "type": "constrained"
     }
   },
-  "version": "1.0.0",
   "command": "bit_choice",
   "cap_description": "Make binary (yes/no, true/false) decisions based on content and questions",
   "metadata": {},

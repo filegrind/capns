@@ -15,7 +15,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(cap) => {
             println!("✓ SUCCESS: Cap parsed correctly!");
             println!("  URN: {}", cap.urn_string());
-            println!("  Version: {}", cap.version);
             println!("  Command: {}", cap.command);
             println!("  Description: {}", cap.cap_description.as_ref().unwrap_or(&"None".to_string()));
             println!("  Accepts Stdin: {}", cap.accepts_stdin);
