@@ -1,13 +1,14 @@
-//! Pure cap-based execution
+//! Pure cap-based execution with strict input validation
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
-use crate::{CapUrn, ResponseWrapper};
+use crate::{CapUrn, ResponseWrapper, Cap, validation::ValidationError};
 
-/// Cap caller that executes via XPC service
+/// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
     cap: String,
     cap_host: Box<dyn CapHost>,
+    cap_definition: Cap,
 }
 
 /// Trait for Cap Host communication
@@ -22,24 +23,29 @@ pub trait CapHost: Send + Sync {
 }
 
 impl CapCaller {
-    /// Create a new cap caller
+    /// Create a new cap caller with validation
     pub fn new(
         cap: String,
         cap_host: Box<dyn CapHost>,
+        cap_definition: Cap,
     ) -> Self {
         Self {
             cap,
             cap_host,
+            cap_definition,
         }
     }
     
     /// Call the cap with structured arguments and optional stdin data
+    /// Validates inputs against cap definition before execution
     pub async fn call(
         &self,
         positional_args: Vec<JsonValue>,
         named_args: Vec<JsonValue>,
         stdin_data: Option<Vec<u8>>
     ) -> Result<ResponseWrapper> {
+        // Validate inputs against cap definition
+        self.validate_inputs(&positional_args, &named_args)?;
         // Convert JsonValue positional args to strings
         let string_positional_args: Vec<String> = positional_args
             .into_iter()
@@ -95,6 +101,9 @@ impl CapCaller {
             return Err(anyhow::anyhow!("Cap returned no output"));
         };
         
+        // Validate output against cap definition
+        self.validate_output(&response)?;
+        
         Ok(response)
     }
     
@@ -124,5 +133,51 @@ impl CapCaller {
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
         cap_urn.get_tag("output") != Some(&"binary".to_string())
+    }
+    
+    /// Validate input arguments against cap definition
+    fn validate_inputs(
+        &self,
+        positional_args: &[JsonValue],
+        _named_args: &[JsonValue],
+    ) -> Result<()> {
+        // For now, we'll validate positional args since that's what most caps use
+        // Named args validation can be added later when we have caps that use them
+        crate::validation::InputValidator::validate_arguments(&self.cap_definition, positional_args)
+            .map_err(|e| anyhow::anyhow!("Input validation failed for {}: {}", self.cap, e))?;
+        Ok(())
+    }
+    
+    /// Validate output against cap definition
+    fn validate_output(&self, response: &ResponseWrapper) -> Result<()> {
+        // For binary outputs, check type compatibility
+        if let Ok(text) = response.as_string() {
+            // For JSON outputs, parse as JSON and validate
+            if self.is_json_cap() {
+                let output_value: JsonValue = serde_json::from_str(&text)
+                    .map_err(|e| anyhow::anyhow!("Output is not valid JSON for cap {}: {}", self.cap, e))?;
+                
+                crate::validation::OutputValidator::validate_output(&self.cap_definition, &output_value)
+                    .map_err(|e| anyhow::anyhow!("Output validation failed for {}: {}", self.cap, e))?;
+            } else {
+                // For text outputs, wrap in JSON string and validate
+                let output_value = JsonValue::String(text);
+                crate::validation::OutputValidator::validate_output(&self.cap_definition, &output_value)
+                    .map_err(|e| anyhow::anyhow!("Output validation failed for {}: {}", self.cap, e))?;
+            }
+        } else {
+            // For binary outputs, validate that the cap expects binary output
+            if let Some(output_def) = self.cap_definition.get_output() {
+                if output_def.output_type != crate::OutputType::Binary {
+                    return Err(anyhow::anyhow!(
+                        "Cap {} expects {:?} output but received binary data", 
+                        self.cap, 
+                        output_def.output_type
+                    ));
+                }
+            }
+        }
+        
+        Ok(())
     }
 }

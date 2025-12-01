@@ -233,30 +233,56 @@ impl InputValidator {
             }
         }
         
-        // String length validation
+        // Length validation (for strings and arrays)
         if let Some(min_length) = validation.min_length {
-            if let Some(s) = value.as_str() {
-                if s.len() < min_length {
-                    return Err(ValidationError::ArgumentValidationFailed {
-                        cap_urn,
-                        argument_name: arg_def.name.clone(),
-                        validation_rule: format!("minimum length {}", min_length),
-                        actual_value: value.clone(),
-                    });
-                }
+            match (value.as_str(), value.as_array()) {
+                (Some(s), _) => {
+                    if s.len() < min_length {
+                        return Err(ValidationError::ArgumentValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.name.clone(),
+                            validation_rule: format!("minimum length {}", min_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                (_, Some(arr)) => {
+                    if arr.len() < min_length {
+                        return Err(ValidationError::ArgumentValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.name.clone(),
+                            validation_rule: format!("minimum array length {}", min_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                _ => {}
             }
         }
         
         if let Some(max_length) = validation.max_length {
-            if let Some(s) = value.as_str() {
-                if s.len() > max_length {
-                    return Err(ValidationError::ArgumentValidationFailed {
-                        cap_urn,
-                        argument_name: arg_def.name.clone(),
-                        validation_rule: format!("maximum length {}", max_length),
-                        actual_value: value.clone(),
-                    });
-                }
+            match (value.as_str(), value.as_array()) {
+                (Some(s), _) => {
+                    if s.len() > max_length {
+                        return Err(ValidationError::ArgumentValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.name.clone(),
+                            validation_rule: format!("maximum length {}", max_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                (_, Some(arr)) => {
+                    if arr.len() > max_length {
+                        return Err(ValidationError::ArgumentValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.name.clone(),
+                            validation_rule: format!("maximum array length {}", max_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                _ => {}
             }
         }
         
