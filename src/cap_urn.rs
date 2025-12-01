@@ -23,8 +23,13 @@ pub struct CapUrn {
 
 impl CapUrn {
     /// Create a new cap URN from tags
+    /// All keys and values are normalized to lowercase for case-insensitive matching
     pub fn new(tags: BTreeMap<String, String>) -> Self {
-        Self { tags }
+        let normalized_tags = tags
+            .into_iter()
+            .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+            .collect();
+        Self { tags: normalized_tags }
     }
 
     /// Create an empty cap URN
@@ -40,10 +45,14 @@ impl CapUrn {
     /// The "cap:" prefix is mandatory
     /// Trailing semicolons are optional and ignored
     /// Tags are automatically sorted alphabetically for canonical form
+    /// All input is normalized to lowercase for case-insensitive matching
     pub fn from_string(s: &str) -> Result<Self, CapUrnError> {
         if s.is_empty() {
             return Err(CapUrnError::Empty);
         }
+
+        // Normalize to lowercase for case-insensitive handling
+        let s = s.to_lowercase();
 
         // Ensure "cap:" prefix is present
         if !s.starts_with("cap:") {
@@ -114,24 +123,28 @@ impl CapUrn {
     }
 
     /// Get a specific tag value
+    /// Key is normalized to lowercase for case-insensitive lookup
     pub fn get_tag(&self, key: &str) -> Option<&String> {
-        self.tags.get(key)
+        self.tags.get(&key.to_lowercase())
     }
 
     /// Check if this cap has a specific tag with a specific value
+    /// Both key and value are normalized to lowercase for case-insensitive comparison
     pub fn has_tag(&self, key: &str, value: &str) -> bool {
-        self.tags.get(key).map_or(false, |v| v == value)
+        self.tags.get(&key.to_lowercase()).map_or(false, |v| v == &value.to_lowercase())
     }
 
     /// Add or update a tag
+    /// Both key and value are normalized to lowercase
     pub fn with_tag(mut self, key: String, value: String) -> Self {
-        self.tags.insert(key, value);
+        self.tags.insert(key.to_lowercase(), value.to_lowercase());
         self
     }
 
     /// Remove a tag
+    /// Key is normalized to lowercase for case-insensitive removal
     pub fn without_tag(mut self, key: &str) -> Self {
-        self.tags.remove(key);
+        self.tags.remove(&key.to_lowercase());
         self
     }
 
@@ -381,7 +394,7 @@ impl CapUrnBuilder {
     }
 
     pub fn tag(mut self, key: &str, value: &str) -> Self {
-        self.tags.insert(key.to_string(), value.to_string());
+        self.tags.insert(key.to_lowercase(), value.to_lowercase());
         self
     }
 
@@ -409,6 +422,36 @@ mod tests {
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
         assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
+    }
+
+    #[test]
+    fn test_cap_urn_case_insensitive() {
+        // Test that different casing produces the same URN
+        let cap1 = CapUrn::from_string("cap:ACTION=Generate;EXT=PDF;Target=Thumbnail;").unwrap();
+        let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        
+        // Both should be normalized to lowercase
+        assert_eq!(cap1.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap1.get_tag("ext"), Some(&"pdf".to_string()));
+        assert_eq!(cap1.get_tag("target"), Some(&"thumbnail".to_string()));
+        
+        // URNs should be identical after normalization
+        assert_eq!(cap1.to_string(), cap2.to_string());
+        
+        // PartialEq should work correctly - URNs with different case should be equal
+        assert_eq!(cap1, cap2);
+        
+        // Case-insensitive tag lookup should work
+        assert_eq!(cap1.get_tag("ACTION"), Some(&"generate".to_string()));
+        assert_eq!(cap1.get_tag("Action"), Some(&"generate".to_string()));
+        assert!(cap1.has_tag("ACTION", "Generate"));
+        assert!(cap1.has_tag("action", "GENERATE"));
+        
+        // Matching should work case-insensitively
+        assert!(cap1.matches(&cap2));
+        assert!(cap2.matches(&cap1));
+        assert!(cap1.matches_str("cap:Action=Generate;Ext=PDF;Target=Thumbnail").unwrap());
+        assert!(cap1.matches_str("cap:action=generate;ext=pdf;target=thumbnail").unwrap());
     }
 
     #[test]

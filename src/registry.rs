@@ -337,12 +337,6 @@ impl CapRegistry {
     pub async fn validate_cap(&self, cap: &Cap) -> Result<(), RegistryError> {
         let canonical_cap = self.get_cap(&cap.urn_string()).await?;
 
-        if cap.version != canonical_cap.version {
-            return Err(RegistryError::ValidationError(format!(
-                "Version mismatch. Local: {}, Canonical: {}",
-                cap.version, canonical_cap.version
-            )));
-        }
 
         if cap.command != canonical_cap.command {
             return Err(RegistryError::ValidationError(format!(
