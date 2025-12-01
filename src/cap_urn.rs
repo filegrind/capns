@@ -171,6 +171,11 @@ impl CapUrn {
         true
     }
 
+	pub fn matches_str(&self, request_str: &str) -> Result<bool, CapUrnError> {
+		let request = CapUrn::from_string(request_str)?;
+		Ok(self.matches(&request))
+	}
+
     /// Check if this cap can handle a request
     ///
     /// This is used when a request comes in with a cap URN

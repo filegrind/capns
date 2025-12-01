@@ -1,0 +1,100 @@
+{
+  "urn": {
+    "tags": {
+      "action": "generate",
+      "target": "summary",
+      "input": "frontmatter",
+      "output": "text",
+      "language": "en",
+      "type": "unconstrained"
+    }
+  },
+  "version": "1.0.0",
+  "command": "generate_text",
+  "cap_description": "Extract and organize bibliographic information from book frontmatter text",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "text",
+        "arg_type": "string",
+        "arg_description": "Frontmatter text to process and summarize",
+        "cli_flag": "--text",
+        "position": 0,
+        "validation": {
+          "min_length": 50,
+          "max_length": 131072
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format for the summary",
+        "cli_flag": "--format",
+        "default_value": "organized",
+        "validation": {
+          "allowed_values": [
+            "organized",
+            "structured",
+            "compact",
+            "detailed"
+          ]
+        }
+      },
+      {
+        "name": "preserve_all_data",
+        "arg_type": "boolean",
+        "arg_description": "Whether to preserve all factual information",
+        "cli_flag": "--preserve-all-data",
+        "default_value": true
+      },
+      {
+        "name": "remove_boilerplate",
+        "arg_type": "boolean",
+        "arg_description": "Whether to remove legal boilerplate and formatting artifacts",
+        "cli_flag": "--remove-boilerplate",
+        "default_value": true
+      },
+      {
+        "name": "language",
+        "arg_type": "string",
+        "arg_description": "Language of the frontmatter text",
+        "cli_flag": "--language",
+        "default_value": "en",
+        "validation": {
+          "allowed_values": [
+            "en",
+            "es",
+            "fr",
+            "de",
+            "it",
+            "pt",
+            "ru",
+            "zh",
+            "ja",
+            "ko"
+          ]
+        }
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for summary output",
+        "cli_flag": "--max-tokens",
+        "default_value": 2000,
+        "validation": {
+          "min": 100,
+          "max": 8192
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Organized bibliographic summary with extracted metadata",
+    "content_type": "application/json"
+  }
+}
