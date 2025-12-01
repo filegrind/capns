@@ -1,8 +1,9 @@
-//! Response wrapper for unified plugin output handling
+//! Response wrapper for unified plugin output handling with validation
 
 use anyhow::{anyhow, Result};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
+use crate::{Cap, validation::{ValidationError, OutputValidator}};
 
 /// Unified response wrapper for all plugin operations
 /// Provides type-safe deserialization of plugin output
@@ -137,6 +138,81 @@ impl ResponseWrapper {
     /// Get response size in bytes
     pub fn size(&self) -> usize {
         self.raw_bytes.len()
+    }
+    
+    /// Validate response against cap output definition
+    pub fn validate_against_cap(&self, cap: &Cap) -> Result<(), ValidationError> {
+        // Convert response to JSON value for validation
+        let json_value = match self.content_type {
+            ResponseContentType::Json => {
+                let text = self.as_string().map_err(|e| {
+                    ValidationError::JsonParseError {
+                        cap_urn: cap.urn_string(),
+                        error: format!("Failed to convert response to string: {}", e),
+                    }
+                })?;
+                serde_json::from_str(&text).map_err(|e| {
+                    ValidationError::JsonParseError {
+                        cap_urn: cap.urn_string(),
+                        error: format!("Failed to parse JSON: {}", e),
+                    }
+                })?
+            },
+            ResponseContentType::Text => {
+                let text = self.as_string().map_err(|e| {
+                    ValidationError::JsonParseError {
+                        cap_urn: cap.urn_string(),
+                        error: format!("Failed to convert response to string: {}", e),
+                    }
+                })?;
+                JsonValue::String(text)
+            },
+            ResponseContentType::Binary => {
+                // Binary outputs can't be validated as JSON, validate the response type instead
+                if let Some(output_def) = cap.get_output() {
+                    if output_def.output_type != crate::OutputType::Binary {
+                        return Err(ValidationError::InvalidOutputType {
+                            cap_urn: cap.urn_string(),
+                            expected_type: output_def.output_type.clone(),
+                            actual_type: "binary".to_string(),
+                            actual_value: JsonValue::String(format!("{} bytes of binary data", self.raw_bytes.len())),
+                        });
+                    }
+                }
+                return Ok(());
+            }
+        };
+        
+        OutputValidator::validate_output(cap, &json_value)
+    }
+    
+    /// Get content type for validation purposes
+    pub fn get_content_type(&self) -> &str {
+        match self.content_type {
+            ResponseContentType::Json => "application/json",
+            ResponseContentType::Text => "text/plain",
+            ResponseContentType::Binary => "application/octet-stream",
+        }
+    }
+    
+    /// Check if response matches expected output type
+    pub fn matches_output_type(&self, cap: &Cap) -> bool {
+        if let Some(output_def) = cap.get_output() {
+            match (&self.content_type, &output_def.output_type) {
+                (ResponseContentType::Json, crate::OutputType::Object) => true,
+                (ResponseContentType::Json, crate::OutputType::Array) => true,
+                (ResponseContentType::Text, crate::OutputType::String) => true,
+                (ResponseContentType::Binary, crate::OutputType::Binary) => true,
+                // Also allow JSON for primitives
+                (ResponseContentType::Json, crate::OutputType::String) => true,
+                (ResponseContentType::Json, crate::OutputType::Integer) => true,
+                (ResponseContentType::Json, crate::OutputType::Number) => true,
+                (ResponseContentType::Json, crate::OutputType::Boolean) => true,
+                _ => false,
+            }
+        } else {
+            false
+        }
     }
 }
 

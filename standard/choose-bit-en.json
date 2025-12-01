@@ -34,7 +34,7 @@
         "position": 1,
         "validation": {
           "min_length": 5,
-          "max_length": 512
+          "max_length": 4096
         }
       }
     ],
