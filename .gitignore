@@ -75,5 +75,6 @@ flame.svg
 
 # Backup files
 *.bak
+*.log
 *.backup
 .scrap/
