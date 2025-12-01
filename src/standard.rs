@@ -364,5 +364,20 @@ pub async fn extract_pages_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<
     registry.get_cap(&urn.to_string()).await
 }
 
+/// Get the standard frontmatter summarization cap from registry
+pub async fn frontmatter_summarization_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+    let urn = CapUrnBuilder::new()
+        .tag("action", "generate")
+        .tag("target", "summary")
+        .tag("input", "frontmatter")
+        .tag("output", "text")
+		.tag("language", lang_code)
+		.tag("type", "unconstrained")
+        .build()
+        .map_err(|e| RegistryError::ValidationError(format!("Failed to build cap URN: {}", e)))?;
+    
+    registry.get_cap(&urn.to_string()).await
+}
+
 
 
