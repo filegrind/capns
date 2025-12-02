@@ -7,7 +7,6 @@
       "ext": "pdf"
     }
   },
-  "version": "1.0.0",
   "command": "generate-thumbnail",
   "cap_description": "Generate a thumbnail image preview of the document",
   "metadata": {},

@@ -1,0 +1,282 @@
+{
+  "urn": {
+    "tags": {
+      "action": "extract",
+      "target": "metadata",
+      "ext": "pdf"
+    }
+  },
+  "command": "extract-metadata",
+  "cap_description": "Extract document metadata including title, author, creation date, file size, and other properties",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the document file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "output",
+        "arg_type": "string",
+        "arg_description": "Write output to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Structured metadata including file properties, document properties, and format-specific metadata",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to the source file"
+        },
+        "file_size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "File size in bytes"
+        },
+        "content_length": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Content length"
+        },
+        "mime_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "MIME type of the file"
+        },
+        "encoding": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document encoding"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document title"
+        },
+        "subject": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document subject"
+        },
+        "identifier": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document identifier"
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document language"
+        },
+        "creator": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Application that created the document"
+        },
+        "producer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Application that produced the PDF"
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Document authors list"
+        },
+        "contributors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Document contributors"
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Document keywords"
+        },
+        "creation_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document creation date in any format"
+        },
+        "modification_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document modification date in any format"
+        },
+        "page_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Total number of pages"
+        },
+        "chapter_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Number of chapters"
+        },
+        "word_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Word count"
+        },
+        "character_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Character count"
+        },
+        "document_type": {
+          "type": "string",
+          "description": "Type of document"
+        },
+        "format_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Format version"
+        },
+        "extended_metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Additional metadata"
+        },
+        "pdf_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "PDF version (e.g., '1.4')"
+        },
+        "has_forms": {
+          "type": "boolean",
+          "description": "Whether document has forms"
+        },
+        "is_encrypted": {
+          "type": "boolean",
+          "description": "Whether document is encrypted"
+        },
+        "attachment_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of attachments"
+        },
+        "is_linearized": {
+          "type": "boolean",
+          "description": "Whether PDF is linearized"
+        },
+        "epub_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "EPUB version if applicable"
+        },
+        "publisher": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document publisher"
+        },
+        "publication_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Publication date"
+        },
+        "rights": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Rights information"
+        },
+        "has_drm": {
+          "type": "boolean",
+          "description": "Whether document has DRM"
+        },
+        "thumbnail_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to thumbnail if generated"
+        }
+      },
+      "required": [
+        "file_path",
+        "file_size_bytes",
+        "content_length",
+        "authors",
+        "contributors",
+        "keywords",
+        "document_type",
+        "extended_metadata",
+        "has_forms",
+        "is_encrypted",
+        "attachment_count",
+        "is_linearized",
+        "has_drm"
+      ]
+    }
+  }
+}

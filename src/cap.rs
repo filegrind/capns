@@ -63,6 +63,14 @@ pub struct CapArgument {
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<serde_json::Value>,
+    
+    /// Reference to external JSON schema for validation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_ref: Option<String>,
+    
+    /// Embedded JSON schema for validation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<serde_json::Value>,
 }
 
 impl ArgumentValidation {
@@ -108,6 +116,10 @@ pub struct CapOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_ref: Option<String>,
     
+    /// Embedded JSON schema for output validation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<serde_json::Value>,
+    
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
     
@@ -124,6 +136,7 @@ impl CapOutput {
             output_type,
             output_description: description,
             schema_ref: None,
+            schema: None,
             content_type: None,
             validation: ArgumentValidation::default(),
         }
@@ -136,6 +149,7 @@ impl CapOutput {
             output_description: description,
             content_type: Some(content_type),
             schema_ref: None,
+            schema: None,
             validation: ArgumentValidation::default(),
         }
     }
@@ -146,6 +160,19 @@ impl CapOutput {
             output_type,
             output_description: description,
             schema_ref: Some(schema_ref),
+            schema: None,
+            content_type: None,
+            validation: ArgumentValidation::default(),
+        }
+    }
+    
+    /// Create output with embedded schema
+    pub fn with_embedded_schema(output_type: OutputType, description: String, schema: serde_json::Value) -> Self {
+        Self {
+            output_type,
+            output_description: description,
+            schema_ref: None,
+            schema: Some(schema),
             content_type: None,
             validation: ArgumentValidation::default(),
         }
@@ -158,6 +185,7 @@ impl CapOutput {
             output_description: description,
             validation,
             schema_ref: None,
+            schema: None,
             content_type: None,
         }
     }
@@ -167,6 +195,7 @@ impl CapOutput {
         output_type: OutputType,
         description: String,
         schema_ref: Option<String>,
+        schema: Option<serde_json::Value>,
         content_type: Option<String>,
         validation: ArgumentValidation,
     ) -> Self {
@@ -174,6 +203,7 @@ impl CapOutput {
             output_type,
             output_description: description,
             schema_ref,
+            schema,
             content_type,
             validation,
         }
@@ -277,6 +307,8 @@ impl CapArgument {
             position: None,
             validation: ArgumentValidation::default(),
             default_value: None,
+            schema_ref: None,
+            schema: None,
         }
     }
     
@@ -295,6 +327,8 @@ impl CapArgument {
             position: Some(position),
             validation: ArgumentValidation::default(),
             default_value: None,
+            schema_ref: None,
+            schema: None,
         }
     }
     
@@ -308,6 +342,8 @@ impl CapArgument {
             position: None,
             validation,
             default_value: None,
+            schema_ref: None,
+            schema: None,
         }
     }
     
@@ -321,6 +357,8 @@ impl CapArgument {
             position: None,
             validation: ArgumentValidation::default(),
             default_value: Some(default),
+            schema_ref: None,
+            schema: None,
         }
     }
     
@@ -333,6 +371,8 @@ impl CapArgument {
         position: Option<usize>,
         validation: ArgumentValidation,
         default: Option<serde_json::Value>,
+        schema_ref: Option<String>,
+        schema: Option<serde_json::Value>,
     ) -> Self {
         Self {
             name,
@@ -342,6 +382,8 @@ impl CapArgument {
             position,
             validation,
             default_value: default,
+            schema_ref,
+            schema,
         }
     }
 }

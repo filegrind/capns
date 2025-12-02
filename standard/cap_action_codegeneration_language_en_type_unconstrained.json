@@ -6,7 +6,6 @@
       "type": "unconstrained"
     }
   },
-  "version": "1.0.0",
   "command": "llm_inference",
   "cap_description": "Code generation and programming tasks in English",
   "metadata": {},
@@ -102,6 +101,83 @@
   "output": {
     "output_type": "object",
     "output_description": "Generated code with optional tests and documentation",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The generated code"
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "rust",
+            "python",
+            "javascript",
+            "typescript",
+            "go",
+            "java",
+            "c",
+            "cpp",
+            "swift",
+            "kotlin",
+            "sql",
+            "shell",
+            "html",
+            "css",
+            "json",
+            "yaml",
+            "toml"
+          ],
+          "description": "Programming language used"
+        },
+        "tests": {
+          "type": "string",
+          "description": "Generated unit tests (if requested)"
+        },
+        "documentation": {
+          "type": "string",
+          "description": "Generated documentation"
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Explanation of the code logic"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Required dependencies or imports"
+        },
+        "complexity_score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Code complexity rating (1-10)"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tokens consumed for generation"
+        },
+        "model_used": {
+          "type": "string",
+          "description": "Model that generated the code"
+        },
+        "generation_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Generation time in milliseconds"
+        }
+      },
+      "required": [
+        "code",
+        "language"
+      ]
+    }
   }
 }

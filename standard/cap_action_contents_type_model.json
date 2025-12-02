@@ -1,0 +1,209 @@
+{
+  "urn": {
+    "tags": {
+      "action": "contents",
+      "type": "model"
+    }
+  },
+  "command": "contents",
+  "cap_description": "Inspect the contents and structure of a model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier to inspect",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "depth",
+        "arg_type": "string",
+        "arg_description": "Level of detail for contents inspection",
+        "cli_flag": "--depth",
+        "default_value": "summary",
+        "validation": {
+          "allowed_values": [
+            "summary",
+            "detailed",
+            "full"
+          ]
+        }
+      },
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format",
+        "cli_flag": "--format",
+        "default_value": "json",
+        "validation": {
+          "allowed_values": [
+            "json",
+            "text",
+            "tree"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Model contents including files, layers, parameters and metadata",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the inspected model"
+        },
+        "model_type": {
+          "type": "string",
+          "description": "Type/architecture of the model"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelFile"
+          },
+          "description": "List of files in the model"
+        },
+        "parameters": {
+          "$ref": "#/$defs/ModelParameters",
+          "description": "Model parameter information"
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LayerInfo"
+          },
+          "description": "Model layer information (if depth=detailed)"
+        },
+        "total_size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total model size in bytes"
+        },
+        "format": {
+          "type": "string",
+          "description": "Model format (e.g., 'pytorch', 'onnx', 'safetensors')"
+        },
+        "inspection_depth": {
+          "type": "string",
+          "enum": [
+            "summary",
+            "detailed",
+            "full"
+          ],
+          "description": "Depth of inspection performed"
+        }
+      },
+      "required": [
+        "model_name",
+        "files",
+        "total_size_bytes",
+        "inspection_depth"
+      ],
+      "$defs": {
+        "ModelFile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "File name"
+            },
+            "path": {
+              "type": "string",
+              "description": "File path within model"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "File size in bytes"
+            },
+            "type": {
+              "type": "string",
+              "description": "File type or role"
+            },
+            "checksum": {
+              "type": "string",
+              "description": "File checksum"
+            }
+          },
+          "required": [
+            "name",
+            "size_bytes"
+          ]
+        },
+        "ModelParameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "total_params": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Total number of parameters"
+            },
+            "trainable_params": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of trainable parameters"
+            },
+            "non_trainable_params": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of non-trainable parameters"
+            },
+            "dtype": {
+              "type": "string",
+              "description": "Parameter data type"
+            }
+          }
+        },
+        "LayerInfo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Layer name"
+            },
+            "type": {
+              "type": "string",
+              "description": "Layer type"
+            },
+            "parameters": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of parameters in layer"
+            },
+            "output_shape": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "description": "Output tensor shape"
+            }
+          },
+          "required": [
+            "name",
+            "type"
+          ]
+        }
+      }
+    }
+  }
+}

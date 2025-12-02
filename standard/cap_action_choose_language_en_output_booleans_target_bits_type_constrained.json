@@ -2,14 +2,14 @@
   "urn": {
     "tags": {
       "action": "choose",
-      "target": "bit",
-      "output": "boolean",
+      "target": "bits",
+      "output": "booleans",
       "language": "en",
       "type": "constrained"
     }
   },
-  "command": "bit_choice",
-  "cap_description": "Make binary (yes/no, true/false) decisions based on content and questions",
+  "command": "bit_choices",
+  "cap_description": "Make multiple binary (yes/no, true/false) decisions based on content and multiple questions",
   "metadata": {},
   "accepts_stdin": true,
   "arguments": {
@@ -17,7 +17,7 @@
       {
         "name": "content",
         "arg_type": "string",
-        "arg_description": "Content to analyze for the binary decision",
+        "arg_description": "Content to analyze for the binary decisions",
         "cli_flag": "--content",
         "position": 0,
         "validation": {
@@ -26,14 +26,21 @@
         }
       },
       {
-        "name": "question",
-        "arg_type": "string",
-        "arg_description": "Binary question to answer about the content",
-        "cli_flag": "--question",
+        "name": "questions",
+        "arg_type": "array",
+        "arg_description": "Array of binary questions to answer about the content",
+        "cli_flag": "--questions",
         "position": 1,
-        "validation": {
-          "min_length": 5,
-          "max_length": 4096
+        "schema": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 4096,
+            "description": "A binary question to answer about the content"
+          }
         }
       }
     ],
@@ -73,7 +80,7 @@
       {
         "name": "confidence_threshold",
         "arg_type": "number",
-        "arg_description": "Minimum confidence threshold for decision",
+        "arg_description": "Minimum confidence threshold for decisions",
         "cli_flag": "--confidence-threshold",
         "default_value": 0.7,
         "validation": {
@@ -85,7 +92,25 @@
   },
   "output": {
     "output_type": "object",
-    "output_description": "Binary decision result with boolean answer",
-    "content_type": "application/json"
+    "output_description": "Multiple binary decision results with boolean array",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 1,
+          "maxItems": 50,
+          "description": "Array of boolean results corresponding to each question"
+        }
+      },
+      "required": [
+        "results"
+      ]
+    }
   }
 }

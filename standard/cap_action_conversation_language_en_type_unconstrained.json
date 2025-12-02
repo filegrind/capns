@@ -6,7 +6,6 @@
       "type": "unconstrained"
     }
   },
-  "version": "1.0.0",
   "command": "llm_inference",
   "cap_description": "Natural conversation and chat responses in English",
   "metadata": {},
@@ -71,6 +70,58 @@
   "output": {
     "output_type": "object",
     "output_description": "Generated conversational response with context information",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "response": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The generated conversational response"
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": "Unique identifier for this conversation"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tokens consumed for generation"
+        },
+        "finish_reason": {
+          "type": "string",
+          "enum": [
+            "stop",
+            "length",
+            "timeout"
+          ],
+          "description": "Why generation finished"
+        },
+        "model_used": {
+          "type": "string",
+          "description": "Model that generated the response"
+        },
+        "generation_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Generation time in milliseconds"
+        },
+        "context_length": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Length of context provided"
+        },
+        "temperature_used": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Temperature setting used"
+        }
+      },
+      "required": [
+        "response"
+      ]
+    }
   }
 }

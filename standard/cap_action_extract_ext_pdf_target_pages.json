@@ -1,0 +1,175 @@
+{
+  "urn": {
+    "tags": {
+      "action": "extract",
+      "target": "pages",
+      "ext": "pdf"
+    }
+  },
+  "command": "extract-pages",
+  "cap_description": "Extract structured page content from the document",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the document file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "output",
+        "arg_type": "string",
+        "arg_description": "Write output to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      },
+      {
+        "name": "page_range",
+        "arg_type": "string",
+        "arg_description": "Page range to extract (e.g., '1-5' or '10-')",
+        "cli_flag": "--page-range",
+        "validation": {
+          "pattern": "^\\d+(-\\d*)?$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Structured page content extracted from the document",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source file path"
+        },
+        "document_type": {
+          "type": "string",
+          "description": "Document format/type (PDF, EPUB, etc.)"
+        },
+        "total_pages": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of pages in document"
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DocumentPage"
+          },
+          "description": "All pages in the document"
+        },
+        "extraction_info": {
+          "$ref": "#/$defs/ExtractionInfo",
+          "description": "Metadata about the extraction process"
+        },
+        "document_title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Document title (from metadata if available)"
+        }
+      },
+      "required": [
+        "source_file",
+        "document_type",
+        "total_pages",
+        "pages",
+        "extraction_info"
+      ],
+      "$defs": {
+        "DocumentPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "page_number": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed)"
+            },
+            "text_content": {
+              "type": "string",
+              "description": "Text content of this page as a single string"
+            },
+            "source_ref": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional source reference (filename, section, etc.)"
+            },
+            "word_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Word count for this page"
+            },
+            "character_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Character count for this page"
+            }
+          },
+          "required": [
+            "page_number",
+            "text_content"
+          ]
+        },
+        "ExtractionInfo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "extractor_name": {
+              "type": "string",
+              "description": "Tool that performed the extraction"
+            },
+            "extractor_version": {
+              "type": "string",
+              "description": "Version of the extraction tool"
+            },
+            "extracted_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Timestamp of extraction"
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Any warnings or notes about the extraction"
+            }
+          },
+          "required": [
+            "extractor_name",
+            "extractor_version",
+            "warnings"
+          ]
+        }
+      }
+    }
+  }
+}

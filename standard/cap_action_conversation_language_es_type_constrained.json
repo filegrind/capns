@@ -6,7 +6,6 @@
       "type": "constrained"
     }
   },
-  "version": "1.0.0",
   "command": "llm_inference",
   "cap_description": "Conversación natural y respuestas de chat en español",
   "metadata": {},
@@ -71,6 +70,58 @@
   "output": {
     "output_type": "object",
     "output_description": "Respuesta conversacional generada con información de contexto",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "respuesta": {
+          "type": "string",
+          "minLength": 1,
+          "description": "La respuesta conversacional generada"
+        },
+        "id_conversacion": {
+          "type": "string",
+          "description": "Identificador único para esta conversación"
+        },
+        "tokens_usados": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Número de tokens consumidos para la generación"
+        },
+        "razon_finalizacion": {
+          "type": "string",
+          "enum": [
+            "stop",
+            "length",
+            "timeout"
+          ],
+          "description": "Por qué terminó la generación"
+        },
+        "modelo_usado": {
+          "type": "string",
+          "description": "Modelo que generó la respuesta"
+        },
+        "tiempo_generacion_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tiempo de generación en milisegundos"
+        },
+        "longitud_contexto": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Longitud del contexto proporcionado"
+        },
+        "temperatura_usada": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Configuración de temperatura utilizada"
+        }
+      },
+      "required": [
+        "respuesta"
+      ]
+    }
   }
 }

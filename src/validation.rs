@@ -63,6 +63,12 @@ pub enum ValidationError {
         cap_urn: String,
         error: String,
     },
+    /// JSON schema validation error
+    SchemaValidationFailed {
+        cap_urn: String,
+        field_name: String,
+        schema_errors: String,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -99,6 +105,9 @@ impl fmt::Display for ValidationError {
             }
             ValidationError::JsonParseError { cap_urn, error } => {
                 write!(f, "Cap '{}' JSON parsing failed: {}", cap_urn, error)
+            }
+            ValidationError::SchemaValidationFailed { cap_urn, field_name, schema_errors } => {
+                write!(f, "Cap '{}' schema validation failed for '{}': {}", cap_urn, field_name, schema_errors)
             }
         }
     }
@@ -162,6 +171,9 @@ impl InputValidator {
         
         // Validation rules
         Self::validate_argument_rules(cap, arg_def, value)?;
+        
+        // Schema validation for structured types
+        Self::validate_argument_schema(cap, arg_def, value)?;
         
         Ok(())
     }
@@ -319,6 +331,43 @@ impl InputValidator {
         Ok(())
     }
     
+    fn validate_argument_schema(
+        cap: &Cap,
+        arg_def: &CapArgument,
+        value: &Value,
+    ) -> Result<(), ValidationError> {
+        // Only validate structured types that have schemas
+        if !matches!(arg_def.arg_type, ArgumentType::Object | ArgumentType::Array) {
+            return Ok(());
+        }
+        
+        // Skip if no schema is defined
+        if arg_def.schema.is_none() && arg_def.schema_ref.is_none() {
+            return Ok(());
+        }
+        
+        // Use the schema validation module
+        let mut schema_validator = crate::schema_validation::SchemaValidator::new();
+        
+        match schema_validator.validate_argument(arg_def, value) {
+            Ok(()) => Ok(()),
+            Err(crate::schema_validation::SchemaValidationError::ArgumentValidation { details, .. }) => {
+                Err(ValidationError::SchemaValidationFailed {
+                    cap_urn: cap.urn_string(),
+                    field_name: arg_def.name.clone(),
+                    schema_errors: details,
+                })
+            }
+            Err(err) => {
+                Err(ValidationError::SchemaValidationFailed {
+                    cap_urn: cap.urn_string(),
+                    field_name: arg_def.name.clone(),
+                    schema_errors: err.to_string(),
+                })
+            }
+        }
+    }
+    
     fn get_json_type_name(value: &Value) -> String {
         match value {
             Value::Null => "null".to_string(),
@@ -359,6 +408,9 @@ impl OutputValidator {
         
         // Validation rules
         Self::validate_output_rules(cap, output_def, output)?;
+        
+        // Schema validation for structured outputs
+        Self::validate_output_schema(cap, output_def, output)?;
         
         Ok(())
     }
@@ -478,6 +530,43 @@ impl OutputValidator {
         }
         
         Ok(())
+    }
+    
+    fn validate_output_schema(
+        cap: &Cap,
+        output_def: &CapOutput,
+        value: &Value,
+    ) -> Result<(), ValidationError> {
+        // Only validate structured types that have schemas
+        if !matches!(output_def.output_type, OutputType::Object | OutputType::Array) {
+            return Ok(());
+        }
+        
+        // Skip if no schema is defined
+        if output_def.schema.is_none() && output_def.schema_ref.is_none() {
+            return Ok(());
+        }
+        
+        // Use the schema validation module
+        let mut schema_validator = crate::schema_validation::SchemaValidator::new();
+        
+        match schema_validator.validate_output(output_def, value) {
+            Ok(()) => Ok(()),
+            Err(crate::schema_validation::SchemaValidationError::OutputValidation { details }) => {
+                Err(ValidationError::SchemaValidationFailed {
+                    cap_urn: cap.urn_string(),
+                    field_name: "output".to_string(),
+                    schema_errors: details,
+                })
+            }
+            Err(err) => {
+                Err(ValidationError::SchemaValidationFailed {
+                    cap_urn: cap.urn_string(),
+                    field_name: "output".to_string(),
+                    schema_errors: err.to_string(),
+                })
+            }
+        }
     }
 }
 

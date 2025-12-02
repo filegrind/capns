@@ -6,7 +6,6 @@
       "type": "unconstrained"
     }
   },
-  "version": "1.0.0",
   "command": "llm_inference",
   "cap_description": "Creative writing and content generation in English",
   "metadata": {},
@@ -119,6 +118,65 @@
   "output": {
     "output_type": "object",
     "output_description": "Creative written content with metadata",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The generated creative content"
+        },
+        "genre": {
+          "type": "string",
+          "enum": [
+            "story",
+            "poetry",
+            "dialogue",
+            "description",
+            "screenplay",
+            "essay",
+            "other"
+          ],
+          "description": "Genre of creative content"
+        },
+        "word_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of words in generated content"
+        },
+        "creativity_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Assessed creativity level of output"
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Identified themes in the content"
+        },
+        "style_notes": {
+          "type": "string",
+          "description": "Notes about writing style used"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tokens consumed"
+        },
+        "model_used": {
+          "type": "string",
+          "description": "Model that generated the content"
+        }
+      },
+      "required": [
+        "content",
+        "word_count"
+      ]
+    }
   }
 }

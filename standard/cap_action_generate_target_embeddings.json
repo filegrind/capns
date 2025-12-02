@@ -1,0 +1,195 @@
+{
+  "urn": {
+    "tags": {
+      "action": "generate",
+      "target": "embeddings"
+    }
+  },
+  "command": "generate",
+  "cap_description": "Generate vector embeddings from text or file input",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "output",
+        "arg_type": "string",
+        "arg_description": "Output JSON file path to write embeddings",
+        "cli_flag": "--output",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "text",
+        "arg_type": "string",
+        "arg_description": "Input text to generate embeddings for",
+        "cli_flag": "--text",
+        "validation": {
+          "min_length": 1,
+          "max_length": 1000000
+        }
+      },
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to input file to generate embeddings from",
+        "cli_flag": "--file-path",
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      },
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model name to use for embedding generation",
+        "cli_flag": "--model",
+        "default_value": "sentence-transformers/all-MiniLM-L6-v2"
+      },
+      {
+        "name": "chunk_size",
+        "arg_type": "integer",
+        "arg_description": "Chunk size in words for splitting input text",
+        "cli_flag": "--chunk-size",
+        "default_value": 400,
+        "validation": {
+          "min": 1
+        }
+      },
+      {
+        "name": "chunk_overlap",
+        "arg_type": "integer",
+        "arg_description": "Chunk overlap in words when splitting input text",
+        "cli_flag": "--chunk-overlap",
+        "default_value": 50,
+        "validation": {
+          "min": 0
+        }
+      },
+      {
+        "name": "include",
+        "arg_type": "string",
+        "arg_description": "File include pattern (can be provided multiple times)",
+        "cli_flag": "--include"
+      },
+      {
+        "name": "exclude",
+        "arg_type": "string",
+        "arg_description": "File exclude pattern (can be provided multiple times)",
+        "cli_flag": "--exclude"
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "JSON file containing embeddings, chunk metadata and model information",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "embeddings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EmbeddingChunk"
+          },
+          "description": "Array of embedding chunks"
+        },
+        "model_info": {
+          "$ref": "#/$defs/ModelInfo",
+          "description": "Information about the model used"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional metadata"
+        },
+        "total_chunks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of chunks processed"
+        },
+        "processing_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processing time in milliseconds"
+        }
+      },
+      "required": [
+        "embeddings",
+        "model_info",
+        "total_chunks"
+      ],
+      "$defs": {
+        "EmbeddingChunk": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "The text chunk that was embedded"
+            },
+            "vector": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "The embedding vector"
+            },
+            "chunk_index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Index of this chunk"
+            },
+            "start_position": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Start position in original text"
+            },
+            "end_position": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "End position in original text"
+            }
+          },
+          "required": [
+            "text",
+            "vector",
+            "chunk_index"
+          ]
+        },
+        "ModelInfo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model_name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Name of the embedding model"
+            },
+            "dimensions": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Dimensionality of the embeddings"
+            },
+            "max_sequence_length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum sequence length supported"
+            }
+          },
+          "required": [
+            "model_name",
+            "dimensions"
+          ]
+        }
+      }
+    }
+  }
+}

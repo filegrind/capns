@@ -9,7 +9,6 @@
       "type": "unconstrained"
     }
   },
-  "version": "1.0.0",
   "command": "generate_text",
   "cap_description": "Extract and organize bibliographic information from book frontmatter text",
   "metadata": {},
@@ -17,10 +16,10 @@
   "arguments": {
     "required": [
       {
-        "name": "text",
+        "name": "frontmatter_text",
         "arg_type": "string",
         "arg_description": "Frontmatter text to process and summarize",
-        "cli_flag": "--text",
+        "cli_flag": "--frontmatter-text",
         "position": 0,
         "validation": {
           "min_length": 50,
@@ -95,6 +94,21 @@
   "output": {
     "output_type": "object",
     "output_description": "Organized bibliographic summary with extracted metadata",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Organized summary of the frontmatter content"
+        }
+      },
+      "required": [
+        "summary"
+      ]
+    }
   }
 }

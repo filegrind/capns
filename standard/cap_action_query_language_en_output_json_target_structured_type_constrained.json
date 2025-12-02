@@ -8,7 +8,6 @@
       "type": "constrained"
     }
   },
-  "version": "1.0.0",
   "command": "structured_query",
   "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
   "metadata": {},
@@ -32,7 +31,29 @@
         "arg_type": "object",
         "arg_description": "Template substitutions for the query prompt",
         "cli_flag": "--substitutions",
-        "position": 1
+        "position": 1,
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000,
+              "description": "Main content for substitution"
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Optional metadata"
+            }
+          },
+          "required": [
+            "content"
+          ]
+        }
       }
     ],
     "optional": [
@@ -76,6 +97,17 @@
   "output": {
     "output_type": "object",
     "output_description": "Structured JSON response conforming to the query's schema",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": [
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ],
+      "description": "Raw JSON result from query execution - schema varies by specific query"
+    }
   }
 }

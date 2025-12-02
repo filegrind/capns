@@ -1,0 +1,120 @@
+{
+  "urn": {
+    "tags": {
+      "action": "management",
+      "type": "model"
+    }
+  },
+  "command": "manage",
+  "cap_description": "General model management operations including installation, configuration and lifecycle",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "operation",
+        "arg_type": "string",
+        "arg_description": "Management operation to perform",
+        "cli_flag": "--operation",
+        "position": 0,
+        "validation": {
+          "allowed_values": [
+            "init",
+            "config",
+            "validate",
+            "cleanup",
+            "info"
+          ]
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier or path",
+        "cli_flag": "--model",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      },
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format for information display",
+        "cli_flag": "--format",
+        "default_value": "json",
+        "validation": {
+          "allowed_values": [
+            "json",
+            "text",
+            "yaml"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Management operation result with status and details",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "Whether the operation was successful"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "init",
+            "config",
+            "validate",
+            "cleanup",
+            "info"
+          ],
+          "description": "Operation that was performed"
+        },
+        "model_name": {
+          "type": "string",
+          "description": "Model that was operated on (if applicable)"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable result message"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Operation-specific details"
+        },
+        "execution_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Operation execution time in milliseconds"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Any warnings generated during operation"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Any errors encountered during operation"
+        }
+      },
+      "required": [
+        "success",
+        "operation",
+        "message"
+      ]
+    }
+  }
+}

@@ -6,7 +6,6 @@
       "type": "unconstrained"
     }
   },
-  "version": "1.0.0",
   "command": "llm_inference",
   "cap_description": "Language translation from and to English",
   "metadata": {},
@@ -132,6 +131,67 @@
   "output": {
     "output_type": "object",
     "output_description": "Translated text with language detection and confidence metrics",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translated_text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The translated text"
+        },
+        "source_language": {
+          "type": "string",
+          "description": "Detected or specified source language"
+        },
+        "target_language": {
+          "type": "string",
+          "description": "Target language for translation"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Translation confidence score"
+        },
+        "translation_style": {
+          "type": "string",
+          "enum": [
+            "formal",
+            "informal",
+            "literal",
+            "natural",
+            "technical",
+            "creative"
+          ],
+          "description": "Style used for translation"
+        },
+        "word_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Word count of translated text"
+        },
+        "character_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Character count of translated text"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tokens consumed"
+        },
+        "model_used": {
+          "type": "string",
+          "description": "Model that performed the translation"
+        }
+      },
+      "required": [
+        "translated_text",
+        "target_language",
+        "confidence"
+      ]
+    }
   }
 }

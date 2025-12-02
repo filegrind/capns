@@ -1,0 +1,134 @@
+{
+  "urn": {
+    "tags": {
+      "action": "list",
+      "type": "model"
+    }
+  },
+  "command": "list",
+  "cap_description": "List available models and their status",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "optional": [
+      {
+        "name": "filter",
+        "arg_type": "string",
+        "arg_description": "Filter models by pattern",
+        "cli_flag": "--filter",
+        "validation": {
+          "pattern": "^[^\\0]*$"
+        }
+      },
+      {
+        "name": "status",
+        "arg_type": "string",
+        "arg_description": "Filter by model status",
+        "cli_flag": "--status",
+        "validation": {
+          "allowed_values": [
+            "loaded",
+            "available",
+            "downloading",
+            "cached",
+            "all"
+          ]
+        }
+      },
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format",
+        "cli_flag": "--format",
+        "default_value": "json",
+        "validation": {
+          "allowed_values": [
+            "json",
+            "text",
+            "table"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "List of models with their metadata and status",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelInfo"
+          },
+          "description": "Array of model information"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of models"
+        },
+        "filter_applied": {
+          "type": "string",
+          "description": "Filter that was applied"
+        }
+      },
+      "required": [
+        "models",
+        "total_count"
+      ],
+      "$defs": {
+        "ModelInfo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Model name or identifier"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "loaded",
+                "available",
+                "downloading",
+                "cached"
+              ],
+              "description": "Current model status"
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Model size in bytes"
+            },
+            "version": {
+              "type": "string",
+              "description": "Model version"
+            },
+            "repository": {
+              "type": "string",
+              "description": "Source repository"
+            },
+            "description": {
+              "type": "string",
+              "description": "Model description"
+            },
+            "last_accessed": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Last access time"
+            }
+          },
+          "required": [
+            "name",
+            "status"
+          ]
+        }
+      }
+    }
+  }
+}

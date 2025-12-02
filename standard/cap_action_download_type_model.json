@@ -5,7 +5,6 @@
       "type": "model"
     }
   },
-  "version": "1.0.0",
   "command": "download",
   "cap_description": "Download machine learning models from various repositories",
   "metadata": {},
@@ -60,6 +59,52 @@
   "output": {
     "output_type": "object",
     "output_description": "Download result with model path and metadata",
-    "content_type": "application/json"
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "Whether the download was successful"
+        },
+        "model_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the downloaded model"
+        },
+        "local_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Local path where the model was saved"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Size of the downloaded model in bytes"
+        },
+        "download_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Download time in milliseconds"
+        },
+        "repository": {
+          "type": "string",
+          "description": "Repository the model was downloaded from"
+        },
+        "version": {
+          "type": "string",
+          "description": "Model version"
+        },
+        "checksum": {
+          "type": "string",
+          "description": "File checksum for verification"
+        }
+      },
+      "required": [
+        "success",
+        "model_name"
+      ]
+    }
   }
 }

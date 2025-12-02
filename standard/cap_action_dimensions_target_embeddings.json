@@ -1,0 +1,48 @@
+{
+  "urn": {
+    "tags": {
+      "action": "dimensions",
+      "target": "embeddings"
+    }
+  },
+  "command": "dimensions",
+  "cap_description": "Get the dimensionality of generated embeddings for a specific model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model_name",
+        "arg_type": "string",
+        "arg_description": "Model name to check dimensions for",
+        "cli_flag": "--model-name",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1,
+          "max_length": 256
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Dimensionality information for the model",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Dimensionality of the generated embeddings"
+        }
+      },
+      "required": [
+        "dimensions"
+      ]
+    }
+  }
+}

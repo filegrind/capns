@@ -1,0 +1,130 @@
+{
+  "urn": {
+    "tags": {
+      "action": "status",
+      "type": "model"
+    }
+  },
+  "command": "status",
+  "cap_description": "Check the status and health of a specific model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model identifier to check status for",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "detailed",
+        "arg_type": "boolean",
+        "arg_description": "Include detailed diagnostics and metrics",
+        "cli_flag": "--detailed",
+        "default_value": false
+      },
+      {
+        "name": "format",
+        "arg_type": "string",
+        "arg_description": "Output format",
+        "cli_flag": "--format",
+        "default_value": "json",
+        "validation": {
+          "allowed_values": [
+            "json",
+            "text"
+          ]
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Model status including health, performance metrics and configuration",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the model"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "loaded",
+            "available",
+            "downloading",
+            "cached",
+            "error"
+          ],
+          "description": "Current model status"
+        },
+        "health": {
+          "type": "string",
+          "enum": [
+            "healthy",
+            "degraded",
+            "unhealthy",
+            "unknown"
+          ],
+          "description": "Model health status"
+        },
+        "is_loaded": {
+          "type": "boolean",
+          "description": "Whether the model is currently loaded in memory"
+        },
+        "memory_usage_mb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Current memory usage in megabytes"
+        },
+        "load_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the model was loaded"
+        },
+        "last_used": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last time the model was used"
+        },
+        "usage_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of times the model has been used"
+        },
+        "average_response_time_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Average response time in milliseconds"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Error message if status is 'error'"
+        },
+        "configuration": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Model configuration (if detailed=true)"
+        }
+      },
+      "required": [
+        "model_name",
+        "status",
+        "health",
+        "is_loaded"
+      ]
+    }
+  }
+}
