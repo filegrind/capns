@@ -61,14 +61,16 @@ impl CapUrn {
 
         // Remove the "cap:" prefix
         let tags_part = &s[4..];
-        if tags_part.is_empty() {
-            return Err(CapUrnError::Empty);
-        }
 
         let mut tags = BTreeMap::new();
 
         // Remove trailing semicolon if present
         let normalized_tags_part = tags_part.trim_end_matches(';');
+        
+        // Handle empty cap URN (cap: with no tags)
+        if normalized_tags_part.is_empty() {
+            return Ok(Self { tags });
+        }
         
         for tag_str in normalized_tags_part.split(';') {
             let tag_str = tag_str.trim();
@@ -88,24 +90,36 @@ impl CapUrn {
                 return Err(CapUrnError::EmptyTagComponent(tag_str.to_string()));
             }
 
+            // Check for duplicate keys
+            if tags.contains_key(key) {
+                return Err(CapUrnError::DuplicateKey(key.to_string()));
+            }
+
+            // Validate key cannot be purely numeric
+            if Self::is_purely_numeric(key) {
+                return Err(CapUrnError::NumericKey(key.to_string()));
+            }
+
             // Validate key and value characters
-            if !Self::is_valid_tag_component(key) || !Self::is_valid_tag_component(value) {
+            if !Self::is_valid_tag_component(key, true) || !Self::is_valid_tag_component(value, false) {
                 return Err(CapUrnError::InvalidCharacter(tag_str.to_string()));
             }
 
             tags.insert(key.to_string(), value.to_string());
         }
 
-        if tags.is_empty() {
-            return Err(CapUrnError::Empty);
-        }
-
         Ok(Self { tags })
     }
 
     /// Validate that a tag component contains only allowed characters
-    fn is_valid_tag_component(s: &str) -> bool {
-        s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '*')
+    /// Allowed: alphanumeric, underscore, dash, slash, colon, asterisk (asterisk only in values)
+    fn is_valid_tag_component(s: &str, is_key: bool) -> bool {
+        s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == ':' || (!is_key && c == '*'))
+    }
+    
+    /// Check if a string is purely numeric
+    fn is_purely_numeric(s: &str) -> bool {
+        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
     }
 
     /// Get the canonical string representation of this cap URN
@@ -283,6 +297,8 @@ pub enum CapUrnError {
     InvalidTagFormat(String),
     EmptyTagComponent(String),
     InvalidCharacter(String),
+    DuplicateKey(String),
+    NumericKey(String),
 }
 
 impl fmt::Display for CapUrnError {
@@ -301,7 +317,13 @@ impl fmt::Display for CapUrnError {
                 write!(f, "Tag key or value cannot be empty: {}", tag)
             }
             CapUrnError::InvalidCharacter(tag) => {
-                write!(f, "Invalid character in tag (use alphanumeric, _, -, *): {}", tag)
+                write!(f, "Invalid character in tag (use alphanumeric, _, -, /, :, * in values only): {}", tag)
+            }
+            CapUrnError::DuplicateKey(key) => {
+                write!(f, "Duplicate tag key: {}", key)
+            }
+            CapUrnError::NumericKey(key) => {
+                write!(f, "Tag key cannot be purely numeric: {}", key)
             }
         }
     }
@@ -619,5 +641,59 @@ mod tests {
         let request = CapUrn::from_string("cap:ext=jpg").unwrap();
         assert!(!cap.matches(&request));
         assert!(wildcarded.matches(&CapUrn::from_string("cap:ext=*").unwrap()));
+    }
+
+    #[test]
+    fn test_empty_cap_urn() {
+        // Empty cap URN should be valid and match everything
+        let empty_cap = CapUrn::from_string("cap:").unwrap();
+        assert_eq!(empty_cap.tags.len(), 0);
+        assert_eq!(empty_cap.to_string(), "cap:");
+        
+        // Should match any other cap
+        let specific_cap = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
+        assert!(empty_cap.matches(&specific_cap));
+        assert!(empty_cap.matches(&empty_cap));
+    }
+
+    #[test]
+    fn test_extended_character_support() {
+        // Test forward slashes and colons in tag components
+        let cap = CapUrn::from_string("cap:url=https://example_org/api;path=/some/file").unwrap();
+        assert_eq!(cap.get_tag("url"), Some(&"https://example_org/api".to_string()));
+        assert_eq!(cap.get_tag("path"), Some(&"/some/file".to_string()));
+    }
+
+    #[test]
+    fn test_wildcard_restrictions() {
+        // Wildcard should be rejected in keys
+        assert!(CapUrn::from_string("cap:*=value").is_err());
+        
+        // Wildcard should be accepted in values
+        let cap = CapUrn::from_string("cap:key=*").unwrap();
+        assert_eq!(cap.get_tag("key"), Some(&"*".to_string()));
+    }
+
+    #[test]
+    fn test_duplicate_key_rejection() {
+        // This should fail in real parsing - simulating with manual insertion check
+        let result = CapUrn::from_string("cap:key=value1;key=value2");
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(matches!(e, CapUrnError::DuplicateKey(_)));
+        }
+    }
+
+    #[test]
+    fn test_numeric_key_restriction() {
+        // Pure numeric keys should be rejected
+        assert!(CapUrn::from_string("cap:123=value").is_err());
+        
+        // Mixed alphanumeric keys should be allowed
+        assert!(CapUrn::from_string("cap:key123=value").is_ok());
+        assert!(CapUrn::from_string("cap:123key=value").is_ok());
+        
+        // Pure numeric values should be allowed
+        assert!(CapUrn::from_string("cap:key=123").is_ok());
     }
 }
