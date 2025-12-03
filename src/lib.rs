@@ -13,6 +13,7 @@ pub mod registry;
 pub mod standard;
 pub mod caller;
 pub mod response;
+pub mod caphost_registry;
 
 pub use cap_urn::*;
 pub use cap::*;
@@ -23,3 +24,4 @@ pub use registry::*;
 pub use standard::*;
 pub use caller::*;
 pub use response::*;
+pub use caphost_registry::*;

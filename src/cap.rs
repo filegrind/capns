@@ -216,7 +216,6 @@ pub struct Cap {
     /// Formal cap URN with hierarchical naming
     pub urn: CapUrn,
     
-    
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cap_description: Option<String>,

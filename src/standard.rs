@@ -5,9 +5,9 @@
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{
-    ArgumentType, ArgumentValidation, Cap, CapArgument, CapArguments, CapOutput, CapUrn, CapUrnBuilder, OutputType, CapRegistry, RegistryError
+    Cap, CapUrnBuilder, CapRegistry, RegistryError
 };
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 // =============================================================================
 // LLM CAPABILITIES
