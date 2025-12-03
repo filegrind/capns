@@ -112,9 +112,9 @@ impl CapUrn {
     }
 
     /// Validate that a tag component contains only allowed characters
-    /// Allowed: alphanumeric, underscore, dash, slash, colon, asterisk (asterisk only in values)
+    /// Allowed: alphanumeric, underscore, dash, slash, colon, dot, asterisk (asterisk only in values)
     fn is_valid_tag_component(s: &str, is_key: bool) -> bool {
-        s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == ':' || (!is_key && c == '*'))
+        s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == ':' || c == '.' || (!is_key && c == '*'))
     }
     
     /// Check if a string is purely numeric
@@ -317,7 +317,7 @@ impl fmt::Display for CapUrnError {
                 write!(f, "Tag key or value cannot be empty: {}", tag)
             }
             CapUrnError::InvalidCharacter(tag) => {
-                write!(f, "Invalid character in tag (use alphanumeric, _, -, /, :, * in values only): {}", tag)
+                write!(f, "Invalid character in tag (use alphanumeric, _, -, /, :, ., * in values only): {}", tag)
             }
             CapUrnError::DuplicateKey(key) => {
                 write!(f, "Duplicate tag key: {}", key)

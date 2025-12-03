@@ -81,11 +81,12 @@ impl CapHostRegistry {
     }
 
     /// Find the best capability host for the request using specificity ranking
-    pub fn find_best_caphost(&self, request_urn: &str) -> Result<&dyn CapHost, CapHostRegistryError> {
+    /// Returns both the CapHost and the Cap definition that matched
+    pub fn find_best_caphost(&self, request_urn: &str) -> Result<(&dyn CapHost, &Cap), CapHostRegistryError> {
         let request = CapUrn::from_string(request_urn)
             .map_err(|e| CapHostRegistryError::InvalidUrn(format!("{}: {}", request_urn, e)))?;
         
-        let mut best_match: Option<(&dyn CapHost, usize)> = None;
+        let mut best_match: Option<(&dyn CapHost, &Cap, usize)> = None;
         
         for entry in self.hosts.values() {
             for cap in &entry.capabilities {
@@ -93,11 +94,11 @@ impl CapHostRegistry {
                     let specificity = cap.urn.specificity();
                     match best_match {
                         None => {
-                            best_match = Some((entry.host.as_ref(), specificity));
+                            best_match = Some((entry.host.as_ref(), cap, specificity));
                         }
-                        Some((_, current_specificity)) => {
+                        Some((_, _, current_specificity)) => {
                             if specificity > current_specificity {
-                                best_match = Some((entry.host.as_ref(), specificity));
+                                best_match = Some((entry.host.as_ref(), cap, specificity));
                             }
                         }
                     }
@@ -107,10 +108,11 @@ impl CapHostRegistry {
         }
         
         match best_match {
-            Some((host, _)) => Ok(host),
+            Some((host, cap, _)) => Ok((host, cap)),
             None => Err(CapHostRegistryError::NoHostsFound(request_urn.to_string())),
         }
     }
+
 
     /// Get all registered capability host names
     pub fn get_host_names(&self) -> Vec<String> {
@@ -263,7 +265,7 @@ mod tests {
         registry.register_caphost("specific".to_string(), specific_host, vec![specific_cap]).await.unwrap();
         
         // Request should match the more specific host (using valid URN characters)
-        let _best_host = registry.find_best_caphost("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
+        let (_best_host, _best_cap) = registry.find_best_caphost("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
         
         // Both hosts should match, but we should get the more specific one
         let all_hosts = registry.find_caphosts("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
