@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
-use crate::{CapUrn, ResponseWrapper, Cap, validation::ValidationError};
+use crate::{CapUrn, ResponseWrapper, Cap};
 
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
@@ -12,7 +12,7 @@ pub struct CapCaller {
 }
 
 /// Trait for Cap Host communication
-pub trait CapHost: Send + Sync {
+pub trait CapHost: Send + Sync + std::fmt::Debug {
     fn execute_cap(
         &self,
         cap_urn: &str,

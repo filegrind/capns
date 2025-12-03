@@ -75,7 +75,7 @@ pub struct CapRegistry {
 impl CapRegistry {
     /// Create a new CapRegistry with standard capabilities bundled
     pub async fn new() -> Result<Self, RegistryError> {
-        let client = reqwest::Client::new();
+        let _client = reqwest::Client::new();
 		let cache_dir = Self::get_cache_dir()?;
 		
         fs::create_dir_all(&cache_dir).map_err(|e| {
@@ -222,6 +222,7 @@ impl CapRegistry {
     /// Get all currently cached caps from in-memory cache
     pub async fn get_cached_caps(&self) -> Result<Vec<Cap>, RegistryError> {
         let cached_caps = self.cached_caps.lock().map_err(|e| {
+            eprintln!("Stack trace: {}", std::backtrace::Backtrace::capture());
             RegistryError::CacheError(format!("Failed to lock cache: {}", e))
         })?;
         Ok(cached_caps.values().cloned().collect())

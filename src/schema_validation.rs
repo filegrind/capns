@@ -3,7 +3,7 @@
 //! Provides comprehensive validation of JSON data against JSON Schema Draft-07.
 
 use crate::{Cap, CapArgument, CapOutput};
-use jsonschema::{JSONSchema, ValidationError as JsonSchemaError};
+use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use thiserror::Error;
