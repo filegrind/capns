@@ -19,7 +19,7 @@ Presence or absence of the final trailing semicolon does not matter. Both `cap:k
 
 ### 6. Character Restrictions
 - No spaces in cap URNs
-- Allowed characters in tag keys and values: alphanumeric, dashes (`-`), underscores (`_`), slashes (`/`), colons (`:`), and asterisk (`*` in values only)
+- Allowed characters in tag keys and values: alphanumeric, dashes (`-`), underscores (`_`), slashes (`/`), colons (`:`), dots (`.`), and asterisk (`*` in values only)
 - Quote marks (`"`, `'`), hash (`#`), and other special characters are not accepted
 
 ### 7. Tag Structure
