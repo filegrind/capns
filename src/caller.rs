@@ -125,14 +125,14 @@ impl CapCaller {
         // Use the formal cap URN system to detect binary caps
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
-        cap_urn.get_tag("output") == Some(&"binary".to_string())
+        cap_urn.get_tag("output") == Some("binary".to_string())
     }
     
     /// Check if this cap should produce JSON output
     fn is_json_cap(&self) -> bool {
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
-        cap_urn.get_tag("output") != Some(&"binary".to_string())
+        cap_urn.get_tag("output") != Some("binary".to_string())
     }
     
     /// Validate input arguments against cap definition
