@@ -138,8 +138,8 @@ impl CapUrn {
 
     /// Get a specific tag value
     /// Key is normalized to lowercase for case-insensitive lookup
-    pub fn get_tag(&self, key: &str) -> Option<&String> {
-        self.tags.get(&key.to_lowercase())
+    pub fn get_tag(&self, key: &str) -> Option<String> {
+        self.tags.get(&key.to_lowercase()).cloned()
     }
 
     /// Check if this cap has a specific tag with a specific value
