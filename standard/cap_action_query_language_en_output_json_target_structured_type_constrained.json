@@ -91,6 +91,18 @@
         "arg_description": "Whether to enable streaming callback updates",
         "cli_flag": "--callback",
         "default_value": false
+      },
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model to use for decision making",
+        "cli_flag": "--model",
+        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF",
+        "validation": {
+          "pattern": ".*:.*",
+          "min_length": 4,
+          "max_length": 512
+        }
       }
     ]
   },
