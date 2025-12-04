@@ -44,13 +44,6 @@
         }
       },
       {
-        "name": "model",
-        "arg_type": "string",
-        "arg_description": "Model name to use for embedding generation",
-        "cli_flag": "--model",
-        "default_value": "sentence-transformers/all-MiniLM-L6-v2"
-      },
-      {
         "name": "chunk_size",
         "arg_type": "integer",
         "arg_description": "Chunk size in words for splitting input text",
@@ -81,6 +74,18 @@
         "arg_type": "string",
         "arg_description": "File exclude pattern (can be provided multiple times)",
         "cli_flag": "--exclude"
+      },
+      {
+        "name": "model",
+        "arg_type": "string",
+        "arg_description": "Model to use for embeddings generation",
+        "cli_flag": "--model",
+        "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
+        "validation": {
+          "pattern": ".*:.*",
+          "min_length": 4,
+          "max_length": 512
+        }
       }
     ]
   },

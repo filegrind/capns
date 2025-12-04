@@ -10,17 +10,17 @@
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
-    "required": [
+    "optional": [
       {
-        "name": "model_name",
+        "name": "model",
         "arg_type": "string",
-        "arg_description": "Model name to check dimensions for",
-        "cli_flag": "--model-name",
-        "position": 0,
+        "arg_description": "Model to use for embeddings generation",
+        "cli_flag": "--model",
+        "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
         "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1,
-          "max_length": 256
+          "pattern": ".*:.*",
+          "min_length": 4,
+          "max_length": 512
         }
       }
     ]
