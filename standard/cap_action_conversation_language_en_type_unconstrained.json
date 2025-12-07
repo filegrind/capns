@@ -66,10 +66,10 @@
         }
       },
       {
-        "name": "model",
+        "name": "model_spec",
         "arg_type": "string",
-        "arg_description": "Model to use for decision making",
-        "cli_flag": "--model",
+        "arg_description": "Model spec to use for conversation",
+        "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF",
         "validation": {
           "pattern": ".*:.*",

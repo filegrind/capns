@@ -12,11 +12,11 @@
   "arguments": {
     "optional": [
       {
-        "name": "model",
+        "name": "model_spec",
         "arg_type": "string",
-        "arg_description": "Model to use for embeddings generation",
-        "cli_flag": "--model",
-        "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
+        "arg_description": "Model spec to use for retrieving embeddings dimensions",
+        "cli_flag": "--model-spec",
+        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF",
         "validation": {
           "pattern": ".*:.*",
           "min_length": 4,

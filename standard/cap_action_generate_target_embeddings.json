@@ -76,10 +76,10 @@
         "cli_flag": "--exclude"
       },
       {
-        "name": "model",
+        "name": "model_spec",
         "arg_type": "string",
-        "arg_description": "Model to use for embeddings generation",
-        "cli_flag": "--model",
+        "arg_description": "Model spec to use for embeddings generation",
+        "cli_flag": "--model-spec",
         "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
         "validation": {
           "pattern": ".*:.*",
