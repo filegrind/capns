@@ -70,47 +70,11 @@
         "arg_type": "string",
         "arg_description": "Model spec to use for conversation",
         "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF",
+        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
         "validation": {
           "pattern": ".*:.*",
           "min_length": 4,
           "max_length": 512
-        }
-      },
-      {
-        "name": "include_patterns",
-        "arg_type": "array",
-        "arg_description": "Array of file name patterns to include in the model download",
-        "cli_flag": "--include_patterns",
-        "default_value": "[\"*Q8_0*\", \"*.json\", \"*.txt\", \"README*\"]",
-        "schema": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 50,
-          "items": {
-            "type": "string",
-            "minLength": 5,
-            "maxLength": 4096,
-            "description": "A file name pattern to include"
-          }
-        }
-      },
-      {
-        "name": "exclude_patterns",
-        "arg_type": "array",
-        "arg_description": "Array of file name patterns to exclude in the model download",
-        "cli_flag": "--exclude_patterns",
-        "default_value": "[\"*IQ1*\", \"*IQ2*\", \"*IQ3*\", \"*Q2*\", \"*Q3*\"]",
-        "schema": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 50,
-          "items": {
-            "type": "string",
-            "minLength": 5,
-            "maxLength": 4096,
-            "description": "A file name pattern to exclude"
-          }
         }
       }
     ]
