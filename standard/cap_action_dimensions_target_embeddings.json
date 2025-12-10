@@ -23,42 +23,6 @@
           "min_length": 4,
           "max_length": 512
         }
-      },
-      {
-        "name": "include_patterns",
-        "arg_type": "array",
-        "arg_description": "Array of file name patterns to include in the model download",
-        "cli_flag": "--include_patterns",
-        "default_value": "[\"*.json\", \"*.txt\", \"*.safetensors\", \"*.bin\", \"README*\"]",
-        "schema": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 50,
-          "items": {
-            "type": "string",
-            "minLength": 5,
-            "maxLength": 4096,
-            "description": "A file name pattern to include"
-          }
-        }
-      },
-      {
-        "name": "exclude_patterns",
-        "arg_type": "array",
-        "arg_description": "Array of file name patterns to exclude in the model download",
-        "cli_flag": "--exclude_patterns",
-        "default_value": "[\"*fp16*\", \"*test*\", \"*pytorch_model*\"]",
-        "schema": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 50,
-          "items": {
-            "type": "string",
-            "minLength": 5,
-            "maxLength": 4096,
-            "description": "A file name pattern to exclude"
-          }
-        }
       }
     ]
   },
