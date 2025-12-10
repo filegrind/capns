@@ -7,6 +7,7 @@
     }
   },
   "command": "extract-outline",
+  "title": "Extract Document Outline",
   "cap_description": "Extract document outline/table of contents with hierarchical structure",
   "metadata": {},
   "accepts_stdin": true,

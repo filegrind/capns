@@ -9,6 +9,7 @@
     }
   },
   "command": "bit_choices",
+  "title": "Make Multiple Choices",
   "cap_description": "Make multiple binary (yes/no, true/false) decisions based on content and multiple questions",
   "metadata": {},
   "accepts_stdin": true,

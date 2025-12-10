@@ -7,6 +7,7 @@
     }
   },
   "command": "llm_inference",
+  "title": "Converse in Spanish",
   "cap_description": "Conversación natural y respuestas de chat en español",
   "metadata": {},
   "accepts_stdin": true,

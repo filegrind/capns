@@ -6,6 +6,7 @@
     }
   },
   "command": "unload",
+  "title": "Unload Model",
   "cap_description": "Unload a model from memory to free resources",
   "metadata": {},
   "accepts_stdin": false,

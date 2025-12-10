@@ -6,6 +6,7 @@
     }
   },
   "command": "dimensions",
+  "title": "Query Embedding Dimensions",
   "cap_description": "Get the dimensionality of generated embeddings for a specific model",
   "metadata": {},
   "accepts_stdin": false,

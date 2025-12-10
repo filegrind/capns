@@ -6,6 +6,7 @@
     }
   },
   "command": "download",
+  "title": "Download Model",
   "cap_description": "Download machine learning models from various repositories",
   "metadata": {},
   "accepts_stdin": false,

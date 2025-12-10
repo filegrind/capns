@@ -6,6 +6,7 @@
     }
   },
   "command": "list",
+  "title": "List Models",
   "cap_description": "List available models and their status",
   "metadata": {},
   "accepts_stdin": false,

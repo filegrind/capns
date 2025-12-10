@@ -6,6 +6,7 @@
     }
   },
   "command": "contents",
+  "title": "Inspect Model Contents",
   "cap_description": "Inspect the contents and structure of a model",
   "metadata": {},
   "accepts_stdin": false,

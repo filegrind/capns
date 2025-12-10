@@ -6,6 +6,7 @@
     }
   },
   "command": "manage",
+  "title": "Manage Model",
   "cap_description": "General model management operations including installation, configuration and lifecycle",
   "metadata": {},
   "accepts_stdin": false,

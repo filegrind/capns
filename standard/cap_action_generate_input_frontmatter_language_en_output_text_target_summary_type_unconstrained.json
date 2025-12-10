@@ -10,6 +10,7 @@
     }
   },
   "command": "generate_text",
+  "title": "Summarize Frontmatter",
   "cap_description": "Extract and organize bibliographic information from book frontmatter text",
   "metadata": {},
   "accepts_stdin": true,

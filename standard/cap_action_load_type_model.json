@@ -6,6 +6,7 @@
     }
   },
   "command": "load",
+  "title": "Load Model",
   "cap_description": "Load a model into memory for inference operations",
   "metadata": {},
   "accepts_stdin": false,
