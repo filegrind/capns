@@ -186,6 +186,7 @@ mod tests {
         
         let cap = Cap {
             urn: CapUrn::from_string("cap:action=test;type=basic").unwrap(),
+            title: "Test Basic Capability".to_string(),
             cap_description: Some("Test capability".to_string()),
             metadata: HashMap::new(),
             command: "test".to_string(),
@@ -225,6 +226,7 @@ mod tests {
         });
         let general_cap = Cap {
             urn: CapUrn::from_string("cap:action=generate").unwrap(),
+            title: "General Generation Capability".to_string(),
             cap_description: Some("General generation".to_string()),
             metadata: HashMap::new(),
             command: "generate".to_string(),
@@ -246,6 +248,7 @@ mod tests {
         });
         let specific_cap = Cap {
             urn: CapUrn::from_string("cap:action=generate;type=text;model=gpt-4").unwrap(),
+            title: "Specific Text Generation Capability".to_string(),
             cap_description: Some("Specific text generation".to_string()),
             metadata: HashMap::new(),
             command: "generate".to_string(),
@@ -293,6 +296,7 @@ mod tests {
         });
         let cap = Cap {
             urn: CapUrn::from_string("cap:action=test").unwrap(),
+            title: "Test Capability".to_string(),
             cap_description: Some("Test".to_string()),
             metadata: HashMap::new(),
             command: "test".to_string(),

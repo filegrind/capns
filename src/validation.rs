@@ -695,7 +695,7 @@ mod tests {
     #[test]
     fn test_input_validation_success() {
         let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
-        let mut cap = Cap::new(urn, "test-command".to_string());
+        let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     fn test_input_validation_missing_required() {
         let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
-        let mut cap = Cap::new(urn, "test-command".to_string());
+        let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn test_input_validation_wrong_type() {
         let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
-        let mut cap = Cap::new(urn, "test-command".to_string());
+        let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
         
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(

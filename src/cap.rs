@@ -22,7 +22,7 @@ pub enum ArgumentType {
 }
 
 /// Argument validation rules
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ArgumentValidation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min: Option<f64>,
@@ -44,7 +44,7 @@ pub struct ArgumentValidation {
 }
 
 /// Cap argument definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapArgument {
     pub name: String,
     
@@ -85,7 +85,7 @@ impl ArgumentValidation {
 }
 
 /// Cap arguments collection
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct CapArguments {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub required: Vec<CapArgument>,
@@ -109,7 +109,7 @@ pub enum OutputType {
 }
 
 /// Output definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
     pub output_type: OutputType,
     
@@ -211,33 +211,86 @@ impl CapOutput {
 }
 
 /// Formal cap definition
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Cap {
     /// Formal cap URN with hierarchical naming
     pub urn: CapUrn,
     
+    /// Human-readable title of the capability (required)
+    pub title: String,
+    
     /// Optional description
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cap_description: Option<String>,
     
     /// Optional metadata as key-value pairs
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     pub metadata: HashMap<String, String>,
     
     /// Command string for CLI execution
     pub command: String,
     
     /// Cap arguments
-    #[serde(skip_serializing_if = "CapArguments::is_empty", default)]
     pub arguments: CapArguments,
     
     /// Output definition
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<CapOutput>,
     
     /// Whether this cap accepts input via stdin
-    #[serde(default)]
     pub accepts_stdin: bool,
+}
+
+// Custom PartialEq implementation that includes all fields
+impl PartialEq for Cap {
+    fn eq(&self, other: &Self) -> bool {
+        self.urn == other.urn &&
+        self.title == other.title &&
+        self.cap_description == other.cap_description &&
+        self.metadata == other.metadata &&
+        self.command == other.command &&
+        self.arguments == other.arguments &&
+        self.output == other.output &&
+        self.accepts_stdin == other.accepts_stdin
+    }
+}
+
+// Custom serializer for Cap that serializes urn as tags object (not canonical string)
+impl Serialize for Cap {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("Cap", 8)?;
+        
+        // Serialize urn as tags object
+        state.serialize_field("urn", &serde_json::json!({
+            "tags": self.urn.tags
+        }))?;
+        
+        state.serialize_field("title", &self.title)?;
+        state.serialize_field("command", &self.command)?;
+        
+        if self.cap_description.is_some() {
+            state.serialize_field("cap_description", &self.cap_description)?;
+        }
+        
+        if !self.metadata.is_empty() {
+            state.serialize_field("metadata", &self.metadata)?;
+        }
+        
+        if !self.arguments.is_empty() {
+            state.serialize_field("arguments", &self.arguments)?;
+        }
+        
+        if self.output.is_some() {
+            state.serialize_field("output", &self.output)?;
+        }
+        
+        if self.accepts_stdin {
+            state.serialize_field("accepts_stdin", &self.accepts_stdin)?;
+        }
+        
+        state.end()
+    }
 }
 
 // Custom deserializer to handle registry format where urn is an object
@@ -249,6 +302,7 @@ impl<'de> Deserialize<'de> for Cap {
         #[derive(Deserialize)]
         struct CapRegistry {
             urn: serde_json::Value,  // Can be either string or object
+            title: String,
             cap_description: Option<String>,
             #[serde(default)]
             metadata: HashMap<String, String>,
@@ -285,6 +339,7 @@ impl<'de> Deserialize<'de> for Cap {
 
         Ok(Cap {
             urn,
+            title: registry_cap.title,
             cap_description: registry_cap.cap_description,
             metadata: registry_cap.metadata,
             command: registry_cap.command,
@@ -481,9 +536,10 @@ impl CapArguments {
 
 impl Cap {
     /// Create a new cap
-    pub fn new(urn: CapUrn, command: String) -> Self {
+    pub fn new(urn: CapUrn, title: String, command: String) -> Self {
         Self {
             urn,
+            title,
             cap_description: None,
             metadata: HashMap::new(),
             command,
@@ -494,9 +550,10 @@ impl Cap {
     }
 
     /// Create a new cap with description
-    pub fn with_description(urn: CapUrn, command: String, description: String) -> Self {
+    pub fn with_description(urn: CapUrn, title: String, command: String, description: String) -> Self {
         Self {
             urn,
+            title,
             cap_description: Some(description),
             metadata: HashMap::new(),
             command,
@@ -508,12 +565,14 @@ impl Cap {
 
     /// Create a new cap with metadata
     pub fn with_metadata(
-        urn: CapUrn, 
+        urn: CapUrn,
+        title: String,
         command: String,
         metadata: HashMap<String, String>
     ) -> Self {
         Self {
             urn,
+            title,
             cap_description: None,
             metadata,
             command,
@@ -526,12 +585,14 @@ impl Cap {
     /// Create a new cap with description and metadata
     pub fn with_description_and_metadata(
         urn: CapUrn,
+        title: String,
         command: String,
         description: String,
         metadata: HashMap<String, String>,
     ) -> Self {
         Self {
             urn,
+            title,
             cap_description: Some(description),
             metadata,
             command,
@@ -544,11 +605,13 @@ impl Cap {
     /// Create a new cap with arguments
     pub fn with_arguments(
         urn: CapUrn,
+        title: String,
         command: String,
         arguments: CapArguments,
     ) -> Self {
         Self {
             urn,
+            title,
             cap_description: None,
             metadata: HashMap::new(),
             command,
@@ -561,14 +624,16 @@ impl Cap {
     /// Create a new cap with command (deprecated - use new() instead)
     pub fn with_command(
         urn: CapUrn,
+        title: String,
         command: String,
     ) -> Self {
-        Self::new(urn, command)
+        Self::new(urn, title, command)
     }
     
     /// Create a fully specified cap
     pub fn with_full_definition(
         urn: CapUrn,
+        title: String,
         description: Option<String>,
         metadata: HashMap<String, String>,
         command: String,
@@ -577,6 +642,7 @@ impl Cap {
     ) -> Self {
         Self {
             urn,
+            title,
             cap_description: description,
             metadata,
             command,
@@ -635,6 +701,16 @@ impl Cap {
         self.command = command;
     }
     
+    /// Get the title
+    pub fn get_title(&self) -> &String {
+        &self.title
+    }
+    
+    /// Set the title
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+    
     /// Get the arguments
     pub fn get_arguments(&self) -> &CapArguments {
         &self.arguments
@@ -674,9 +750,10 @@ mod tests {
     #[test]
     fn test_cap_creation() {
         let urn = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
-        let cap = Cap::new(urn, "test-command".to_string());
+        let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
         
         assert_eq!(cap.urn_string(), "cap:action=transform;format=json;type=data_processing");
+        assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
 
@@ -687,8 +764,9 @@ mod tests {
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
         
-        let cap = Cap::with_metadata(urn, "test-command".to_string(), metadata);
+        let cap = Cap::with_metadata(urn, "Perform Mathematical Operations".to_string(), "test-command".to_string(), metadata);
         
+        assert_eq!(cap.title, "Perform Mathematical Operations");
         assert_eq!(cap.get_metadata("precision"), Some(&"double".to_string()));
         assert_eq!(cap.get_metadata("operations"), Some(&"add,subtract,multiply,divide".to_string()));
         assert!(cap.has_metadata("precision"));
@@ -698,7 +776,7 @@ mod tests {
     #[test]
     fn test_cap_matching() {
         let urn = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
-        let cap = Cap::new(urn, "test-command".to_string());
+        let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
         
         assert!(cap.matches_request("cap:action=transform;format=json;type=data_processing"));
         assert!(cap.matches_request("cap:action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
@@ -707,9 +785,41 @@ mod tests {
     }
 
     #[test]
+    fn test_cap_title() {
+        let urn = CapUrn::from_string("cap:action=extract;target=metadata").unwrap();
+        let mut cap = Cap::new(urn, "Extract Document Metadata".to_string(), "extract-metadata".to_string());
+        
+        // Test title getter
+        assert_eq!(cap.get_title(), &"Extract Document Metadata".to_string());
+        assert_eq!(cap.title, "Extract Document Metadata");
+        
+        // Test title setter
+        cap.set_title("Extract File Metadata".to_string());
+        assert_eq!(cap.get_title(), &"Extract File Metadata".to_string());
+        assert_eq!(cap.title, "Extract File Metadata");
+    }
+
+    #[test]
+    fn test_cap_definition_equality() {
+        let urn1 = CapUrn::from_string("cap:action=transform;format=json").unwrap();
+        let urn2 = CapUrn::from_string("cap:action=transform;format=json").unwrap();
+        
+        let cap1 = Cap::new(urn1, "Transform JSON Data".to_string(), "transform".to_string());
+        let cap2 = Cap::new(urn2.clone(), "Transform JSON Data".to_string(), "transform".to_string());
+        let cap3 = Cap::new(urn2, "Convert JSON Format".to_string(), "transform".to_string());
+        
+        // Same cap definition (all fields identical) should be equal
+        assert_eq!(cap1, cap2);
+        
+        // Cap definitions with different titles should not be equal (like any JSON object comparison)
+        assert_ne!(cap1, cap3);
+        assert_ne!(cap2, cap3);
+    }
+
+    #[test]
     fn test_cap_accepts_stdin() {
         let urn = CapUrn::from_string("cap:action=generate;target=embeddings").unwrap();
-        let mut cap = Cap::new(urn, "generate".to_string());
+        let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
         
         // By default, caps should not accept stdin
         assert!(!cap.accepts_stdin);
