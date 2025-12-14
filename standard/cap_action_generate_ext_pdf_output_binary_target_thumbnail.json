@@ -59,13 +59,13 @@
         }
       },
       {
-        "name": "page",
-        "arg_type": "integer",
-        "arg_description": "Page number to generate thumbnail from (1-based, default: 1)",
-        "cli_flag": "--page",
-        "default_value": 1,
+        "name": "page_range",
+        "arg_type": "string",
+        "arg_description": "Page range to generate thumbnails from (1-based). Examples: '1' (single page), '1-5' (pages 1-5), '3-' (page 3 to end)",
+        "cli_flag": "--page-range",
+        "default_value": "1",
         "validation": {
-          "min": 1
+          "pattern": "^\\d+(-\\d*)?$"
         }
       }
     ]
