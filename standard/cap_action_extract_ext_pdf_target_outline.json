@@ -37,10 +37,10 @@
         }
       },
       {
-        "name": "include_page_numbers",
+        "name": "include_order_indexes",
         "arg_type": "boolean",
         "arg_description": "Include page numbers in the outline (default: true)",
-        "cli_flag": "--include-page-numbers",
+        "cli_flag": "--include-order-indexes",
         "default_value": true
       },
       {
