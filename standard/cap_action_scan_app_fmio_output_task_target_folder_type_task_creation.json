@@ -5,7 +5,6 @@
       "action": "scan",
       "target": "folder",
       "output": "task",
-      "language": "en",
       "type": "task_creation"
     }
   },

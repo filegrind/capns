@@ -2,30 +2,37 @@
   "urn": {
     "tags": {
       "app": "fmio",
-      "action": "scan",
-      "target": "files",
+      "action": "apply",
+      "target": "capability",
       "output": "task",
-      "language": "en",
       "type": "task_creation"
     }
   },
-  "command": "scan_files_task",
-  "title": "Create Files Scan Task",
+  "command": "apply_capability_task",
+  "title": "Create Apply Capability Task",
   "category": "FMIO",
-  "cap_description": "Create a task to scan a specific list of files",
+  "cap_description": "Create a task to apply a specific capability to a listing",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
     "required": [
       {
-        "name": "file_paths",
-        "arg_type": "array",
-        "arg_description": "Array of file paths to scan",
-        "cli_flag": "--file-paths",
-        "position": 0,
+        "name": "cap_urn",
+        "arg_type": "string",
+        "arg_description": "URN of the capability to apply",
+        "cli_flag": "--cap-urn",
         "validation": {
           "min_length": 1,
-          "max_length": 1000
+          "max_length": 512
+        }
+      },
+      {
+        "name": "listing_id",
+        "arg_type": "string",
+        "arg_description": "ID of the listing to apply capability to",
+        "cli_flag": "--listing-id",
+        "validation": {
+          "pattern": "[0-9a-f-]{36}"
         }
       }
     ]
