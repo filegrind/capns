@@ -7,6 +7,7 @@
   },
   "command": "status",
   "title": "Check Model Status",
+  "category": "Model Management",
   "cap_description": "Check the status and health of a specific model",
   "metadata": {},
   "accepts_stdin": false,

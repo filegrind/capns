@@ -219,6 +219,9 @@ pub struct Cap {
     /// Human-readable title of the capability (required)
     pub title: String,
     
+    /// Category for visual grouping and display of caps (optional)
+    pub category: Option<String>,
+    
     /// Optional description
     pub cap_description: Option<String>,
     
@@ -243,6 +246,7 @@ impl PartialEq for Cap {
     fn eq(&self, other: &Self) -> bool {
         self.urn == other.urn &&
         self.title == other.title &&
+        self.category == other.category &&
         self.cap_description == other.cap_description &&
         self.metadata == other.metadata &&
         self.command == other.command &&
@@ -259,7 +263,7 @@ impl Serialize for Cap {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Cap", 8)?;
+        let mut state = serializer.serialize_struct("Cap", 9)?;
         
         // Serialize urn as tags object
         state.serialize_field("urn", &serde_json::json!({
@@ -268,6 +272,10 @@ impl Serialize for Cap {
         
         state.serialize_field("title", &self.title)?;
         state.serialize_field("command", &self.command)?;
+        
+        if self.category.is_some() {
+            state.serialize_field("category", &self.category)?;
+        }
         
         if self.cap_description.is_some() {
             state.serialize_field("cap_description", &self.cap_description)?;
@@ -303,6 +311,7 @@ impl<'de> Deserialize<'de> for Cap {
         struct CapRegistry {
             urn: serde_json::Value,  // Can be either string or object
             title: String,
+            category: Option<String>,
             cap_description: Option<String>,
             #[serde(default)]
             metadata: HashMap<String, String>,
@@ -340,6 +349,7 @@ impl<'de> Deserialize<'de> for Cap {
         Ok(Cap {
             urn,
             title: registry_cap.title,
+            category: registry_cap.category,
             cap_description: registry_cap.cap_description,
             metadata: registry_cap.metadata,
             command: registry_cap.command,
@@ -540,6 +550,7 @@ impl Cap {
         Self {
             urn,
             title,
+            category: None,
             cap_description: None,
             metadata: HashMap::new(),
             command,
@@ -554,6 +565,7 @@ impl Cap {
         Self {
             urn,
             title,
+            category: None,
             cap_description: Some(description),
             metadata: HashMap::new(),
             command,
@@ -573,6 +585,7 @@ impl Cap {
         Self {
             urn,
             title,
+            category: None,
             cap_description: None,
             metadata,
             command,
@@ -593,6 +606,7 @@ impl Cap {
         Self {
             urn,
             title,
+            category: None,
             cap_description: Some(description),
             metadata,
             command,
@@ -612,6 +626,7 @@ impl Cap {
         Self {
             urn,
             title,
+            category: None,
             cap_description: None,
             metadata: HashMap::new(),
             command,
@@ -643,6 +658,7 @@ impl Cap {
         Self {
             urn,
             title,
+            category: None,
             cap_description: description,
             metadata,
             command,
@@ -709,6 +725,21 @@ impl Cap {
     /// Set the title
     pub fn set_title(&mut self, title: String) {
         self.title = title;
+    }
+    
+    /// Get the category
+    pub fn get_category(&self) -> Option<&String> {
+        self.category.as_ref()
+    }
+    
+    /// Set the category
+    pub fn set_category(&mut self, category: String) {
+        self.category = Some(category);
+    }
+    
+    /// Clear the category
+    pub fn clear_category(&mut self) {
+        self.category = None;
     }
     
     /// Get the arguments

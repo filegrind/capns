@@ -8,6 +8,7 @@
   },
   "command": "llm_inference",
   "title": "Write Creatively in English",
+  "category": "AI Inference",
   "cap_description": "Creative writing and content generation in English",
   "metadata": {},
   "accepts_stdin": true,

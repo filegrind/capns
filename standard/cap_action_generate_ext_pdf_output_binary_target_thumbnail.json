@@ -9,6 +9,7 @@
   },
   "command": "generate-thumbnail",
   "title": "Generate Thumbnail",
+  "category": "Document Processing",
   "cap_description": "Generate a thumbnail image preview of the document",
   "metadata": {},
   "accepts_stdin": true,

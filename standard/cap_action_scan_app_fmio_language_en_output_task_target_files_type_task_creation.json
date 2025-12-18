@@ -11,6 +11,7 @@
   },
   "command": "scan_files_task",
   "title": "Create Files Scan Task",
+  "category": "Task Management",
   "cap_description": "Create a task to scan a specific list of files",
   "metadata": {},
   "accepts_stdin": false,

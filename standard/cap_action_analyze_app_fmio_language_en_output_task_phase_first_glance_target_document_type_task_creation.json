@@ -12,6 +12,7 @@
   },
   "command": "first_glance_task",
   "title": "Create First Glance Analysis Task",
+  "category": "Task Management",
   "cap_description": "Create a task for initial document analysis - first glance phase",
   "metadata": {},
   "accepts_stdin": false,

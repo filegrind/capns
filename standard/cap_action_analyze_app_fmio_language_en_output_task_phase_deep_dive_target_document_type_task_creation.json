@@ -12,6 +12,7 @@
   },
   "command": "deep_dive_task",
   "title": "Create Deep Dive Analysis Task",
+  "category": "Task Management",
   "cap_description": "Create a task for deep dive comprehensive document analysis",
   "metadata": {},
   "accepts_stdin": false,

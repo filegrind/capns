@@ -8,6 +8,7 @@
   },
   "command": "extract-metadata",
   "title": "Extract Document Metadata",
+  "category": "Document Processing",
   "cap_description": "Extract document metadata including title, author, creation date, file size, and other properties",
   "metadata": {},
   "accepts_stdin": true,

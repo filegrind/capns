@@ -10,6 +10,7 @@
   },
   "command": "bit_choice",
   "title": "Make Binary Decision",
+  "category": "Data Selection",
   "cap_description": "Make binary (yes/no, true/false) decisions based on content and questions",
   "metadata": {},
   "accepts_stdin": true,

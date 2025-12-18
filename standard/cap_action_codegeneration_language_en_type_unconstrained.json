@@ -8,6 +8,7 @@
   },
   "command": "llm_inference",
   "title": "Generate Code in English",
+  "category": "AI Inference",
   "cap_description": "Code generation and programming tasks in English",
   "metadata": {},
   "accepts_stdin": true,

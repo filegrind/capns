@@ -7,6 +7,7 @@
   },
   "command": "list",
   "title": "List Models",
+  "category": "Model Management",
   "cap_description": "List available models and their status",
   "metadata": {},
   "accepts_stdin": false,
