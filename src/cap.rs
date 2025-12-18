@@ -71,6 +71,10 @@ pub struct CapArgument {
     /// Embedded JSON schema for validation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
+    
+    /// Arbitrary metadata as JSON object
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl ArgumentValidation {
@@ -127,6 +131,10 @@ pub struct CapOutput {
     pub validation: ArgumentValidation,
     
     pub output_description: String,
+    
+    /// Arbitrary metadata as JSON object
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl CapOutput {
@@ -139,6 +147,7 @@ impl CapOutput {
             schema: None,
             content_type: None,
             validation: ArgumentValidation::default(),
+            metadata: None,
         }
     }
     
@@ -151,6 +160,7 @@ impl CapOutput {
             schema_ref: None,
             schema: None,
             validation: ArgumentValidation::default(),
+            metadata: None,
         }
     }
     
@@ -163,6 +173,7 @@ impl CapOutput {
             schema: None,
             content_type: None,
             validation: ArgumentValidation::default(),
+            metadata: None,
         }
     }
     
@@ -175,6 +186,7 @@ impl CapOutput {
             schema: Some(schema),
             content_type: None,
             validation: ArgumentValidation::default(),
+            metadata: None,
         }
     }
     
@@ -187,6 +199,7 @@ impl CapOutput {
             schema_ref: None,
             schema: None,
             content_type: None,
+            metadata: None,
         }
     }
     
@@ -198,6 +211,7 @@ impl CapOutput {
         schema: Option<serde_json::Value>,
         content_type: Option<String>,
         validation: ArgumentValidation,
+        metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
             output_type,
@@ -206,6 +220,7 @@ impl CapOutput {
             schema,
             content_type,
             validation,
+            metadata,
         }
     }
 }
@@ -239,6 +254,9 @@ pub struct Cap {
     
     /// Whether this cap accepts input via stdin
     pub accepts_stdin: bool,
+    
+    /// Arbitrary metadata as JSON object
+    pub metadata_json: Option<serde_json::Value>,
 }
 
 // Custom PartialEq implementation that includes all fields
@@ -252,7 +270,8 @@ impl PartialEq for Cap {
         self.command == other.command &&
         self.arguments == other.arguments &&
         self.output == other.output &&
-        self.accepts_stdin == other.accepts_stdin
+        self.accepts_stdin == other.accepts_stdin &&
+        self.metadata_json == other.metadata_json
     }
 }
 
@@ -263,7 +282,7 @@ impl Serialize for Cap {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Cap", 9)?;
+        let mut state = serializer.serialize_struct("Cap", 10)?;
         
         // Serialize urn as tags object
         state.serialize_field("urn", &serde_json::json!({
@@ -297,6 +316,10 @@ impl Serialize for Cap {
             state.serialize_field("accepts_stdin", &self.accepts_stdin)?;
         }
         
+        if self.metadata_json.is_some() {
+            state.serialize_field("metadata_json", &self.metadata_json)?;
+        }
+        
         state.end()
     }
 }
@@ -321,6 +344,7 @@ impl<'de> Deserialize<'de> for Cap {
             output: Option<CapOutput>,
             #[serde(default)]
             accepts_stdin: bool,
+            metadata_json: Option<serde_json::Value>,
         }
 
         let registry_cap = CapRegistry::deserialize(deserializer)?;
@@ -356,6 +380,7 @@ impl<'de> Deserialize<'de> for Cap {
             arguments: registry_cap.arguments,
             output: registry_cap.output,
             accepts_stdin: registry_cap.accepts_stdin,
+            metadata_json: registry_cap.metadata_json,
         })
     }
 }
@@ -373,6 +398,7 @@ impl CapArgument {
             default_value: None,
             schema_ref: None,
             schema: None,
+            metadata: None,
         }
     }
     
@@ -393,6 +419,7 @@ impl CapArgument {
             default_value: None,
             schema_ref: None,
             schema: None,
+            metadata: None,
         }
     }
     
@@ -408,6 +435,7 @@ impl CapArgument {
             default_value: None,
             schema_ref: None,
             schema: None,
+            metadata: None,
         }
     }
     
@@ -423,6 +451,7 @@ impl CapArgument {
             default_value: Some(default),
             schema_ref: None,
             schema: None,
+            metadata: None,
         }
     }
     
@@ -437,6 +466,7 @@ impl CapArgument {
         default: Option<serde_json::Value>,
         schema_ref: Option<String>,
         schema: Option<serde_json::Value>,
+        metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
             name,
@@ -448,6 +478,7 @@ impl CapArgument {
             default_value: default,
             schema_ref,
             schema,
+            metadata,
         }
     }
 }
@@ -557,6 +588,7 @@ impl Cap {
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
+            metadata_json: None,
         }
     }
 
@@ -572,6 +604,7 @@ impl Cap {
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
+            metadata_json: None,
         }
     }
 
@@ -592,6 +625,7 @@ impl Cap {
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
+            metadata_json: None,
         }
     }
 
@@ -613,6 +647,7 @@ impl Cap {
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
+            metadata_json: None,
         }
     }
     
@@ -633,6 +668,7 @@ impl Cap {
             arguments,
             output: None,
             accepts_stdin: false,
+            metadata_json: None,
         }
     }
     
@@ -654,6 +690,7 @@ impl Cap {
         command: String,
         arguments: CapArguments,
         output: Option<CapOutput>,
+        metadata_json: Option<serde_json::Value>,
     ) -> Self {
         Self {
             urn,
@@ -665,6 +702,7 @@ impl Cap {
             arguments,
             output,
             accepts_stdin: false,
+            metadata_json,
         }
     }
     
@@ -770,6 +808,55 @@ impl Cap {
     /// Set the output definition
     pub fn set_output(&mut self, output: CapOutput) {
         self.output = Some(output);
+    }
+    
+    /// Get metadata JSON
+    pub fn get_metadata_json(&self) -> Option<&serde_json::Value> {
+        self.metadata_json.as_ref()
+    }
+    
+    /// Set metadata JSON
+    pub fn set_metadata_json(&mut self, metadata: serde_json::Value) {
+        self.metadata_json = Some(metadata);
+    }
+    
+    /// Clear metadata JSON
+    pub fn clear_metadata_json(&mut self) {
+        self.metadata_json = None;
+    }
+}
+
+impl CapArgument {
+    /// Get metadata JSON
+    pub fn get_metadata(&self) -> Option<&serde_json::Value> {
+        self.metadata.as_ref()
+    }
+    
+    /// Set metadata JSON
+    pub fn set_metadata(&mut self, metadata: serde_json::Value) {
+        self.metadata = Some(metadata);
+    }
+    
+    /// Clear metadata JSON
+    pub fn clear_metadata(&mut self) {
+        self.metadata = None;
+    }
+}
+
+impl CapOutput {
+    /// Get metadata JSON
+    pub fn get_metadata(&self) -> Option<&serde_json::Value> {
+        self.metadata.as_ref()
+    }
+    
+    /// Set metadata JSON
+    pub fn set_metadata(&mut self, metadata: serde_json::Value) {
+        self.metadata = Some(metadata);
+    }
+    
+    /// Clear metadata JSON
+    pub fn clear_metadata(&mut self) {
+        self.metadata = None;
     }
 }
 
