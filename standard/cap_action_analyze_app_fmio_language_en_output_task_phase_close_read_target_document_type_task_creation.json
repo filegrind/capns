@@ -12,7 +12,7 @@
   },
   "command": "close_read_task",
   "title": "Create Close Read Analysis Task",
-  "category": "Task Management",
+  "category": "FMIO",
   "cap_description": "Create a task for detailed close reading document analysis",
   "metadata": {},
   "accepts_stdin": false,

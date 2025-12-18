@@ -12,7 +12,7 @@
   },
   "command": "skim_pass_task",
   "title": "Create Skim Pass Analysis Task",
-  "category": "Task Management",
+  "category": "FMIO",
   "cap_description": "Create a task for skim pass document analysis",
   "metadata": {},
   "accepts_stdin": false,

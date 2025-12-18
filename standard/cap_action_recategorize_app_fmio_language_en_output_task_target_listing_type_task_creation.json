@@ -11,7 +11,7 @@
   },
   "command": "recategorization_task",
   "title": "Create Listing Recategorization Task",
-  "category": "Task Management",
+  "category": "FMIO",
   "cap_description": "Create a task to recategorize a listing based on updated analysis",
   "metadata": {},
   "accepts_stdin": false,

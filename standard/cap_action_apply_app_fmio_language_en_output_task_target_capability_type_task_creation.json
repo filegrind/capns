@@ -11,7 +11,7 @@
   },
   "command": "apply_capability_task",
   "title": "Create Apply Capability Task",
-  "category": "Task Management",
+  "category": "FMIO",
   "cap_description": "Create a task to apply a specific capability to a listing",
   "metadata": {},
   "accepts_stdin": false,
