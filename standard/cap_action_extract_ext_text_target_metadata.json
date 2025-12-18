@@ -1,0 +1,46 @@
+{
+  "urn": {
+    "tags": {
+      "action": "extract",
+      "target": "metadata",
+      "ext": "text"
+    }
+  },
+  "command": "extract-metadata",
+  "title": "Extract Text Document Metadata",
+  "category": "Document Processing",
+  "cap_description": "Extract text document metadata including title, file size, word count, and other properties",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the text file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "output",
+        "arg_type": "string",
+        "arg_description": "Write output to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Structured metadata including file properties and text-specific metadata",
+    "content_type": "application/json"
+  }
+}
