@@ -139,12 +139,23 @@ impl CapCaller {
     fn validate_inputs(
         &self,
         positional_args: &[JsonValue],
-        _named_args: &[JsonValue],
+        named_args: &[JsonValue],
     ) -> Result<()> {
-        // For now, we'll validate positional args since that's what most caps use
-        // Named args validation can be added later when we have caps that use them
-        crate::validation::InputValidator::validate_arguments(&self.cap_definition, positional_args)
-            .map_err(|e| anyhow::anyhow!("Input validation failed for {}: {}", self.cap, e))?;
+        // Determine if this capability expects positional or named arguments
+        let expects_positional = self.cap_definition.arguments.required.iter()
+            .any(|arg| arg.position.is_some()) || 
+            !positional_args.is_empty();
+        
+        if expects_positional {
+            // Validate as positional arguments
+            crate::validation::InputValidator::validate_positional_arguments(&self.cap_definition, positional_args)
+                .map_err(|e| anyhow::anyhow!("Input validation failed for {}: {}", self.cap, e))?;
+        } else {
+            // Validate as named arguments
+            crate::validation::InputValidator::validate_named_arguments(&self.cap_definition, named_args)
+                .map_err(|e| anyhow::anyhow!("Input validation failed for {}: {}", self.cap, e))?;
+        }
+        
         Ok(())
     }
     

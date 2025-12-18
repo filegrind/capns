@@ -21,7 +21,6 @@
         "arg_type": "array",
         "arg_description": "Array of file paths to scan",
         "cli_flag": "--file-paths",
-        "position": 0,
         "validation": {
           "min_length": 1,
           "max_length": 1000
