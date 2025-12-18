@@ -32,29 +32,7 @@
         "arg_type": "object",
         "arg_description": "Template substitutions for the query prompt",
         "cli_flag": "--substitutions",
-        "position": 1,
-        "schema": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "content": {
-              "type": "string",
-              "minLength": 0,
-              "maxLength": 100000,
-              "description": "Main content for substitution"
-            },
-            "metadata": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              },
-              "description": "Optional metadata"
-            }
-          },
-          "required": [
-            "content"
-          ]
-        }
+        "position": 1
       }
     ],
     "optional": [

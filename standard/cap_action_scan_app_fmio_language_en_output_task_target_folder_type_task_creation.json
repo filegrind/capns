@@ -1,0 +1,60 @@
+{
+  "urn": {
+    "tags": {
+      "app": "fmio",
+      "action": "scan",
+      "target": "folder",
+      "output": "task",
+      "language": "en",
+      "type": "task_creation"
+    }
+  },
+  "command": "scan_folder_task",
+  "title": "Create Folder Scan Task",
+  "cap_description": "Create a task to scan a folder for files and documents",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "folder_path",
+        "arg_type": "string",
+        "arg_description": "Path to the folder to scan",
+        "cli_flag": "--folder-path",
+        "validation": {
+          "min_length": 1,
+          "max_length": 4096
+        }
+      },
+      {
+        "name": "is_recursive",
+        "arg_type": "boolean",
+        "arg_description": "Whether to scan subfolders recursively",
+        "cli_flag": "--recursive"
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Created task information",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "ID of the created task"
+        },
+        "task_type": {
+          "type": "string",
+          "description": "Type of task created"
+        }
+      },
+      "required": [
+        "task_id",
+        "task_type"
+      ]
+    }
+  }
+}

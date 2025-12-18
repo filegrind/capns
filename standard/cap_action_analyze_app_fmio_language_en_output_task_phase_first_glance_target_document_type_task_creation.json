@@ -1,0 +1,73 @@
+{
+  "urn": {
+    "tags": {
+      "app": "fmio",
+      "action": "analyze",
+      "target": "document",
+      "phase": "first_glance",
+      "output": "task",
+      "language": "en",
+      "type": "task_creation"
+    }
+  },
+  "command": "first_glance_task",
+  "title": "Create First Glance Analysis Task",
+  "cap_description": "Create a task for initial document analysis - first glance phase",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "listing_id",
+        "arg_type": "string",
+        "arg_description": "ID of the listing to analyze",
+        "cli_flag": "--listing-id",
+        "validation": {
+          "pattern": "[0-9a-f-]{36}"
+        }
+      },
+      {
+        "name": "tracked_file_id",
+        "arg_type": "string",
+        "arg_description": "ID of the tracked file to analyze",
+        "cli_flag": "--tracked-file-id",
+        "validation": {
+          "pattern": "[0-9a-f-]{36}"
+        }
+      },
+      {
+        "name": "filename",
+        "arg_type": "string",
+        "arg_description": "Name of the file being analyzed",
+        "cli_flag": "--filename",
+        "validation": {
+          "min_length": 1,
+          "max_length": 1024
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Created task information",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "description": "ID of the created task"
+        },
+        "task_type": {
+          "type": "string",
+          "description": "Type of task created"
+        }
+      },
+      "required": [
+        "task_id",
+        "task_type"
+      ]
+    }
+  }
+}
