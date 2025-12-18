@@ -19,6 +19,11 @@ pub enum ValidationError {
         cap_urn: String,
         argument_name: String,
     },
+    /// Unknown argument provided
+    UnknownArgument {
+        cap_urn: String,
+        argument_name: String,
+    },
     /// Invalid argument type
     InvalidArgumentType {
         cap_urn: String,
@@ -80,6 +85,9 @@ impl fmt::Display for ValidationError {
             ValidationError::MissingRequiredArgument { cap_urn, argument_name } => {
                 write!(f, "Cap '{}' requires argument '{}' but it was not provided", cap_urn, argument_name)
             }
+            ValidationError::UnknownArgument { cap_urn, argument_name } => {
+                write!(f, "Cap '{}' does not accept argument '{}' - check capability definition for valid arguments", cap_urn, argument_name)
+            }
             ValidationError::InvalidArgumentType { cap_urn, argument_name, expected_type, actual_type, actual_value } => {
                 write!(f, "Cap '{}' argument '{}' expects type '{:?}' but received '{}' with value: {}", 
                        cap_urn, argument_name, expected_type, actual_type, actual_value)
@@ -120,7 +128,7 @@ pub struct InputValidator;
 
 impl InputValidator {
     /// Validate arguments against cap input schema
-    pub fn validate_arguments(
+    pub fn validate_positional_arguments(
         cap: &Cap,
         arguments: &[Value],
     ) -> Result<(), ValidationError> {
@@ -155,6 +163,63 @@ impl InputValidator {
             let arg_index = required_count + index;
             if arg_index < arguments.len() {
                 Self::validate_single_argument(cap, opt_arg, &arguments[arg_index])?;
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate named arguments against cap input schema
+    pub fn validate_named_arguments(
+        cap: &Cap,
+        named_args: &[Value],
+    ) -> Result<(), ValidationError> {
+        let cap_urn = cap.urn_string();
+        let args = &cap.arguments;
+        
+        // Extract named argument values into a map
+        let mut provided_args = std::collections::HashMap::new();
+        for arg in named_args {
+            if let Value::Object(map) = arg {
+                if let (Some(Value::String(name)), Some(value)) = (map.get("name"), map.get("value")) {
+                    provided_args.insert(name.clone(), value.clone());
+                }
+            }
+        }
+        
+        // Check that all required arguments are provided as named arguments
+        for req_arg in &args.required {
+            if !provided_args.contains_key(&req_arg.name) {
+                return Err(ValidationError::MissingRequiredArgument {
+                    cap_urn: cap_urn.clone(),
+                    argument_name: format!("{} (expected as named argument)", req_arg.name),
+                });
+            }
+            
+            // Validate the provided argument value
+            let provided_value = &provided_args[&req_arg.name];
+            Self::validate_single_argument(cap, req_arg, provided_value)?;
+        }
+        
+        // Validate optional arguments if provided
+        for opt_arg in &args.optional {
+            if let Some(provided_value) = provided_args.get(&opt_arg.name) {
+                Self::validate_single_argument(cap, opt_arg, provided_value)?;
+            }
+        }
+        
+        // Check for unknown arguments
+        let known_arg_names: std::collections::HashSet<String> = args.required.iter()
+            .chain(args.optional.iter())
+            .map(|arg| arg.name.clone())
+            .collect();
+        
+        for provided_name in provided_args.keys() {
+            if !known_arg_names.contains(provided_name) {
+                return Err(ValidationError::UnknownArgument {
+                    cap_urn: cap_urn.clone(),
+                    argument_name: provided_name.clone(),
+                });
             }
         }
         
@@ -654,7 +719,7 @@ impl SchemaValidator {
                 cap_urn: cap_urn.to_string(),
             })?;
 
-        InputValidator::validate_arguments(cap, arguments)
+        InputValidator::validate_positional_arguments(cap, arguments)
     }
 
     /// Validate output against a cap's output schema
@@ -709,7 +774,7 @@ mod tests {
         
         let input_args = vec![json!("/path/to/file.txt")];
         
-        assert!(InputValidator::validate_arguments(&cap, &input_args).is_ok());
+        assert!(InputValidator::validate_positional_arguments(&cap, &input_args).is_ok());
     }
     
     #[test]
@@ -729,7 +794,7 @@ mod tests {
         
         let input_args = vec![]; // Missing required argument
         
-        let result = InputValidator::validate_arguments(&cap, &input_args);
+        let result = InputValidator::validate_positional_arguments(&cap, &input_args);
         assert!(result.is_err());
         
         if let Err(ValidationError::MissingRequiredArgument { argument_name, .. }) = result {
@@ -756,7 +821,7 @@ mod tests {
         
         let input_args = vec![json!("not_a_number")]; // Wrong type
         
-        let result = InputValidator::validate_arguments(&cap, &input_args);
+        let result = InputValidator::validate_positional_arguments(&cap, &input_args);
         assert!(result.is_err());
         
         if let Err(ValidationError::InvalidArgumentType { expected_type, .. }) = result {
@@ -771,7 +836,7 @@ mod tests {
 pub async fn validate_cap_arguments(registry: &crate::registry::CapRegistry, cap_urn: &str, arguments: &[Value]) -> Result<(), ValidationError> {
     let canonical_cap = registry.get_cap(cap_urn).await
         .map_err(|_| ValidationError::UnknownCap { cap_urn: cap_urn.to_string() })?;
-    InputValidator::validate_arguments(&canonical_cap, arguments)
+    InputValidator::validate_positional_arguments(&canonical_cap, arguments)
 }
 
 /// Validate cap output against canonical definition
