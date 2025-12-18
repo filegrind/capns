@@ -23,6 +23,9 @@
         "arg_type": "string",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id",
+        "metadata": {
+          "cap_arg_type": "LISTING_ID"
+        },
         "validation": {
           "pattern": "[0-9a-f-]{36}"
         }
@@ -32,6 +35,9 @@
         "arg_type": "string",
         "arg_description": "ID of the tracked file to analyze",
         "cli_flag": "--tracked-file-id",
+        "metadata": {
+          "cap_arg_type": "TRACKED_FILE_ID"
+        },
         "validation": {
           "pattern": "[0-9a-f-]{36}"
         }
@@ -41,6 +47,9 @@
         "arg_type": "string",
         "arg_description": "Name of the file being analyzed",
         "cli_flag": "--filename",
+        "metadata": {
+          "cap_arg_type": "FILENAME"
+        },
         "validation": {
           "min_length": 1,
           "max_length": 1024
@@ -52,6 +61,9 @@
     "output_type": "object",
     "output_description": "Created task information",
     "content_type": "application/json",
+    "metadata": {
+      "cap_output_type": "TASK_ID"
+    },
     "schema": {
       "type": "object",
       "additionalProperties": false,
