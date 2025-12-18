@@ -26,25 +26,6 @@
         "validation": {
           "pattern": "[0-9a-f-]{36}"
         }
-      },
-      {
-        "name": "tracked_file_id",
-        "arg_type": "string",
-        "arg_description": "ID of the tracked file to analyze",
-        "cli_flag": "--tracked-file-id",
-        "validation": {
-          "pattern": "[0-9a-f-]{36}"
-        }
-      },
-      {
-        "name": "filename",
-        "arg_type": "string",
-        "arg_description": "Name of the file being analyzed",
-        "cli_flag": "--filename",
-        "validation": {
-          "min_length": 1,
-          "max_length": 1024
-        }
       }
     ]
   },
