@@ -23,6 +23,9 @@
         "arg_type": "string",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id",
+        "metadata": {
+          "cap_arg_type": "LISTING_ID"
+        },
         "validation": {
           "pattern": "[0-9a-f-]{36}"
         }
