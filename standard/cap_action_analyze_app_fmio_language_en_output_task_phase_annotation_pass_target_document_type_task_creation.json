@@ -12,7 +12,6 @@
   },
   "command": "annotation_pass_task",
   "title": "Create Annotation Pass Analysis Task",
-  "category": "FMIO",
   "cap_description": "Create a task for comprehensive annotation pass document analysis",
   "metadata": {},
   "accepts_stdin": false,

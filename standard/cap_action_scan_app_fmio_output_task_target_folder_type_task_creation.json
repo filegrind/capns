@@ -10,7 +10,6 @@
   },
   "command": "scan_folder_task",
   "title": "Create Folder Scan Task",
-  "category": "FMIO",
   "cap_description": "Create a task to scan a folder for files and documents",
   "metadata": {},
   "accepts_stdin": false,

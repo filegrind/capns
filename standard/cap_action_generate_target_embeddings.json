@@ -7,7 +7,6 @@
   },
   "command": "generate",
   "title": "Generate Vector Embeddings",
-  "category": "AI Inference",
   "cap_description": "Generate vector embeddings from text or file input",
   "metadata": {},
   "accepts_stdin": true,

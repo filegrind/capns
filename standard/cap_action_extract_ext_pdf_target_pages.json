@@ -8,7 +8,6 @@
   },
   "command": "extract-pages",
   "title": "Extract Document Pages",
-  "category": "Document Processing",
   "cap_description": "Extract structured page content from the document",
   "metadata": {},
   "accepts_stdin": true,

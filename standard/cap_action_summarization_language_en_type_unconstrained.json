@@ -8,7 +8,6 @@
   },
   "command": "llm_inference",
   "title": "Summarize in English",
-  "category": "AI Inference",
   "cap_description": "Document and text summarization in English",
   "metadata": {},
   "accepts_stdin": true,

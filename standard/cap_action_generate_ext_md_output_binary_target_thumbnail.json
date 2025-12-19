@@ -9,7 +9,6 @@
   },
   "command": "generate-thumbnail",
   "title": "Generate Markdown Thumbnail",
-  "category": "Document Processing",
   "cap_description": "Generate a thumbnail image preview of the markdown document",
   "metadata": {},
   "accepts_stdin": true,

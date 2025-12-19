@@ -9,7 +9,6 @@
   },
   "command": "generate-thumbnail",
   "title": "Generate RST Thumbnail",
-  "category": "Document Processing",
   "cap_description": "Generate a thumbnail image preview of the RST document",
   "metadata": {},
   "accepts_stdin": true,

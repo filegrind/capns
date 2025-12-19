@@ -8,7 +8,6 @@
   },
   "command": "extract-pages",
   "title": "Extract Log Document Pages",
-  "category": "Document Processing",
   "cap_description": "Extract pages with text content from log files",
   "metadata": {},
   "accepts_stdin": true,

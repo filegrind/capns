@@ -12,7 +12,6 @@
   },
   "command": "first_glance_task",
   "title": "Create First Glance Analysis Task",
-  "category": "FMIO",
   "cap_description": "Create a task for initial document analysis - first glance phase",
   "metadata": {},
   "accepts_stdin": false,

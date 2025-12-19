@@ -7,7 +7,6 @@
   },
   "command": "contents",
   "title": "Inspect Model Contents",
-  "category": "Model Management",
   "cap_description": "Inspect the contents and structure of a model",
   "metadata": {},
   "accepts_stdin": false,

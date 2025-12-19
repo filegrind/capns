@@ -8,7 +8,6 @@
   },
   "command": "extract-metadata",
   "title": "Extract Log Document Metadata",
-  "category": "Document Processing",
   "cap_description": "Extract log document metadata including title, file size, word count, and other properties",
   "metadata": {},
   "accepts_stdin": true,

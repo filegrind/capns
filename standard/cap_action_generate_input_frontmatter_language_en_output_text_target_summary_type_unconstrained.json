@@ -11,7 +11,6 @@
   },
   "command": "generate_text",
   "title": "Summarize Frontmatter",
-  "category": "Document Processing",
   "cap_description": "Extract and organize bibliographic information from book frontmatter text",
   "metadata": {},
   "accepts_stdin": true,

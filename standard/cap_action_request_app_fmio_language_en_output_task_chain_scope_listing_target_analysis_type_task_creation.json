@@ -12,7 +12,6 @@
   },
   "command": "listing_analysis_task",
   "title": "Create Listing Analysis Task Chain",
-  "category": "FMIO",
   "cap_description": "Create a complete analysis task chain for a listing (first glance → annotation pass → close read → deep dive)",
   "metadata": {},
   "accepts_stdin": false,

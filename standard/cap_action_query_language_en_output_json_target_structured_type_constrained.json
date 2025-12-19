@@ -10,7 +10,6 @@
   },
   "command": "structured_query",
   "title": "Execute Structured Query",
-  "category": "Data Selection",
   "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
   "metadata": {},
   "accepts_stdin": true,

@@ -8,7 +8,6 @@
   },
   "command": "extract-outline",
   "title": "Extract RST Document Outline",
-  "category": "Document Processing",
   "cap_description": "Extract document outline/table of contents from RST files",
   "metadata": {},
   "accepts_stdin": true,

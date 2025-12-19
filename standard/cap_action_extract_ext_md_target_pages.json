@@ -8,7 +8,6 @@
   },
   "command": "extract-pages",
   "title": "Extract Markdown Document Pages",
-  "category": "Document Processing",
   "cap_description": "Extract pages with text content from markdown files",
   "metadata": {},
   "accepts_stdin": true,

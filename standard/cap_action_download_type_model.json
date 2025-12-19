@@ -7,7 +7,6 @@
   },
   "command": "download",
   "title": "Download Model",
-  "category": "Model Management",
   "cap_description": "Download machine learning models from various repositories",
   "metadata": {},
   "accepts_stdin": false,
