@@ -1,18 +1,16 @@
 {
   "urn": {
     "tags": {
-      "app": "fmio",
-      "action": "analyze",
-      "target": "document",
-      "phase": "skim_pass",
-      "output": "task",
-      "language": "en",
-      "type": "task_creation"
+      "app": "fgrnd",
+      "action": "use",
+      "tool": "outline_extraction",
+      "target": "listing",
+      "output": "task"
     }
   },
-  "command": "skim_pass_task",
-  "title": "Create Skim Pass Analysis Task",
-  "cap_description": "Create a task for skim pass document analysis",
+  "command": "outline_extraction_task",
+  "title": "Create Outline Extraction Task",
+  "cap_description": "Extract document structure and hierarchical outline using LLM analysis",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
@@ -35,6 +33,9 @@
     "output_type": "object",
     "output_description": "Created task information",
     "content_type": "application/json",
+    "metadata": {
+      "cap_output_type": "TASK_ID"
+    },
     "schema": {
       "type": "object",
       "additionalProperties": false,

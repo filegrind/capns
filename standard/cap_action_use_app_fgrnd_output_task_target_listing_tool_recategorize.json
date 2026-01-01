@@ -1,28 +1,30 @@
 {
   "urn": {
     "tags": {
-      "app": "fmio",
-      "action": "scan",
-      "target": "files",
-      "output": "task",
-      "type": "task_creation"
+      "app": "fgrnd",
+      "action": "use",
+      "tool": "recategorize",
+      "target": "listing",
+      "output": "task"
     }
   },
-  "command": "scan_files_task",
-  "title": "Create Files Scan Task",
-  "cap_description": "Create a task to scan a specific list of files",
+  "command": "recategorize_task",
+  "title": "Create Recategorize Task",
+  "cap_description": "Re-analyze and recategorize a document based on current content",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
     "required": [
       {
-        "name": "file_paths",
-        "arg_type": "array",
-        "arg_description": "Array of file paths to scan",
-        "cli_flag": "--file-paths",
+        "name": "listing_id",
+        "arg_type": "string",
+        "arg_description": "ID of the listing to recategorize",
+        "cli_flag": "--listing-id",
+        "metadata": {
+          "cap_arg_type": "LISTING_ID"
+        },
         "validation": {
-          "min_length": 1,
-          "max_length": 1000
+          "pattern": "[0-9a-f-]{36}"
         }
       }
     ]
@@ -31,6 +33,9 @@
     "output_type": "object",
     "output_description": "Created task information",
     "content_type": "application/json",
+    "metadata": {
+      "cap_output_type": "TASK_ID"
+    },
     "schema": {
       "type": "object",
       "additionalProperties": false,

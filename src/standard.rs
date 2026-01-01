@@ -1,7 +1,7 @@
 //! Standard capability definitions with arguments
 //!
 //! This module provides the standard capability definitions used across
-//! all FMIO providers, including their formal argument specifications.
+//! all FGRND providers, including their formal argument specifications.
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{

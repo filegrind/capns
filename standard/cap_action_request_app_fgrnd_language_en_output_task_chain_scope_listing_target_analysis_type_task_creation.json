@@ -1,17 +1,18 @@
 {
   "urn": {
     "tags": {
-      "app": "fmio",
-      "action": "recategorize",
-      "target": "listing",
-      "output": "task",
+      "app": "fgrnd",
+      "action": "request",
+      "target": "analysis",
+      "scope": "listing",
+      "output": "task_chain",
       "language": "en",
       "type": "task_creation"
     }
   },
-  "command": "recategorization_task",
-  "title": "Create Listing Recategorization Task",
-  "cap_description": "Create a task to recategorize a listing based on updated analysis",
+  "command": "listing_analysis_task",
+  "title": "Create Listing Analysis Task Chain",
+  "cap_description": "Create a complete analysis task chain for a listing (first glance → annotation pass → close read → deep dive)",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
@@ -32,23 +33,23 @@
   },
   "output": {
     "output_type": "object",
-    "output_description": "Created task information",
+    "output_description": "Information about the created task chain",
     "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "task_id": {
+        "listing_id": {
           "type": "string",
-          "description": "ID of the created task"
+          "description": "ID of the listing being analyzed"
         },
         "task_type": {
           "type": "string",
-          "description": "Type of task created"
+          "description": "Type of task chain created"
         }
       },
       "required": [
-        "task_id",
+        "listing_id",
         "task_type"
       ]
     }

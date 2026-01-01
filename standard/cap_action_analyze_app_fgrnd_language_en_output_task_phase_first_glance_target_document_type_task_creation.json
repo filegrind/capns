@@ -1,18 +1,18 @@
 {
   "urn": {
     "tags": {
-      "app": "fmio",
+      "app": "fgrnd",
       "action": "analyze",
       "target": "document",
-      "phase": "close_read",
+      "phase": "first_glance",
       "output": "task",
       "language": "en",
       "type": "task_creation"
     }
   },
-  "command": "close_read_task",
-  "title": "Create Close Read Analysis Task",
-  "cap_description": "Create a task for detailed close reading document analysis",
+  "command": "first_glance_task",
+  "title": "Create First Glance Analysis Task",
+  "cap_description": "Create a task for initial document analysis - first glance phase",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
@@ -35,6 +35,9 @@
     "output_type": "object",
     "output_description": "Created task information",
     "content_type": "application/json",
+    "metadata": {
+      "cap_output_type": "TASK_ID"
+    },
     "schema": {
       "type": "object",
       "additionalProperties": false,

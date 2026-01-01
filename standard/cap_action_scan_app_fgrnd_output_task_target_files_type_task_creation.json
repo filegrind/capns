@@ -1,32 +1,28 @@
 {
   "urn": {
     "tags": {
-      "app": "fmio",
-      "action": "analyze",
-      "target": "document",
-      "phase": "first_glance",
+      "app": "fgrnd",
+      "action": "scan",
+      "target": "files",
       "output": "task",
-      "language": "en",
       "type": "task_creation"
     }
   },
-  "command": "first_glance_task",
-  "title": "Create First Glance Analysis Task",
-  "cap_description": "Create a task for initial document analysis - first glance phase",
+  "command": "scan_files_task",
+  "title": "Create Files Scan Task",
+  "cap_description": "Create a task to scan a specific list of files",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
     "required": [
       {
-        "name": "listing_id",
-        "arg_type": "string",
-        "arg_description": "ID of the listing to analyze",
-        "cli_flag": "--listing-id",
-        "metadata": {
-          "cap_arg_type": "LISTING_ID"
-        },
+        "name": "file_paths",
+        "arg_type": "array",
+        "arg_description": "Array of file paths to scan",
+        "cli_flag": "--file-paths",
         "validation": {
-          "pattern": "[0-9a-f-]{36}"
+          "min_length": 1,
+          "max_length": 1000
         }
       }
     ]
@@ -35,9 +31,6 @@
     "output_type": "object",
     "output_description": "Created task information",
     "content_type": "application/json",
-    "metadata": {
-      "cap_output_type": "TASK_ID"
-    },
     "schema": {
       "type": "object",
       "additionalProperties": false,

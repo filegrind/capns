@@ -1,16 +1,17 @@
 {
   "urn": {
     "tags": {
-      "app": "fmio",
-      "action": "use",
-      "tool": "quick_summary",
+      "app": "fgrnd",
+      "action": "recategorize",
       "target": "listing",
-      "output": "task"
+      "output": "task",
+      "language": "en",
+      "type": "task_creation"
     }
   },
-  "command": "quick_summary_task",
-  "title": "Create Quick Summary Task",
-  "cap_description": "Fast extraction of basic metadata from document frontmatter - validates document, extracts title, contributors, keywords",
+  "command": "recategorization_task",
+  "title": "Create Listing Recategorization Task",
+  "cap_description": "Create a task to recategorize a listing based on updated analysis",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
@@ -33,9 +34,6 @@
     "output_type": "object",
     "output_description": "Created task information",
     "content_type": "application/json",
-    "metadata": {
-      "cap_output_type": "TASK_ID"
-    },
     "schema": {
       "type": "object",
       "additionalProperties": false,
