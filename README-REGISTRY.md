@@ -56,7 +56,7 @@ import (
     "fmt"
     "log"
     
-    capns "github.com/fmio/capns-go"
+    capns "github.com/fgrnd/capns-go"
 )
 
 func main() {
@@ -162,7 +162,7 @@ package main
 
 import (
     "log"
-    sdk "github.com/fmio/fmio-plugin-sdk-go"
+    sdk "github.com/fgrnd/fgrnd-plugin-sdk-go"
 )
 
 func main() {
@@ -192,14 +192,14 @@ func main() {
 ### Objective-C Plugin SDK
 
 ```objc
-#import <FMIOPluginSDK/FMIOPluginSDK.h>
+#import <FGRNDPluginSDK/FGRNDPluginSDK.h>
 
 int main() {
     // Create registry manager
-    FMIORegistryManager *manager = [FMIORegistryManager manager];
+    FGRNDRegistryManager *manager = [FGRNDRegistryManager manager];
     
     // Get canonical cap
-    [FMIOStandardCaps standardCapWithUrnCanonical:@"cap:action=extract;target=metadata;" completion:^(CSCap *cap, NSError *error) {
+    [FGRNDStandardCaps standardCapWithUrnCanonical:@"cap:action=extract;target=metadata;" completion:^(CSCap *cap, NSError *error) {
         if (cap) {
             NSLog(@"Got canonical cap: %@", [cap urnString]);
         } else {
@@ -208,7 +208,7 @@ int main() {
     }];
     
     // Validate all standard caps
-    [FMIOStandardCaps validateStandardCaps:^(NSError *error) {
+    [FGRNDStandardCaps validateStandardCaps:^(NSError *error) {
         if (error) {
             NSLog(@"Standard caps validation failed: %@", error);
         } else {
