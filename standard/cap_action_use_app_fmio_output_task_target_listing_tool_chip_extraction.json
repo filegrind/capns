@@ -3,13 +3,13 @@
     "tags": {
       "app": "fmio",
       "action": "use",
-      "tool": "artifact_extraction",
+      "tool": "chip_extraction",
       "target": "listing",
       "output": "task"
     }
   },
-  "command": "artifact_extraction_task",
-  "title": "Create Artifact Extraction Tool Task",
+  "command": "chip_extraction_task",
+  "title": "Create Chip Extraction Tool Task",
   "cap_description": "Create a task for initial document analysis - first glance phase",
   "metadata": {},
   "accepts_stdin": false,

@@ -54,7 +54,7 @@
       {
         "name": "remove_boilerplate",
         "arg_type": "boolean",
-        "arg_description": "Whether to remove legal boilerplate and formatting artifacts",
+        "arg_description": "Whether to remove legal boilerplate and formatting chips",
         "cli_flag": "--remove-boilerplate",
         "default_value": true
       },
