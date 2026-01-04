@@ -260,8 +260,8 @@ let cap = registry.get_cap(urn).await?; // Ready to use!
 ```
 
 **Benefits:**
-✅ **Hide complexity**: No need to understand `RegistryCapDefinition` vs `Cap`  
-✅ **Descriptive errors**: Clear error messages when caps aren't found  
-✅ **Batch operations**: Get multiple caps efficiently  
-✅ **Graceful handling**: `try_get_cap()` returns `None` instead of failing  
-✅ **Consistent API**: Same simple interface across Rust, Go, and Objective-C
+OK **Hide complexity**: No need to understand `RegistryCapDefinition` vs `Cap`  
+OK **Descriptive errors**: Clear error messages when caps aren't found  
+OK **Batch operations**: Get multiple caps efficiently  
+OK **Graceful handling**: `try_get_cap()` returns `None` instead of failing  
+OK **Consistent API**: Same simple interface across Rust, Go, and Objective-C
