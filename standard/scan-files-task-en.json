@@ -1,12 +1,10 @@
 {
   "urn": {
     "tags": {
-      "app": "fgrnd",
-      "action": "scan",
-      "target": "files",
-      "output": "task",
+      "action": "scan_files",
       "type": "task_creation",
-      "media_spec": "content-type: application/json; profile=https://filegrind.com/schema/file-path-array"
+      "in": "content-type: application/json; profile=https://filegrind.com/schema/file-path-array",
+      "out": "content-type: text/plain; profile=https://filegrind.com/schema/task-id"
     }
   },
   "command": "scan_files_task",

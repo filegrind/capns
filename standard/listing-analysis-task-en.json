@@ -1,14 +1,11 @@
 {
   "urn": {
     "tags": {
-      "app": "fgrnd",
-      "action": "request",
-      "target": "analysis",
-      "scope": "listing",
-      "output": "task_chain",
+      "action": "request_listing_analysis",
       "language": "en",
       "type": "task_creation",
-      "media_spec": "content-type: text/plain; profile=https://filegrind.com/schema/listing-id"
+      "in": "content-type: text/plain; profile=https://filegrind.com/schema/listing-id",
+      "out": "content-type: text/plain; profile=https://filegrind.com/schema/task-chain-id"
     }
   },
   "command": "listing_analysis_task",
@@ -23,9 +20,6 @@
         "arg_type": "string",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id",
-        "metadata": {
-          "cap_arg_type": "LISTING_ID"
-        },
         "validation": {
           "pattern": "[0-9a-f-]{36}"
         }

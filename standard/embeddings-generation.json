@@ -1,9 +1,9 @@
 {
   "urn": {
     "tags": {
-      "action": "generate",
-      "target": "embeddings",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/utf8-text"
+      "action": "generate_embeddings",
+      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
+      "out": "content-type: application/json; profile=https://capns.org/schema/embeddings-result"
     }
   },
   "command": "generate",

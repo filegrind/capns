@@ -1,12 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "query",
-      "target": "structured",
-      "output": "json",
+      "action": "query_structured",
       "language": "en",
       "type": "constrained",
-      "media_spec": "content-type: application/json; profile=https://capns.org/schema/structured-query-params"
+      "in": "content-type: application/json; profile=https://capns.org/schema/structured-query-params",
+      "out": "content-type: application/json; profile=https://capns.org/schema/structured-query-result"
     }
   },
   "command": "structured_query",

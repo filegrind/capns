@@ -1,10 +1,10 @@
 {
   "urn": {
     "tags": {
-      "action": "extract",
-      "target": "outline",
+      "action": "extract_outline",
       "ext": "txt",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/utf8-text"
+      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
+      "out": "content-type: application/json; profile=https://capns.org/schema/document-outline"
     }
   },
   "command": "extract-outline",

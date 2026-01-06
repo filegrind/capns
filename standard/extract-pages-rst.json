@@ -1,10 +1,10 @@
 {
   "urn": {
     "tags": {
-      "action": "extract",
-      "target": "pages",
+      "action": "extract_pages",
       "ext": "rst",
-      "media_spec": "content-type: text/x-rst; profile=https://capns.org/schema/rst-document"
+      "in": "content-type: text/x-rst; profile=https://capns.org/schema/rst-document",
+      "out": "content-type: application/json; profile=https://capns.org/schema/document-pages"
     }
   },
   "command": "extract-pages",

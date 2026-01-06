@@ -1,11 +1,10 @@
 {
   "urn": {
     "tags": {
-      "action": "generate",
-      "output": "binary",
-      "target": "thumbnail",
+      "action": "generate_thumbnail",
       "ext": "txt",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/utf8-text"
+      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
+      "out": "content-type: image/png; profile=https://capns.org/schema/thumbnail-image"
     }
   },
   "command": "generate-thumbnail",

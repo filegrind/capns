@@ -3,8 +3,9 @@
     "tags": {
       "action": "creative",
       "language": "en",
-      "type": "unconstrained",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/prompt-text"
+      "type": "constrained",
+      "in": "content-type: text/plain; profile=https://capns.org/schema/prompt-text",
+      "out": "content-type: application/json; profile=https://capns.org/schema/creative-response"
     }
   },
   "command": "llm_inference",

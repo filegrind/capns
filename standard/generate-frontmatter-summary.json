@@ -1,13 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "generate",
-      "target": "summary",
-      "input": "frontmatter",
-      "output": "text",
+      "action": "generate_frontmatter_summary",
       "language": "en",
-      "type": "unconstrained",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/utf8-text"
+      "type": "constrained",
+      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
+      "out": "content-type: application/json; profile=https://capns.org/schema/frontmatter-summary"
     }
   },
   "command": "generate_text",

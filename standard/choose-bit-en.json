@@ -1,12 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "choose",
-      "target": "bit",
-      "output": "boolean",
+      "action": "choose_bit",
       "language": "en",
       "type": "constrained",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/utf8-text"
+      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
+      "out": "content-type: application/json; profile=https://capns.org/schema/boolean-result"
     }
   },
   "command": "bit_choice",

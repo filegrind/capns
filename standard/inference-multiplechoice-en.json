@@ -4,7 +4,8 @@
       "action": "multiplechoice",
       "language": "en",
       "type": "constrained",
-      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/prompt-text"
+      "in": "content-type: text/plain; profile=https://capns.org/schema/prompt-text",
+      "out": "content-type: application/json; profile=https://capns.org/schema/multiplechoice-response"
     }
   },
   "command": "llm_inference",

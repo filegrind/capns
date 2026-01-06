@@ -1,8 +1,8 @@
 {
   "urn": {
     "tags": {
-      "action": "dimensions",
-      "target": "embeddings"
+      "action": "embeddings_dimensions",
+      "out": "content-type: application/json; profile=https://capns.org/schema/uint"
     }
   },
   "command": "dimensions",
