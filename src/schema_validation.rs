@@ -248,16 +248,17 @@ mod tests {
             default_value: None,
             schema_ref: None,
             schema: Some(schema),
+            metadata: None,
         };
-        
+
         let valid_value = json!({"name": "John", "age": 30});
         assert!(validator.validate_argument(&arg, &valid_value).is_ok());
     }
-    
+
     #[test]
     fn test_argument_schema_validation_failure() {
         let mut validator = SchemaValidator::new();
-        
+
         let schema = json!({
             "type": "object",
             "properties": {
@@ -265,7 +266,7 @@ mod tests {
             },
             "required": ["name"]
         });
-        
+
         let arg = CapArgument {
             name: "user_data".to_string(),
             arg_type: ArgumentType::Object,
@@ -276,6 +277,7 @@ mod tests {
             default_value: None,
             schema_ref: None,
             schema: Some(schema),
+            metadata: None,
         };
         
         let invalid_value = json!({"age": 30}); // Missing required "name"
@@ -302,6 +304,7 @@ mod tests {
             schema: Some(schema),
             content_type: Some("application/json".to_string()),
             validation: Default::default(),
+            metadata: None,
         };
         
         let valid_value = json!({"result": "success", "timestamp": "2023-01-01T00:00:00Z"});
@@ -323,6 +326,7 @@ mod tests {
             default_value: None,
             schema_ref: None,
             schema: None,
+            metadata: None,
         };
         
         let value = json!("any string value");

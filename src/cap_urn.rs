@@ -12,22 +12,34 @@ use std::str::FromStr;
 /// A cap URN using flat, ordered tags
 ///
 /// Examples:
-/// - `action=generate;ext=pdf;output=binary;target=thumbnail;`
-/// - `action=extract;target=metadata;`
-/// - `action=analysis;format=en;type=constrained`
+/// - `cap:action=generate;ext=pdf;output=binary;target=thumbnail`
+/// - `cap:action=extract;target=metadata`
+/// - `cap:key="Value With Spaces"`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapUrn {
     /// The tags that define this cap, stored in sorted order for canonical representation
     pub tags: BTreeMap<String, String>,
 }
 
+/// Parser states for the state machine
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ParseState {
+    ExpectingKey,
+    InKey,
+    ExpectingValue,
+    InUnquotedValue,
+    InQuotedValue,
+    InQuotedValueEscape,
+    ExpectingSemiOrEnd,
+}
+
 impl CapUrn {
     /// Create a new cap URN from tags
-    /// All keys and values are normalized to lowercase for case-insensitive matching
+    /// Keys are normalized to lowercase; values are preserved as-is
     pub fn new(tags: BTreeMap<String, String>) -> Self {
         let normalized_tags = tags
             .into_iter()
-            .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+            .map(|(k, v)| (k.to_lowercase(), v))
             .collect();
         Self {
             tags: normalized_tags,
@@ -43,90 +55,218 @@ impl CapUrn {
 
     /// Create a cap URN from a string representation
     ///
-    /// Format: `cap:key1=value1;key2=value2;...`
+    /// Format: `cap:key1=value1;key2=value2;...` or `cap:key1="value with spaces";key2=simple`
     /// The "cap:" prefix is mandatory
     /// Trailing semicolons are optional and ignored
     /// Tags are automatically sorted alphabetically for canonical form
-    /// All input is normalized to lowercase for case-insensitive matching
+    ///
+    /// Case handling:
+    /// - Keys: Always normalized to lowercase
+    /// - Unquoted values: Normalized to lowercase
+    /// - Quoted values: Case preserved exactly as specified
     pub fn from_string(s: &str) -> Result<Self, CapUrnError> {
         if s.is_empty() {
             return Err(CapUrnError::Empty);
         }
 
-        // Normalize to lowercase for case-insensitive handling
-        let s = s.to_lowercase();
-
-        // Ensure "cap:" prefix is present
-        if !s.starts_with("cap:") {
+        // Check for "cap:" prefix (case-insensitive)
+        if s.len() < 4 || !s[..4].eq_ignore_ascii_case("cap:") {
             return Err(CapUrnError::MissingCapPrefix);
         }
 
-        // Remove the "cap:" prefix
         let tags_part = &s[4..];
-
         let mut tags = BTreeMap::new();
 
-        // Remove trailing semicolon if present
-        let normalized_tags_part = tags_part.trim_end_matches(';');
-
         // Handle empty cap URN (cap: with no tags)
-        if normalized_tags_part.is_empty() {
+        if tags_part.is_empty() || tags_part == ";" {
             return Ok(Self { tags });
         }
 
-        for tag_str in normalized_tags_part.split(';') {
-            let tag_str = tag_str.trim();
-            if tag_str.is_empty() {
-                continue;
+        let mut state = ParseState::ExpectingKey;
+        let mut current_key = String::new();
+        let mut current_value = String::new();
+        let chars: Vec<char> = tags_part.chars().collect();
+        let mut pos = 0;
+
+        while pos < chars.len() {
+            let c = chars[pos];
+
+            match state {
+                ParseState::ExpectingKey => {
+                    if c == ';' {
+                        // Empty segment, skip
+                        pos += 1;
+                        continue;
+                    } else if Self::is_valid_key_char(c) {
+                        current_key.push(c.to_ascii_lowercase());
+                        state = ParseState::InKey;
+                    } else {
+                        return Err(CapUrnError::InvalidCharacter(format!(
+                            "invalid character '{}' at position {}",
+                            c, pos
+                        )));
+                    }
+                }
+
+                ParseState::InKey => {
+                    if c == '=' {
+                        if current_key.is_empty() {
+                            return Err(CapUrnError::EmptyTagComponent(
+                                "empty key".to_string(),
+                            ));
+                        }
+                        state = ParseState::ExpectingValue;
+                    } else if Self::is_valid_key_char(c) {
+                        current_key.push(c.to_ascii_lowercase());
+                    } else {
+                        return Err(CapUrnError::InvalidCharacter(format!(
+                            "invalid character '{}' in key at position {}",
+                            c, pos
+                        )));
+                    }
+                }
+
+                ParseState::ExpectingValue => {
+                    if c == '"' {
+                        state = ParseState::InQuotedValue;
+                    } else if c == ';' {
+                        return Err(CapUrnError::EmptyTagComponent(format!(
+                            "empty value for key '{}'",
+                            current_key
+                        )));
+                    } else if Self::is_valid_unquoted_value_char(c) {
+                        current_value.push(c.to_ascii_lowercase());
+                        state = ParseState::InUnquotedValue;
+                    } else {
+                        return Err(CapUrnError::InvalidCharacter(format!(
+                            "invalid character '{}' in value at position {}",
+                            c, pos
+                        )));
+                    }
+                }
+
+                ParseState::InUnquotedValue => {
+                    if c == ';' {
+                        Self::finish_tag(&mut tags, &mut current_key, &mut current_value)?;
+                        state = ParseState::ExpectingKey;
+                    } else if Self::is_valid_unquoted_value_char(c) {
+                        current_value.push(c.to_ascii_lowercase());
+                    } else {
+                        return Err(CapUrnError::InvalidCharacter(format!(
+                            "invalid character '{}' in unquoted value at position {}",
+                            c, pos
+                        )));
+                    }
+                }
+
+                ParseState::InQuotedValue => {
+                    if c == '"' {
+                        state = ParseState::ExpectingSemiOrEnd;
+                    } else if c == '\\' {
+                        state = ParseState::InQuotedValueEscape;
+                    } else {
+                        // Any character allowed in quoted value, preserve case
+                        current_value.push(c);
+                    }
+                }
+
+                ParseState::InQuotedValueEscape => {
+                    if c == '"' || c == '\\' {
+                        current_value.push(c);
+                        state = ParseState::InQuotedValue;
+                    } else {
+                        return Err(CapUrnError::InvalidEscapeSequence(pos));
+                    }
+                }
+
+                ParseState::ExpectingSemiOrEnd => {
+                    if c == ';' {
+                        Self::finish_tag(&mut tags, &mut current_key, &mut current_value)?;
+                        state = ParseState::ExpectingKey;
+                    } else {
+                        return Err(CapUrnError::InvalidCharacter(format!(
+                            "expected ';' or end after quoted value, got '{}' at position {}",
+                            c, pos
+                        )));
+                    }
+                }
             }
 
-            let parts: Vec<&str> = tag_str.split('=').collect();
-            if parts.len() != 2 {
-                return Err(CapUrnError::InvalidTagFormat(tag_str.to_string()));
+            pos += 1;
+        }
+
+        // Handle end of input
+        match state {
+            ParseState::InUnquotedValue | ParseState::ExpectingSemiOrEnd => {
+                Self::finish_tag(&mut tags, &mut current_key, &mut current_value)?;
             }
-
-            let key = parts[0].trim();
-            let value = parts[1].trim();
-
-            if key.is_empty() || value.is_empty() {
-                return Err(CapUrnError::EmptyTagComponent(tag_str.to_string()));
+            ParseState::ExpectingKey => {
+                // Valid - trailing semicolon or empty input after prefix
             }
-
-            // Check for duplicate keys
-            if tags.contains_key(key) {
-                return Err(CapUrnError::DuplicateKey(key.to_string()));
+            ParseState::InQuotedValue | ParseState::InQuotedValueEscape => {
+                return Err(CapUrnError::UnterminatedQuote(pos));
             }
-
-            // Validate key cannot be purely numeric
-            if Self::is_purely_numeric(key) {
-                return Err(CapUrnError::NumericKey(key.to_string()));
+            ParseState::InKey => {
+                return Err(CapUrnError::InvalidTagFormat(format!(
+                    "incomplete tag '{}'",
+                    current_key
+                )));
             }
-
-            // Validate key and value characters
-            if !Self::is_valid_tag_component(key, true)
-                || !Self::is_valid_tag_component(value, false)
-            {
-                return Err(CapUrnError::InvalidCharacter(tag_str.to_string()));
+            ParseState::ExpectingValue => {
+                return Err(CapUrnError::EmptyTagComponent(format!(
+                    "empty value for key '{}'",
+                    current_key
+                )));
             }
-
-            tags.insert(key.to_string(), value.to_string());
         }
 
         Ok(Self { tags })
     }
 
-    /// Validate that a tag component contains only allowed characters
-    /// Allowed: alphanumeric, underscore, dash, slash, colon, dot, asterisk (asterisk only in values)
-    fn is_valid_tag_component(s: &str, is_key: bool) -> bool {
-        s.chars().all(|c| {
-            c.is_alphanumeric()
-                || c == '_'
-                || c == '-'
-                || c == '/'
-                || c == ':'
-                || c == '.'
-                || (!is_key && c == '*')
-        })
+    /// Finish a tag by validating and inserting it
+    fn finish_tag(
+        tags: &mut BTreeMap<String, String>,
+        key: &mut String,
+        value: &mut String,
+    ) -> Result<(), CapUrnError> {
+        if key.is_empty() {
+            return Err(CapUrnError::EmptyTagComponent("empty key".to_string()));
+        }
+        if value.is_empty() {
+            return Err(CapUrnError::EmptyTagComponent(format!(
+                "empty value for key '{}'",
+                key
+            )));
+        }
+
+        // Check for duplicate keys
+        if tags.contains_key(key.as_str()) {
+            return Err(CapUrnError::DuplicateKey(key.clone()));
+        }
+
+        // Validate key cannot be purely numeric
+        if Self::is_purely_numeric(key) {
+            return Err(CapUrnError::NumericKey(key.clone()));
+        }
+
+        tags.insert(std::mem::take(key), std::mem::take(value));
+        Ok(())
+    }
+
+    /// Check if character is valid for a key
+    fn is_valid_key_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == ':' || c == '.'
+    }
+
+    /// Check if character is valid for an unquoted value
+    fn is_valid_unquoted_value_char(c: char) -> bool {
+        c.is_alphanumeric()
+            || c == '_'
+            || c == '-'
+            || c == '/'
+            || c == ':'
+            || c == '.'
+            || c == '*'
     }
 
     /// Check if a string is purely numeric
@@ -134,39 +274,67 @@ impl CapUrn {
         !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
     }
 
+    /// Check if a value needs quoting for serialization
+    fn needs_quoting(value: &str) -> bool {
+        value.chars().any(|c| {
+            c == ';' || c == '=' || c == '"' || c == '\\' || c == ' ' || c.is_uppercase()
+        })
+    }
+
+    /// Quote a value for serialization
+    fn quote_value(value: &str) -> String {
+        let mut result = String::with_capacity(value.len() + 2);
+        result.push('"');
+        for c in value.chars() {
+            if c == '"' || c == '\\' {
+                result.push('\\');
+            }
+            result.push(c);
+        }
+        result.push('"');
+        result
+    }
+
     /// Get the canonical string representation of this cap URN
     ///
     /// Always includes "cap:" prefix
     /// Tags are already sorted alphabetically due to BTreeMap
     /// No trailing semicolon in canonical form
+    /// Values are quoted only when necessary (smart quoting)
     pub fn to_string(&self) -> String {
         let tags_str = self
             .tags
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v))
+            .map(|(k, v)| {
+                if Self::needs_quoting(v) {
+                    format!("{}={}", k, Self::quote_value(v))
+                } else {
+                    format!("{}={}", k, v)
+                }
+            })
             .collect::<Vec<_>>()
             .join(";");
         format!("cap:{}", tags_str)
     }
 
     /// Get a specific tag value
-    /// Key is normalized to lowercase for case-insensitive lookup
-    pub fn get_tag(&self, key: &str) -> Option<String> {
-        self.tags.get(&key.to_lowercase()).cloned()
+    /// Key is normalized to lowercase for lookup
+    pub fn get_tag(&self, key: &str) -> Option<&String> {
+        self.tags.get(&key.to_lowercase())
     }
 
     /// Check if this cap has a specific tag with a specific value
-    /// Both key and value are normalized to lowercase for case-insensitive comparison
+    /// Key is normalized to lowercase; value comparison is case-sensitive
     pub fn has_tag(&self, key: &str, value: &str) -> bool {
         self.tags
             .get(&key.to_lowercase())
-            .map_or(false, |v| v == &value.to_lowercase())
+            .map_or(false, |v| v == value)
     }
 
     /// Add or update a tag
-    /// Both key and value are normalized to lowercase
+    /// Key is normalized to lowercase; value is preserved as-is
     pub fn with_tag(mut self, key: String, value: String) -> Self {
-        self.tags.insert(key.to_lowercase(), value.to_lowercase());
+        self.tags.insert(key.to_lowercase(), value);
         self
     }
 
@@ -325,13 +493,24 @@ impl CapUrn {
 /// Errors that can occur when parsing cap URNs
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CapUrnError {
+    /// Error code 1: Empty or malformed URN
     Empty,
+    /// Error code 5: URN does not start with `cap:`
     MissingCapPrefix,
+    /// Error code 4: Tag not in key=value format
     InvalidTagFormat(String),
+    /// Error code 2: Empty key or value component
     EmptyTagComponent(String),
+    /// Error code 3: Disallowed character in key/value
     InvalidCharacter(String),
+    /// Error code 6: Same key appears twice
     DuplicateKey(String),
+    /// Error code 7: Key is purely numeric
     NumericKey(String),
+    /// Error code 8: Quoted value never closed
+    UnterminatedQuote(usize),
+    /// Error code 9: Invalid escape in quoted value (only \" and \\ allowed)
+    InvalidEscapeSequence(usize),
 }
 
 impl fmt::Display for CapUrnError {
@@ -350,13 +529,23 @@ impl fmt::Display for CapUrnError {
                 write!(f, "Tag key or value cannot be empty: {}", tag)
             }
             CapUrnError::InvalidCharacter(tag) => {
-                write!(f, "Invalid character in tag (use alphanumeric, _, -, /, :, ., * in values only): {}", tag)
+                write!(f, "Invalid character in tag: {}", tag)
             }
             CapUrnError::DuplicateKey(key) => {
                 write!(f, "Duplicate tag key: {}", key)
             }
             CapUrnError::NumericKey(key) => {
                 write!(f, "Tag key cannot be purely numeric: {}", key)
+            }
+            CapUrnError::UnterminatedQuote(pos) => {
+                write!(f, "Unterminated quote at position {}", pos)
+            }
+            CapUrnError::InvalidEscapeSequence(pos) => {
+                write!(
+                    f,
+                    "Invalid escape sequence at position {} (only \\\" and \\\\ allowed)",
+                    pos
+                )
             }
         }
     }
@@ -438,8 +627,9 @@ impl CapUrnBuilder {
         }
     }
 
+    /// Add a tag with key (normalized to lowercase) and value (preserved as-is)
     pub fn tag(mut self, key: &str, value: &str) -> Self {
-        self.tags.insert(key.to_lowercase(), value.to_lowercase());
+        self.tags.insert(key.to_lowercase(), value.to_string());
         self
     }
 
@@ -447,7 +637,7 @@ impl CapUrnBuilder {
         if self.tags.is_empty() {
             return Err(CapUrnError::Empty);
         }
-        Ok(CapUrn::new(self.tags))
+        Ok(CapUrn { tags: self.tags })
     }
 }
 
@@ -470,37 +660,174 @@ mod tests {
     }
 
     #[test]
-    fn test_cap_urn_case_insensitive() {
-        // Test that different casing produces the same URN
-        let cap1 = CapUrn::from_string("cap:ACTION=Generate;EXT=PDF;Target=Thumbnail;").unwrap();
+    fn test_unquoted_values_lowercased() {
+        // Unquoted values are normalized to lowercase
+        let cap = CapUrn::from_string("cap:ACTION=Generate;EXT=PDF;Target=Thumbnail;").unwrap();
+
+        // Keys are always lowercase
+        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
+        assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
+
+        // Key lookup is case-insensitive
+        assert_eq!(cap.get_tag("ACTION"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("Action"), Some(&"generate".to_string()));
+
+        // Both URNs parse to same lowercase values
         let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        assert_eq!(cap.to_string(), cap2.to_string());
+        assert_eq!(cap, cap2);
+    }
 
-        // Both should be normalized to lowercase
-        assert_eq!(cap1.get_tag("action"), Some(&"generate".to_string()));
-        assert_eq!(cap1.get_tag("ext"), Some(&"pdf".to_string()));
-        assert_eq!(cap1.get_tag("target"), Some(&"thumbnail".to_string()));
+    #[test]
+    fn test_quoted_values_preserve_case() {
+        // Quoted values preserve their case
+        let cap = CapUrn::from_string(r#"cap:key="Value With Spaces""#).unwrap();
+        assert_eq!(cap.get_tag("key"), Some(&"Value With Spaces".to_string()));
 
-        // URNs should be identical after normalization
-        assert_eq!(cap1.to_string(), cap2.to_string());
+        // Key is still lowercase
+        let cap2 = CapUrn::from_string(r#"cap:KEY="Value With Spaces""#).unwrap();
+        assert_eq!(cap2.get_tag("key"), Some(&"Value With Spaces".to_string()));
 
-        // PartialEq should work correctly - URNs with different case should be equal
-        assert_eq!(cap1, cap2);
+        // Unquoted vs quoted case difference
+        let unquoted = CapUrn::from_string("cap:key=UPPERCASE").unwrap();
+        let quoted = CapUrn::from_string(r#"cap:key="UPPERCASE""#).unwrap();
+        assert_eq!(unquoted.get_tag("key"), Some(&"uppercase".to_string())); // lowercase
+        assert_eq!(quoted.get_tag("key"), Some(&"UPPERCASE".to_string())); // preserved
+        assert_ne!(unquoted, quoted); // NOT equal
+    }
 
-        // Case-insensitive tag lookup should work
-        assert_eq!(cap1.get_tag("ACTION"), Some(&"generate".to_string()));
-        assert_eq!(cap1.get_tag("Action"), Some(&"generate".to_string()));
-        assert!(cap1.has_tag("ACTION", "Generate"));
-        assert!(cap1.has_tag("action", "GENERATE"));
+    #[test]
+    fn test_quoted_value_special_chars() {
+        // Semicolons in quoted values
+        let cap = CapUrn::from_string(r#"cap:key="value;with;semicolons""#).unwrap();
+        assert_eq!(cap.get_tag("key"), Some(&"value;with;semicolons".to_string()));
 
-        // Matching should work case-insensitively
-        assert!(cap1.matches(&cap2));
-        assert!(cap2.matches(&cap1));
-        assert!(cap1
-            .matches_str("cap:Action=Generate;Ext=PDF;Target=Thumbnail")
-            .unwrap());
-        assert!(cap1
-            .matches_str("cap:action=generate;ext=pdf;target=thumbnail")
-            .unwrap());
+        // Equals in quoted values
+        let cap2 = CapUrn::from_string(r#"cap:key="value=with=equals""#).unwrap();
+        assert_eq!(cap2.get_tag("key"), Some(&"value=with=equals".to_string()));
+
+        // Spaces in quoted values
+        let cap3 = CapUrn::from_string(r#"cap:key="hello world""#).unwrap();
+        assert_eq!(cap3.get_tag("key"), Some(&"hello world".to_string()));
+    }
+
+    #[test]
+    fn test_quoted_value_escape_sequences() {
+        // Escaped quotes
+        let cap = CapUrn::from_string(r#"cap:key="value\"quoted\"""#).unwrap();
+        assert_eq!(cap.get_tag("key"), Some(&r#"value"quoted""#.to_string()));
+
+        // Escaped backslashes
+        let cap2 = CapUrn::from_string(r#"cap:key="path\\file""#).unwrap();
+        assert_eq!(cap2.get_tag("key"), Some(&r#"path\file"#.to_string()));
+
+        // Mixed escapes
+        let cap3 = CapUrn::from_string(r#"cap:key="say \"hello\\world\"""#).unwrap();
+        assert_eq!(cap3.get_tag("key"), Some(&r#"say "hello\world""#.to_string()));
+    }
+
+    #[test]
+    fn test_mixed_quoted_unquoted() {
+        let cap = CapUrn::from_string(r#"cap:a="Quoted";b=simple"#).unwrap();
+        assert_eq!(cap.get_tag("a"), Some(&"Quoted".to_string()));
+        assert_eq!(cap.get_tag("b"), Some(&"simple".to_string()));
+    }
+
+    #[test]
+    fn test_unterminated_quote_error() {
+        let result = CapUrn::from_string(r#"cap:key="unterminated"#);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(matches!(e, CapUrnError::UnterminatedQuote(_)));
+        }
+    }
+
+    #[test]
+    fn test_invalid_escape_sequence_error() {
+        let result = CapUrn::from_string(r#"cap:key="bad\n""#);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(matches!(e, CapUrnError::InvalidEscapeSequence(_)));
+        }
+
+        // Invalid escape at end
+        let result2 = CapUrn::from_string(r#"cap:key="bad\x""#);
+        assert!(result2.is_err());
+        if let Err(e) = result2 {
+            assert!(matches!(e, CapUrnError::InvalidEscapeSequence(_)));
+        }
+    }
+
+    #[test]
+    fn test_serialization_smart_quoting() {
+        // Simple lowercase value - no quoting needed
+        let cap = CapUrnBuilder::new().tag("key", "simple").build().unwrap();
+        assert_eq!(cap.to_string(), "cap:key=simple");
+
+        // Value with spaces - needs quoting
+        let cap2 = CapUrnBuilder::new()
+            .tag("key", "has spaces")
+            .build()
+            .unwrap();
+        assert_eq!(cap2.to_string(), r#"cap:key="has spaces""#);
+
+        // Value with semicolons - needs quoting
+        let cap3 = CapUrnBuilder::new()
+            .tag("key", "has;semi")
+            .build()
+            .unwrap();
+        assert_eq!(cap3.to_string(), r#"cap:key="has;semi""#);
+
+        // Value with uppercase - needs quoting to preserve
+        let cap4 = CapUrnBuilder::new()
+            .tag("key", "HasUpper")
+            .build()
+            .unwrap();
+        assert_eq!(cap4.to_string(), r#"cap:key="HasUpper""#);
+
+        // Value with quotes - needs quoting and escaping
+        let cap5 = CapUrnBuilder::new()
+            .tag("key", r#"has"quote"#)
+            .build()
+            .unwrap();
+        assert_eq!(cap5.to_string(), r#"cap:key="has\"quote""#);
+
+        // Value with backslashes - needs quoting and escaping
+        let cap6 = CapUrnBuilder::new()
+            .tag("key", r#"path\file"#)
+            .build()
+            .unwrap();
+        assert_eq!(cap6.to_string(), r#"cap:key="path\\file""#);
+    }
+
+    #[test]
+    fn test_round_trip_simple() {
+        let original = "cap:action=generate;ext=pdf";
+        let cap = CapUrn::from_string(original).unwrap();
+        let serialized = cap.to_string();
+        let reparsed = CapUrn::from_string(&serialized).unwrap();
+        assert_eq!(cap, reparsed);
+    }
+
+    #[test]
+    fn test_round_trip_quoted() {
+        let original = r#"cap:key="Value With Spaces""#;
+        let cap = CapUrn::from_string(original).unwrap();
+        let serialized = cap.to_string();
+        let reparsed = CapUrn::from_string(&serialized).unwrap();
+        assert_eq!(cap, reparsed);
+        assert_eq!(reparsed.get_tag("key"), Some(&"Value With Spaces".to_string()));
+    }
+
+    #[test]
+    fn test_round_trip_escapes() {
+        let original = r#"cap:key="value\"with\\escapes""#;
+        let cap = CapUrn::from_string(original).unwrap();
+        assert_eq!(cap.get_tag("key"), Some(&r#"value"with\escapes"#.to_string()));
+        let serialized = cap.to_string();
+        let reparsed = CapUrn::from_string(&serialized).unwrap();
+        assert_eq!(cap, reparsed);
     }
 
     #[test]
@@ -511,6 +838,10 @@ mod tests {
         // Valid cap: prefix should work
         let cap = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+
+        // Case-insensitive prefix
+        let cap2 = CapUrn::from_string("CAP:action=generate").unwrap();
+        assert_eq!(cap2.get_tag("action"), Some(&"generate".to_string()));
     }
 
     #[test]
@@ -572,8 +903,21 @@ mod tests {
         assert!(cap.matches(&request3)); // Cap has ext=pdf, request accepts any ext
 
         // No match - conflicting value
-        let request4 = CapUrn::from_string("cap:action=extract").unwrap(); // Different action should not match
+        let request4 = CapUrn::from_string("cap:action=extract").unwrap();
         assert!(!cap.matches(&request4));
+    }
+
+    #[test]
+    fn test_matching_case_sensitive_values() {
+        // Values with different case should NOT match
+        let cap1 = CapUrn::from_string(r#"cap:key="Value""#).unwrap();
+        let cap2 = CapUrn::from_string(r#"cap:key="value""#).unwrap();
+        assert!(!cap1.matches(&cap2));
+        assert!(!cap2.matches(&cap1));
+
+        // Same case should match
+        let cap3 = CapUrn::from_string(r#"cap:key="Value""#).unwrap();
+        assert!(cap1.matches(&cap3));
     }
 
     #[test]
@@ -615,6 +959,19 @@ mod tests {
 
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("output"), Some(&"binary".to_string()));
+    }
+
+    #[test]
+    fn test_builder_preserves_case() {
+        let cap = CapUrnBuilder::new()
+            .tag("KEY", "ValueWithCase")
+            .build()
+            .unwrap();
+
+        // Key is lowercase
+        assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
+        // Value case preserved, so needs quoting
+        assert_eq!(cap.to_string(), r#"cap:key="ValueWithCase""#);
     }
 
     #[test]
@@ -687,6 +1044,10 @@ mod tests {
         let specific_cap = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
         assert!(empty_cap.matches(&specific_cap));
         assert!(empty_cap.matches(&empty_cap));
+
+        // With trailing semicolon
+        let empty_cap2 = CapUrn::from_string("cap:;").unwrap();
+        assert_eq!(empty_cap2.tags.len(), 0);
     }
 
     #[test]
@@ -712,7 +1073,6 @@ mod tests {
 
     #[test]
     fn test_duplicate_key_rejection() {
-        // This should fail in real parsing - simulating with manual insertion check
         let result = CapUrn::from_string("cap:key=value1;key=value2");
         assert!(result.is_err());
         if let Err(e) = result {
@@ -731,5 +1091,45 @@ mod tests {
 
         // Pure numeric values should be allowed
         assert!(CapUrn::from_string("cap:key=123").is_ok());
+    }
+
+    #[test]
+    fn test_empty_value_error() {
+        assert!(CapUrn::from_string("cap:key=").is_err());
+        assert!(CapUrn::from_string("cap:key=;other=value").is_err());
+    }
+
+    #[test]
+    fn test_has_tag_case_sensitive() {
+        let cap = CapUrn::from_string(r#"cap:key="Value""#).unwrap();
+
+        // Exact case match works
+        assert!(cap.has_tag("key", "Value"));
+
+        // Different case does not match
+        assert!(!cap.has_tag("key", "value"));
+        assert!(!cap.has_tag("key", "VALUE"));
+
+        // Key lookup is case-insensitive
+        assert!(cap.has_tag("KEY", "Value"));
+        assert!(cap.has_tag("Key", "Value"));
+    }
+
+    #[test]
+    fn test_with_tag_preserves_value() {
+        let cap = CapUrn::empty().with_tag("key".to_string(), "ValueWithCase".to_string());
+        assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
+    }
+
+    #[test]
+    fn test_semantic_equivalence() {
+        // Unquoted and quoted simple lowercase values are equivalent
+        let unquoted = CapUrn::from_string("cap:key=simple").unwrap();
+        let quoted = CapUrn::from_string(r#"cap:key="simple""#).unwrap();
+        assert_eq!(unquoted, quoted);
+
+        // Both serialize the same way (unquoted)
+        assert_eq!(unquoted.to_string(), "cap:key=simple");
+        assert_eq!(quoted.to_string(), "cap:key=simple");
     }
 }
