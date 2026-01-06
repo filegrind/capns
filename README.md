@@ -329,11 +329,16 @@ go test
 swift test
 ```
 
+## Documentation
+
+- [RULES.md](docs/RULES.md) - Definitive specification for Cap URN format, syntax, and behavior
+- [README-REGISTRY.md](docs/README-REGISTRY.md) - Cap registry and provider matching documentation
+
 ## Project Structure
 
 ```
 capns/              # Rust implementation
-capns-go/           # Go implementation  
+capns-go/           # Go implementation
 capns-objc/         # Objective-C implementation
 fgrnd-plugin-sdk/     # Plugin development SDK
 fgrnd-provider-sdk/   # Provider development SDK

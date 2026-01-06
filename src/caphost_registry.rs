@@ -198,8 +198,10 @@ mod tests {
                 content_type: None,
                 validation: ArgumentValidation::default(),
                 output_description: "Test output".to_string(),
+                metadata: None,
             }),
             accepts_stdin: false,
+            metadata_json: None,
         };
         
         registry.register_caphost("test-host".to_string(), host, vec![cap]).await.unwrap();
@@ -238,8 +240,10 @@ mod tests {
                 content_type: None,
                 validation: ArgumentValidation::default(),
                 output_description: "General output".to_string(),
+                metadata: None,
             }),
             accepts_stdin: false,
+            metadata_json: None,
         };
         
         // Register specific host
@@ -260,8 +264,10 @@ mod tests {
                 content_type: None,
                 validation: ArgumentValidation::default(),
                 output_description: "Specific output".to_string(),
+                metadata: None,
             }),
             accepts_stdin: false,
+            metadata_json: None,
         };
         
         registry.register_caphost("general".to_string(), general_host, vec![general_cap]).await.unwrap();
@@ -303,6 +309,7 @@ mod tests {
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
             accepts_stdin: false,
+            metadata_json: None,
         };
         
         tokio::runtime::Runtime::new().unwrap().block_on(async {
