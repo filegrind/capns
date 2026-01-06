@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
-use crate::{CapUrn, ResponseWrapper, Cap};
+use crate::{CapUrn, ResponseWrapper, Cap, MediaSpec};
 
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
@@ -120,19 +120,35 @@ impl CapCaller {
         operation.replace('_', "-")
     }
     
-    /// Check if this cap produces binary output
+    /// Check if this cap produces binary output based on 'out' tag
     fn is_binary_cap(&self) -> bool {
-        // Use the formal cap URN system to detect binary caps
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
-        cap_urn.get_tag("output") == Some(&"binary".to_string())
+
+        match cap_urn.get_tag("out") {
+            Some(spec) => {
+                MediaSpec::parse(spec)
+                    .map(|ms| ms.is_binary())
+                    .unwrap_or(false)
+            }
+            None => false
+        }
     }
 
-    /// Check if this cap should produce JSON output
+    /// Check if this cap should produce JSON output based on 'out' tag
     fn is_json_cap(&self) -> bool {
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
-        cap_urn.get_tag("output") != Some(&"binary".to_string())
+
+        match cap_urn.get_tag("out") {
+            Some(spec) => {
+                MediaSpec::parse(spec)
+                    .map(|ms| ms.is_json())
+                    .unwrap_or(false)
+            }
+            // Default to text/plain (not JSON) if no 'out' tag is specified
+            None => false
+        }
     }
     
     /// Validate input arguments against cap definition

@@ -14,6 +14,7 @@ pub mod standard;
 pub mod caller;
 pub mod response;
 pub mod caphost_registry;
+pub mod media_spec;
 
 pub use cap_urn::*;
 pub use cap::*;
@@ -25,3 +26,4 @@ pub use standard::*;
 pub use caller::*;
 pub use response::*;
 pub use caphost_registry::*;
+pub use media_spec::*;
