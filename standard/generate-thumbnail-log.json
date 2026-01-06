@@ -1,0 +1,69 @@
+{
+  "urn": {
+    "tags": {
+      "action": "generate",
+      "output": "binary",
+      "target": "thumbnail",
+      "ext": "log",
+      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/log-document"
+    }
+  },
+  "command": "generate-thumbnail",
+  "title": "Generate Log Thumbnail",
+  "cap_description": "Generate a thumbnail image preview of the log document",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the log file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "width",
+        "arg_type": "integer",
+        "arg_description": "Width of the thumbnail in pixels",
+        "cli_flag": "--width",
+        "default_value": 200,
+        "validation": {
+          "min": 50,
+          "max": 2000
+        }
+      },
+      {
+        "name": "height",
+        "arg_type": "integer",
+        "arg_description": "Height of the thumbnail in pixels",
+        "cli_flag": "--height",
+        "default_value": 300,
+        "validation": {
+          "min": 50,
+          "max": 2000
+        }
+      },
+      {
+        "name": "output_file",
+        "arg_type": "string",
+        "arg_description": "Write thumbnail to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "\\.(png|jpg|jpeg)$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "binary",
+    "output_description": "PNG image data representing a thumbnail of the log document",
+    "content_type": "image/png"
+  }
+}

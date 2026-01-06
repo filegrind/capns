@@ -1,0 +1,63 @@
+{
+  "urn": {
+    "tags": {
+      "action": "extract",
+      "target": "outline",
+      "ext": "md",
+      "media_spec": "content-type: text/markdown; profile=https://capns.org/schema/markdown-document"
+    }
+  },
+  "command": "extract-outline",
+  "title": "Extract Markdown Document Outline",
+  "cap_description": "Extract document outline/table of contents from markdown files",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the markdown file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "max_depth",
+        "arg_type": "integer",
+        "arg_description": "Maximum outline depth to extract (1-10)",
+        "cli_flag": "--max-depth",
+        "validation": {
+          "min": 1,
+          "max": 10
+        }
+      },
+      {
+        "name": "include_order_indexes",
+        "arg_type": "boolean",
+        "arg_description": "Include page numbers in the outline",
+        "cli_flag": "--include-order-indexes",
+        "default_value": true
+      },
+      {
+        "name": "output",
+        "arg_type": "string",
+        "arg_description": "Write output to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Structured document outline with hierarchical entries",
+    "content_type": "application/json"
+  }
+}

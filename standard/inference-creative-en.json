@@ -1,0 +1,196 @@
+{
+  "urn": {
+    "tags": {
+      "action": "creative",
+      "language": "en",
+      "type": "unconstrained",
+      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/prompt-text"
+    }
+  },
+  "command": "llm_inference",
+  "title": "Write Creatively in English",
+  "cap_description": "Creative writing and content generation in English",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "prompt",
+        "arg_type": "string",
+        "arg_description": "Creative writing prompt or brief",
+        "cli_flag": "--prompt",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 8192
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "genre",
+        "arg_type": "string",
+        "arg_description": "Genre or style of creative content",
+        "cli_flag": "--genre",
+        "default_value": "fiction",
+        "validation": {
+          "allowed_values": [
+            "fiction",
+            "poetry",
+            "essay",
+            "story",
+            "dialogue",
+            "script",
+            "article",
+            "blog",
+            "marketing",
+            "technical",
+            "academic"
+          ]
+        }
+      },
+      {
+        "name": "tone",
+        "arg_type": "string",
+        "arg_description": "Tone or mood for the creative content",
+        "cli_flag": "--tone",
+        "default_value": "conversational",
+        "validation": {
+          "allowed_values": [
+            "formal",
+            "casual",
+            "humorous",
+            "serious",
+            "dramatic",
+            "playful",
+            "professional",
+            "academic",
+            "conversational"
+          ]
+        }
+      },
+      {
+        "name": "length",
+        "arg_type": "string",
+        "arg_description": "Desired length of creative output",
+        "cli_flag": "--length",
+        "default_value": "medium",
+        "validation": {
+          "allowed_values": [
+            "short",
+            "medium",
+            "long",
+            "extended"
+          ]
+        }
+      },
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Background context or inspiration",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 16384
+        }
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for creative output",
+        "cli_flag": "--max-tokens",
+        "default_value": 3000,
+        "validation": {
+          "min": 100,
+          "max": 8192
+        }
+      },
+      {
+        "name": "creativity_level",
+        "arg_type": "number",
+        "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
+        "cli_flag": "--creativity-level",
+        "default_value": 0.8,
+        "validation": {
+          "min": 0,
+          "max": 1
+        }
+      },
+      {
+        "name": "model_spec",
+        "arg_type": "string",
+        "arg_description": "Model spec to use for creative writing",
+        "cli_flag": "--model-spec",
+        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
+        "validation": {
+          "pattern": ".*:.*",
+          "min_length": 4,
+          "max_length": 512
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Creative written content with metadata",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The generated creative content"
+        },
+        "genre": {
+          "type": "string",
+          "enum": [
+            "story",
+            "poetry",
+            "dialogue",
+            "description",
+            "screenplay",
+            "essay",
+            "other"
+          ],
+          "description": "Genre of creative content"
+        },
+        "word_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of words in generated content"
+        },
+        "creativity_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Assessed creativity level of output"
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Identified themes in the content"
+        },
+        "style_notes": {
+          "type": "string",
+          "description": "Notes about writing style used"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tokens consumed"
+        },
+        "model_used": {
+          "type": "string",
+          "description": "Model that generated the content"
+        }
+      },
+      "required": [
+        "content",
+        "word_count"
+      ]
+    }
+  }
+}

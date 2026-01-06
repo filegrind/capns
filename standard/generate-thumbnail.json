@@ -1,0 +1,79 @@
+{
+  "urn": {
+    "tags": {
+      "action": "generate",
+      "output": "binary",
+      "target": "thumbnail",
+      "ext": "pdf",
+      "media_spec": "content-type: application/pdf; profile=https://capns.org/schema/pdf-document"
+    }
+  },
+  "command": "generate-thumbnail",
+  "title": "Generate Thumbnail",
+  "cap_description": "Generate a thumbnail image preview of the document",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "file_path",
+        "arg_type": "string",
+        "arg_description": "Path to the document file to process",
+        "cli_flag": "file_path",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "width",
+        "arg_type": "integer",
+        "arg_description": "Width of the thumbnail in pixels",
+        "cli_flag": "--width",
+        "default_value": 200,
+        "validation": {
+          "min": 50,
+          "max": 2000
+        }
+      },
+      {
+        "name": "height",
+        "arg_type": "integer",
+        "arg_description": "Height of the thumbnail in pixels",
+        "cli_flag": "--height",
+        "default_value": 300,
+        "validation": {
+          "min": 50,
+          "max": 2000
+        }
+      },
+      {
+        "name": "output_file",
+        "arg_type": "string",
+        "arg_description": "Write thumbnail to specified file instead of stdout",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "\\.(png|jpg|jpeg)$"
+        }
+      },
+      {
+        "name": "page_range",
+        "arg_type": "string",
+        "arg_description": "Page range to generate thumbnails from (1-based). Examples: '1' (single page), '1-5' (pages 1-5), '3-' (page 3 to end)",
+        "cli_flag": "--page-range",
+        "default_value": "1",
+        "validation": {
+          "pattern": "^\\d+(-\\d*)?$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "binary",
+    "output_description": "PNG image data representing a thumbnail of the document",
+    "content_type": "image/png"
+  }
+}

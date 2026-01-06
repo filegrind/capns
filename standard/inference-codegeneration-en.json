@@ -1,0 +1,197 @@
+{
+  "urn": {
+    "tags": {
+      "action": "codegeneration",
+      "language": "en",
+      "type": "unconstrained",
+      "media_spec": "content-type: text/plain; profile=https://capns.org/schema/prompt-text"
+    }
+  },
+  "command": "llm_inference",
+  "title": "Generate Code in English",
+  "cap_description": "Code generation and programming tasks in English",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "prompt",
+        "arg_type": "string",
+        "arg_description": "Code generation prompt or specification",
+        "cli_flag": "--prompt",
+        "position": 0,
+        "validation": {
+          "min_length": 1,
+          "max_length": 16384
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "language",
+        "arg_type": "string",
+        "arg_description": "Programming language for code generation",
+        "cli_flag": "--language",
+        "default_value": "rust",
+        "validation": {
+          "allowed_values": [
+            "rust",
+            "python",
+            "javascript",
+            "typescript",
+            "go",
+            "java",
+            "c",
+            "cpp",
+            "swift",
+            "kotlin",
+            "sql",
+            "shell",
+            "html",
+            "css",
+            "json",
+            "yaml",
+            "toml"
+          ]
+        }
+      },
+      {
+        "name": "context",
+        "arg_type": "string",
+        "arg_description": "Existing code context or codebase information",
+        "cli_flag": "--context",
+        "validation": {
+          "max_length": 65536
+        }
+      },
+      {
+        "name": "style",
+        "arg_type": "string",
+        "arg_description": "Coding style or framework preferences",
+        "cli_flag": "--style",
+        "validation": {
+          "max_length": 4096
+        }
+      },
+      {
+        "name": "max_tokens",
+        "arg_type": "number",
+        "arg_description": "Maximum tokens for generated code",
+        "cli_flag": "--max-tokens",
+        "default_value": 4096,
+        "validation": {
+          "min": 100,
+          "max": 8192
+        }
+      },
+      {
+        "name": "include_tests",
+        "arg_type": "boolean",
+        "arg_description": "Whether to include unit tests",
+        "cli_flag": "--include-tests",
+        "default_value": false
+      },
+      {
+        "name": "include_comments",
+        "arg_type": "boolean",
+        "arg_description": "Whether to include code comments",
+        "cli_flag": "--include-comments",
+        "default_value": true
+      },
+      {
+        "name": "model_spec",
+        "arg_type": "string",
+        "arg_description": "Model spec to use for code generation",
+        "cli_flag": "--model-spec",
+        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
+        "validation": {
+          "pattern": ".*:.*",
+          "min_length": 4,
+          "max_length": 512
+        }
+      }
+    ]
+  },
+  "output": {
+    "output_type": "object",
+    "output_description": "Generated code with optional tests and documentation",
+    "content_type": "application/json",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The generated code"
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "rust",
+            "python",
+            "javascript",
+            "typescript",
+            "go",
+            "java",
+            "c",
+            "cpp",
+            "swift",
+            "kotlin",
+            "sql",
+            "shell",
+            "html",
+            "css",
+            "json",
+            "yaml",
+            "toml"
+          ],
+          "description": "Programming language used"
+        },
+        "tests": {
+          "type": "string",
+          "description": "Generated unit tests (if requested)"
+        },
+        "documentation": {
+          "type": "string",
+          "description": "Generated documentation"
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Explanation of the code logic"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Required dependencies or imports"
+        },
+        "complexity_score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Code complexity rating (1-10)"
+        },
+        "tokens_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tokens consumed for generation"
+        },
+        "model_used": {
+          "type": "string",
+          "description": "Model that generated the code"
+        },
+        "generation_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Generation time in milliseconds"
+        }
+      },
+      "required": [
+        "code",
+        "language"
+      ]
+    }
+  }
+}
