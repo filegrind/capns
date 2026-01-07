@@ -1,5 +1,81 @@
 # Handoff: Eliminate ArgumentType/OutputType Enums - Replace with MediaSpec
 
+## Progress Update (January 2026)
+
+### ✅ COMPLETED PHASES
+
+#### Phase 1: capns (Rust) - COMPLETE ✅
+- ✅ Removed `ArgumentType` and `OutputType` enums from `cap.rs`
+- ✅ Updated `CapArgument` to use `media_spec: String` field
+- ✅ Updated `CapOutput` to use `media_spec: String` field
+- ✅ Created `profile_schema_cache.rs` module for downloading/caching JSON Schema profiles
+- ✅ Updated `validation.rs` to use `ProfileSchemaRegistry` for profile-based validation
+- ✅ Updated `schema_validation.rs` to only validate explicit schemas
+- ✅ Updated `caller.rs` with basic validation (async validation at higher level)
+- ✅ Updated `response.rs` to use media_spec-based type checking
+- ✅ Updated `caphost_registry.rs` test code to use media_spec
+- ✅ Updated `lib.rs` exports
+- ✅ **Rust code compiles successfully** with only minor dead code warnings
+
+#### Phase 4: capns-js - COMPLETE ✅
+- ✅ Updated `InputValidator.validateArgumentType()` to use MediaSpec parsing
+- ✅ Added `validateAgainstProfile()` for basic profile validation
+- ✅ Updated `OutputValidator.validateOutput()` to use MediaSpec
+- ✅ Updated `ValidationError` messages to include media_spec information
+- ✅ Leveraged existing `MediaSpec` class for parsing
+
+#### Phase 5: capns_dot_org Website - COMPLETE ✅
+- ✅ Updated `cap.schema.json` to require `media_spec` instead of `arg_type`/`output_type`
+- ✅ Updated all 52 TOML capability definition files to use `media_spec`
+- ✅ Removed deprecated `cap_output_type` metadata fields
+- ✅ Updated `capns.js` (synced from capns-js)
+- ✅ Verified `load-standards.js` (no changes needed - just copies fields)
+- ✅ **All 52 JSON files generated successfully** from TOML
+- ✅ Updated validation in `functions/api-admin-capabilities.js`
+- ✅ Updated UI display in `scripts/main.js` with `getTypeFromMediaSpec()` helper
+- ✅ Updated UI display in `scripts/cap-navigator.js` with `getTypeFromMediaSpec()` method
+
+### 📝 Implementation Details
+
+**Profile Schema Cache Pattern:**
+- Embeds standard JSON schemas for common types (str, int, num, bool, obj, arrays)
+- Downloads and caches schemas from profile URLs on-demand
+- Two-level cache: disk cache and in-memory compiled schemas
+- Cache TTL: 1 week for downloaded schemas
+- Follows same pattern as CapRegistry for consistency
+
+**MediaSpec Format in TOML:**
+```toml
+media_spec = "content-type: application/json; profile=https://capns.org/schemas/str"
+```
+Note: Profile URLs are unquoted in TOML (quotes only around the entire media_spec string)
+
+**MediaSpec Format in JSON:**
+```json
+"media_spec": "content-type: application/json; profile=https://capns.org/schemas/str"
+```
+
+#### Phase 2: capns-go (Golang) - COMPLETE ✅
+- ✅ Deleted `ArgumentType` and `OutputType` enums from `cap.go`
+- ✅ Updated `CapArgument` to use `MediaSpec string` field
+- ✅ Updated `CapOutput` to use `MediaSpec string` field
+- ✅ Updated all factory methods to accept `mediaSpec string` parameter
+- ✅ Updated `validation.go` to use MediaSpec parsing for type validation
+- ✅ Created `validateValueAgainstProfile()` function for profile-based validation
+- ✅ Updated `schema_validation.go` to check MediaSpec instead of type enums
+- ✅ Updated `cap_caller.go` to use MediaSpec from cap definition
+- ✅ Updated `response_wrapper.go` to use MediaSpec validation
+- ✅ Updated all test files with correct media spec strings
+- ✅ Updated example files with correct media spec strings
+- ✅ **Go code compiles successfully and all tests pass**
+
+### 🚧 REMAINING PHASES
+
+- ⏸️ Phase 3: capns-objc (Objective-C)
+- ⏸️ Phase 6-15: Downstream projects (fgrnd, fgrnd-mac, plugin SDKs, provider SDKs, czar services)
+
+---
+
 ## Executive Summary
 
 This task eliminates the `ArgumentType` and `OutputType` enums from all capns implementations and replaces them with `MediaSpec` usage. The new approach uses JSON Schema profiles for type validation, providing better extensibility and standardized validation.
