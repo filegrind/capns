@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "prompt",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Code generation prompt or specification",
         "cli_flag": "--prompt",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "language",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Programming language for code generation",
         "cli_flag": "--language",
         "default_value": "rust",
@@ -58,7 +58,7 @@
       },
       {
         "name": "context",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Existing code context or codebase information",
         "cli_flag": "--context",
         "validation": {
@@ -67,7 +67,7 @@
       },
       {
         "name": "style",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Coding style or framework preferences",
         "cli_flag": "--style",
         "validation": {
@@ -76,7 +76,7 @@
       },
       {
         "name": "max_tokens",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Maximum tokens for generated code",
         "cli_flag": "--max-tokens",
         "default_value": 4096,
@@ -87,21 +87,21 @@
       },
       {
         "name": "include_tests",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to include unit tests",
         "cli_flag": "--include-tests",
         "default_value": false
       },
       {
         "name": "include_comments",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to include code comments",
         "cli_flag": "--include-comments",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for code generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -114,9 +114,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Generated code with optional tests and documentation",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "text",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Text content to summarize",
         "cli_flag": "--text",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "summary_type",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Type of summary to generate",
         "cli_flag": "--summary-type",
         "default_value": "abstractive",
@@ -47,7 +47,7 @@
       },
       {
         "name": "length",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Desired summary length",
         "cli_flag": "--length",
         "default_value": "medium",
@@ -62,7 +62,7 @@
       },
       {
         "name": "focus",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Summary focus area",
         "cli_flag": "--focus",
         "default_value": "main_points",
@@ -80,7 +80,7 @@
       },
       {
         "name": "context",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Additional context for summarization",
         "cli_flag": "--context",
         "validation": {
@@ -89,7 +89,7 @@
       },
       {
         "name": "max_tokens",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Maximum tokens for summary output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -100,14 +100,14 @@
       },
       {
         "name": "preserve_structure",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to preserve document structure",
         "cli_flag": "--preserve-structure",
         "default_value": false
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for summarization",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -120,9 +120,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Summary with metadata including compression metrics",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

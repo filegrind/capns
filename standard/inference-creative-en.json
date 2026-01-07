@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "prompt",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Creative writing prompt or brief",
         "cli_flag": "--prompt",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "genre",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Genre or style of creative content",
         "cli_flag": "--genre",
         "default_value": "fiction",
@@ -52,7 +52,7 @@
       },
       {
         "name": "tone",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Tone or mood for the creative content",
         "cli_flag": "--tone",
         "default_value": "conversational",
@@ -72,7 +72,7 @@
       },
       {
         "name": "length",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Desired length of creative output",
         "cli_flag": "--length",
         "default_value": "medium",
@@ -87,7 +87,7 @@
       },
       {
         "name": "context",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Background context or inspiration",
         "cli_flag": "--context",
         "validation": {
@@ -96,7 +96,7 @@
       },
       {
         "name": "max_tokens",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Maximum tokens for creative output",
         "cli_flag": "--max-tokens",
         "default_value": 3000,
@@ -107,7 +107,7 @@
       },
       {
         "name": "creativity_level",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
         "cli_flag": "--creativity-level",
         "default_value": 0.8,
@@ -118,7 +118,7 @@
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for creative writing",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -131,9 +131,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Creative written content with metadata",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

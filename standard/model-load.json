@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model identifier or path to load",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "device",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Device to load model on",
         "cli_flag": "--device",
         "default_value": "cpu",
@@ -42,7 +42,7 @@
       },
       {
         "name": "precision",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model precision/quantization level",
         "cli_flag": "--precision",
         "default_value": "float32",
@@ -58,9 +58,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Load result with model handle and configuration",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

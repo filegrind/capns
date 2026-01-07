@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "operation",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Management operation to perform",
         "cli_flag": "--operation",
         "position": 0,
@@ -32,7 +32,7 @@
     "optional": [
       {
         "name": "model",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model identifier or path",
         "cli_flag": "--model",
         "validation": {
@@ -41,7 +41,7 @@
       },
       {
         "name": "format",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Output format for information display",
         "cli_flag": "--format",
         "default_value": "json",
@@ -56,9 +56,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Management operation result with status and details",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

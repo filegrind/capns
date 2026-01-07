@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Path to the log file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "max_depth",
-        "arg_type": "integer",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/int",
         "arg_description": "Maximum outline depth to extract (1-10)",
         "cli_flag": "--max-depth",
         "validation": {
@@ -39,14 +39,14 @@
       },
       {
         "name": "include_order_indexes",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Include page numbers in the outline",
         "cli_flag": "--include-order-indexes",
         "default_value": true
       },
       {
         "name": "output",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -56,8 +56,7 @@
     ]
   },
   "output": {
-    "output_type": "object",
-    "output_description": "Structured document outline with hierarchical entries",
-    "content_type": "application/json"
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
+    "output_description": "Structured document outline with hierarchical entries"
   }
 }

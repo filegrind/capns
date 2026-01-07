@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model identifier or handle to unload",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "force",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Force unload even if model is in use",
         "cli_flag": "--force",
         "default_value": false
@@ -35,9 +35,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Unload result with status and freed resources",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

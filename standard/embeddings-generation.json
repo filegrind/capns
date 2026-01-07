@@ -15,7 +15,7 @@
     "required": [
       {
         "name": "output",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Output JSON file path to write embeddings",
         "cli_flag": "--output",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "text",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Input text to generate embeddings for",
         "cli_flag": "--text",
         "validation": {
@@ -37,7 +37,7 @@
       },
       {
         "name": "file_path",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Path to input file to generate embeddings from",
         "cli_flag": "--file-path",
         "validation": {
@@ -47,7 +47,7 @@
       },
       {
         "name": "chunk_size",
-        "arg_type": "integer",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/int",
         "arg_description": "Chunk size in words for splitting input text",
         "cli_flag": "--chunk-size",
         "default_value": 400,
@@ -57,7 +57,7 @@
       },
       {
         "name": "chunk_overlap",
-        "arg_type": "integer",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/int",
         "arg_description": "Chunk overlap in words when splitting input text",
         "cli_flag": "--chunk-overlap",
         "default_value": 50,
@@ -67,19 +67,19 @@
       },
       {
         "name": "include",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "File include pattern (can be provided multiple times)",
         "cli_flag": "--include"
       },
       {
         "name": "exclude",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "File exclude pattern (can be provided multiple times)",
         "cli_flag": "--exclude"
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for embeddings generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
@@ -92,9 +92,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "JSON file containing embeddings, chunk metadata and model information",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

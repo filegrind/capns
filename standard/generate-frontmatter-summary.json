@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "frontmatter_text",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Frontmatter text to process and summarize",
         "cli_flag": "--frontmatter-text",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "format",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Output format for the summary",
         "cli_flag": "--format",
         "default_value": "organized",
@@ -45,21 +45,21 @@
       },
       {
         "name": "preserve_all_data",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to preserve all factual information",
         "cli_flag": "--preserve-all-data",
         "default_value": true
       },
       {
         "name": "remove_boilerplate",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to remove legal boilerplate and formatting chips",
         "cli_flag": "--remove-boilerplate",
         "default_value": true
       },
       {
         "name": "language",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Language of the frontmatter text",
         "cli_flag": "--language",
         "default_value": "en",
@@ -80,7 +80,7 @@
       },
       {
         "name": "max_tokens",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Maximum tokens for summary output",
         "cli_flag": "--max-tokens",
         "default_value": 2000,
@@ -91,7 +91,7 @@
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for summary generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -104,9 +104,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Organized bibliographic summary with extracted metadata",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

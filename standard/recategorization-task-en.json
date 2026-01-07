@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "listing_id",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id",
         "validation": {
@@ -27,9 +27,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Created task information",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

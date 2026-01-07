@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_paths",
-        "arg_type": "array",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str-array",
         "arg_description": "Array of file paths to scan",
         "cli_flag": "--file-paths",
         "validation": {
@@ -27,9 +27,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Created task information",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

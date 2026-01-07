@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "query_name",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Name of the structured query to execute",
         "cli_flag": "--query-name",
         "position": 0,
@@ -29,7 +29,7 @@
       },
       {
         "name": "substitutions",
-        "arg_type": "object",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
         "arg_description": "Template substitutions for the query prompt",
         "cli_flag": "--substitutions",
         "position": 1
@@ -38,7 +38,7 @@
     "optional": [
       {
         "name": "language",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Language code for the query processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -59,21 +59,21 @@
       },
       {
         "name": "schema_variables",
-        "arg_type": "object",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
         "arg_description": "Variables for dynamic schema generation",
         "cli_flag": "--schema-variables",
         "default_value": {}
       },
       {
         "name": "callback_enabled",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to enable streaming callback updates",
         "cli_flag": "--callback",
         "default_value": false
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for structured query execution",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -86,9 +86,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Structured JSON response conforming to the query's schema",
-    "content_type": "application/json",
     "schema": {
       "type": [
         "object",

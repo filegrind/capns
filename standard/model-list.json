@@ -14,7 +14,7 @@
     "optional": [
       {
         "name": "filter",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Filter models by pattern",
         "cli_flag": "--filter",
         "validation": {
@@ -23,7 +23,7 @@
       },
       {
         "name": "status",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Filter by model status",
         "cli_flag": "--status",
         "validation": {
@@ -38,7 +38,7 @@
       },
       {
         "name": "format",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",
@@ -53,9 +53,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "List of models with their metadata and status",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

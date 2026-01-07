@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model identifier to download",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "repository",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Repository to download from",
         "cli_flag": "--repository",
         "default_value": "huggingface",
@@ -41,14 +41,14 @@
       },
       {
         "name": "force",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Force download even if model exists",
         "cli_flag": "--force",
         "default_value": false
       },
       {
         "name": "cache_dir",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Custom cache directory for model storage",
         "cli_flag": "--cache-dir",
         "validation": {
@@ -58,9 +58,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Download result with model path and metadata",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

@@ -14,7 +14,7 @@
     "optional": [
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for retrieving embeddings dimensions",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF",
@@ -27,9 +27,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Dimensionality information for the model",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

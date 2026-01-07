@@ -5,21 +5,9 @@
 //! and do not assume any specific domain like files or documents.
 
 use crate::cap_urn::CapUrn;
+use crate::media_spec::MediaSpec;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
-
-/// Argument type enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ArgumentType {
-    String,
-    Integer,
-    Number,
-    Boolean,
-    Array,
-    Object,
-    Binary,
-}
 
 /// Argument validation rules
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -47,31 +35,33 @@ pub struct ArgumentValidation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapArgument {
     pub name: String,
-    
-    pub arg_type: ArgumentType,
-    
+
+    /// MediaSpec string defining the expected type
+    /// e.g., "content-type: application/json; profile=\"https://capns.org/schemas/str\""
+    pub media_spec: String,
+
     pub arg_description: String,
-    
+
     #[serde(rename = "cli_flag")]
     pub cli_flag: String,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<usize>,
-    
+
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
     pub validation: ArgumentValidation,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<serde_json::Value>,
-    
-    /// Reference to external JSON schema for validation
+
+    /// Reference to external JSON schema for validation (overrides profile in media_spec)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_ref: Option<String>,
-    
-    /// Embedded JSON schema for validation
+
+    /// Embedded JSON schema for validation (overrides profile in media_spec)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
-    
+
     /// Arbitrary metadata as JSON object
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -99,129 +89,130 @@ pub struct CapArguments {
 }
 
 
-/// Output type enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum OutputType {
-    String,
-    Integer,
-    Number,
-    Boolean,
-    Array,
-    Object,
-    Binary,
-}
-
 /// Output definition
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
-    pub output_type: OutputType,
-    
+    /// MediaSpec string defining the output type
+    /// e.g., "content-type: application/json; profile=\"https://capns.org/schemas/obj\""
+    pub media_spec: String,
+
+    /// Reference to external JSON schema for validation (overrides profile in media_spec)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_ref: Option<String>,
-    
-    /// Embedded JSON schema for output validation
+
+    /// Embedded JSON schema for output validation (overrides profile in media_spec)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
-    
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_type: Option<String>,
-    
+
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
     pub validation: ArgumentValidation,
-    
+
     pub output_description: String,
-    
+
     /// Arbitrary metadata as JSON object
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
 impl CapOutput {
-    /// Create a new output definition
-    pub fn new(output_type: OutputType, description: String) -> Self {
+    /// Create a new output definition with MediaSpec string
+    pub fn new(media_spec: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
-            output_type,
-            output_description: description,
-            schema_ref: None,
-            schema: None,
-            content_type: None,
-            validation: ArgumentValidation::default(),
-            metadata: None,
-        }
-    }
-    
-    /// Create output with content type
-    pub fn with_content_type(output_type: OutputType, description: String, content_type: String) -> Self {
-        Self {
-            output_type,
-            output_description: description,
-            content_type: Some(content_type),
+            media_spec: media_spec.into(),
+            output_description: description.into(),
             schema_ref: None,
             schema: None,
             validation: ArgumentValidation::default(),
             metadata: None,
         }
     }
-    
+
     /// Create output with schema reference
-    pub fn with_schema(output_type: OutputType, description: String, schema_ref: String) -> Self {
+    pub fn with_schema(media_spec: impl Into<String>, description: impl Into<String>, schema_ref: impl Into<String>) -> Self {
         Self {
-            output_type,
-            output_description: description,
-            schema_ref: Some(schema_ref),
+            media_spec: media_spec.into(),
+            output_description: description.into(),
+            schema_ref: Some(schema_ref.into()),
             schema: None,
-            content_type: None,
             validation: ArgumentValidation::default(),
             metadata: None,
         }
     }
-    
+
     /// Create output with embedded schema
-    pub fn with_embedded_schema(output_type: OutputType, description: String, schema: serde_json::Value) -> Self {
+    pub fn with_embedded_schema(media_spec: impl Into<String>, description: impl Into<String>, schema: serde_json::Value) -> Self {
         Self {
-            output_type,
-            output_description: description,
+            media_spec: media_spec.into(),
+            output_description: description.into(),
             schema_ref: None,
             schema: Some(schema),
-            content_type: None,
             validation: ArgumentValidation::default(),
             metadata: None,
         }
     }
-    
+
     /// Create output with validation
-    pub fn with_validation(output_type: OutputType, description: String, validation: ArgumentValidation) -> Self {
+    pub fn with_validation(media_spec: impl Into<String>, description: impl Into<String>, validation: ArgumentValidation) -> Self {
         Self {
-            output_type,
-            output_description: description,
+            media_spec: media_spec.into(),
+            output_description: description.into(),
             validation,
             schema_ref: None,
             schema: None,
-            content_type: None,
             metadata: None,
         }
     }
-    
+
     /// Create a fully specified output
     pub fn with_full_definition(
-        output_type: OutputType,
-        description: String,
+        media_spec: impl Into<String>,
+        description: impl Into<String>,
         schema_ref: Option<String>,
         schema: Option<serde_json::Value>,
-        content_type: Option<String>,
         validation: ArgumentValidation,
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
-            output_type,
-            output_description: description,
+            media_spec: media_spec.into(),
+            output_description: description.into(),
             schema_ref,
             schema,
-            content_type,
             validation,
             metadata,
         }
+    }
+
+    /// Parse the MediaSpec from the media_spec string
+    pub fn parsed_media_spec(&self) -> Result<MediaSpec, crate::media_spec::MediaSpecError> {
+        MediaSpec::parse(&self.media_spec)
+    }
+
+    /// Check if output is binary based on media_spec
+    pub fn is_binary(&self) -> bool {
+        self.parsed_media_spec()
+            .map(|ms| ms.is_binary())
+            .unwrap_or(false)
+    }
+
+    /// Check if output is JSON based on media_spec
+    pub fn is_json(&self) -> bool {
+        self.parsed_media_spec()
+            .map(|ms| ms.is_json())
+            .unwrap_or(false)
+    }
+
+    /// Get the content type from media_spec
+    pub fn content_type(&self) -> Option<String> {
+        self.parsed_media_spec()
+            .map(|ms| ms.content_type)
+            .ok()
+    }
+
+    /// Get the profile URL from media_spec
+    pub fn profile(&self) -> Option<String> {
+        self.parsed_media_spec()
+            .ok()
+            .and_then(|ms| ms.profile)
     }
 }
 
@@ -376,13 +367,13 @@ impl<'de> Deserialize<'de> for Cap {
 }
 
 impl CapArgument {
-    /// Create a new cap argument
-    pub fn new(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
+    /// Create a new cap argument with MediaSpec string
+    pub fn new(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>) -> Self {
         Self {
-            name,
-            arg_type,
-            arg_description: description,
-            cli_flag,
+            name: name.into(),
+            media_spec: media_spec.into(),
+            arg_description: description.into(),
+            cli_flag: cli_flag.into(),
             position: None,
             validation: ArgumentValidation::default(),
             default_value: None,
@@ -391,19 +382,14 @@ impl CapArgument {
             metadata: None,
         }
     }
-    
-    /// Create argument with CLI flag (deprecated - use new() instead)
-    pub fn with_cli_flag(name: String, arg_type: ArgumentType, description: String, cli_flag: String) -> Self {
-        Self::new(name, arg_type, description, cli_flag)
-    }
-    
+
     /// Create argument with position
-    pub fn with_position(name: String, arg_type: ArgumentType, description: String, cli_flag: String, position: usize) -> Self {
+    pub fn with_position(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, position: usize) -> Self {
         Self {
-            name,
-            arg_type,
-            arg_description: description,
-            cli_flag,
+            name: name.into(),
+            media_spec: media_spec.into(),
+            arg_description: description.into(),
+            cli_flag: cli_flag.into(),
             position: Some(position),
             validation: ArgumentValidation::default(),
             default_value: None,
@@ -412,14 +398,14 @@ impl CapArgument {
             metadata: None,
         }
     }
-    
+
     /// Create argument with validation
-    pub fn with_validation(name: String, arg_type: ArgumentType, description: String, cli_flag: String, validation: ArgumentValidation) -> Self {
+    pub fn with_validation(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, validation: ArgumentValidation) -> Self {
         Self {
-            name,
-            arg_type,
-            arg_description: description,
-            cli_flag,
+            name: name.into(),
+            media_spec: media_spec.into(),
+            arg_description: description.into(),
+            cli_flag: cli_flag.into(),
             position: None,
             validation,
             default_value: None,
@@ -428,14 +414,14 @@ impl CapArgument {
             metadata: None,
         }
     }
-    
+
     /// Create argument with default value
-    pub fn with_default(name: String, arg_type: ArgumentType, description: String, cli_flag: String, default: serde_json::Value) -> Self {
+    pub fn with_default(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, default: serde_json::Value) -> Self {
         Self {
-            name,
-            arg_type,
-            arg_description: description,
-            cli_flag,
+            name: name.into(),
+            media_spec: media_spec.into(),
+            arg_description: description.into(),
+            cli_flag: cli_flag.into(),
             position: None,
             validation: ArgumentValidation::default(),
             default_value: Some(default),
@@ -444,13 +430,13 @@ impl CapArgument {
             metadata: None,
         }
     }
-    
+
     /// Create a fully specified argument
     pub fn with_full_definition(
-        name: String,
-        arg_type: ArgumentType,
-        description: String,
-        cli_flag: String,
+        name: impl Into<String>,
+        media_spec: impl Into<String>,
+        description: impl Into<String>,
+        cli_flag: impl Into<String>,
         position: Option<usize>,
         validation: ArgumentValidation,
         default: Option<serde_json::Value>,
@@ -459,10 +445,10 @@ impl CapArgument {
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
-            name,
-            arg_type,
-            arg_description: description,
-            cli_flag,
+            name: name.into(),
+            media_spec: media_spec.into(),
+            arg_description: description.into(),
+            cli_flag: cli_flag.into(),
             position,
             validation,
             default_value: default,
@@ -470,6 +456,39 @@ impl CapArgument {
             schema,
             metadata,
         }
+    }
+
+    /// Parse the MediaSpec from the media_spec string
+    pub fn parsed_media_spec(&self) -> Result<MediaSpec, crate::media_spec::MediaSpecError> {
+        MediaSpec::parse(&self.media_spec)
+    }
+
+    /// Check if argument is binary based on media_spec
+    pub fn is_binary(&self) -> bool {
+        self.parsed_media_spec()
+            .map(|ms| ms.is_binary())
+            .unwrap_or(false)
+    }
+
+    /// Check if argument is JSON based on media_spec
+    pub fn is_json(&self) -> bool {
+        self.parsed_media_spec()
+            .map(|ms| ms.is_json())
+            .unwrap_or(false)
+    }
+
+    /// Get the content type from media_spec
+    pub fn content_type(&self) -> Option<String> {
+        self.parsed_media_spec()
+            .map(|ms| ms.content_type)
+            .ok()
+    }
+
+    /// Get the profile URL from media_spec
+    pub fn profile(&self) -> Option<String> {
+        self.parsed_media_spec()
+            .ok()
+            .and_then(|ms| ms.profile)
     }
 }
 

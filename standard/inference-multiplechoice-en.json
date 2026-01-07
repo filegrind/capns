@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "query",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Logical query or decision problem",
         "cli_flag": "--query",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "context",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Context and facts for logical reasoning",
         "cli_flag": "--context",
         "validation": {
@@ -39,7 +39,7 @@
       },
       {
         "name": "decision_type",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Type of logical decision required",
         "cli_flag": "--decision-type",
         "default_value": "binary",
@@ -55,7 +55,7 @@
       },
       {
         "name": "max_tokens",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Maximum tokens for reasoning output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -66,14 +66,14 @@
       },
       {
         "name": "require_explanation",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Whether to include reasoning explanation",
         "cli_flag": "--require-explanation",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -86,9 +86,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Logical decision with reasoning explanation and confidence",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "content",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Content to analyze for the binary decisions",
         "cli_flag": "--content",
         "position": 0,
@@ -28,7 +28,7 @@
       },
       {
         "name": "questions",
-        "arg_type": "array",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str-array",
         "arg_description": "Array of binary questions to answer about the content",
         "cli_flag": "--questions",
         "position": 1,
@@ -48,7 +48,7 @@
     "optional": [
       {
         "name": "language",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Language code for processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -69,7 +69,7 @@
       },
       {
         "name": "max_content_length",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Maximum content length to consider (for context window management)",
         "cli_flag": "--max-content-length",
         "default_value": 2048,
@@ -80,7 +80,7 @@
       },
       {
         "name": "confidence_threshold",
-        "arg_type": "number",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
         "arg_description": "Minimum confidence threshold for decisions",
         "cli_flag": "--confidence-threshold",
         "default_value": 0.7,
@@ -91,7 +91,7 @@
       },
       {
         "name": "model_spec",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -104,9 +104,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Multiple binary decision results with boolean array",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

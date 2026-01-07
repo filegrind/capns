@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Model identifier to check status for",
         "cli_flag": "--model",
         "position": 0,
@@ -27,14 +27,14 @@
     "optional": [
       {
         "name": "detailed",
-        "arg_type": "boolean",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
         "arg_description": "Include detailed diagnostics and metrics",
         "cli_flag": "--detailed",
         "default_value": false
       },
       {
         "name": "format",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",
@@ -48,9 +48,8 @@
     ]
   },
   "output": {
-    "output_type": "object",
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
     "output_description": "Model status including health, performance metrics and configuration",
-    "content_type": "application/json",
     "schema": {
       "type": "object",
       "additionalProperties": false,

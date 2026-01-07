@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Path to the text file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "output",
-        "arg_type": "string",
+        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -39,8 +39,7 @@
     ]
   },
   "output": {
-    "output_type": "object",
-    "output_description": "Structured metadata including file properties and text-specific metadata",
-    "content_type": "application/json"
+    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
+    "output_description": "Structured metadata including file properties and text-specific metadata"
   }
 }
