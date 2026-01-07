@@ -1,12 +1,12 @@
 //! MediaSpec parsing, spec ID resolution, and media type handling
 //!
 //! This module provides:
-//! - Spec ID resolution (e.g., `capns:ms:str.v1` → resolved media spec)
+//! - Spec ID resolution (e.g., `std:str.v1` → resolved media spec)
 //! - MediaSpec parsing (canonical form: `text/plain; profile=https://...`)
 //! - MediaSpecDef for defining specs in cap definitions
 //!
 //! ## Spec ID Format
-//! Spec IDs are references like `capns:ms:str.v1` that resolve to media type definitions.
+//! Spec IDs are references like `std:str.v1` that resolve to media type definitions.
 //! Built-in primitives are available without explicit declaration.
 //!
 //! ## MediaSpec Format
@@ -24,27 +24,27 @@ use std::fmt;
 // =============================================================================
 
 /// Spec ID for string type
-pub const SPEC_ID_STR: &str = "capns:ms:str.v1";
+pub const SPEC_ID_STR: &str = "std:str.v1";
 /// Spec ID for integer type
-pub const SPEC_ID_INT: &str = "capns:ms:int.v1";
+pub const SPEC_ID_INT: &str = "std:int.v1";
 /// Spec ID for number type
-pub const SPEC_ID_NUM: &str = "capns:ms:num.v1";
+pub const SPEC_ID_NUM: &str = "std:num.v1";
 /// Spec ID for boolean type
-pub const SPEC_ID_BOOL: &str = "capns:ms:bool.v1";
+pub const SPEC_ID_BOOL: &str = "std:bool.v1";
 /// Spec ID for JSON object type
-pub const SPEC_ID_OBJ: &str = "capns:ms:obj.v1";
+pub const SPEC_ID_OBJ: &str = "std:obj.v1";
 /// Spec ID for string array type
-pub const SPEC_ID_STR_ARRAY: &str = "capns:ms:str-array.v1";
+pub const SPEC_ID_STR_ARRAY: &str = "std:str-array.v1";
 /// Spec ID for integer array type
-pub const SPEC_ID_INT_ARRAY: &str = "capns:ms:int-array.v1";
+pub const SPEC_ID_INT_ARRAY: &str = "std:int-array.v1";
 /// Spec ID for number array type
-pub const SPEC_ID_NUM_ARRAY: &str = "capns:ms:num-array.v1";
+pub const SPEC_ID_NUM_ARRAY: &str = "std:num-array.v1";
 /// Spec ID for boolean array type
-pub const SPEC_ID_BOOL_ARRAY: &str = "capns:ms:bool-array.v1";
+pub const SPEC_ID_BOOL_ARRAY: &str = "std:bool-array.v1";
 /// Spec ID for object array type
-pub const SPEC_ID_OBJ_ARRAY: &str = "capns:ms:obj-array.v1";
+pub const SPEC_ID_OBJ_ARRAY: &str = "std:obj-array.v1";
 /// Spec ID for binary data
-pub const SPEC_ID_BINARY: &str = "capns:ms:binary.v1";
+pub const SPEC_ID_BINARY: &str = "std:binary.v1";
 
 // =============================================================================
 // PROFILE URLS (new canonical /schema/ path)
@@ -84,7 +84,7 @@ pub const PROFILE_OBJ_ARRAY: &str = "https://capns.org/schema/obj-array";
 ///
 /// ## String Form (compact)
 /// ```json
-/// "capns:ms:str.v1": "text/plain; profile=https://capns.org/schema/str"
+/// "std:str.v1": "text/plain; profile=https://capns.org/schema/str"
 /// ```
 ///
 /// ## Object Form (rich, with optional local schema)
@@ -204,7 +204,7 @@ impl ResolvedMediaSpec {
 /// 3. If neither, fail hard with an error
 ///
 /// # Arguments
-/// * `spec_id` - The spec ID to resolve (e.g., "capns:ms:str.v1")
+/// * `spec_id` - The spec ID to resolve (e.g., "std:str.v1")
 /// * `media_specs` - The media_specs map from the cap definition
 ///
 /// # Errors
