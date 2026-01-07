@@ -151,7 +151,8 @@ impl Default for CapHostRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapArguments, CapOutput, OutputType, ArgumentValidation};
+    use crate::{CapArguments, CapOutput, ArgumentValidation};
+    use crate::standard::media::MEDIA_STRING;
     use std::pin::Pin;
     use std::future::Future;
     use std::collections::HashMap;
@@ -179,11 +180,11 @@ mod tests {
     #[tokio::test]
     async fn test_register_and_find_caphost() {
         let mut registry = CapHostRegistry::new();
-        
+
         let host = Box::new(MockCapHost {
             name: "test-host".to_string(),
         });
-        
+
         let cap = Cap {
             urn: CapUrn::from_string("cap:action=test;type=basic").unwrap(),
             title: "Test Basic Capability".to_string(),
@@ -192,10 +193,9 @@ mod tests {
             command: "test".to_string(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput {
-                output_type: OutputType::String,
+                media_spec: MEDIA_STRING.to_string(),
                 schema_ref: None,
                 schema: None,
-                content_type: None,
                 validation: ArgumentValidation::default(),
                 output_description: "Test output".to_string(),
                 metadata: None,
@@ -203,17 +203,17 @@ mod tests {
             accepts_stdin: false,
             metadata_json: None,
         };
-        
+
         registry.register_caphost("test-host".to_string(), host, vec![cap]).await.unwrap();
-        
+
         // Test exact match
         let hosts = registry.find_caphosts("cap:action=test;type=basic").unwrap();
         assert_eq!(hosts.len(), 1);
-        
+
         // Test subset match (request has more specific requirements)
         let hosts = registry.find_caphosts("cap:action=test;type=basic;model=gpt-4").unwrap();
         assert_eq!(hosts.len(), 1);
-        
+
         // Test no match
         assert!(registry.find_caphosts("cap:action=different").is_err());
     }
@@ -221,7 +221,7 @@ mod tests {
     #[tokio::test]
     async fn test_best_caphost_selection() {
         let mut registry = CapHostRegistry::new();
-        
+
         // Register general host
         let general_host = Box::new(MockCapHost {
             name: "general".to_string(),
@@ -234,10 +234,9 @@ mod tests {
             command: "generate".to_string(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput {
-                output_type: OutputType::String,
+                media_spec: MEDIA_STRING.to_string(),
                 schema_ref: None,
                 schema: None,
-                content_type: None,
                 validation: ArgumentValidation::default(),
                 output_description: "General output".to_string(),
                 metadata: None,
@@ -245,7 +244,7 @@ mod tests {
             accepts_stdin: false,
             metadata_json: None,
         };
-        
+
         // Register specific host
         let specific_host = Box::new(MockCapHost {
             name: "specific".to_string(),
@@ -258,10 +257,9 @@ mod tests {
             command: "generate".to_string(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput {
-                output_type: OutputType::String,
+                media_spec: MEDIA_STRING.to_string(),
                 schema_ref: None,
                 schema: None,
-                content_type: None,
                 validation: ArgumentValidation::default(),
                 output_description: "Specific output".to_string(),
                 metadata: None,
@@ -269,13 +267,13 @@ mod tests {
             accepts_stdin: false,
             metadata_json: None,
         };
-        
+
         registry.register_caphost("general".to_string(), general_host, vec![general_cap]).await.unwrap();
         registry.register_caphost("specific".to_string(), specific_host, vec![specific_cap]).await.unwrap();
-        
+
         // Request should match the more specific host (using valid URN characters)
         let (_best_host, _best_cap) = registry.find_best_caphost("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
-        
+
         // Both hosts should match, but we should get the more specific one
         let all_hosts = registry.find_caphosts("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
         assert_eq!(all_hosts.len(), 2);
@@ -284,7 +282,7 @@ mod tests {
     #[test]
     fn test_invalid_urn_handling() {
         let registry = CapHostRegistry::new();
-        
+
         let result = registry.find_caphosts("invalid-urn");
         assert!(matches!(result, Err(CapHostRegistryError::InvalidUrn(_))));
     }
@@ -292,10 +290,10 @@ mod tests {
     #[test]
     fn test_can_handle() {
         let mut registry = CapHostRegistry::new();
-        
+
         // Empty registry
         assert!(!registry.can_handle("cap:action=test"));
-        
+
         // After registration
         let host = Box::new(MockCapHost {
             name: "test".to_string(),
@@ -311,11 +309,11 @@ mod tests {
             accepts_stdin: false,
             metadata_json: None,
         };
-        
+
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             registry.register_caphost("test".to_string(), host, vec![cap]).await.unwrap();
         });
-        
+
         assert!(registry.can_handle("cap:action=test"));
         assert!(registry.can_handle("cap:action=test;extra=param"));
         assert!(!registry.can_handle("cap:action=different"));

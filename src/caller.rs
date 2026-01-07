@@ -35,7 +35,7 @@ impl CapCaller {
             cap_definition,
         }
     }
-    
+
     /// Call the cap with structured arguments and optional stdin data
     /// Validates inputs against cap definition before execution
     pub async fn call(
@@ -44,8 +44,10 @@ impl CapCaller {
         named_args: Vec<JsonValue>,
         stdin_data: Option<Vec<u8>>
     ) -> Result<ResponseWrapper> {
-        // Validate inputs against cap definition
-        self.validate_inputs(&positional_args, &named_args)?;
+        // Note: Full async validation with ProfileSchemaRegistry would be done at a higher level
+        // Here we do basic structural validation synchronously
+        self.validate_inputs_basic(&positional_args, &named_args)?;
+
         // Convert JsonValue positional args to strings
         let string_positional_args: Vec<String> = positional_args
             .into_iter()
@@ -65,7 +67,7 @@ impl CapCaller {
             .into_iter()
             .filter_map(|arg| {
                 if let JsonValue::Object(map) = arg {
-                    if let (Some(JsonValue::String(name)), Some(value)) = 
+                    if let (Some(JsonValue::String(name)), Some(value)) =
                         (map.get("name"), map.get("value")) {
                         let value_str = match value {
                             JsonValue::String(s) => s.clone(),
@@ -82,12 +84,12 @@ impl CapCaller {
 
         // Execute via cap host method with stdin support
         let (binary_output, text_output) = self.cap_host.execute_cap(
-            &self.cap, 
+            &self.cap,
             &string_positional_args,
             &string_named_args,
             stdin_data
         ).await?;
-        
+
         // Determine response type based on what was returned
         let response = if let Some(binary_data) = binary_output {
             ResponseWrapper::from_binary(binary_data)
@@ -100,13 +102,13 @@ impl CapCaller {
         } else {
             return Err(anyhow::anyhow!("Cap returned no output"));
         };
-        
-        // Validate output against cap definition
-        self.validate_output(&response)?;
-        
+
+        // Validate output against cap definition (basic type check)
+        self.validate_output_basic(&response)?;
+
         Ok(response)
     }
-    
+
     /// Convert cap name to command
     fn cap_to_command(&self, cap: &str) -> String {
         // Extract operation part (everything before the last colon)
@@ -115,11 +117,11 @@ impl CapCaller {
         } else {
             cap
         };
-        
+
         // Convert underscores to hyphens for command name
         operation.replace('_', "-")
     }
-    
+
     /// Check if this cap produces binary output based on 'out' tag
     fn is_binary_cap(&self) -> bool {
         let cap_urn = CapUrn::from_string(&self.cap)
@@ -150,61 +152,86 @@ impl CapCaller {
             None => false
         }
     }
-    
-    /// Validate input arguments against cap definition
-    fn validate_inputs(
+
+    /// Basic input validation (argument count, required args present)
+    /// Full async validation with ProfileSchemaRegistry should be done at a higher level
+    fn validate_inputs_basic(
         &self,
         positional_args: &[JsonValue],
         named_args: &[JsonValue],
     ) -> Result<()> {
-        // Determine if this capability expects positional or named arguments
-        let expects_positional = self.cap_definition.arguments.required.iter()
-            .any(|arg| arg.position.is_some()) || 
-            !positional_args.is_empty();
-        
-        if expects_positional {
-            // Validate as positional arguments
-            crate::validation::InputValidator::validate_positional_arguments(&self.cap_definition, positional_args)
-                .map_err(|e| anyhow::anyhow!("Input validation failed for {}: {}", self.cap, e))?;
-        } else {
-            // Validate as named arguments
-            crate::validation::InputValidator::validate_named_arguments(&self.cap_definition, named_args)
-                .map_err(|e| anyhow::anyhow!("Input validation failed for {}: {}", self.cap, e))?;
-        }
-        
-        Ok(())
-    }
-    
-    /// Validate output against cap definition
-    fn validate_output(&self, response: &ResponseWrapper) -> Result<()> {
-        // For binary outputs, check type compatibility
-        if let Ok(text) = response.as_string() {
-            // For JSON outputs, parse as JSON and validate
-            if self.is_json_cap() {
-                let output_value: JsonValue = serde_json::from_str(&text)
-                    .map_err(|e| anyhow::anyhow!("Output is not valid JSON for cap {}: {}", self.cap, e))?;
-                
-                crate::validation::OutputValidator::validate_output(&self.cap_definition, &output_value)
-                    .map_err(|e| anyhow::anyhow!("Output validation failed for {}: {}", self.cap, e))?;
-            } else {
-                // For text outputs, wrap in JSON string and validate
-                let output_value = JsonValue::String(text);
-                crate::validation::OutputValidator::validate_output(&self.cap_definition, &output_value)
-                    .map_err(|e| anyhow::anyhow!("Output validation failed for {}: {}", self.cap, e))?;
+        let args = &self.cap_definition.arguments;
+
+        // Check if positional arguments are being used
+        let using_positional = !positional_args.is_empty() ||
+            args.required.iter().any(|arg| arg.position.is_some());
+
+        if using_positional {
+            // Validate positional arguments
+            let max_args = args.required.len() + args.optional.len();
+            if positional_args.len() > max_args {
+                return Err(anyhow::anyhow!(
+                    "Too many arguments: expected at most {}, got {}",
+                    max_args, positional_args.len()
+                ));
+            }
+
+            // Check required arguments are present
+            if positional_args.len() < args.required.len() {
+                let missing = &args.required[positional_args.len()];
+                return Err(anyhow::anyhow!(
+                    "Missing required argument: {}",
+                    missing.name
+                ));
             }
         } else {
-            // For binary outputs, validate that the cap expects binary output
-            if let Some(output_def) = self.cap_definition.get_output() {
-                if output_def.output_type != crate::OutputType::Binary {
+            // Validate named arguments
+            let mut provided_names = std::collections::HashSet::new();
+            for arg in named_args {
+                if let JsonValue::Object(map) = arg {
+                    if let Some(JsonValue::String(name)) = map.get("name") {
+                        provided_names.insert(name.clone());
+                    }
+                }
+            }
+
+            // Check all required arguments are provided
+            for req_arg in &args.required {
+                if !provided_names.contains(&req_arg.name) {
                     return Err(anyhow::anyhow!(
-                        "Cap {} expects {:?} output but received binary data", 
-                        self.cap, 
-                        output_def.output_type
+                        "Missing required argument: {}",
+                        req_arg.name
                     ));
                 }
             }
         }
-        
+
+        Ok(())
+    }
+
+    /// Basic output validation
+    /// Full async validation with ProfileSchemaRegistry should be done at a higher level
+    fn validate_output_basic(&self, response: &ResponseWrapper) -> Result<()> {
+        // For text/JSON outputs, just check it's parseable if JSON expected
+        if let Ok(text) = response.as_string() {
+            if self.is_json_cap() {
+                // Verify it's valid JSON
+                let _: JsonValue = serde_json::from_str(&text)
+                    .map_err(|e| anyhow::anyhow!("Output is not valid JSON for cap {}: {}", self.cap, e))?;
+            }
+        } else {
+            // For binary outputs, validate that the cap expects binary output via media_spec
+            if let Some(output_def) = self.cap_definition.get_output() {
+                if !output_def.is_binary() {
+                    return Err(anyhow::anyhow!(
+                        "Cap {} expects non-binary output (media_spec: {}) but received binary data",
+                        self.cap,
+                        output_def.media_spec
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 }

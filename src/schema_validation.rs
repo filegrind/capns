@@ -1,6 +1,8 @@
 //! JSON Schema validation for capability arguments and outputs
 //!
 //! Provides comprehensive validation of JSON data against JSON Schema Draft-07.
+//! This module handles explicit embedded schemas and schema_ref fields.
+//! Profile-based validation (from media_spec) is handled by ProfileSchemaRegistry.
 
 use crate::{Cap, CapArgument, CapOutput};
 use jsonschema::JSONSchema;
@@ -13,19 +15,19 @@ use thiserror::Error;
 pub enum SchemaValidationError {
     #[error("Schema compilation failed: {0}")]
     SchemaCompilation(String),
-    
+
     #[error("Validation failed for argument '{argument}': {details}")]
     ArgumentValidation { argument: String, details: String },
-    
+
     #[error("Validation failed for output: {details}")]
     OutputValidation { details: String },
-    
+
     #[error("Schema not found for argument '{argument}'")]
     SchemaNotFound { argument: String },
-    
+
     #[error("Schema reference '{schema_ref}' could not be resolved")]
     SchemaRefNotResolved { schema_ref: String },
-    
+
     #[error("Invalid JSON value for validation")]
     InvalidJson,
 }
@@ -34,7 +36,7 @@ pub enum SchemaValidationError {
 pub struct SchemaValidator {
     /// Cache of compiled schemas for performance
     schema_cache: HashMap<String, JSONSchema>,
-    
+
     /// External schema resolver (for schema_ref support)
     schema_resolver: Option<Box<dyn SchemaResolver>>,
 }
@@ -53,7 +55,7 @@ impl SchemaValidator {
             schema_resolver: None,
         }
     }
-    
+
     /// Create a schema validator with an external schema resolver
     pub fn with_resolver(resolver: Box<dyn SchemaResolver>) -> Self {
         Self {
@@ -61,7 +63,7 @@ impl SchemaValidator {
             schema_resolver: Some(resolver),
         }
     }
-    
+
     /// Validate all arguments for a capability against their schemas
     pub fn validate_arguments(
         &mut self,
@@ -79,59 +81,53 @@ impl SchemaValidator {
                 self.validate_argument(arg_def, &arguments[index])?;
             }
         }
-        
+
         // Note: Optional arguments validation would need more complex logic
         // to handle named arguments or default values
-        
+
         Ok(())
     }
-    
-    /// Validate a single argument against its schema
+
+    /// Validate a single argument against its explicit schema (if any)
+    /// This only validates against schema/schema_ref fields, not media_spec profile
     pub fn validate_argument(
         &mut self,
         arg_def: &CapArgument,
         value: &JsonValue,
     ) -> Result<(), SchemaValidationError> {
-        // Only validate if we have object or array types with schemas
-        if !matches!(arg_def.arg_type, crate::ArgumentType::Object | crate::ArgumentType::Array) {
-            return Ok(());
-        }
-        
+        // Only validate if we have an explicit schema or schema_ref
         let schema = if let Some(embedded_schema) = &arg_def.schema {
             embedded_schema.clone()
         } else if let Some(schema_ref) = &arg_def.schema_ref {
             self.resolve_schema_ref(schema_ref)?
         } else {
-            // No schema specified, skip validation
+            // No explicit schema specified, skip validation
             return Ok(());
         };
-        
+
         self.validate_value_against_schema(&arg_def.name, value, &schema)
     }
-    
-    /// Validate output against its schema
+
+    /// Validate output against its explicit schema (if any)
+    /// This only validates against schema/schema_ref fields, not media_spec profile
     pub fn validate_output(
         &mut self,
         output_def: &CapOutput,
         value: &JsonValue,
     ) -> Result<(), SchemaValidationError> {
-        // Only validate structured outputs
-        if !matches!(output_def.output_type, crate::OutputType::Object | crate::OutputType::Array) {
-            return Ok(());
-        }
-        
+        // Only validate if we have an explicit schema or schema_ref
         let schema = if let Some(embedded_schema) = &output_def.schema {
             embedded_schema.clone()
         } else if let Some(schema_ref) = &output_def.schema_ref {
             self.resolve_schema_ref(schema_ref)?
         } else {
-            // No schema specified, skip validation
+            // No explicit schema specified, skip validation
             return Ok(());
         };
-        
+
         self.validate_value_against_schema("output", value, &schema)
     }
-    
+
     /// Validate a JSON value against a schema
     fn validate_value_against_schema(
         &mut self,
@@ -141,7 +137,7 @@ impl SchemaValidator {
     ) -> Result<(), SchemaValidationError> {
         let schema_key = serde_json::to_string(schema)
             .map_err(|_| SchemaValidationError::InvalidJson)?;
-        
+
         // Use cached compiled schema or compile new one
         let compiled_schema = if let Some(cached) = self.schema_cache.get(&schema_key) {
             cached
@@ -151,14 +147,14 @@ impl SchemaValidator {
             self.schema_cache.insert(schema_key.clone(), compiled);
             self.schema_cache.get(&schema_key).unwrap()
         };
-        
+
         // Validate the value
         if let Err(validation_errors) = compiled_schema.validate(value) {
             let error_details = validation_errors
                 .map(|e| format!("  - {}", e))
                 .collect::<Vec<_>>()
                 .join("\n");
-            
+
             if name == "output" {
                 return Err(SchemaValidationError::OutputValidation {
                     details: error_details,
@@ -170,10 +166,10 @@ impl SchemaValidator {
                 });
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Resolve a schema reference using the configured resolver
     fn resolve_schema_ref(&self, schema_ref: &str) -> Result<JsonValue, SchemaValidationError> {
         if let Some(resolver) = &self.schema_resolver {
@@ -211,7 +207,7 @@ impl SchemaResolver for FileSchemaResolver {
             .map_err(|_| SchemaValidationError::SchemaRefNotResolved {
                 schema_ref: schema_ref.to_string(),
             })?;
-        
+
         serde_json::from_str(&schema_content)
             .map_err(|_| SchemaValidationError::SchemaRefNotResolved {
                 schema_ref: schema_ref.to_string(),
@@ -222,13 +218,13 @@ impl SchemaResolver for FileSchemaResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ArgumentType, OutputType, CapArgument, CapOutput};
+    use crate::standard::media::{MEDIA_JSON_OBJECT, MEDIA_STRING};
     use serde_json::json;
 
     #[test]
     fn test_argument_schema_validation_success() {
         let mut validator = SchemaValidator::new();
-        
+
         let schema = json!({
             "type": "object",
             "properties": {
@@ -237,10 +233,10 @@ mod tests {
             },
             "required": ["name"]
         });
-        
+
         let arg = CapArgument {
             name: "user_data".to_string(),
-            arg_type: ArgumentType::Object,
+            media_spec: MEDIA_JSON_OBJECT.to_string(),
             arg_description: "User data".to_string(),
             cli_flag: "--user-data".to_string(),
             position: Some(0),
@@ -269,7 +265,7 @@ mod tests {
 
         let arg = CapArgument {
             name: "user_data".to_string(),
-            arg_type: ArgumentType::Object,
+            media_spec: MEDIA_JSON_OBJECT.to_string(),
             arg_description: "User data".to_string(),
             cli_flag: "--user-data".to_string(),
             position: Some(0),
@@ -279,15 +275,15 @@ mod tests {
             schema: Some(schema),
             metadata: None,
         };
-        
+
         let invalid_value = json!({"age": 30}); // Missing required "name"
         assert!(validator.validate_argument(&arg, &invalid_value).is_err());
     }
-    
+
     #[test]
     fn test_output_schema_validation_success() {
         let mut validator = SchemaValidator::new();
-        
+
         let schema = json!({
             "type": "object",
             "properties": {
@@ -296,29 +292,29 @@ mod tests {
             },
             "required": ["result"]
         });
-        
+
         let output = CapOutput {
-            output_type: OutputType::Object,
+            media_spec: MEDIA_JSON_OBJECT.to_string(),
             output_description: "Query result".to_string(),
             schema_ref: None,
             schema: Some(schema),
-            content_type: Some("application/json".to_string()),
             validation: Default::default(),
             metadata: None,
         };
-        
+
         let valid_value = json!({"result": "success", "timestamp": "2023-01-01T00:00:00Z"});
         assert!(validator.validate_output(&output, &valid_value).is_ok());
     }
-    
+
     #[test]
-    fn test_skip_validation_for_simple_types() {
+    fn test_skip_validation_without_explicit_schema() {
         let mut validator = SchemaValidator::new();
-        
-        // String argument without schema should not be validated
+
+        // Argument without explicit schema should not be validated by this module
+        // (profile validation is handled by ProfileSchemaRegistry)
         let arg = CapArgument {
             name: "simple_string".to_string(),
-            arg_type: ArgumentType::String,
+            media_spec: MEDIA_STRING.to_string(),
             arg_description: "Simple string".to_string(),
             cli_flag: "--string".to_string(),
             position: Some(0),
@@ -328,7 +324,7 @@ mod tests {
             schema: None,
             metadata: None,
         };
-        
+
         let value = json!("any string value");
         assert!(validator.validate_argument(&arg, &value).is_ok());
     }
