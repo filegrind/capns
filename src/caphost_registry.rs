@@ -152,7 +152,7 @@ impl Default for CapHostRegistry {
 mod tests {
     use super::*;
     use crate::{CapArguments, CapOutput, ArgumentValidation};
-    use crate::standard::media::MEDIA_STRING;
+    use crate::standard::media::SPEC_ID_STR;
     use std::pin::Pin;
     use std::future::Future;
     use std::collections::HashMap;
@@ -186,20 +186,14 @@ mod tests {
         });
 
         let cap = Cap {
-            urn: CapUrn::from_string("cap:action=test;type=basic").unwrap(),
+            urn: CapUrn::from_string("cap:op=test;type=basic").unwrap(),
             title: "Test Basic Capability".to_string(),
             cap_description: Some("Test capability".to_string()),
             metadata: HashMap::new(),
             command: "test".to_string(),
+            media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
-            output: Some(CapOutput {
-                media_spec: MEDIA_STRING.to_string(),
-                schema_ref: None,
-                schema: None,
-                validation: ArgumentValidation::default(),
-                output_description: "Test output".to_string(),
-                metadata: None,
-            }),
+            output: Some(CapOutput::new(SPEC_ID_STR, "Test output")),
             accepts_stdin: false,
             metadata_json: None,
         };
@@ -207,15 +201,15 @@ mod tests {
         registry.register_caphost("test-host".to_string(), host, vec![cap]).await.unwrap();
 
         // Test exact match
-        let hosts = registry.find_caphosts("cap:action=test;type=basic").unwrap();
+        let hosts = registry.find_caphosts("cap:op=test;type=basic").unwrap();
         assert_eq!(hosts.len(), 1);
 
         // Test subset match (request has more specific requirements)
-        let hosts = registry.find_caphosts("cap:action=test;type=basic;model=gpt-4").unwrap();
+        let hosts = registry.find_caphosts("cap:op=test;type=basic;model=gpt-4").unwrap();
         assert_eq!(hosts.len(), 1);
 
         // Test no match
-        assert!(registry.find_caphosts("cap:action=different").is_err());
+        assert!(registry.find_caphosts("cap:op=different").is_err());
     }
 
     #[tokio::test]
@@ -227,20 +221,14 @@ mod tests {
             name: "general".to_string(),
         });
         let general_cap = Cap {
-            urn: CapUrn::from_string("cap:action=generate").unwrap(),
+            urn: CapUrn::from_string("cap:op=generate").unwrap(),
             title: "General Generation Capability".to_string(),
             cap_description: Some("General generation".to_string()),
             metadata: HashMap::new(),
             command: "generate".to_string(),
+            media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
-            output: Some(CapOutput {
-                media_spec: MEDIA_STRING.to_string(),
-                schema_ref: None,
-                schema: None,
-                validation: ArgumentValidation::default(),
-                output_description: "General output".to_string(),
-                metadata: None,
-            }),
+            output: Some(CapOutput::new(SPEC_ID_STR, "General output")),
             accepts_stdin: false,
             metadata_json: None,
         };
@@ -250,20 +238,14 @@ mod tests {
             name: "specific".to_string(),
         });
         let specific_cap = Cap {
-            urn: CapUrn::from_string("cap:action=generate;type=text;model=gpt-4").unwrap(),
+            urn: CapUrn::from_string("cap:op=generate;type=text;model=gpt-4").unwrap(),
             title: "Specific Text Generation Capability".to_string(),
             cap_description: Some("Specific text generation".to_string()),
             metadata: HashMap::new(),
             command: "generate".to_string(),
+            media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
-            output: Some(CapOutput {
-                media_spec: MEDIA_STRING.to_string(),
-                schema_ref: None,
-                schema: None,
-                validation: ArgumentValidation::default(),
-                output_description: "Specific output".to_string(),
-                metadata: None,
-            }),
+            output: Some(CapOutput::new(SPEC_ID_STR, "Specific output")),
             accepts_stdin: false,
             metadata_json: None,
         };
@@ -272,10 +254,10 @@ mod tests {
         registry.register_caphost("specific".to_string(), specific_host, vec![specific_cap]).await.unwrap();
 
         // Request should match the more specific host (using valid URN characters)
-        let (_best_host, _best_cap) = registry.find_best_caphost("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
+        let (_best_host, _best_cap) = registry.find_best_caphost("cap:op=generate;type=text;model=gpt-4;temperature=low").unwrap();
 
         // Both hosts should match, but we should get the more specific one
-        let all_hosts = registry.find_caphosts("cap:action=generate;type=text;model=gpt-4;temperature=low").unwrap();
+        let all_hosts = registry.find_caphosts("cap:op=generate;type=text;model=gpt-4;temperature=low").unwrap();
         assert_eq!(all_hosts.len(), 2);
     }
 
@@ -292,18 +274,19 @@ mod tests {
         let mut registry = CapHostRegistry::new();
 
         // Empty registry
-        assert!(!registry.can_handle("cap:action=test"));
+        assert!(!registry.can_handle("cap:op=test"));
 
         // After registration
         let host = Box::new(MockCapHost {
             name: "test".to_string(),
         });
         let cap = Cap {
-            urn: CapUrn::from_string("cap:action=test").unwrap(),
+            urn: CapUrn::from_string("cap:op=test").unwrap(),
             title: "Test Capability".to_string(),
             cap_description: Some("Test".to_string()),
             metadata: HashMap::new(),
             command: "test".to_string(),
+            media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
             accepts_stdin: false,
@@ -314,8 +297,8 @@ mod tests {
             registry.register_caphost("test".to_string(), host, vec![cap]).await.unwrap();
         });
 
-        assert!(registry.can_handle("cap:action=test"));
-        assert!(registry.can_handle("cap:action=test;extra=param"));
-        assert!(!registry.can_handle("cap:action=different"));
+        assert!(registry.can_handle("cap:op=test"));
+        assert!(registry.can_handle("cap:op=test;extra=param"));
+        assert!(!registry.can_handle("cap:op=different"));
     }
 }

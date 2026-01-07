@@ -143,6 +143,8 @@ impl ResponseWrapper {
     /// Validate response against cap output definition (basic validation)
     /// Note: Full async validation with ProfileSchemaRegistry should be done separately
     pub fn validate_against_cap(&self, cap: &Cap) -> Result<(), ValidationError> {
+        let media_specs = cap.get_media_specs();
+
         // Convert response to JSON value for validation
         let _json_value = match self.content_type {
             ResponseContentType::Json => {
@@ -171,7 +173,7 @@ impl ResponseWrapper {
             ResponseContentType::Binary => {
                 // Binary outputs can't be validated as JSON, validate the response type instead
                 if let Some(output_def) = cap.get_output() {
-                    if !output_def.is_binary() {
+                    if !output_def.is_binary(media_specs) {
                         return Err(ValidationError::InvalidOutputType {
                             cap_urn: cap.urn_string(),
                             expected_media_spec: output_def.media_spec.clone(),
@@ -202,8 +204,9 @@ impl ResponseWrapper {
     /// Check if response matches expected output type based on media_spec
     pub fn matches_output_type(&self, cap: &Cap) -> bool {
         if let Some(output_def) = cap.get_output() {
-            let is_output_binary = output_def.is_binary();
-            let is_output_json = output_def.is_json();
+            let media_specs = cap.get_media_specs();
+            let is_output_binary = output_def.is_binary(media_specs);
+            let is_output_json = output_def.is_json(media_specs);
 
             match &self.content_type {
                 ResponseContentType::Json => is_output_json || !is_output_binary,
