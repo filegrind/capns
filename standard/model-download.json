@@ -1,7 +1,7 @@
 {
   "urn": {
     "tags": {
-      "action": "download",
+      "op": "download",
       "type": "model"
     }
   },
@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model identifier to download",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "repository",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Repository to download from",
         "cli_flag": "--repository",
         "default_value": "huggingface",
@@ -41,14 +41,14 @@
       },
       {
         "name": "force",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Force download even if model exists",
         "cli_flag": "--force",
         "default_value": false
       },
       {
         "name": "cache_dir",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Custom cache directory for model storage",
         "cli_flag": "--cache-dir",
         "validation": {
@@ -58,53 +58,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Download result with model path and metadata",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "success": {
-          "type": "boolean",
-          "description": "Whether the download was successful"
-        },
-        "model_name": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Name of the downloaded model"
-        },
-        "local_path": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Local path where the model was saved"
-        },
-        "size_bytes": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Size of the downloaded model in bytes"
-        },
-        "download_time_ms": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Download time in milliseconds"
-        },
-        "repository": {
-          "type": "string",
-          "description": "Repository the model was downloaded from"
-        },
-        "version": {
-          "type": "string",
-          "description": "Model version"
-        },
-        "checksum": {
-          "type": "string",
-          "description": "File checksum for verification"
-        }
-      },
-      "required": [
-        "success",
-        "model_name"
-      ]
-    }
+    "media_spec": "capns:download-output.v1",
+    "output_description": "Download result with model path and metadata"
   }
 }

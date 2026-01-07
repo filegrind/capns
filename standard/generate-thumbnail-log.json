@@ -1,10 +1,10 @@
 {
   "urn": {
     "tags": {
-      "action": "generate_thumbnail",
+      "op": "generate_thumbnail",
       "ext": "log",
-      "in": "content-type: text/plain; profile=https://capns.org/schema/log-document",
-      "out": "content-type: image/png; profile=https://capns.org/schema/thumbnail-image"
+      "in": "capns:ms:str.v1",
+      "out": "capns:ms:binary.v1"
     }
   },
   "command": "generate-thumbnail",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Path to the log file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "width",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/int",
+        "media_spec": "capns:ms:int.v1",
         "arg_description": "Width of the thumbnail in pixels",
         "cli_flag": "--width",
         "default_value": 200,
@@ -40,7 +40,7 @@
       },
       {
         "name": "height",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/int",
+        "media_spec": "capns:ms:int.v1",
         "arg_description": "Height of the thumbnail in pixels",
         "cli_flag": "--height",
         "default_value": 300,
@@ -51,7 +51,7 @@
       },
       {
         "name": "output_file",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Write thumbnail to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -61,7 +61,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/octet-stream",
+    "media_spec": "capns:ms:binary.v1",
     "output_description": "PNG image data representing a thumbnail of the log document"
   }
 }

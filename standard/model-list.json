@@ -1,7 +1,7 @@
 {
   "urn": {
     "tags": {
-      "action": "list",
+      "op": "list",
       "type": "model"
     }
   },
@@ -14,7 +14,7 @@
     "optional": [
       {
         "name": "filter",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Filter models by pattern",
         "cli_flag": "--filter",
         "validation": {
@@ -23,7 +23,7 @@
       },
       {
         "name": "status",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Filter by model status",
         "cli_flag": "--status",
         "validation": {
@@ -38,7 +38,7 @@
       },
       {
         "name": "format",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",
@@ -53,82 +53,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "List of models with their metadata and status",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "models": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ModelInfo"
-          },
-          "description": "Array of model information"
-        },
-        "total_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Total number of models"
-        },
-        "filter_applied": {
-          "type": "string",
-          "description": "Filter that was applied"
-        }
-      },
-      "required": [
-        "models",
-        "total_count"
-      ],
-      "$defs": {
-        "ModelInfo": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Model name or identifier"
-            },
-            "status": {
-              "type": "string",
-              "enum": [
-                "loaded",
-                "available",
-                "downloading",
-                "cached"
-              ],
-              "description": "Current model status"
-            },
-            "size_bytes": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Model size in bytes"
-            },
-            "version": {
-              "type": "string",
-              "description": "Model version"
-            },
-            "repository": {
-              "type": "string",
-              "description": "Source repository"
-            },
-            "description": {
-              "type": "string",
-              "description": "Model description"
-            },
-            "last_accessed": {
-              "type": "string",
-              "format": "date-time",
-              "description": "Last access time"
-            }
-          },
-          "required": [
-            "name",
-            "status"
-          ]
-        }
-      }
-    }
+    "media_spec": "capns:list-output.v1",
+    "output_description": "List of models with their metadata and status"
   }
 }

@@ -1,11 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "codegeneration",
+      "op": "codegeneration",
       "language": "en",
       "type": "constrained",
-      "in": "content-type: text/plain; profile=https://capns.org/schema/prompt-text",
-      "out": "content-type: application/json; profile=https://capns.org/schema/codegeneration-response"
+      "in": "capns:ms:str.v1",
+      "out": "capns:llm_inference-output.v1"
     }
   },
   "command": "llm_inference",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "prompt",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Code generation prompt or specification",
         "cli_flag": "--prompt",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Programming language for code generation",
         "cli_flag": "--language",
         "default_value": "rust",
@@ -58,7 +58,7 @@
       },
       {
         "name": "context",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Existing code context or codebase information",
         "cli_flag": "--context",
         "validation": {
@@ -67,7 +67,7 @@
       },
       {
         "name": "style",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Coding style or framework preferences",
         "cli_flag": "--style",
         "validation": {
@@ -76,7 +76,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
+        "media_spec": "capns:ms:num.v1",
         "arg_description": "Maximum tokens for generated code",
         "cli_flag": "--max-tokens",
         "default_value": 4096,
@@ -87,21 +87,21 @@
       },
       {
         "name": "include_tests",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Whether to include unit tests",
         "cli_flag": "--include-tests",
         "default_value": false
       },
       {
         "name": "include_comments",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Whether to include code comments",
         "cli_flag": "--include-comments",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model spec to use for code generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -114,84 +114,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Generated code with optional tests and documentation",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "code": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The generated code"
-        },
-        "language": {
-          "type": "string",
-          "enum": [
-            "rust",
-            "python",
-            "javascript",
-            "typescript",
-            "go",
-            "java",
-            "c",
-            "cpp",
-            "swift",
-            "kotlin",
-            "sql",
-            "shell",
-            "html",
-            "css",
-            "json",
-            "yaml",
-            "toml"
-          ],
-          "description": "Programming language used"
-        },
-        "tests": {
-          "type": "string",
-          "description": "Generated unit tests (if requested)"
-        },
-        "documentation": {
-          "type": "string",
-          "description": "Generated documentation"
-        },
-        "explanation": {
-          "type": "string",
-          "description": "Explanation of the code logic"
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Required dependencies or imports"
-        },
-        "complexity_score": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10,
-          "description": "Code complexity rating (1-10)"
-        },
-        "tokens_used": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of tokens consumed for generation"
-        },
-        "model_used": {
-          "type": "string",
-          "description": "Model that generated the code"
-        },
-        "generation_time_ms": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Generation time in milliseconds"
-        }
-      },
-      "required": [
-        "code",
-        "language"
-      ]
-    }
+    "media_spec": "capns:llm_inference-output.v1",
+    "output_description": "Generated code with optional tests and documentation"
   }
 }

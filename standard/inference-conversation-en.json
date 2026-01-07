@@ -1,11 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "conversation",
+      "op": "conversation",
       "language": "en",
       "type": "constrained",
-      "in": "content-type: text/plain; profile=https://capns.org/schema/prompt-text",
-      "out": "content-type: application/json; profile=https://capns.org/schema/conversation-response"
+      "in": "capns:ms:str.v1",
+      "out": "capns:llm_inference-output.v1"
     }
   },
   "command": "llm_inference",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "prompt",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "User's conversational input",
         "cli_flag": "--prompt",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "context",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Conversation context and history",
         "cli_flag": "--context",
         "validation": {
@@ -39,7 +39,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/int",
+        "media_spec": "capns:ms:int.v1",
         "arg_description": "Maximum tokens to generate",
         "cli_flag": "--max-tokens",
         "default_value": 2000,
@@ -50,7 +50,7 @@
       },
       {
         "name": "temperature",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
+        "media_spec": "capns:ms:num.v1",
         "arg_description": "Sampling temperature for creativity vs consistency",
         "cli_flag": "--temperature",
         "default_value": 0.7,
@@ -61,7 +61,7 @@
       },
       {
         "name": "system_prompt",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "System instructions for conversation behavior",
         "cli_flag": "--system-prompt",
         "validation": {
@@ -70,7 +70,7 @@
       },
       {
         "name": "model_spec",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model spec to use for conversation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -83,59 +83,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Generated conversational response with context information",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "response": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The generated conversational response"
-        },
-        "conversation_id": {
-          "type": "string",
-          "description": "Unique identifier for this conversation"
-        },
-        "tokens_used": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of tokens consumed for generation"
-        },
-        "finish_reason": {
-          "type": "string",
-          "enum": [
-            "stop",
-            "length",
-            "timeout"
-          ],
-          "description": "Why generation finished"
-        },
-        "model_used": {
-          "type": "string",
-          "description": "Model that generated the response"
-        },
-        "generation_time_ms": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Generation time in milliseconds"
-        },
-        "context_length": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Length of context provided"
-        },
-        "temperature_used": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 2,
-          "description": "Temperature setting used"
-        }
-      },
-      "required": [
-        "response"
-      ]
-    }
+    "media_spec": "capns:llm_inference-output.v1",
+    "output_description": "Generated conversational response with context information"
   }
 }

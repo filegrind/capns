@@ -1,11 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "request_listing_analysis",
+      "op": "request_listing_analysis",
       "language": "en",
       "type": "task_creation",
-      "in": "content-type: text/plain; profile=https://filegrind.com/schema/listing-id",
-      "out": "content-type: text/plain; profile=https://filegrind.com/schema/task-chain-id"
+      "in": "capns:ms:str.v1",
+      "out": "capns:listing_analysis_task-output.v1"
     }
   },
   "command": "listing_analysis_task",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "listing_id",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id",
         "validation": {
@@ -27,25 +27,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Information about the created task chain",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "listing_id": {
-          "type": "string",
-          "description": "ID of the listing being analyzed"
-        },
-        "task_type": {
-          "type": "string",
-          "description": "Type of task chain created"
-        }
-      },
-      "required": [
-        "listing_id",
-        "task_type"
-      ]
-    }
+    "media_spec": "capns:listing_analysis_task-output.v1",
+    "output_description": "Information about the created task chain"
   }
 }

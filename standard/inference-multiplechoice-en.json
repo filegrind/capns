@@ -1,11 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "multiplechoice",
+      "op": "multiplechoice",
       "language": "en",
       "type": "constrained",
-      "in": "content-type: text/plain; profile=https://capns.org/schema/prompt-text",
-      "out": "content-type: application/json; profile=https://capns.org/schema/multiplechoice-response"
+      "in": "capns:ms:str.v1",
+      "out": "capns:llm_inference-output.v1"
     }
   },
   "command": "llm_inference",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "query",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Logical query or decision problem",
         "cli_flag": "--query",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "context",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Context and facts for logical reasoning",
         "cli_flag": "--context",
         "validation": {
@@ -39,7 +39,7 @@
       },
       {
         "name": "decision_type",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Type of logical decision required",
         "cli_flag": "--decision-type",
         "default_value": "binary",
@@ -55,7 +55,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
+        "media_spec": "capns:ms:num.v1",
         "arg_description": "Maximum tokens for reasoning output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -66,14 +66,14 @@
       },
       {
         "name": "require_explanation",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Whether to include reasoning explanation",
         "cli_flag": "--require-explanation",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -86,58 +86,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Logical decision with reasoning explanation and confidence",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "decision": {
-          "type": "string",
-          "description": "The logical decision or choice made"
-        },
-        "confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "Confidence score for the decision"
-        },
-        "reasoning": {
-          "type": "string",
-          "description": "Explanation of the reasoning process"
-        },
-        "decision_type": {
-          "type": "string",
-          "enum": [
-            "binary",
-            "classification",
-            "reasoning",
-            "verification",
-            "comparison"
-          ],
-          "description": "Type of decision made"
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Key evidence points used"
-        },
-        "tokens_used": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of tokens consumed"
-        },
-        "model_used": {
-          "type": "string",
-          "description": "Model that made the decision"
-        }
-      },
-      "required": [
-        "decision",
-        "confidence"
-      ]
-    }
+    "media_spec": "capns:llm_inference-output.v1",
+    "output_description": "Logical decision with reasoning explanation and confidence"
   }
 }

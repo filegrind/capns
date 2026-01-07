@@ -1,7 +1,7 @@
 {
   "urn": {
     "tags": {
-      "action": "unload",
+      "op": "unload",
       "type": "model"
     }
   },
@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model identifier or handle to unload",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "force",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Force unload even if model is in use",
         "cli_flag": "--force",
         "default_value": false
@@ -35,44 +35,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Unload result with status and freed resources",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "success": {
-          "type": "boolean",
-          "description": "Whether the model was unloaded successfully"
-        },
-        "model_name": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Name of the unloaded model"
-        },
-        "freed_memory_mb": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Memory freed in megabytes"
-        },
-        "unload_time_ms": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Unload time in milliseconds"
-        },
-        "was_forced": {
-          "type": "boolean",
-          "description": "Whether the unload was forced"
-        },
-        "message": {
-          "type": "string",
-          "description": "Additional status message"
-        }
-      },
-      "required": [
-        "success",
-        "model_name"
-      ]
-    }
+    "media_spec": "capns:unload-output.v1",
+    "output_description": "Unload result with status and freed resources"
   }
 }

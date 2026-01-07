@@ -1,9 +1,9 @@
 {
   "urn": {
     "tags": {
-      "action": "use_chip_extraction",
-      "in": "content-type: text/plain; profile=https://filegrind.com/schema/listing-id",
-      "out": "content-type: text/plain; profile=https://filegrind.com/schema/task-id"
+      "op": "use_chip_extraction",
+      "in": "capns:ms:str.v1",
+      "out": "capns:chip_extraction_task-output.v1"
     }
   },
   "command": "chip_extraction_task",
@@ -15,7 +15,7 @@
     "required": [
       {
         "name": "listing_id",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id",
         "validation": {
@@ -25,25 +25,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Created task information",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "task_id": {
-          "type": "string",
-          "description": "ID of the created task"
-        },
-        "task_type": {
-          "type": "string",
-          "description": "Type of task created"
-        }
-      },
-      "required": [
-        "task_id",
-        "task_type"
-      ]
-    }
+    "media_spec": "capns:chip_extraction_task-output.v1",
+    "output_description": "Created task information"
   }
 }

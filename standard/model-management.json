@@ -1,7 +1,7 @@
 {
   "urn": {
     "tags": {
-      "action": "management",
+      "op": "management",
       "type": "model"
     }
   },
@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "operation",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Management operation to perform",
         "cli_flag": "--operation",
         "position": 0,
@@ -32,7 +32,7 @@
     "optional": [
       {
         "name": "model",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model identifier or path",
         "cli_flag": "--model",
         "validation": {
@@ -41,7 +41,7 @@
       },
       {
         "name": "format",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Output format for information display",
         "cli_flag": "--format",
         "default_value": "json",
@@ -56,65 +56,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Management operation result with status and details",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "success": {
-          "type": "boolean",
-          "description": "Whether the operation was successful"
-        },
-        "operation": {
-          "type": "string",
-          "enum": [
-            "init",
-            "config",
-            "validate",
-            "cleanup",
-            "info"
-          ],
-          "description": "Operation that was performed"
-        },
-        "model_name": {
-          "type": "string",
-          "description": "Model that was operated on (if applicable)"
-        },
-        "message": {
-          "type": "string",
-          "description": "Human-readable result message"
-        },
-        "details": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "Operation-specific details"
-        },
-        "execution_time_ms": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Operation execution time in milliseconds"
-        },
-        "warnings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Any warnings generated during operation"
-        },
-        "errors": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Any errors encountered during operation"
-        }
-      },
-      "required": [
-        "success",
-        "operation",
-        "message"
-      ]
-    }
+    "media_spec": "capns:manage-output.v1",
+    "output_description": "Management operation result with status and details"
   }
 }

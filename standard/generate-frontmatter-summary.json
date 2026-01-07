@@ -1,11 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "generate_frontmatter_summary",
+      "op": "generate_frontmatter_summary",
       "language": "en",
       "type": "constrained",
-      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
-      "out": "content-type: application/json; profile=https://capns.org/schema/frontmatter-summary"
+      "in": "capns:ms:str.v1",
+      "out": "capns:ms:str.v1"
     }
   },
   "command": "generate_text",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "frontmatter_text",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Frontmatter text to process and summarize",
         "cli_flag": "--frontmatter-text",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "format",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Output format for the summary",
         "cli_flag": "--format",
         "default_value": "organized",
@@ -45,21 +45,21 @@
       },
       {
         "name": "preserve_all_data",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Whether to preserve all factual information",
         "cli_flag": "--preserve-all-data",
         "default_value": true
       },
       {
         "name": "remove_boilerplate",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/bool",
+        "media_spec": "capns:ms:bool.v1",
         "arg_description": "Whether to remove legal boilerplate and formatting chips",
         "cli_flag": "--remove-boilerplate",
         "default_value": true
       },
       {
         "name": "language",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Language of the frontmatter text",
         "cli_flag": "--language",
         "default_value": "en",
@@ -80,7 +80,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
+        "media_spec": "capns:ms:num.v1",
         "arg_description": "Maximum tokens for summary output",
         "cli_flag": "--max-tokens",
         "default_value": 2000,
@@ -91,7 +91,7 @@
       },
       {
         "name": "model_spec",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model spec to use for summary generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -104,22 +104,11 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
+    "media_spec": "capns:ms:str.v1",
     "output_description": "Organized bibliographic summary with extracted metadata",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 10000,
-          "description": "Organized summary of the frontmatter content"
-        }
-      },
-      "required": [
-        "summary"
-      ]
+    "validation": {
+      "min_length": 1,
+      "max_length": 10000
     }
   }
 }

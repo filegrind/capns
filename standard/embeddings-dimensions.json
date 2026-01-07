@@ -1,23 +1,23 @@
 {
   "urn": {
     "tags": {
-      "action": "embeddings_dimensions",
-      "out": "content-type: application/json; profile=https://capns.org/schema/uint"
+      "op": "embeddings_dimensions",
+      "out": "capns:ms:int.v1"
     }
   },
   "command": "dimensions",
-  "title": "Query Embedding Dimensions",
-  "cap_description": "Get the dimensionality of generated embeddings for a specific model",
+  "title": "Get Embeddings Dimensions",
+  "cap_description": "Query the dimensionality of embeddings for a given model",
   "metadata": {},
   "accepts_stdin": false,
   "arguments": {
     "optional": [
       {
         "name": "model_spec",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model spec to use for retrieving embeddings dimensions",
         "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF",
+        "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
         "validation": {
           "pattern": ".*:.*",
           "min_length": 4,
@@ -27,22 +27,11 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Dimensionality information for the model",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "dimensions": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000,
-          "description": "Dimensionality of the generated embeddings"
-        }
-      },
-      "required": [
-        "dimensions"
-      ]
+    "media_spec": "capns:ms:int.v1",
+    "output_description": "Dimensionality of the embeddings (positive integer)",
+    "validation": {
+      "min": 1,
+      "max": 100000
     }
   }
 }

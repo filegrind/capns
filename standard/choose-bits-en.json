@@ -1,11 +1,11 @@
 {
   "urn": {
     "tags": {
-      "action": "choose_bits",
+      "op": "choose_bits",
       "language": "en",
       "type": "constrained",
-      "in": "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
-      "out": "content-type: application/json; profile=https://capns.org/schema/booleans-result"
+      "in": "capns:ms:str.v1",
+      "out": "capns:ms:bool-array.v1"
     }
   },
   "command": "bit_choices",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "content",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Content to analyze for the binary decisions",
         "cli_flag": "--content",
         "position": 0,
@@ -28,27 +28,16 @@
       },
       {
         "name": "questions",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str-array",
+        "media_spec": "capns:questions-array.v1",
         "arg_description": "Array of binary questions to answer about the content",
         "cli_flag": "--questions",
-        "position": 1,
-        "schema": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 50,
-          "items": {
-            "type": "string",
-            "minLength": 5,
-            "maxLength": 4096,
-            "description": "A binary question to answer about the content"
-          }
-        }
+        "position": 1
       }
     ],
     "optional": [
       {
         "name": "language",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Language code for processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -69,7 +58,7 @@
       },
       {
         "name": "max_content_length",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
+        "media_spec": "capns:ms:num.v1",
         "arg_description": "Maximum content length to consider (for context window management)",
         "cli_flag": "--max-content-length",
         "default_value": 2048,
@@ -80,7 +69,7 @@
       },
       {
         "name": "confidence_threshold",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/num",
+        "media_spec": "capns:ms:num.v1",
         "arg_description": "Minimum confidence threshold for decisions",
         "cli_flag": "--confidence-threshold",
         "default_value": 0.7,
@@ -91,7 +80,7 @@
       },
       {
         "name": "model_spec",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -104,25 +93,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Multiple binary decision results with boolean array",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "results": {
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "minItems": 1,
-          "maxItems": 50,
-          "description": "Array of boolean results corresponding to each question"
-        }
-      },
-      "required": [
-        "results"
-      ]
-    }
+    "media_spec": "capns:ms:bool-array.v1",
+    "output_description": "Array of boolean decision results corresponding to each question"
   }
 }

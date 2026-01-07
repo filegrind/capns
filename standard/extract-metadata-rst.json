@@ -1,10 +1,10 @@
 {
   "urn": {
     "tags": {
-      "action": "extract_metadata",
+      "op": "extract_metadata",
       "ext": "rst",
-      "in": "content-type: text/x-rst; profile=https://capns.org/schema/rst-document",
-      "out": "content-type: application/json; profile=https://capns.org/schema/file-metadata"
+      "in": "capns:ms:str.v1",
+      "out": "capns:ms:obj.v1"
     }
   },
   "command": "extract-metadata",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Path to the RST file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "output",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -39,7 +39,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
+    "media_spec": "capns:ms:obj.v1",
     "output_description": "Structured metadata including file properties and RST-specific metadata"
   }
 }

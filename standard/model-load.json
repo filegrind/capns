@@ -1,7 +1,7 @@
 {
   "urn": {
     "tags": {
-      "action": "load",
+      "op": "load",
       "type": "model"
     }
   },
@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model identifier or path to load",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "device",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Device to load model on",
         "cli_flag": "--device",
         "default_value": "cpu",
@@ -42,7 +42,7 @@
       },
       {
         "name": "precision",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str",
+        "media_spec": "capns:ms:str.v1",
         "arg_description": "Model precision/quantization level",
         "cli_flag": "--precision",
         "default_value": "float32",
@@ -58,64 +58,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Load result with model handle and configuration",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "success": {
-          "type": "boolean",
-          "description": "Whether the model was loaded successfully"
-        },
-        "model_name": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Name of the loaded model"
-        },
-        "model_handle": {
-          "type": "string",
-          "description": "Handle/ID for the loaded model instance"
-        },
-        "device": {
-          "type": "string",
-          "enum": [
-            "cpu",
-            "cuda",
-            "mps"
-          ],
-          "description": "Device the model was loaded on"
-        },
-        "precision": {
-          "type": "string",
-          "enum": [
-            "float32",
-            "float16",
-            "int8",
-            "int4"
-          ],
-          "description": "Model precision"
-        },
-        "memory_usage_mb": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Memory usage in megabytes"
-        },
-        "load_time_ms": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Load time in milliseconds"
-        },
-        "model_config": {
-          "type": "object",
-          "additionalProperties": true,
-          "description": "Model configuration parameters"
-        }
-      },
-      "required": [
-        "success",
-        "model_name"
-      ]
-    }
+    "media_spec": "capns:load-output.v1",
+    "output_description": "Load result with model handle and configuration"
   }
 }

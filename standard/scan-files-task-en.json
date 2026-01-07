@@ -1,10 +1,10 @@
 {
   "urn": {
     "tags": {
-      "action": "scan_files",
+      "op": "scan_files",
       "type": "task_creation",
-      "in": "content-type: application/json; profile=https://filegrind.com/schema/file-path-array",
-      "out": "content-type: text/plain; profile=https://filegrind.com/schema/task-id"
+      "in": "capns:ms:str-array.v1",
+      "out": "capns:scan_files_task-output.v1"
     }
   },
   "command": "scan_files_task",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_paths",
-        "media_spec": "content-type: application/json; profile=https://capns.org/schemas/str-array",
+        "media_spec": "capns:ms:str-array.v1",
         "arg_description": "Array of file paths to scan",
         "cli_flag": "--file-paths",
         "validation": {
@@ -27,25 +27,7 @@
     ]
   },
   "output": {
-    "media_spec": "content-type: application/json; profile=https://capns.org/schemas/obj",
-    "output_description": "Created task information",
-    "schema": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "task_id": {
-          "type": "string",
-          "description": "ID of the created task"
-        },
-        "task_type": {
-          "type": "string",
-          "description": "Type of task created"
-        }
-      },
-      "required": [
-        "task_id",
-        "task_type"
-      ]
-    }
+    "media_spec": "capns:scan_files_task-output.v1",
+    "output_description": "Created task information"
   }
 }
