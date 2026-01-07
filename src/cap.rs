@@ -3,9 +3,31 @@
 //! This module defines the structure for formal cap definitions that include
 //! the cap URN, versioning, and metadata. Caps are general-purpose
 //! and do not assume any specific domain like files or documents.
+//!
+//! ## Cap Definition Format
+//!
+//! Caps now use spec IDs in `media_spec` fields that reference definitions
+//! in the `media_specs` table. Example:
+//!
+//! ```json
+//! {
+//!   "urn": { "tags": { "op": "conversation", "in": "capns:ms:str.v1", "out": "my:output.v1" } },
+//!   "media_specs": {
+//!     "my:output.v1": {
+//!       "media_type": "application/json",
+//!       "profile_uri": "https://example.com/schema",
+//!       "schema": { "type": "object", ... }
+//!     }
+//!   },
+//!   "arguments": {
+//!     "required": [{ "name": "input", "media_spec": "capns:ms:str.v1", ... }]
+//!   },
+//!   "output": { "media_spec": "my:output.v1", ... }
+//! }
+//! ```
 
 use crate::cap_urn::CapUrn;
-use crate::media_spec::MediaSpec;
+use crate::media_spec::{resolve_spec_id, MediaSpecDef, MediaSpecError, ResolvedMediaSpec};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
@@ -32,12 +54,15 @@ pub struct ArgumentValidation {
 }
 
 /// Cap argument definition
+///
+/// The `media_spec` field contains a spec ID (e.g., "capns:ms:str.v1") that
+/// references a definition in the cap's `media_specs` table or a built-in primitive.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapArgument {
     pub name: String,
 
-    /// MediaSpec string defining the expected type
-    /// e.g., "content-type: application/json; profile=\"https://capns.org/schemas/str\""
+    /// Spec ID referencing a media spec definition
+    /// e.g., "capns:ms:str.v1", "capns:ms:int.v1", or a custom spec ID
     pub media_spec: String,
 
     pub arg_description: String,
@@ -53,14 +78,6 @@ pub struct CapArgument {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<serde_json::Value>,
-
-    /// Reference to external JSON schema for validation (overrides profile in media_spec)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema_ref: Option<String>,
-
-    /// Embedded JSON schema for validation (overrides profile in media_spec)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema: Option<serde_json::Value>,
 
     /// Arbitrary metadata as JSON object
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -90,19 +107,15 @@ pub struct CapArguments {
 
 
 /// Output definition
+///
+/// The `media_spec` field contains a spec ID (e.g., "capns:ms:obj.v1") that
+/// references a definition in the cap's `media_specs` table or a built-in primitive.
+/// Any output schema should be defined in the media_specs entry, not inline here.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
-    /// MediaSpec string defining the output type
-    /// e.g., "content-type: application/json; profile=\"https://capns.org/schemas/obj\""
+    /// Spec ID referencing a media spec definition
+    /// e.g., "capns:ms:obj.v1" or a custom spec ID like "my:output-spec.v1"
     pub media_spec: String,
-
-    /// Reference to external JSON schema for validation (overrides profile in media_spec)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema_ref: Option<String>,
-
-    /// Embedded JSON schema for output validation (overrides profile in media_spec)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema: Option<serde_json::Value>,
 
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
     pub validation: ArgumentValidation,
@@ -115,37 +128,15 @@ pub struct CapOutput {
 }
 
 impl CapOutput {
-    /// Create a new output definition with MediaSpec string
+    /// Create a new output definition with spec ID
+    ///
+    /// # Arguments
+    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "capns:ms:obj.v1")
+    /// * `description` - Human-readable description of the output
     pub fn new(media_spec: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             media_spec: media_spec.into(),
             output_description: description.into(),
-            schema_ref: None,
-            schema: None,
-            validation: ArgumentValidation::default(),
-            metadata: None,
-        }
-    }
-
-    /// Create output with schema reference
-    pub fn with_schema(media_spec: impl Into<String>, description: impl Into<String>, schema_ref: impl Into<String>) -> Self {
-        Self {
-            media_spec: media_spec.into(),
-            output_description: description.into(),
-            schema_ref: Some(schema_ref.into()),
-            schema: None,
-            validation: ArgumentValidation::default(),
-            metadata: None,
-        }
-    }
-
-    /// Create output with embedded schema
-    pub fn with_embedded_schema(media_spec: impl Into<String>, description: impl Into<String>, schema: serde_json::Value) -> Self {
-        Self {
-            media_spec: media_spec.into(),
-            output_description: description.into(),
-            schema_ref: None,
-            schema: Some(schema),
             validation: ArgumentValidation::default(),
             metadata: None,
         }
@@ -157,8 +148,6 @@ impl CapOutput {
             media_spec: media_spec.into(),
             output_description: description.into(),
             validation,
-            schema_ref: None,
-            schema: None,
             metadata: None,
         }
     }
@@ -167,82 +156,123 @@ impl CapOutput {
     pub fn with_full_definition(
         media_spec: impl Into<String>,
         description: impl Into<String>,
-        schema_ref: Option<String>,
-        schema: Option<serde_json::Value>,
         validation: ArgumentValidation,
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
             media_spec: media_spec.into(),
             output_description: description.into(),
-            schema_ref,
-            schema,
             validation,
             metadata,
         }
     }
 
-    /// Parse the MediaSpec from the media_spec string
-    pub fn parsed_media_spec(&self) -> Result<MediaSpec, crate::media_spec::MediaSpecError> {
-        MediaSpec::parse(&self.media_spec)
+    /// Get the spec ID
+    pub fn spec_id(&self) -> &str {
+        &self.media_spec
     }
 
-    /// Check if output is binary based on media_spec
-    pub fn is_binary(&self) -> bool {
-        self.parsed_media_spec()
+    /// Resolve this output's media spec using the provided media_specs table
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    ///
+    /// # Errors
+    /// Returns `MediaSpecError::UnresolvableSpecId` if the spec ID cannot be resolved.
+    pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_spec_id(&self.media_spec, media_specs)
+    }
+
+    /// Check if output is binary based on resolved media spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
+        self.resolve(media_specs)
             .map(|ms| ms.is_binary())
             .unwrap_or(false)
     }
 
-    /// Check if output is JSON based on media_spec
-    pub fn is_json(&self) -> bool {
-        self.parsed_media_spec()
+    /// Check if output is JSON based on resolved media spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
+        self.resolve(media_specs)
             .map(|ms| ms.is_json())
             .unwrap_or(false)
     }
 
-    /// Get the content type from media_spec
-    pub fn content_type(&self) -> Option<String> {
-        self.parsed_media_spec()
-            .map(|ms| ms.content_type)
+    /// Get the media type from resolved spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
+        self.resolve(media_specs)
+            .map(|ms| ms.media_type)
             .ok()
     }
 
-    /// Get the profile URL from media_spec
-    pub fn profile(&self) -> Option<String> {
-        self.parsed_media_spec()
+    /// Get the profile URI from resolved spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
+        self.resolve(media_specs)
             .ok()
-            .and_then(|ms| ms.profile)
+            .and_then(|ms| ms.profile_uri)
+    }
+
+    /// Get the schema from resolved spec (if any)
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<serde_json::Value> {
+        self.resolve(media_specs)
+            .ok()
+            .and_then(|ms| ms.schema)
     }
 }
 
 /// Formal cap definition
+///
+/// A cap definition includes:
+/// - URN with tags (including `op`, `in`, `out` which use spec IDs)
+/// - `media_specs` table mapping spec IDs to definitions
+/// - Arguments with spec ID references
+/// - Output with spec ID reference
 #[derive(Debug, Clone)]
 pub struct Cap {
     /// Formal cap URN with hierarchical naming
+    /// Tags can include `op`, `in`, `out` (which should be spec IDs)
     pub urn: CapUrn,
-    
+
     /// Human-readable title of the capability (required)
     pub title: String,
-    
+
     /// Optional description
     pub cap_description: Option<String>,
-    
+
     /// Optional metadata as key-value pairs
     pub metadata: HashMap<String, String>,
-    
+
     /// Command string for CLI execution
     pub command: String,
-    
+
+    /// Media spec definitions table
+    /// Maps spec IDs to their definitions (string or object form)
+    /// Arguments and output `media_spec` fields reference entries here
+    pub media_specs: HashMap<String, MediaSpecDef>,
+
     /// Cap arguments
     pub arguments: CapArguments,
-    
+
     /// Output definition
     pub output: Option<CapOutput>,
-    
+
     /// Whether this cap accepts input via stdin
     pub accepts_stdin: bool,
-    
+
     /// Arbitrary metadata as JSON object
     pub metadata_json: Option<serde_json::Value>,
 }
@@ -255,6 +285,7 @@ impl PartialEq for Cap {
         self.cap_description == other.cap_description &&
         self.metadata == other.metadata &&
         self.command == other.command &&
+        self.media_specs == other.media_specs &&
         self.arguments == other.arguments &&
         self.output == other.output &&
         self.accepts_stdin == other.accepts_stdin &&
@@ -269,40 +300,45 @@ impl Serialize for Cap {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Cap", 10)?;
-        
+        let mut state = serializer.serialize_struct("Cap", 11)?;
+
         // Serialize urn as tags object
         state.serialize_field("urn", &serde_json::json!({
             "tags": self.urn.tags
         }))?;
-        
+
         state.serialize_field("title", &self.title)?;
         state.serialize_field("command", &self.command)?;
 
         if self.cap_description.is_some() {
             state.serialize_field("cap_description", &self.cap_description)?;
         }
-        
+
         if !self.metadata.is_empty() {
             state.serialize_field("metadata", &self.metadata)?;
         }
-        
+
+        // Always serialize media_specs (can be empty)
+        if !self.media_specs.is_empty() {
+            state.serialize_field("media_specs", &self.media_specs)?;
+        }
+
         if !self.arguments.is_empty() {
             state.serialize_field("arguments", &self.arguments)?;
         }
-        
+
         if self.output.is_some() {
             state.serialize_field("output", &self.output)?;
         }
-        
+
         if self.accepts_stdin {
             state.serialize_field("accepts_stdin", &self.accepts_stdin)?;
         }
-        
+
         if self.metadata_json.is_some() {
             state.serialize_field("metadata_json", &self.metadata_json)?;
         }
-        
+
         state.end()
     }
 }
@@ -322,6 +358,8 @@ impl<'de> Deserialize<'de> for Cap {
             metadata: HashMap<String, String>,
             command: String,
             #[serde(default)]
+            media_specs: HashMap<String, MediaSpecDef>,
+            #[serde(default)]
             arguments: CapArguments,
             output: Option<CapOutput>,
             #[serde(default)]
@@ -330,7 +368,7 @@ impl<'de> Deserialize<'de> for Cap {
         }
 
         let registry_cap = CapRegistry::deserialize(deserializer)?;
-        
+
         // Handle urn field - can be string or object with tags
         let urn = match registry_cap.urn {
             serde_json::Value::String(urn_str) => {
@@ -358,6 +396,7 @@ impl<'de> Deserialize<'de> for Cap {
             cap_description: registry_cap.cap_description,
             metadata: registry_cap.metadata,
             command: registry_cap.command,
+            media_specs: registry_cap.media_specs,
             arguments: registry_cap.arguments,
             output: registry_cap.output,
             accepts_stdin: registry_cap.accepts_stdin,
@@ -367,7 +406,13 @@ impl<'de> Deserialize<'de> for Cap {
 }
 
 impl CapArgument {
-    /// Create a new cap argument with MediaSpec string
+    /// Create a new cap argument with spec ID
+    ///
+    /// # Arguments
+    /// * `name` - Argument name
+    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "capns:ms:str.v1")
+    /// * `description` - Human-readable description
+    /// * `cli_flag` - CLI flag for this argument (e.g., "--input")
     pub fn new(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -377,8 +422,6 @@ impl CapArgument {
             position: None,
             validation: ArgumentValidation::default(),
             default_value: None,
-            schema_ref: None,
-            schema: None,
             metadata: None,
         }
     }
@@ -393,8 +436,6 @@ impl CapArgument {
             position: Some(position),
             validation: ArgumentValidation::default(),
             default_value: None,
-            schema_ref: None,
-            schema: None,
             metadata: None,
         }
     }
@@ -409,8 +450,6 @@ impl CapArgument {
             position: None,
             validation,
             default_value: None,
-            schema_ref: None,
-            schema: None,
             metadata: None,
         }
     }
@@ -425,8 +464,6 @@ impl CapArgument {
             position: None,
             validation: ArgumentValidation::default(),
             default_value: Some(default),
-            schema_ref: None,
-            schema: None,
             metadata: None,
         }
     }
@@ -440,8 +477,6 @@ impl CapArgument {
         position: Option<usize>,
         validation: ArgumentValidation,
         default: Option<serde_json::Value>,
-        schema_ref: Option<String>,
-        schema: Option<serde_json::Value>,
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
@@ -452,43 +487,74 @@ impl CapArgument {
             position,
             validation,
             default_value: default,
-            schema_ref,
-            schema,
             metadata,
         }
     }
 
-    /// Parse the MediaSpec from the media_spec string
-    pub fn parsed_media_spec(&self) -> Result<MediaSpec, crate::media_spec::MediaSpecError> {
-        MediaSpec::parse(&self.media_spec)
+    /// Get the spec ID
+    pub fn spec_id(&self) -> &str {
+        &self.media_spec
     }
 
-    /// Check if argument is binary based on media_spec
-    pub fn is_binary(&self) -> bool {
-        self.parsed_media_spec()
+    /// Resolve this argument's media spec using the provided media_specs table
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    ///
+    /// # Errors
+    /// Returns `MediaSpecError::UnresolvableSpecId` if the spec ID cannot be resolved.
+    pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_spec_id(&self.media_spec, media_specs)
+    }
+
+    /// Check if argument is binary based on resolved media spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
+        self.resolve(media_specs)
             .map(|ms| ms.is_binary())
             .unwrap_or(false)
     }
 
-    /// Check if argument is JSON based on media_spec
-    pub fn is_json(&self) -> bool {
-        self.parsed_media_spec()
+    /// Check if argument is JSON based on resolved media spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
+        self.resolve(media_specs)
             .map(|ms| ms.is_json())
             .unwrap_or(false)
     }
 
-    /// Get the content type from media_spec
-    pub fn content_type(&self) -> Option<String> {
-        self.parsed_media_spec()
-            .map(|ms| ms.content_type)
+    /// Get the media type from resolved spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
+        self.resolve(media_specs)
+            .map(|ms| ms.media_type)
             .ok()
     }
 
-    /// Get the profile URL from media_spec
-    pub fn profile(&self) -> Option<String> {
-        self.parsed_media_spec()
+    /// Get the profile URI from resolved spec
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
+        self.resolve(media_specs)
             .ok()
-            .and_then(|ms| ms.profile)
+            .and_then(|ms| ms.profile_uri)
+    }
+
+    /// Get the schema from resolved spec (if any)
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<serde_json::Value> {
+        self.resolve(media_specs)
+            .ok()
+            .and_then(|ms| ms.schema)
     }
 }
 
@@ -593,6 +659,7 @@ impl Cap {
             cap_description: None,
             metadata: HashMap::new(),
             command,
+            media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
@@ -608,6 +675,7 @@ impl Cap {
             cap_description: Some(description),
             metadata: HashMap::new(),
             command,
+            media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
@@ -628,6 +696,7 @@ impl Cap {
             cap_description: None,
             metadata,
             command,
+            media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
@@ -649,13 +718,14 @@ impl Cap {
             cap_description: Some(description),
             metadata,
             command,
+            media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
             accepts_stdin: false,
             metadata_json: None,
         }
     }
-    
+
     /// Create a new cap with arguments
     pub fn with_arguments(
         urn: CapUrn,
@@ -669,14 +739,16 @@ impl Cap {
             cap_description: None,
             metadata: HashMap::new(),
             command,
+            media_specs: HashMap::new(),
             arguments,
             output: None,
             accepts_stdin: false,
             metadata_json: None,
         }
     }
-    
+
     /// Create a new cap with command (deprecated - use new() instead)
+    #[deprecated(note = "use new() instead")]
     pub fn with_command(
         urn: CapUrn,
         title: String,
@@ -684,7 +756,7 @@ impl Cap {
     ) -> Self {
         Self::new(urn, title, command)
     }
-    
+
     /// Create a fully specified cap
     pub fn with_full_definition(
         urn: CapUrn,
@@ -692,6 +764,7 @@ impl Cap {
         description: Option<String>,
         metadata: HashMap<String, String>,
         command: String,
+        media_specs: HashMap<String, MediaSpecDef>,
         arguments: CapArguments,
         output: Option<CapOutput>,
         metadata_json: Option<serde_json::Value>,
@@ -702,11 +775,32 @@ impl Cap {
             cap_description: description,
             metadata,
             command,
+            media_specs,
             arguments,
             output,
             accepts_stdin: false,
             metadata_json,
         }
+    }
+
+    /// Get the media_specs table
+    pub fn get_media_specs(&self) -> &HashMap<String, MediaSpecDef> {
+        &self.media_specs
+    }
+
+    /// Set media_specs
+    pub fn set_media_specs(&mut self, media_specs: HashMap<String, MediaSpecDef>) {
+        self.media_specs = media_specs;
+    }
+
+    /// Add a media spec definition
+    pub fn add_media_spec(&mut self, spec_id: impl Into<String>, def: MediaSpecDef) {
+        self.media_specs.insert(spec_id.into(), def);
+    }
+
+    /// Resolve a spec ID using this cap's media_specs
+    pub fn resolve_spec_id(&self, spec_id: &str) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_spec_id(spec_id, &self.media_specs)
     }
     
     /// Check if this cap matches a request string

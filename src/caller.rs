@@ -2,7 +2,8 @@
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
-use crate::{CapUrn, ResponseWrapper, Cap, MediaSpec};
+use crate::{CapUrn, ResponseWrapper, Cap};
+use crate::media_spec::resolve_spec_id;
 
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
@@ -123,14 +124,18 @@ impl CapCaller {
     }
 
     /// Check if this cap produces binary output based on 'out' tag
+    ///
+    /// The 'out' tag contains a spec ID that needs to be resolved using the
+    /// cap definition's media_specs table.
     fn is_binary_cap(&self) -> bool {
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
 
         match cap_urn.get_tag("out") {
-            Some(spec) => {
-                MediaSpec::parse(spec)
-                    .map(|ms| ms.is_binary())
+            Some(spec_id) => {
+                // Resolve the spec ID using the cap's media_specs
+                resolve_spec_id(spec_id, self.cap_definition.get_media_specs())
+                    .map(|resolved| resolved.is_binary())
                     .unwrap_or(false)
             }
             None => false
@@ -138,14 +143,18 @@ impl CapCaller {
     }
 
     /// Check if this cap should produce JSON output based on 'out' tag
+    ///
+    /// The 'out' tag contains a spec ID that needs to be resolved using the
+    /// cap definition's media_specs table.
     fn is_json_cap(&self) -> bool {
         let cap_urn = CapUrn::from_string(&self.cap)
             .expect("Invalid cap URN");
 
         match cap_urn.get_tag("out") {
-            Some(spec) => {
-                MediaSpec::parse(spec)
-                    .map(|ms| ms.is_json())
+            Some(spec_id) => {
+                // Resolve the spec ID using the cap's media_specs
+                resolve_spec_id(spec_id, self.cap_definition.get_media_specs())
+                    .map(|resolved| resolved.is_json())
                     .unwrap_or(false)
             }
             // Default to text/plain (not JSON) if no 'out' tag is specified
@@ -212,6 +221,8 @@ impl CapCaller {
     /// Basic output validation
     /// Full async validation with ProfileSchemaRegistry should be done at a higher level
     fn validate_output_basic(&self, response: &ResponseWrapper) -> Result<()> {
+        let media_specs = self.cap_definition.get_media_specs();
+
         // For text/JSON outputs, just check it's parseable if JSON expected
         if let Ok(text) = response.as_string() {
             if self.is_json_cap() {
@@ -222,7 +233,7 @@ impl CapCaller {
         } else {
             // For binary outputs, validate that the cap expects binary output via media_spec
             if let Some(output_def) = self.cap_definition.get_output() {
-                if !output_def.is_binary() {
+                if !output_def.is_binary(media_specs) {
                     return Err(anyhow::anyhow!(
                         "Cap {} expects non-binary output (media_spec: {}) but received binary data",
                         self.cap,

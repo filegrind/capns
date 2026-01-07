@@ -1,10 +1,11 @@
 //! JSON Schema validation for capability arguments and outputs
 //!
 //! Provides comprehensive validation of JSON data against JSON Schema Draft-07.
-//! This module handles explicit embedded schemas and schema_ref fields.
-//! Profile-based validation (from media_spec) is handled by ProfileSchemaRegistry.
+//! Schemas are now located in the `media_specs` table of the cap definition,
+//! not in inline fields on arguments/outputs.
 
 use crate::{Cap, CapArgument, CapOutput};
+use crate::media_spec::resolve_spec_id;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -22,26 +23,20 @@ pub enum SchemaValidationError {
     #[error("Validation failed for output: {details}")]
     OutputValidation { details: String },
 
-    #[error("Schema not found for argument '{argument}'")]
-    SchemaNotFound { argument: String },
-
-    #[error("Schema reference '{schema_ref}' could not be resolved")]
-    SchemaRefNotResolved { schema_ref: String },
+    #[error("Spec ID '{spec_id}' could not be resolved: {error}")]
+    SpecIdNotResolved { spec_id: String, error: String },
 
     #[error("Invalid JSON value for validation")]
     InvalidJson,
 }
 
-/// Schema validator that handles both embedded schemas and schema references
+/// Schema validator that resolves schemas from media_specs
 pub struct SchemaValidator {
     /// Cache of compiled schemas for performance
     schema_cache: HashMap<String, JSONSchema>,
-
-    /// External schema resolver (for schema_ref support)
-    schema_resolver: Option<Box<dyn SchemaResolver>>,
 }
 
-/// Trait for resolving external schema references
+/// Trait for resolving external schema references (for legacy/external schemas)
 pub trait SchemaResolver: Send + Sync {
     /// Resolve a schema reference to a JSON schema
     fn resolve_schema(&self, schema_ref: &str) -> Result<JsonValue, SchemaValidationError>;
@@ -52,15 +47,6 @@ impl SchemaValidator {
     pub fn new() -> Self {
         Self {
             schema_cache: HashMap::new(),
-            schema_resolver: None,
-        }
-    }
-
-    /// Create a schema validator with an external schema resolver
-    pub fn with_resolver(resolver: Box<dyn SchemaResolver>) -> Self {
-        Self {
-            schema_cache: HashMap::new(),
-            schema_resolver: Some(resolver),
         }
     }
 
@@ -71,58 +57,67 @@ impl SchemaValidator {
         arguments: &[JsonValue],
     ) -> Result<(), SchemaValidationError> {
         let cap_args = &cap.arguments;
+        let media_specs = cap.get_media_specs();
+
         // Validate required arguments
         for (index, arg_def) in cap_args.required.iter().enumerate() {
             if let Some(position) = arg_def.position {
                 if let Some(arg_value) = arguments.get(position) {
-                    self.validate_argument(arg_def, arg_value)?;
+                    self.validate_argument_with_cap(cap, arg_def, arg_value)?;
                 }
             } else if index < arguments.len() {
-                self.validate_argument(arg_def, &arguments[index])?;
+                self.validate_argument_with_cap(cap, arg_def, &arguments[index])?;
             }
         }
-
-        // Note: Optional arguments validation would need more complex logic
-        // to handle named arguments or default values
 
         Ok(())
     }
 
-    /// Validate a single argument against its explicit schema (if any)
-    /// This only validates against schema/schema_ref fields, not media_spec profile
-    pub fn validate_argument(
+    /// Validate a single argument against its schema from media_specs
+    pub fn validate_argument_with_cap(
         &mut self,
+        cap: &Cap,
         arg_def: &CapArgument,
         value: &JsonValue,
     ) -> Result<(), SchemaValidationError> {
-        // Only validate if we have an explicit schema or schema_ref
-        let schema = if let Some(embedded_schema) = &arg_def.schema {
-            embedded_schema.clone()
-        } else if let Some(schema_ref) = &arg_def.schema_ref {
-            self.resolve_schema_ref(schema_ref)?
-        } else {
-            // No explicit schema specified, skip validation
-            return Ok(());
+        let media_specs = cap.get_media_specs();
+
+        // Resolve the spec ID to get the schema
+        let resolved = resolve_spec_id(&arg_def.media_spec, media_specs)
+            .map_err(|e| SchemaValidationError::SpecIdNotResolved {
+                spec_id: arg_def.media_spec.clone(),
+                error: e.to_string(),
+            })?;
+
+        // If no schema in the resolved spec, skip validation
+        let schema = match resolved.schema {
+            Some(s) => s,
+            None => return Ok(()),
         };
 
         self.validate_value_against_schema(&arg_def.name, value, &schema)
     }
 
-    /// Validate output against its explicit schema (if any)
-    /// This only validates against schema/schema_ref fields, not media_spec profile
-    pub fn validate_output(
+    /// Validate output against its schema from media_specs
+    pub fn validate_output_with_cap(
         &mut self,
+        cap: &Cap,
         output_def: &CapOutput,
         value: &JsonValue,
     ) -> Result<(), SchemaValidationError> {
-        // Only validate if we have an explicit schema or schema_ref
-        let schema = if let Some(embedded_schema) = &output_def.schema {
-            embedded_schema.clone()
-        } else if let Some(schema_ref) = &output_def.schema_ref {
-            self.resolve_schema_ref(schema_ref)?
-        } else {
-            // No explicit schema specified, skip validation
-            return Ok(());
+        let media_specs = cap.get_media_specs();
+
+        // Resolve the spec ID to get the schema
+        let resolved = resolve_spec_id(&output_def.media_spec, media_specs)
+            .map_err(|e| SchemaValidationError::SpecIdNotResolved {
+                spec_id: output_def.media_spec.clone(),
+                error: e.to_string(),
+            })?;
+
+        // If no schema in the resolved spec, skip validation
+        let schema = match resolved.schema {
+            Some(s) => s,
+            None => return Ok(()),
         };
 
         self.validate_value_against_schema("output", value, &schema)
@@ -169,17 +164,6 @@ impl SchemaValidator {
 
         Ok(())
     }
-
-    /// Resolve a schema reference using the configured resolver
-    fn resolve_schema_ref(&self, schema_ref: &str) -> Result<JsonValue, SchemaValidationError> {
-        if let Some(resolver) = &self.schema_resolver {
-            resolver.resolve_schema(schema_ref)
-        } else {
-            Err(SchemaValidationError::SchemaRefNotResolved {
-                schema_ref: schema_ref.to_string(),
-            })
-        }
-    }
 }
 
 impl Default for SchemaValidator {
@@ -204,13 +188,15 @@ impl SchemaResolver for FileSchemaResolver {
     fn resolve_schema(&self, schema_ref: &str) -> Result<JsonValue, SchemaValidationError> {
         let schema_path = self.base_path.join(schema_ref);
         let schema_content = std::fs::read_to_string(&schema_path)
-            .map_err(|_| SchemaValidationError::SchemaRefNotResolved {
-                schema_ref: schema_ref.to_string(),
+            .map_err(|_| SchemaValidationError::SpecIdNotResolved {
+                spec_id: schema_ref.to_string(),
+                error: "File not found".to_string(),
             })?;
 
         serde_json::from_str(&schema_content)
-            .map_err(|_| SchemaValidationError::SchemaRefNotResolved {
-                schema_ref: schema_ref.to_string(),
+            .map_err(|_| SchemaValidationError::SpecIdNotResolved {
+                spec_id: schema_ref.to_string(),
+                error: "Invalid JSON".to_string(),
             })
     }
 }
@@ -218,7 +204,9 @@ impl SchemaResolver for FileSchemaResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::standard::media::{MEDIA_JSON_OBJECT, MEDIA_STRING};
+    use crate::standard::media::{SPEC_ID_OBJ, SPEC_ID_STR};
+    use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
+    use crate::CapUrn;
     use serde_json::json;
 
     #[test]
@@ -234,21 +222,27 @@ mod tests {
             "required": ["name"]
         });
 
-        let arg = CapArgument {
-            name: "user_data".to_string(),
-            media_spec: MEDIA_JSON_OBJECT.to_string(),
-            arg_description: "User data".to_string(),
-            cli_flag: "--user-data".to_string(),
-            position: Some(0),
-            validation: Default::default(),
-            default_value: None,
-            schema_ref: None,
-            schema: Some(schema),
-            metadata: None,
-        };
+        // Create cap with media_specs containing the schema
+        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
+        cap.add_media_spec(
+            "my:user-data.v1",
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "application/json".to_string(),
+                profile_uri: "https://example.com/schema/user-data".to_string(),
+                schema: Some(schema),
+            }),
+        );
+
+        let arg = CapArgument::new(
+            "user_data",
+            "my:user-data.v1",
+            "User data",
+            "--user-data",
+        );
 
         let valid_value = json!({"name": "John", "age": 30});
-        assert!(validator.validate_argument(&arg, &valid_value).is_ok());
+        assert!(validator.validate_argument_with_cap(&cap, &arg, &valid_value).is_ok());
     }
 
     #[test]
@@ -263,21 +257,27 @@ mod tests {
             "required": ["name"]
         });
 
-        let arg = CapArgument {
-            name: "user_data".to_string(),
-            media_spec: MEDIA_JSON_OBJECT.to_string(),
-            arg_description: "User data".to_string(),
-            cli_flag: "--user-data".to_string(),
-            position: Some(0),
-            validation: Default::default(),
-            default_value: None,
-            schema_ref: None,
-            schema: Some(schema),
-            metadata: None,
-        };
+        // Create cap with media_specs containing the schema
+        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
+        cap.add_media_spec(
+            "my:user-data.v1",
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "application/json".to_string(),
+                profile_uri: "https://example.com/schema/user-data".to_string(),
+                schema: Some(schema),
+            }),
+        );
+
+        let arg = CapArgument::new(
+            "user_data",
+            "my:user-data.v1",
+            "User data",
+            "--user-data",
+        );
 
         let invalid_value = json!({"age": 30}); // Missing required "name"
-        assert!(validator.validate_argument(&arg, &invalid_value).is_err());
+        assert!(validator.validate_argument_with_cap(&cap, &arg, &invalid_value).is_err());
     }
 
     #[test]
@@ -293,39 +293,68 @@ mod tests {
             "required": ["result"]
         });
 
-        let output = CapOutput {
-            media_spec: MEDIA_JSON_OBJECT.to_string(),
-            output_description: "Query result".to_string(),
-            schema_ref: None,
-            schema: Some(schema),
-            validation: Default::default(),
-            metadata: None,
-        };
+        // Create cap with media_specs containing the schema
+        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
+        cap.add_media_spec(
+            "my:query-result.v1",
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "application/json".to_string(),
+                profile_uri: "https://example.com/schema/query-result".to_string(),
+                schema: Some(schema),
+            }),
+        );
+
+        let output = CapOutput::new("my:query-result.v1", "Query result");
 
         let valid_value = json!({"result": "success", "timestamp": "2023-01-01T00:00:00Z"});
-        assert!(validator.validate_output(&output, &valid_value).is_ok());
+        assert!(validator.validate_output_with_cap(&cap, &output, &valid_value).is_ok());
     }
 
     #[test]
-    fn test_skip_validation_without_explicit_schema() {
+    fn test_skip_validation_without_schema() {
         let mut validator = SchemaValidator::new();
 
-        // Argument without explicit schema should not be validated by this module
-        // (profile validation is handled by ProfileSchemaRegistry)
-        let arg = CapArgument {
-            name: "simple_string".to_string(),
-            media_spec: MEDIA_STRING.to_string(),
-            arg_description: "Simple string".to_string(),
-            cli_flag: "--string".to_string(),
-            position: Some(0),
-            validation: Default::default(),
-            default_value: None,
-            schema_ref: None,
-            schema: None,
-            metadata: None,
-        };
+        // Create cap - using built-in spec ID which has no local schema
+        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
+
+        // Argument using built-in spec ID (no local schema)
+        let arg = CapArgument::new(
+            "simple_string",
+            SPEC_ID_STR,
+            "Simple string",
+            "--string",
+        );
 
         let value = json!("any string value");
-        assert!(validator.validate_argument(&arg, &value).is_ok());
+        // Should succeed because built-in specs don't have local schemas
+        assert!(validator.validate_argument_with_cap(&cap, &arg, &value).is_ok());
+    }
+
+    #[test]
+    fn test_unresolvable_spec_id_fails_hard() {
+        let mut validator = SchemaValidator::new();
+
+        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
+
+        // Argument with unknown spec ID
+        let arg = CapArgument::new(
+            "unknown",
+            "unknown:spec.v1", // Not in media_specs and not a built-in
+            "Unknown",
+            "--unknown",
+        );
+
+        let value = json!("test");
+        let result = validator.validate_argument_with_cap(&cap, &arg, &value);
+        assert!(result.is_err());
+
+        if let Err(SchemaValidationError::SpecIdNotResolved { spec_id, .. }) = result {
+            assert_eq!(spec_id, "unknown:spec.v1");
+        } else {
+            panic!("Expected SpecIdNotResolved error");
+        }
     }
 }

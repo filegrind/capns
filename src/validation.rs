@@ -2,9 +2,11 @@
 //!
 //! This module provides strict validation of inputs and outputs against
 //! cap schemas, ensuring adherence to advertised specifications.
+//! Uses spec ID resolution to get media types and schemas from the media_specs table.
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
-use crate::{Cap, CapArgument, CapOutput, MediaSpec};
+use crate::{Cap, CapArgument, CapOutput};
+use crate::media_spec::resolve_spec_id;
 use crate::profile_schema_cache::ProfileSchemaRegistry;
 use serde_json::Value;
 use std::fmt;
@@ -253,14 +255,11 @@ impl InputValidator {
         arg_def: &CapArgument,
         value: &Value,
     ) -> Result<(), ValidationError> {
-        // Type validation via MediaSpec profile
+        // Type validation via resolved spec (includes local schema validation if present)
         self.validate_argument_type(cap, arg_def, value).await?;
 
-        // Validation rules
+        // Validation rules (min/max, length, pattern, allowed_values)
         self.validate_argument_rules(cap, arg_def, value)?;
-
-        // Schema validation for explicit schemas
-        self.validate_argument_schema(cap, arg_def, value).await?;
 
         Ok(())
     }
@@ -272,9 +271,10 @@ impl InputValidator {
         value: &Value,
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
+        let media_specs = cap.get_media_specs();
 
-        // Parse the MediaSpec from the argument definition
-        let media_spec = MediaSpec::parse(&arg_def.media_spec)
+        // Resolve the spec ID from the argument definition
+        let resolved = resolve_spec_id(&arg_def.media_spec, media_specs)
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
                 field_name: arg_def.name.clone(),
@@ -282,7 +282,7 @@ impl InputValidator {
             })?;
 
         // For binary media types, we expect a base64-encoded string - no profile validation
-        if media_spec.is_binary() {
+        if resolved.is_binary() {
             if !matches!(value, Value::String(_)) {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
@@ -295,8 +295,23 @@ impl InputValidator {
             return Ok(());
         }
 
-        // For JSON types, validate against profile schema
-        if let Some(ref profile) = media_spec.profile {
+        // First, try to use local schema from resolved spec
+        if let Some(ref schema) = resolved.schema {
+            // Validate against the local schema
+            if let Err(errors) = self.validate_with_local_schema(schema, value) {
+                return Err(ValidationError::InvalidArgumentType {
+                    cap_urn,
+                    argument_name: arg_def.name.clone(),
+                    expected_media_spec: arg_def.media_spec.clone(),
+                    actual_value: value.clone(),
+                    schema_errors: errors,
+                });
+            }
+            return Ok(());
+        }
+
+        // Otherwise, validate against profile schema (via ProfileSchemaRegistry)
+        if let Some(ref profile) = resolved.profile_uri {
             if let Err(errors) = self.schema_registry.validate(profile, value).await {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
@@ -307,9 +322,29 @@ impl InputValidator {
                 });
             }
         }
-        // No profile means any JSON value is valid for that content-type
+        // No profile or schema means any JSON value is valid for that media type
 
         Ok(())
+    }
+
+    /// Validate a value against a local JSON schema
+    fn validate_with_local_schema(&self, schema: &Value, value: &Value) -> Result<(), Vec<String>> {
+        // Use jsonschema crate for validation
+        let compiled = match jsonschema::JSONSchema::compile(schema) {
+            Ok(c) => c,
+            Err(e) => return Err(vec![format!("Failed to compile schema: {}", e)]),
+        };
+
+        let result = compiled.validate(value);
+        match result {
+            Ok(_) => Ok(()),
+            Err(errors) => {
+                let error_strings: Vec<String> = errors
+                    .map(|e| format!("{}: {}", e.instance_path, e))
+                    .collect();
+                Err(error_strings)
+            }
+        }
     }
 
     fn validate_argument_rules(
@@ -433,39 +468,6 @@ impl InputValidator {
 
         Ok(())
     }
-
-    async fn validate_argument_schema(
-        &self,
-        cap: &Cap,
-        arg_def: &CapArgument,
-        value: &Value,
-    ) -> Result<(), ValidationError> {
-        // Only validate if there's an explicit schema or schema_ref
-        if arg_def.schema.is_none() && arg_def.schema_ref.is_none() {
-            return Ok(());
-        }
-
-        // Use the schema validation module for explicit schemas
-        let mut schema_validator = crate::schema_validation::SchemaValidator::new();
-
-        match schema_validator.validate_argument(arg_def, value) {
-            Ok(()) => Ok(()),
-            Err(crate::schema_validation::SchemaValidationError::ArgumentValidation { details, .. }) => {
-                Err(ValidationError::SchemaValidationFailed {
-                    cap_urn: cap.urn_string(),
-                    field_name: arg_def.name.clone(),
-                    schema_errors: details,
-                })
-            }
-            Err(err) => {
-                Err(ValidationError::SchemaValidationFailed {
-                    cap_urn: cap.urn_string(),
-                    field_name: arg_def.name.clone(),
-                    schema_errors: err.to_string(),
-                })
-            }
-        }
-    }
 }
 
 /// Output validator using ProfileSchemaRegistry
@@ -493,14 +495,11 @@ impl OutputValidator {
                 issue: "No output definition specified".to_string(),
             })?;
 
-        // Type validation via MediaSpec profile
+        // Type validation via resolved spec (includes local schema validation if present)
         self.validate_output_type(cap, output_def, output).await?;
 
-        // Validation rules
+        // Validation rules (min/max, length, pattern, allowed_values)
         self.validate_output_rules(cap, output_def, output)?;
-
-        // Schema validation for explicit schemas
-        self.validate_output_schema(cap, output_def, output).await?;
 
         Ok(())
     }
@@ -512,9 +511,10 @@ impl OutputValidator {
         value: &Value,
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
+        let media_specs = cap.get_media_specs();
 
-        // Parse the MediaSpec from the output definition
-        let media_spec = MediaSpec::parse(&output_def.media_spec)
+        // Resolve the spec ID from the output definition
+        let resolved = resolve_spec_id(&output_def.media_spec, media_specs)
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
                 field_name: "output".to_string(),
@@ -522,7 +522,7 @@ impl OutputValidator {
             })?;
 
         // For binary media types, we expect a base64-encoded string - no profile validation
-        if media_spec.is_binary() {
+        if resolved.is_binary() {
             if !matches!(value, Value::String(_)) {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
@@ -534,8 +534,22 @@ impl OutputValidator {
             return Ok(());
         }
 
-        // For JSON types, validate against profile schema
-        if let Some(ref profile) = media_spec.profile {
+        // First, try to use local schema from resolved spec
+        if let Some(ref schema) = resolved.schema {
+            // Validate against the local schema
+            if let Err(errors) = self.validate_with_local_schema(schema, value) {
+                return Err(ValidationError::InvalidOutputType {
+                    cap_urn,
+                    expected_media_spec: output_def.media_spec.clone(),
+                    actual_value: value.clone(),
+                    schema_errors: errors,
+                });
+            }
+            return Ok(());
+        }
+
+        // Otherwise, validate against profile schema (via ProfileSchemaRegistry)
+        if let Some(ref profile) = resolved.profile_uri {
             if let Err(errors) = self.schema_registry.validate(profile, value).await {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
@@ -545,9 +559,29 @@ impl OutputValidator {
                 });
             }
         }
-        // No profile means any JSON value is valid for that content-type
+        // No profile or schema means any JSON value is valid for that media type
 
         Ok(())
+    }
+
+    /// Validate a value against a local JSON schema
+    fn validate_with_local_schema(&self, schema: &Value, value: &Value) -> Result<(), Vec<String>> {
+        // Use jsonschema crate for validation
+        let compiled = match jsonschema::JSONSchema::compile(schema) {
+            Ok(c) => c,
+            Err(e) => return Err(vec![format!("Failed to compile schema: {}", e)]),
+        };
+
+        let result = compiled.validate(value);
+        match result {
+            Ok(_) => Ok(()),
+            Err(errors) => {
+                let error_strings: Vec<String> = errors
+                    .map(|e| format!("{}: {}", e.instance_path, e))
+                    .collect();
+                Err(error_strings)
+            }
+        }
     }
 
     fn validate_output_rules(
@@ -636,39 +670,6 @@ impl OutputValidator {
 
         Ok(())
     }
-
-    async fn validate_output_schema(
-        &self,
-        cap: &Cap,
-        output_def: &CapOutput,
-        value: &Value,
-    ) -> Result<(), ValidationError> {
-        // Only validate if there's an explicit schema or schema_ref
-        if output_def.schema.is_none() && output_def.schema_ref.is_none() {
-            return Ok(());
-        }
-
-        // Use the schema validation module for explicit schemas
-        let mut schema_validator = crate::schema_validation::SchemaValidator::new();
-
-        match schema_validator.validate_output(output_def, value) {
-            Ok(()) => Ok(()),
-            Err(crate::schema_validation::SchemaValidationError::OutputValidation { details }) => {
-                Err(ValidationError::SchemaValidationFailed {
-                    cap_urn: cap.urn_string(),
-                    field_name: "output".to_string(),
-                    schema_errors: details,
-                })
-            }
-            Err(err) => {
-                Err(ValidationError::SchemaValidationFailed {
-                    cap_urn: cap.urn_string(),
-                    field_name: "output".to_string(),
-                    schema_errors: err.to_string(),
-                })
-            }
-        }
-    }
 }
 
 /// Cap schema validator
@@ -678,6 +679,7 @@ impl CapValidator {
     /// Validate a cap definition itself
     pub fn validate_cap(cap: &Cap) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
+        let media_specs = cap.get_media_specs();
 
         // Validate that required arguments don't have default values
         for arg in &cap.arguments.required {
@@ -716,9 +718,9 @@ impl CapValidator {
             }
         }
 
-        // Validate that all media_specs are parseable
+        // Validate that all media_spec IDs can be resolved
         for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
-            MediaSpec::parse(&arg.media_spec)
+            resolve_spec_id(&arg.media_spec, media_specs)
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
                     field_name: arg.name.clone(),
@@ -727,7 +729,7 @@ impl CapValidator {
         }
 
         if let Some(output) = cap.get_output() {
-            MediaSpec::parse(&output.media_spec)
+            resolve_spec_id(&output.media_spec, media_specs)
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
                     field_name: "output".to_string(),
@@ -814,7 +816,7 @@ impl Default for SchemaValidator {
 mod tests {
     use super::*;
     use crate::{CapUrn, CapArguments};
-    use crate::standard::media::MEDIA_STRING;
+    use crate::standard::media::{SPEC_ID_STR, SPEC_ID_INT};
     use serde_json::json;
 
     #[tokio::test]
@@ -822,13 +824,13 @@ mod tests {
         let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
         let validator = InputValidator::new(schema_registry);
 
-        let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
+        let urn = CapUrn::from_string("cap:type=test;op=cap").unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
             "file_path",
-            MEDIA_STRING,
+            SPEC_ID_STR,
             "Path to file",
             "--file",
         ));
@@ -845,13 +847,13 @@ mod tests {
         let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
         let validator = InputValidator::new(schema_registry);
 
-        let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
+        let urn = CapUrn::from_string("cap:type=test;op=cap").unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
             "file_path",
-            MEDIA_STRING,
+            SPEC_ID_STR,
             "Path to file",
             "--file",
         ));
@@ -872,18 +874,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_input_validation_wrong_type() {
-        use crate::standard::media::MEDIA_INTEGER;
-
         let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
         let validator = InputValidator::new(schema_registry);
 
-        let urn = CapUrn::from_string("cap:type=test;action=cap").unwrap();
+        let urn = CapUrn::from_string("cap:type=test;op=cap").unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
             "width",
-            MEDIA_INTEGER,
+            SPEC_ID_INT,
             "Width value",
             "--width",
         ));

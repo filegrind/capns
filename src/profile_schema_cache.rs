@@ -16,9 +16,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::standard::media::{
-    PROFILE_STRING, PROFILE_INTEGER, PROFILE_NUMBER, PROFILE_BOOLEAN,
-    PROFILE_JSON_OBJECT, PROFILE_STRING_ARRAY, PROFILE_NUMBER_ARRAY,
-    PROFILE_BOOLEAN_ARRAY, PROFILE_JSON_OBJECT_ARRAY,
+    PROFILE_STR, PROFILE_INT, PROFILE_NUM, PROFILE_BOOL,
+    PROFILE_OBJ, PROFILE_STR_ARRAY, PROFILE_NUM_ARRAY,
+    PROFILE_BOOL_ARRAY, PROFILE_OBJ_ARRAY,
 };
 
 const CACHE_DURATION_HOURS: u64 = 24 * 7; // Cache for 1 week
@@ -27,7 +27,7 @@ const CACHE_DURATION_HOURS: u64 = 24 * 7; // Cache for 1 week
 mod embedded_schemas {
     pub const STR_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/str",
+        "$id": "https://capns.org/schema/str",
         "title": "String",
         "description": "A JSON string value",
         "type": "string"
@@ -35,7 +35,7 @@ mod embedded_schemas {
 
     pub const INT_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/int",
+        "$id": "https://capns.org/schema/int",
         "title": "Integer",
         "description": "A JSON integer value",
         "type": "integer"
@@ -43,7 +43,7 @@ mod embedded_schemas {
 
     pub const NUM_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/num",
+        "$id": "https://capns.org/schema/num",
         "title": "Number",
         "description": "A JSON number value (integer or floating point)",
         "type": "number"
@@ -51,7 +51,7 @@ mod embedded_schemas {
 
     pub const BOOL_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/bool",
+        "$id": "https://capns.org/schema/bool",
         "title": "Boolean",
         "description": "A JSON boolean value (true or false)",
         "type": "boolean"
@@ -59,7 +59,7 @@ mod embedded_schemas {
 
     pub const OBJ_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/obj",
+        "$id": "https://capns.org/schema/obj",
         "title": "Object",
         "description": "A JSON object value",
         "type": "object"
@@ -67,7 +67,7 @@ mod embedded_schemas {
 
     pub const STR_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/str-array",
+        "$id": "https://capns.org/schema/str-array",
         "title": "String Array",
         "description": "A JSON array of string values",
         "type": "array",
@@ -76,7 +76,7 @@ mod embedded_schemas {
 
     pub const NUM_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/num-array",
+        "$id": "https://capns.org/schema/num-array",
         "title": "Number Array",
         "description": "A JSON array of number values",
         "type": "array",
@@ -85,7 +85,7 @@ mod embedded_schemas {
 
     pub const BOOL_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/bool-array",
+        "$id": "https://capns.org/schema/bool-array",
         "title": "Boolean Array",
         "description": "A JSON array of boolean values",
         "type": "array",
@@ -94,7 +94,7 @@ mod embedded_schemas {
 
     pub const OBJ_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schemas/obj-array",
+        "$id": "https://capns.org/schema/obj-array",
         "title": "Object Array",
         "description": "A JSON array of object values",
         "type": "array",
@@ -104,15 +104,15 @@ mod embedded_schemas {
     /// Get all embedded schemas as (profile_url, schema_json) pairs
     pub fn all() -> Vec<(&'static str, &'static str)> {
         vec![
-            (super::PROFILE_STRING, STR_SCHEMA),
-            (super::PROFILE_INTEGER, INT_SCHEMA),
-            (super::PROFILE_NUMBER, NUM_SCHEMA),
-            (super::PROFILE_BOOLEAN, BOOL_SCHEMA),
-            (super::PROFILE_JSON_OBJECT, OBJ_SCHEMA),
-            (super::PROFILE_STRING_ARRAY, STR_ARRAY_SCHEMA),
-            (super::PROFILE_NUMBER_ARRAY, NUM_ARRAY_SCHEMA),
-            (super::PROFILE_BOOLEAN_ARRAY, BOOL_ARRAY_SCHEMA),
-            (super::PROFILE_JSON_OBJECT_ARRAY, OBJ_ARRAY_SCHEMA),
+            (super::PROFILE_STR, STR_SCHEMA),
+            (super::PROFILE_INT, INT_SCHEMA),
+            (super::PROFILE_NUM, NUM_SCHEMA),
+            (super::PROFILE_BOOL, BOOL_SCHEMA),
+            (super::PROFILE_OBJ, OBJ_SCHEMA),
+            (super::PROFILE_STR_ARRAY, STR_ARRAY_SCHEMA),
+            (super::PROFILE_NUM_ARRAY, NUM_ARRAY_SCHEMA),
+            (super::PROFILE_BOOL_ARRAY, BOOL_ARRAY_SCHEMA),
+            (super::PROFILE_OBJ_ARRAY, OBJ_ARRAY_SCHEMA),
         ]
     }
 }
@@ -515,15 +515,15 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Check that embedded schemas are available
-        assert!(registry.schema_exists(PROFILE_STRING));
-        assert!(registry.schema_exists(PROFILE_INTEGER));
-        assert!(registry.schema_exists(PROFILE_NUMBER));
-        assert!(registry.schema_exists(PROFILE_BOOLEAN));
-        assert!(registry.schema_exists(PROFILE_JSON_OBJECT));
-        assert!(registry.schema_exists(PROFILE_STRING_ARRAY));
-        assert!(registry.schema_exists(PROFILE_NUMBER_ARRAY));
-        assert!(registry.schema_exists(PROFILE_BOOLEAN_ARRAY));
-        assert!(registry.schema_exists(PROFILE_JSON_OBJECT_ARRAY));
+        assert!(registry.schema_exists(PROFILE_STR));
+        assert!(registry.schema_exists(PROFILE_INT));
+        assert!(registry.schema_exists(PROFILE_NUM));
+        assert!(registry.schema_exists(PROFILE_BOOL));
+        assert!(registry.schema_exists(PROFILE_OBJ));
+        assert!(registry.schema_exists(PROFILE_STR_ARRAY));
+        assert!(registry.schema_exists(PROFILE_NUM_ARRAY));
+        assert!(registry.schema_exists(PROFILE_BOOL_ARRAY));
+        assert!(registry.schema_exists(PROFILE_OBJ_ARRAY));
     }
 
     #[tokio::test]
@@ -531,10 +531,10 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Valid string
-        assert!(registry.validate(PROFILE_STRING, &json!("hello")).await.is_ok());
+        assert!(registry.validate(PROFILE_STR, &json!("hello")).await.is_ok());
 
         // Invalid: not a string
-        assert!(registry.validate(PROFILE_STRING, &json!(42)).await.is_err());
+        assert!(registry.validate(PROFILE_STR, &json!(42)).await.is_err());
     }
 
     #[tokio::test]
@@ -542,13 +542,13 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Valid integer
-        assert!(registry.validate(PROFILE_INTEGER, &json!(42)).await.is_ok());
+        assert!(registry.validate(PROFILE_INT, &json!(42)).await.is_ok());
 
         // Invalid: not an integer (float)
-        assert!(registry.validate(PROFILE_INTEGER, &json!(3.14)).await.is_err());
+        assert!(registry.validate(PROFILE_INT, &json!(3.14)).await.is_err());
 
         // Invalid: not a number
-        assert!(registry.validate(PROFILE_INTEGER, &json!("hello")).await.is_err());
+        assert!(registry.validate(PROFILE_INT, &json!("hello")).await.is_err());
     }
 
     #[tokio::test]
@@ -556,13 +556,13 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Valid number (integer)
-        assert!(registry.validate(PROFILE_NUMBER, &json!(42)).await.is_ok());
+        assert!(registry.validate(PROFILE_NUM, &json!(42)).await.is_ok());
 
         // Valid number (float)
-        assert!(registry.validate(PROFILE_NUMBER, &json!(3.14)).await.is_ok());
+        assert!(registry.validate(PROFILE_NUM, &json!(3.14)).await.is_ok());
 
         // Invalid: not a number
-        assert!(registry.validate(PROFILE_NUMBER, &json!("hello")).await.is_err());
+        assert!(registry.validate(PROFILE_NUM, &json!("hello")).await.is_err());
     }
 
     #[tokio::test]
@@ -570,11 +570,11 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Valid boolean
-        assert!(registry.validate(PROFILE_BOOLEAN, &json!(true)).await.is_ok());
-        assert!(registry.validate(PROFILE_BOOLEAN, &json!(false)).await.is_ok());
+        assert!(registry.validate(PROFILE_BOOL, &json!(true)).await.is_ok());
+        assert!(registry.validate(PROFILE_BOOL, &json!(false)).await.is_ok());
 
         // Invalid: not a boolean
-        assert!(registry.validate(PROFILE_BOOLEAN, &json!("true")).await.is_err());
+        assert!(registry.validate(PROFILE_BOOL, &json!("true")).await.is_err());
     }
 
     #[tokio::test]
@@ -582,10 +582,10 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Valid object
-        assert!(registry.validate(PROFILE_JSON_OBJECT, &json!({"key": "value"})).await.is_ok());
+        assert!(registry.validate(PROFILE_OBJ, &json!({"key": "value"})).await.is_ok());
 
         // Invalid: not an object
-        assert!(registry.validate(PROFILE_JSON_OBJECT, &json!([1, 2, 3])).await.is_err());
+        assert!(registry.validate(PROFILE_OBJ, &json!([1, 2, 3])).await.is_err());
     }
 
     #[tokio::test]
@@ -593,13 +593,13 @@ mod tests {
         let registry = ProfileSchemaRegistry::new().await.unwrap();
 
         // Valid string array
-        assert!(registry.validate(PROFILE_STRING_ARRAY, &json!(["a", "b", "c"])).await.is_ok());
+        assert!(registry.validate(PROFILE_STR_ARRAY, &json!(["a", "b", "c"])).await.is_ok());
 
         // Invalid: contains non-strings
-        assert!(registry.validate(PROFILE_STRING_ARRAY, &json!(["a", 1, "c"])).await.is_err());
+        assert!(registry.validate(PROFILE_STR_ARRAY, &json!(["a", 1, "c"])).await.is_err());
 
         // Invalid: not an array
-        assert!(registry.validate(PROFILE_STRING_ARRAY, &json!("hello")).await.is_err());
+        assert!(registry.validate(PROFILE_STR_ARRAY, &json!("hello")).await.is_err());
     }
 
     #[tokio::test]
@@ -613,8 +613,8 @@ mod tests {
 
     #[test]
     fn test_is_embedded_profile() {
-        assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_STRING));
-        assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_INTEGER));
+        assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_STR));
+        assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_INT));
         assert!(!ProfileSchemaRegistry::is_embedded_profile("https://example.com/custom"));
     }
 }
