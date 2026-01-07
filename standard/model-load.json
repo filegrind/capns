@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model identifier or path to load",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "device",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Device to load model on",
         "cli_flag": "--device",
         "default_value": "cpu",
@@ -42,7 +42,7 @@
       },
       {
         "name": "precision",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model precision/quantization level",
         "cli_flag": "--precision",
         "default_value": "float32",

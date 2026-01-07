@@ -4,7 +4,7 @@
       "op": "multiplechoice",
       "language": "en",
       "type": "constrained",
-      "in": "capns:ms:str.v1",
+      "in": "std:str.v1",
       "out": "capns:llm_inference-output.v1"
     }
   },
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "query",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Logical query or decision problem",
         "cli_flag": "--query",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "context",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Context and facts for logical reasoning",
         "cli_flag": "--context",
         "validation": {
@@ -39,7 +39,7 @@
       },
       {
         "name": "decision_type",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Type of logical decision required",
         "cli_flag": "--decision-type",
         "default_value": "binary",
@@ -55,7 +55,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "capns:ms:num.v1",
+        "media_spec": "std:num.v1",
         "arg_description": "Maximum tokens for reasoning output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -66,14 +66,14 @@
       },
       {
         "name": "require_explanation",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Whether to include reasoning explanation",
         "cli_flag": "--require-explanation",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",

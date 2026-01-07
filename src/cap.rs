@@ -11,7 +11,7 @@
 //!
 //! ```json
 //! {
-//!   "urn": { "tags": { "op": "conversation", "in": "capns:ms:str.v1", "out": "my:output.v1" } },
+//!   "urn": { "tags": { "op": "conversation", "in": "std:str.v1", "out": "my:output.v1" } },
 //!   "media_specs": {
 //!     "my:output.v1": {
 //!       "media_type": "application/json",
@@ -20,7 +20,7 @@
 //!     }
 //!   },
 //!   "arguments": {
-//!     "required": [{ "name": "input", "media_spec": "capns:ms:str.v1", ... }]
+//!     "required": [{ "name": "input", "media_spec": "std:str.v1", ... }]
 //!   },
 //!   "output": { "media_spec": "my:output.v1", ... }
 //! }
@@ -55,14 +55,14 @@ pub struct ArgumentValidation {
 
 /// Cap argument definition
 ///
-/// The `media_spec` field contains a spec ID (e.g., "capns:ms:str.v1") that
+/// The `media_spec` field contains a spec ID (e.g., "std:str.v1") that
 /// references a definition in the cap's `media_specs` table or a built-in primitive.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapArgument {
     pub name: String,
 
     /// Spec ID referencing a media spec definition
-    /// e.g., "capns:ms:str.v1", "capns:ms:int.v1", or a custom spec ID
+    /// e.g., "std:str.v1", "std:int.v1", or a custom spec ID
     pub media_spec: String,
 
     pub arg_description: String,
@@ -108,13 +108,13 @@ pub struct CapArguments {
 
 /// Output definition
 ///
-/// The `media_spec` field contains a spec ID (e.g., "capns:ms:obj.v1") that
+/// The `media_spec` field contains a spec ID (e.g., "std:obj.v1") that
 /// references a definition in the cap's `media_specs` table or a built-in primitive.
 /// Any output schema should be defined in the media_specs entry, not inline here.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
     /// Spec ID referencing a media spec definition
-    /// e.g., "capns:ms:obj.v1" or a custom spec ID like "my:output-spec.v1"
+    /// e.g., "std:obj.v1" or a custom spec ID like "my:output-spec.v1"
     pub media_spec: String,
 
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
@@ -131,7 +131,7 @@ impl CapOutput {
     /// Create a new output definition with spec ID
     ///
     /// # Arguments
-    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "capns:ms:obj.v1")
+    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "std:obj.v1")
     /// * `description` - Human-readable description of the output
     pub fn new(media_spec: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
@@ -410,7 +410,7 @@ impl CapArgument {
     ///
     /// # Arguments
     /// * `name` - Argument name
-    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "capns:ms:str.v1")
+    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "std:str.v1")
     /// * `description` - Human-readable description
     /// * `cli_flag` - CLI flag for this argument (e.g., "--input")
     pub fn new(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>) -> Self {

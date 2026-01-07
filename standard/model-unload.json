@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model identifier or handle to unload",
         "cli_flag": "--model",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "force",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Force unload even if model is in use",
         "cli_flag": "--force",
         "default_value": false

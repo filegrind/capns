@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "operation",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Management operation to perform",
         "cli_flag": "--operation",
         "position": 0,
@@ -32,7 +32,7 @@
     "optional": [
       {
         "name": "model",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model identifier or path",
         "cli_flag": "--model",
         "validation": {
@@ -41,7 +41,7 @@
       },
       {
         "name": "format",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Output format for information display",
         "cli_flag": "--format",
         "default_value": "json",

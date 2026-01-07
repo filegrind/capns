@@ -4,7 +4,7 @@
       "op": "codegeneration",
       "language": "en",
       "type": "constrained",
-      "in": "capns:ms:str.v1",
+      "in": "std:str.v1",
       "out": "capns:llm_inference-output.v1"
     }
   },
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "prompt",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Code generation prompt or specification",
         "cli_flag": "--prompt",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Programming language for code generation",
         "cli_flag": "--language",
         "default_value": "rust",
@@ -58,7 +58,7 @@
       },
       {
         "name": "context",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Existing code context or codebase information",
         "cli_flag": "--context",
         "validation": {
@@ -67,7 +67,7 @@
       },
       {
         "name": "style",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Coding style or framework preferences",
         "cli_flag": "--style",
         "validation": {
@@ -76,7 +76,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "capns:ms:num.v1",
+        "media_spec": "std:num.v1",
         "arg_description": "Maximum tokens for generated code",
         "cli_flag": "--max-tokens",
         "default_value": 4096,
@@ -87,21 +87,21 @@
       },
       {
         "name": "include_tests",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Whether to include unit tests",
         "cli_flag": "--include-tests",
         "default_value": false
       },
       {
         "name": "include_comments",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Whether to include code comments",
         "cli_flag": "--include-comments",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model spec to use for code generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",

@@ -4,7 +4,7 @@
       "op": "query_structured",
       "language": "en",
       "type": "constrained",
-      "in": "capns:ms:obj.v1",
+      "in": "std:obj.v1",
       "out": "capns:structured_query-output.v1"
     }
   },
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "query_name",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Name of the structured query to execute",
         "cli_flag": "--query-name",
         "position": 0,
@@ -29,7 +29,7 @@
       },
       {
         "name": "substitutions",
-        "media_spec": "capns:ms:obj.v1",
+        "media_spec": "std:obj.v1",
         "arg_description": "Template substitutions for the query prompt",
         "cli_flag": "--substitutions",
         "position": 1
@@ -38,7 +38,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Language code for the query processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -59,21 +59,21 @@
       },
       {
         "name": "schema_variables",
-        "media_spec": "capns:ms:obj.v1",
+        "media_spec": "std:obj.v1",
         "arg_description": "Variables for dynamic schema generation",
         "cli_flag": "--schema-variables",
         "default_value": {}
       },
       {
         "name": "callback_enabled",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Whether to enable streaming callback updates",
         "cli_flag": "--callback",
         "default_value": false
       },
       {
         "name": "model_spec",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model spec to use for structured query execution",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",

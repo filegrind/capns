@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "generate_embeddings",
-      "in": "capns:ms:str.v1",
+      "in": "std:str.v1",
       "out": "capns:generate-output.v1"
     }
   },
@@ -15,7 +15,7 @@
     "required": [
       {
         "name": "output",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Output JSON file path to write embeddings",
         "cli_flag": "--output",
         "position": 0,
@@ -27,7 +27,7 @@
     "optional": [
       {
         "name": "text",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Input text to generate embeddings for",
         "cli_flag": "--text",
         "validation": {
@@ -37,7 +37,7 @@
       },
       {
         "name": "file_path",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Path to input file to generate embeddings from",
         "cli_flag": "--file-path",
         "validation": {
@@ -47,7 +47,7 @@
       },
       {
         "name": "chunk_size",
-        "media_spec": "capns:ms:int.v1",
+        "media_spec": "std:int.v1",
         "arg_description": "Chunk size in words for splitting input text",
         "cli_flag": "--chunk-size",
         "default_value": 400,
@@ -57,7 +57,7 @@
       },
       {
         "name": "chunk_overlap",
-        "media_spec": "capns:ms:int.v1",
+        "media_spec": "std:int.v1",
         "arg_description": "Chunk overlap in words when splitting input text",
         "cli_flag": "--chunk-overlap",
         "default_value": 50,
@@ -67,19 +67,19 @@
       },
       {
         "name": "include",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "File include pattern (can be provided multiple times)",
         "cli_flag": "--include"
       },
       {
         "name": "exclude",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "File exclude pattern (can be provided multiple times)",
         "cli_flag": "--exclude"
       },
       {
         "name": "model_spec",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model spec to use for embeddings generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",

@@ -14,7 +14,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model identifier to check status for",
         "cli_flag": "--model",
         "position": 0,
@@ -27,14 +27,14 @@
     "optional": [
       {
         "name": "detailed",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Include detailed diagnostics and metrics",
         "cli_flag": "--detailed",
         "default_value": false
       },
       {
         "name": "format",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",

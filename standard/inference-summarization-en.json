@@ -4,7 +4,7 @@
       "op": "summarization",
       "language": "en",
       "type": "constrained",
-      "in": "capns:ms:str.v1",
+      "in": "std:str.v1",
       "out": "capns:llm_inference-output.v1"
     }
   },
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "text",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Text content to summarize",
         "cli_flag": "--text",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "summary_type",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Type of summary to generate",
         "cli_flag": "--summary-type",
         "default_value": "abstractive",
@@ -47,7 +47,7 @@
       },
       {
         "name": "length",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Desired summary length",
         "cli_flag": "--length",
         "default_value": "medium",
@@ -62,7 +62,7 @@
       },
       {
         "name": "focus",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Summary focus area",
         "cli_flag": "--focus",
         "default_value": "main_points",
@@ -80,7 +80,7 @@
       },
       {
         "name": "context",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Additional context for summarization",
         "cli_flag": "--context",
         "validation": {
@@ -89,7 +89,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "capns:ms:num.v1",
+        "media_spec": "std:num.v1",
         "arg_description": "Maximum tokens for summary output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -100,14 +100,14 @@
       },
       {
         "name": "preserve_structure",
-        "media_spec": "capns:ms:bool.v1",
+        "media_spec": "std:bool.v1",
         "arg_description": "Whether to preserve document structure",
         "cli_flag": "--preserve-structure",
         "default_value": false
       },
       {
         "name": "model_spec",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model spec to use for summarization",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",

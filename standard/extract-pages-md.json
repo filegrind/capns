@@ -3,8 +3,8 @@
     "tags": {
       "op": "extract_pages",
       "ext": "md",
-      "in": "capns:ms:str.v1",
-      "out": "capns:ms:obj.v1"
+      "in": "std:str.v1",
+      "out": "std:obj.v1"
     }
   },
   "command": "extract-pages",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Path to the markdown file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "page_range",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Page range to extract (e.g., '1-5' or '10-')",
         "cli_flag": "--page-range",
         "validation": {
@@ -38,7 +38,7 @@
       },
       {
         "name": "output",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -48,7 +48,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:ms:obj.v1",
+    "media_spec": "std:obj.v1",
     "output_description": "Structured document pages with text content"
   }
 }

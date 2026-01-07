@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "embeddings_dimensions",
-      "out": "capns:ms:int.v1"
+      "out": "std:int.v1"
     }
   },
   "command": "dimensions",
@@ -14,7 +14,7 @@
     "optional": [
       {
         "name": "model_spec",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Model spec to use for retrieving embeddings dimensions",
         "cli_flag": "--model-spec",
         "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
@@ -27,7 +27,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:ms:int.v1",
+    "media_spec": "std:int.v1",
     "output_description": "Dimensionality of the embeddings (positive integer)",
     "validation": {
       "min": 1,

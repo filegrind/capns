@@ -3,7 +3,7 @@
     "tags": {
       "op": "scan_files",
       "type": "task_creation",
-      "in": "capns:ms:str-array.v1",
+      "in": "std:str-array.v1",
       "out": "capns:scan_files_task-output.v1"
     }
   },
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_paths",
-        "media_spec": "capns:ms:str-array.v1",
+        "media_spec": "std:str-array.v1",
         "arg_description": "Array of file paths to scan",
         "cli_flag": "--file-paths",
         "validation": {

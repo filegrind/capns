@@ -14,7 +14,7 @@
     "optional": [
       {
         "name": "filter",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Filter models by pattern",
         "cli_flag": "--filter",
         "validation": {
@@ -23,7 +23,7 @@
       },
       {
         "name": "status",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Filter by model status",
         "cli_flag": "--status",
         "validation": {
@@ -38,7 +38,7 @@
       },
       {
         "name": "format",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",

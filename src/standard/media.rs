@@ -261,10 +261,10 @@ mod tests {
     #[test]
     fn test_spec_id_constants() {
         // Verify spec IDs have expected format
-        assert!(SPEC_ID_STR.starts_with("capns:ms:"));
-        assert!(SPEC_ID_INT.starts_with("capns:ms:"));
-        assert!(SPEC_ID_OBJ.starts_with("capns:ms:"));
-        assert!(SPEC_ID_BINARY.starts_with("capns:ms:"));
+        assert!(SPEC_ID_STR.starts_with("std:"));
+        assert!(SPEC_ID_INT.starts_with("std:"));
+        assert!(SPEC_ID_OBJ.starts_with("std:"));
+        assert!(SPEC_ID_BINARY.starts_with("std:"));
     }
 
     #[test]

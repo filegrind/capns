@@ -3,7 +3,7 @@
     "tags": {
       "op": "extract_metadata",
       "ext": "pdf",
-      "in": "capns:ms:binary.v1",
+      "in": "std:binary.v1",
       "out": "capns:extract-metadata-output.v1"
     }
   },
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Path to the document file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "output",
-        "media_spec": "capns:ms:str.v1",
+        "media_spec": "std:str.v1",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
