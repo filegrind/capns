@@ -414,9 +414,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_key_generation() {
         let registry = CapRegistry::new().await.unwrap();
-        let key1 = registry.cache_key("cap:action=extract;target=metadata");
-        let key2 = registry.cache_key("cap:action=extract;target=metadata");
-        let key3 = registry.cache_key("cap:action=different");
+        let key1 = registry.cache_key("cap:op=extract;target=metadata");
+        let key2 = registry.cache_key("cap:op=extract;target=metadata");
+        let key3 = registry.cache_key("cap:op=different");
 
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);

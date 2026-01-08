@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "use_outline_extraction",
-      "in": "std:str.v1",
+      "in": "fgrnd:listing-id.v1",
       "out": "capns:outline_extraction_task-output.v1"
     }
   },
@@ -15,12 +15,9 @@
     "required": [
       {
         "name": "listing_id",
-        "media_spec": "std:str.v1",
+        "media_spec": "fgrnd:listing-id.v1",
         "arg_description": "ID of the listing to analyze",
-        "cli_flag": "--listing-id",
-        "validation": {
-          "pattern": "[0-9a-f-]{36}"
-        }
+        "cli_flag": "--listing-id"
       }
     ]
   },

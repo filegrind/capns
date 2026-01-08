@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "use_embedding_generation",
-      "in": "std:str.v1",
+      "in": "fgrnd:listing-id.v1",
       "out": "capns:embedding_generation_task-output.v1"
     }
   },
@@ -15,12 +15,9 @@
     "required": [
       {
         "name": "listing_id",
-        "media_spec": "std:str.v1",
+        "media_spec": "fgrnd:listing-id.v1",
         "arg_description": "ID of the listing to generate embeddings for",
-        "cli_flag": "--listing-id",
-        "validation": {
-          "pattern": "[0-9a-f-]{36}"
-        }
+        "cli_flag": "--listing-id"
       }
     ]
   },

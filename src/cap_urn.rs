@@ -12,8 +12,8 @@ use std::str::FromStr;
 /// A cap URN using flat, ordered tags
 ///
 /// Examples:
-/// - `cap:action=generate;ext=pdf;output=binary;target=thumbnail`
-/// - `cap:action=extract;target=metadata`
+/// - `cap:op=generate;ext=pdf;output=binary;target=thumbnail`
+/// - `cap:op=extract;target=metadata`
 /// - `cap:key="Value With Spaces"`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapUrn {
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn test_cap_urn_creation() {
-        let cap = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf;target=thumbnail;").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
         assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
@@ -674,7 +674,7 @@ mod tests {
         assert_eq!(cap.get_tag("Action"), Some(&"generate".to_string()));
 
         // Both URNs parse to same lowercase values
-        let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        let cap2 = CapUrn::from_string("cap:op=generate;ext=pdf;target=thumbnail;").unwrap();
         assert_eq!(cap.to_string(), cap2.to_string());
         assert_eq!(cap, cap2);
     }
@@ -803,7 +803,7 @@ mod tests {
 
     #[test]
     fn test_round_trip_simple() {
-        let original = "cap:action=generate;ext=pdf";
+        let original = "cap:op=generate;ext=pdf";
         let cap = CapUrn::from_string(original).unwrap();
         let serialized = cap.to_string();
         let reparsed = CapUrn::from_string(&serialized).unwrap();
@@ -833,22 +833,22 @@ mod tests {
     #[test]
     fn test_cap_prefix_required() {
         // Missing cap: prefix should fail
-        assert!(CapUrn::from_string("action=generate;ext=pdf").is_err());
+        assert!(CapUrn::from_string("op=generate;ext=pdf").is_err());
 
         // Valid cap: prefix should work
-        let cap = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
         assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
 
         // Case-insensitive prefix
-        let cap2 = CapUrn::from_string("CAP:action=generate").unwrap();
+        let cap2 = CapUrn::from_string("CAP:op=generate").unwrap();
         assert_eq!(cap2.get_tag("action"), Some(&"generate".to_string()));
     }
 
     #[test]
     fn test_trailing_semicolon_equivalence() {
         // Both with and without trailing semicolon should be equivalent
-        let cap1 = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
-        let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf;").unwrap();
+        let cap1 = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        let cap2 = CapUrn::from_string("cap:op=generate;ext=pdf;").unwrap();
 
         // They should be equal
         assert_eq!(cap1, cap2);
@@ -877,25 +877,25 @@ mod tests {
 
     #[test]
     fn test_canonical_string_format() {
-        let cap = CapUrn::from_string("cap:action=generate;target=thumbnail;ext=pdf").unwrap();
+        let cap = CapUrn::from_string("cap:op=generate;target=thumbnail;ext=pdf").unwrap();
         // Should be sorted alphabetically and have no trailing semicolon in canonical form
         assert_eq!(
             cap.to_string(),
-            "cap:action=generate;ext=pdf;target=thumbnail"
+            "cap:op=generate;ext=pdf;target=thumbnail"
         );
     }
 
     #[test]
     fn test_tag_matching() {
-        let cap = CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf;target=thumbnail;").unwrap();
 
         // Exact match
         let request1 =
-            CapUrn::from_string("cap:action=generate;ext=pdf;target=thumbnail;").unwrap();
+            CapUrn::from_string("cap:op=generate;ext=pdf;target=thumbnail;").unwrap();
         assert!(cap.matches(&request1));
 
         // Subset match
-        let request2 = CapUrn::from_string("cap:action=generate").unwrap();
+        let request2 = CapUrn::from_string("cap:op=generate").unwrap();
         assert!(cap.matches(&request2));
 
         // Wildcard request should match specific cap
@@ -903,7 +903,7 @@ mod tests {
         assert!(cap.matches(&request3)); // Cap has ext=pdf, request accepts any ext
 
         // No match - conflicting value
-        let request4 = CapUrn::from_string("cap:action=extract").unwrap();
+        let request4 = CapUrn::from_string("cap:op=extract").unwrap();
         assert!(!cap.matches(&request4));
     }
 
@@ -922,23 +922,23 @@ mod tests {
 
     #[test]
     fn test_missing_tag_handling() {
-        let cap = CapUrn::from_string("cap:action=generate").unwrap();
+        let cap = CapUrn::from_string("cap:op=generate").unwrap();
 
         // Request with tag should match cap without tag (treated as wildcard)
         let request1 = CapUrn::from_string("cap:ext=pdf").unwrap();
         assert!(cap.matches(&request1)); // cap missing ext tag = wildcard, can handle any ext
 
         // But cap with extra tags can match subset requests
-        let cap2 = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
-        let request2 = CapUrn::from_string("cap:action=generate").unwrap();
+        let cap2 = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        let request2 = CapUrn::from_string("cap:op=generate").unwrap();
         assert!(cap2.matches(&request2));
     }
 
     #[test]
     fn test_specificity() {
         let cap1 = CapUrn::from_string("cap:type=general").unwrap();
-        let cap2 = CapUrn::from_string("cap:action=generate").unwrap();
-        let cap3 = CapUrn::from_string("cap:action=*;ext=pdf").unwrap();
+        let cap2 = CapUrn::from_string("cap:op=generate").unwrap();
+        let cap3 = CapUrn::from_string("cap:op=*;ext=pdf").unwrap();
 
         assert_eq!(cap1.specificity(), 1);
         assert_eq!(cap2.specificity(), 1);
@@ -950,14 +950,14 @@ mod tests {
     #[test]
     fn test_builder() {
         let cap = CapUrnBuilder::new()
-            .tag("action", "generate")
+            .tag("op", "generate")
             .tag("target", "thumbnail")
             .tag("ext", "pdf")
             .tag("output", "binary")
             .build()
             .unwrap();
 
-        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("op"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("output"), Some(&"binary".to_string()));
     }
 
@@ -976,16 +976,16 @@ mod tests {
 
     #[test]
     fn test_compatibility() {
-        let cap1 = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
-        let cap2 = CapUrn::from_string("cap:action=generate;format=*").unwrap();
-        let cap3 = CapUrn::from_string("cap:type=image;action=extract").unwrap();
+        let cap1 = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        let cap2 = CapUrn::from_string("cap:op=generate;format=*").unwrap();
+        let cap3 = CapUrn::from_string("cap:type=image;op=extract").unwrap();
 
         assert!(cap1.is_compatible_with(&cap2));
         assert!(cap2.is_compatible_with(&cap1));
         assert!(!cap1.is_compatible_with(&cap3));
 
         // Missing tags are treated as wildcards for compatibility
-        let cap4 = CapUrn::from_string("cap:action=generate").unwrap();
+        let cap4 = CapUrn::from_string("cap:op=generate").unwrap();
         assert!(cap1.is_compatible_with(&cap4));
         assert!(cap4.is_compatible_with(&cap1));
     }
@@ -993,27 +993,27 @@ mod tests {
     #[test]
     fn test_best_match() {
         let caps = vec![
-            CapUrn::from_string("cap:action=*").unwrap(),
-            CapUrn::from_string("cap:action=generate").unwrap(),
-            CapUrn::from_string("cap:action=generate;ext=pdf").unwrap(),
+            CapUrn::from_string("cap:op=*").unwrap(),
+            CapUrn::from_string("cap:op=generate").unwrap(),
+            CapUrn::from_string("cap:op=generate;ext=pdf").unwrap(),
         ];
 
-        let request = CapUrn::from_string("cap:action=generate").unwrap();
+        let request = CapUrn::from_string("cap:op=generate").unwrap();
         let best = CapMatcher::find_best_match(&caps, &request).unwrap();
 
         // Most specific cap that can handle the request
-        assert_eq!(best.to_string(), "cap:action=generate;ext=pdf");
+        assert_eq!(best.to_string(), "cap:op=generate;ext=pdf");
     }
 
     #[test]
     fn test_merge_and_subset() {
-        let cap1 = CapUrn::from_string("cap:action=generate").unwrap();
+        let cap1 = CapUrn::from_string("cap:op=generate").unwrap();
         let cap2 = CapUrn::from_string("cap:ext=pdf;output=binary").unwrap();
 
         let merged = cap1.merge(&cap2);
         assert_eq!(
             merged.to_string(),
-            "cap:action=generate;ext=pdf;output=binary"
+            "cap:op=generate;ext=pdf;output=binary"
         );
 
         let subset = merged.subset(&["type", "ext"]);
@@ -1041,7 +1041,7 @@ mod tests {
         assert_eq!(empty_cap.to_string(), "cap:");
 
         // Should match any other cap
-        let specific_cap = CapUrn::from_string("cap:action=generate;ext=pdf").unwrap();
+        let specific_cap = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
         assert!(empty_cap.matches(&specific_cap));
         assert!(empty_cap.matches(&empty_cap));
 

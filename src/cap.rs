@@ -949,17 +949,17 @@ mod tests {
 
     #[test]
     fn test_cap_creation() {
-        let urn = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
+        let urn = CapUrn::from_string("cap:op=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
         
-        assert_eq!(cap.urn_string(), "cap:action=transform;format=json;type=data_processing");
+        assert_eq!(cap.urn_string(), "cap:op=transform;format=json;type=data_processing");
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
 
     #[test]
     fn test_cap_with_metadata() {
-        let urn = CapUrn::from_string("cap:action=arithmetic;type=compute;subtype=math").unwrap();
+        let urn = CapUrn::from_string("cap:op=arithmetic;type=compute;subtype=math").unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
@@ -975,18 +975,18 @@ mod tests {
 
     #[test]
     fn test_cap_matching() {
-        let urn = CapUrn::from_string("cap:action=transform;format=json;type=data_processing").unwrap();
+        let urn = CapUrn::from_string("cap:op=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
         
-        assert!(cap.matches_request("cap:action=transform;format=json;type=data_processing"));
-        assert!(cap.matches_request("cap:action=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
+        assert!(cap.matches_request("cap:op=transform;format=json;type=data_processing"));
+        assert!(cap.matches_request("cap:op=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
         assert!(cap.matches_request("cap:type=data_processing")); // Request is subset, cap has all required tags
         assert!(!cap.matches_request("cap:type=compute"));
     }
 
     #[test]
     fn test_cap_title() {
-        let urn = CapUrn::from_string("cap:action=extract;target=metadata").unwrap();
+        let urn = CapUrn::from_string("cap:op=extract;target=metadata").unwrap();
         let mut cap = Cap::new(urn, "Extract Document Metadata".to_string(), "extract-metadata".to_string());
         
         // Test title getter
@@ -1001,8 +1001,8 @@ mod tests {
 
     #[test]
     fn test_cap_definition_equality() {
-        let urn1 = CapUrn::from_string("cap:action=transform;format=json").unwrap();
-        let urn2 = CapUrn::from_string("cap:action=transform;format=json").unwrap();
+        let urn1 = CapUrn::from_string("cap:op=transform;format=json").unwrap();
+        let urn2 = CapUrn::from_string("cap:op=transform;format=json").unwrap();
         
         let cap1 = Cap::new(urn1, "Transform JSON Data".to_string(), "transform".to_string());
         let cap2 = Cap::new(urn2.clone(), "Transform JSON Data".to_string(), "transform".to_string());
@@ -1018,7 +1018,7 @@ mod tests {
 
     #[test]
     fn test_cap_accepts_stdin() {
-        let urn = CapUrn::from_string("cap:action=generate;target=embeddings").unwrap();
+        let urn = CapUrn::from_string("cap:op=generate;target=embeddings").unwrap();
         let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
         
         // By default, caps should not accept stdin

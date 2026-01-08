@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let registry = CapRegistry::new().await?;
     
     // Get a canonical cap definition from registry
-    let cap_urn = "cap:action=extract;target=metadata";
+    let cap_urn = "cap:op=extract;target=metadata";
     println!("\nGetting cap from registry: {}", cap_urn);
     
     let cap = registry.get_cap(cap_urn).await?;
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Get multiple caps at once
     println!("\nGetting multiple caps...");
-    let cap_urns = ["cap:action=extract;target=metadata", "cap:action=generate;target=thumbnail"];
+    let cap_urns = ["cap:op=extract;target=metadata", "cap:op=generate;target=thumbnail"];
     
     let caps = registry.get_caps(&cap_urns).await?;
     println!("✓ Successfully retrieved {} caps", caps.len());
