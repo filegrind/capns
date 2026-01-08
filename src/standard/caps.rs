@@ -1,7 +1,7 @@
 //! Standard capability definitions with arguments
 //!
 //! This module provides the standard capability definitions used across
-//! all FGRND providers, including their formal argument specifications.
+//! all FGND providers, including their formal argument specifications.
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{
@@ -310,7 +310,7 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
 }
 
 // -----------------------------------------------------------------------------
-// FGRND-SPECIFIC TASK URN BUILDERS
+// FGND-SPECIFIC TASK URN BUILDERS
 // -----------------------------------------------------------------------------
 
 /// Build URN for scan-files-task capability
@@ -318,8 +318,8 @@ pub fn scan_files_task_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "scan_files")
         .tag("type", "task_creation")
-        .tag("in", "fgrnd:file-path-array.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:file-path-array.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build scan-files-task cap URN")
 }
@@ -330,8 +330,8 @@ pub fn recategorization_task_urn(lang_code: &str) -> CapUrn {
         .tag("op", "recategorize_listing")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build recategorization-task cap URN")
 }
@@ -342,22 +342,22 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
         .tag("op", "request_listing_analysis")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build listing-analysis-task cap URN")
 }
 
 // -----------------------------------------------------------------------------
-// FGRND TOOL URN BUILDERS
+// FGND TOOL URN BUILDERS
 // -----------------------------------------------------------------------------
 
 /// Build URN for chip-extraction tool capability
 pub fn chip_extraction_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_chip_extraction")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build chip-extraction tool cap URN")
 }
@@ -366,8 +366,8 @@ pub fn chip_extraction_tool_urn() -> CapUrn {
 pub fn quick_summary_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_quick_summary")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build quick-summary tool cap URN")
 }
@@ -376,8 +376,8 @@ pub fn quick_summary_tool_urn() -> CapUrn {
 pub fn detailed_analysis_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_detailed_analysis")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build detailed-analysis tool cap URN")
 }
@@ -386,8 +386,8 @@ pub fn detailed_analysis_tool_urn() -> CapUrn {
 pub fn outline_extraction_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_outline_extraction")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build outline-extraction tool cap URN")
 }
@@ -396,8 +396,8 @@ pub fn outline_extraction_tool_urn() -> CapUrn {
 pub fn embedding_generation_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_embedding_generation")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build embedding-generation tool cap URN")
 }
@@ -406,8 +406,8 @@ pub fn embedding_generation_tool_urn() -> CapUrn {
 pub fn recategorize_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_recategorize")
-        .tag("in", "fgrnd:listing-id.v1")
-        .tag("out", "fgrnd:task-id.v1")
+        .tag("in", "fgnd:listing-id.v1")
+        .tag("out", "fgnd:task-id.v1")
         .build()
         .expect("Failed to build recategorize tool cap URN")
 }

@@ -2,8 +2,8 @@
 name = "capns"
 version = "0.1.0"
 edition = "2021"
-description = "Core cap URN and definition system for FGRND plugins"
-authors = ["FGRND Team"]
+description = "Core cap URN and definition system for FGND plugins"
+authors = ["FGND Team"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
