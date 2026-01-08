@@ -352,14 +352,14 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
 // FGND TOOL URN BUILDERS
 // -----------------------------------------------------------------------------
 
-/// Build URN for chip-extraction tool capability
-pub fn chip_extraction_tool_urn() -> CapUrn {
+/// Build URN for grinder tool capability
+pub fn grinder_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "use_chip_extraction")
+        .tag("op", "use_grinder")
         .tag("in", "fgnd:listing-id.v1")
         .tag("out", "fgnd:task-id.v1")
         .build()
-        .expect("Failed to build chip-extraction tool cap URN")
+        .expect("Failed to build grinder tool cap URN")
 }
 
 /// Build URN for quick-summary tool capability

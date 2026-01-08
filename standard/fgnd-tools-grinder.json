@@ -1,13 +1,13 @@
 {
   "urn": {
     "tags": {
-      "op": "use_chip_extraction",
+      "op": "use_grinder",
       "in": "fgnd:listing-id.v1",
       "out": "fgnd:task-id.v1"
     }
   },
-  "command": "chip_extraction_task",
-  "title": "Create Chip Extraction Tool Task",
+  "command": "grinder_task",
+  "title": "Create Grinder Tool Task",
   "cap_description": "Create a task for initial document analysis - first glance phase",
   "metadata": {},
   "media_specs": {
@@ -22,7 +22,7 @@
     },
     "fgnd:task-id.v1": {
       "media_type": "application/json",
-      "profile_uri": "https://capns.org/schema/chip_extraction_task-output",
+      "profile_uri": "https://capns.org/schema/grinder_task-output",
       "schema": {
         "type": "object",
         "additionalProperties": false,
