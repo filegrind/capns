@@ -116,7 +116,7 @@ let cap = Cap::new(key, "1.0.0".to_string(), "extract-metadata".to_string());
 Feature-complete Go implementation.
 
 ```go
-import "github.com/fgrnd/capns-go"
+import "github.com/fgnd/capns-go"
 
 // Create cap URN
 key, err := capns.NewCapUrnFromString("cap:action=extract;target=metadata;")
@@ -340,8 +340,8 @@ swift test
 capns/              # Rust implementation
 capns-go/           # Go implementation
 capns-objc/         # Objective-C implementation
-fgrnd-plugin-sdk/     # Plugin development SDK
-fgrnd-provider-sdk/   # Provider development SDK
+fgnd-plugin-sdk/     # Plugin development SDK
+fgnd-provider-sdk/   # Provider development SDK
 ```
 
 ## Dependencies

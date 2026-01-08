@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "use_outline_extraction",
-      "in": "fgrnd:listing-id.v1",
-      "out": "fgrnd:task-id.v1"
+      "in": "fgnd:listing-id.v1",
+      "out": "fgnd:task-id.v1"
     }
   },
   "command": "outline_extraction_task",
@@ -15,14 +15,14 @@
     "required": [
       {
         "name": "listing_id",
-        "media_spec": "fgrnd:listing-id.v1",
+        "media_spec": "fgnd:listing-id.v1",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id"
       }
     ]
   },
   "output": {
-    "media_spec": "fgrnd:task-id.v1",
+    "media_spec": "fgnd:task-id.v1",
     "output_description": "Created task information"
   }
 }

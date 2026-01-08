@@ -47,22 +47,22 @@ pub const SPEC_ID_OBJ_ARRAY: &str = "std:obj-array.v1";
 pub const SPEC_ID_BINARY: &str = "std:binary.v1";
 
 // =============================================================================
-// FGRND-SPECIFIC SPEC IDS (well-known types for FileGrind)
+// FGND-SPECIFIC SPEC IDS (well-known types for FileGrind)
 // =============================================================================
 
 /// Spec ID for listing ID (UUID)
-pub const SPEC_ID_FGRND_LISTING_ID: &str = "fgrnd:listing-id.v1";
+pub const SPEC_ID_FGND_LISTING_ID: &str = "fgnd:listing-id.v1";
 /// Spec ID for file path array
-pub const SPEC_ID_FGRND_FILE_PATH_ARRAY: &str = "fgrnd:file-path-array.v1";
+pub const SPEC_ID_FGND_FILE_PATH_ARRAY: &str = "fgnd:file-path-array.v1";
 /// Spec ID for task ID (UUID)
-pub const SPEC_ID_FGRND_TASK_ID: &str = "fgrnd:task-id.v1";
+pub const SPEC_ID_FGND_TASK_ID: &str = "fgnd:task-id.v1";
 
 /// Profile URL for listing ID
-pub const PROFILE_FGRND_LISTING_ID: &str = "https://filegrind.com/schema/listing-id";
+pub const PROFILE_FGND_LISTING_ID: &str = "https://filegrind.com/schema/listing-id";
 /// Profile URL for file path array
-pub const PROFILE_FGRND_FILE_PATH_ARRAY: &str = "https://filegrind.com/schema/file-path-array";
+pub const PROFILE_FGND_FILE_PATH_ARRAY: &str = "https://filegrind.com/schema/file-path-array";
 /// Profile URL for task ID
-pub const PROFILE_FGRND_TASK_ID: &str = "https://filegrind.com/schema/task-id";
+pub const PROFILE_FGND_TASK_ID: &str = "https://filegrind.com/schema/task-id";
 
 // =============================================================================
 // CAPNS OUTPUT SPEC IDS (well-known output types)
@@ -323,10 +323,10 @@ fn resolve_builtin(spec_id: &str) -> Option<ResolvedMediaSpec> {
         SPEC_ID_BOOL_ARRAY => ("application/json", Some(PROFILE_BOOL_ARRAY)),
         SPEC_ID_OBJ_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
         SPEC_ID_BINARY => ("application/octet-stream", None),
-        // FGRND-specific well-known types
-        SPEC_ID_FGRND_LISTING_ID => ("text/plain", Some(PROFILE_FGRND_LISTING_ID)),
-        SPEC_ID_FGRND_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGRND_FILE_PATH_ARRAY)),
-        SPEC_ID_FGRND_TASK_ID => ("text/plain", Some(PROFILE_FGRND_TASK_ID)),
+        // FGND-specific well-known types
+        SPEC_ID_FGND_LISTING_ID => ("text/plain", Some(PROFILE_FGND_LISTING_ID)),
+        SPEC_ID_FGND_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGND_FILE_PATH_ARRAY)),
+        SPEC_ID_FGND_TASK_ID => ("text/plain", Some(PROFILE_FGND_TASK_ID)),
         // CAPNS output types
         SPEC_ID_CAPNS_DOWNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_DOWNLOAD_OUTPUT)),
         SPEC_ID_CAPNS_LOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LOAD_OUTPUT)),
@@ -363,9 +363,9 @@ pub fn is_builtin_spec_id(spec_id: &str) -> bool {
             | SPEC_ID_BOOL_ARRAY
             | SPEC_ID_OBJ_ARRAY
             | SPEC_ID_BINARY
-            | SPEC_ID_FGRND_LISTING_ID
-            | SPEC_ID_FGRND_FILE_PATH_ARRAY
-            | SPEC_ID_FGRND_TASK_ID
+            | SPEC_ID_FGND_LISTING_ID
+            | SPEC_ID_FGND_FILE_PATH_ARRAY
+            | SPEC_ID_FGND_TASK_ID
             | SPEC_ID_CAPNS_DOWNLOAD_OUTPUT
             | SPEC_ID_CAPNS_LOAD_OUTPUT
             | SPEC_ID_CAPNS_UNLOAD_OUTPUT

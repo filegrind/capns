@@ -32,13 +32,13 @@ These spec IDs are implicitly available and do not need to be declared in `media
 
 Additional well-known spec IDs for specific domains:
 
-#### FileGrind Types (`fgrnd:`)
+#### FileGrind Types (`fgnd:`)
 
 | Spec ID | Media Type | Profile URI | Description |
 |---------|------------|-------------|-------------|
-| `fgrnd:listing-id.v1` | `text/plain` | `https://filegrind.com/schema/listing-id` | Listing UUID |
-| `fgrnd:task-id.v1` | `text/plain` | `https://filegrind.com/schema/task-id` | Task UUID |
-| `fgrnd:file-path-array.v1` | `application/json` | `https://filegrind.com/schema/file-path-array` | Array of file paths |
+| `fgnd:listing-id.v1` | `text/plain` | `https://filegrind.com/schema/listing-id` | Listing UUID |
+| `fgnd:task-id.v1` | `text/plain` | `https://filegrind.com/schema/task-id` | Task UUID |
+| `fgnd:file-path-array.v1` | `application/json` | `https://filegrind.com/schema/file-path-array` | Array of file paths |
 
 #### CapNS Output Types (`capns:`)
 
