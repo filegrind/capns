@@ -654,7 +654,7 @@ mod tests {
     #[test]
     fn test_cap_urn_creation() {
         let cap = CapUrn::from_string("cap:op=generate;ext=pdf;target=thumbnail;").unwrap();
-        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("op"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
         assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
     }
@@ -662,18 +662,18 @@ mod tests {
     #[test]
     fn test_unquoted_values_lowercased() {
         // Unquoted values are normalized to lowercase
-        let cap = CapUrn::from_string("cap:ACTION=Generate;EXT=PDF;Target=Thumbnail;").unwrap();
+        let cap = CapUrn::from_string("cap:OP=Generate;EXT=PDF;Target=Thumbnail;").unwrap();
 
         // Keys are always lowercase
-        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("op"), Some(&"generate".to_string()));
         assert_eq!(cap.get_tag("ext"), Some(&"pdf".to_string()));
         assert_eq!(cap.get_tag("target"), Some(&"thumbnail".to_string()));
 
         // Key lookup is case-insensitive
-        assert_eq!(cap.get_tag("ACTION"), Some(&"generate".to_string()));
-        assert_eq!(cap.get_tag("Action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("OP"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("Op"), Some(&"generate".to_string()));
 
-        // Both URNs parse to same lowercase values
+        // Both URNs parse to same lowercase values (same tags, same values)
         let cap2 = CapUrn::from_string("cap:op=generate;ext=pdf;target=thumbnail;").unwrap();
         assert_eq!(cap.to_string(), cap2.to_string());
         assert_eq!(cap, cap2);
@@ -837,11 +837,11 @@ mod tests {
 
         // Valid cap: prefix should work
         let cap = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
-        assert_eq!(cap.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap.get_tag("op"), Some(&"generate".to_string()));
 
         // Case-insensitive prefix
         let cap2 = CapUrn::from_string("CAP:op=generate").unwrap();
-        assert_eq!(cap2.get_tag("action"), Some(&"generate".to_string()));
+        assert_eq!(cap2.get_tag("op"), Some(&"generate".to_string()));
     }
 
     #[test]
@@ -879,9 +879,10 @@ mod tests {
     fn test_canonical_string_format() {
         let cap = CapUrn::from_string("cap:op=generate;target=thumbnail;ext=pdf").unwrap();
         // Should be sorted alphabetically and have no trailing semicolon in canonical form
+        // Alphabetical order: ext < op < target
         assert_eq!(
             cap.to_string(),
-            "cap:op=generate;ext=pdf;target=thumbnail"
+            "cap:ext=pdf;op=generate;target=thumbnail"
         );
     }
 
@@ -1002,7 +1003,8 @@ mod tests {
         let best = CapMatcher::find_best_match(&caps, &request).unwrap();
 
         // Most specific cap that can handle the request
-        assert_eq!(best.to_string(), "cap:op=generate;ext=pdf");
+        // Alphabetical order: ext < op
+        assert_eq!(best.to_string(), "cap:ext=pdf;op=generate");
     }
 
     #[test]
@@ -1011,9 +1013,10 @@ mod tests {
         let cap2 = CapUrn::from_string("cap:ext=pdf;output=binary").unwrap();
 
         let merged = cap1.merge(&cap2);
+        // Alphabetical order: ext < op < output
         assert_eq!(
             merged.to_string(),
-            "cap:op=generate;ext=pdf;output=binary"
+            "cap:ext=pdf;op=generate;output=binary"
         );
 
         let subset = merged.subset(&["type", "ext"]);

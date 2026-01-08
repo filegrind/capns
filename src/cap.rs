@@ -187,50 +187,55 @@ impl CapOutput {
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
-        self.resolve(media_specs)
-            .map(|ms| ms.is_binary())
-            .unwrap_or(false)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.is_binary())
     }
 
     /// Check if output is JSON based on resolved media spec
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
-        self.resolve(media_specs)
-            .map(|ms| ms.is_json())
-            .unwrap_or(false)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.is_json())
     }
 
     /// Get the media type from resolved spec
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
-        self.resolve(media_specs)
-            .map(|ms| ms.media_type)
-            .ok()
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
-        self.resolve(media_specs)
-            .ok()
-            .and_then(|ms| ms.profile_uri)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<serde_json::Value> {
-        self.resolve(media_specs)
-            .ok()
-            .and_then(|ms| ms.schema)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.schema)
     }
 }
 
@@ -511,50 +516,55 @@ impl CapArgument {
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
-        self.resolve(media_specs)
-            .map(|ms| ms.is_binary())
-            .unwrap_or(false)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.is_binary())
     }
 
     /// Check if argument is JSON based on resolved media spec
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> bool {
-        self.resolve(media_specs)
-            .map(|ms| ms.is_json())
-            .unwrap_or(false)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.is_json())
     }
 
     /// Get the media type from resolved spec
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
-        self.resolve(media_specs)
-            .map(|ms| ms.media_type)
-            .ok()
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<String> {
-        self.resolve(media_specs)
-            .ok()
-            .and_then(|ms| ms.profile_uri)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
     ///
     /// # Arguments
     /// * `media_specs` - The media_specs map from the cap definition
-    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Option<serde_json::Value> {
-        self.resolve(media_specs)
-            .ok()
-            .and_then(|ms| ms.schema)
+    ///
+    /// # Errors
+    /// Returns error if the spec ID cannot be resolved
+    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.schema)
     }
 }
 
@@ -951,8 +961,9 @@ mod tests {
     fn test_cap_creation() {
         let urn = CapUrn::from_string("cap:op=transform;format=json;type=data_processing").unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
-        
-        assert_eq!(cap.urn_string(), "cap:op=transform;format=json;type=data_processing");
+
+        // Alphabetical order: format < op < type
+        assert_eq!(cap.urn_string(), "cap:format=json;op=transform;type=data_processing");
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
