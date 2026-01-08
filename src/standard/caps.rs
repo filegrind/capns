@@ -13,14 +13,48 @@ use std::sync::Arc;
 // HELPER FUNCTIONS
 // =============================================================================
 
-/// Get the media_spec value for a given file extension
-pub fn media_spec_for_ext(ext: &str) -> &'static str {
+/// Get the input spec ID for a given file extension
+///
+/// Returns spec IDs for document input types:
+/// - Binary files (pdf): std:binary.v1
+/// - Text files (md, rst, log, txt): std:str.v1
+pub fn input_spec_id_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "content-type: application/pdf; profile=https://capns.org/schema/pdf-document",
-        "md" => "content-type: text/markdown; profile=https://capns.org/schema/markdown-document",
-        "rst" => "content-type: text/x-rst; profile=https://capns.org/schema/rst-document",
-        "log" => "content-type: text/plain; profile=https://capns.org/schema/log-document",
-        "txt" | "text" | _ => "content-type: text/plain; profile=https://capns.org/schema/utf8-text",
+        "pdf" => "std:binary.v1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => "std:str.v1",
+    }
+}
+
+/// Get the output spec ID for extract-metadata operation by extension
+///
+/// - PDF files: capns:extract-metadata-output.v1 (has full schema)
+/// - Text files: std:obj.v1 (generic JSON object)
+pub fn extract_metadata_output_spec_id_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "pdf" => "capns:extract-metadata-output.v1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
+    }
+}
+
+/// Get the output spec ID for extract-outline operation by extension
+///
+/// - PDF files: capns:extract-outline-output.v1 (has full schema)
+/// - Text files: std:obj.v1 (generic JSON object)
+pub fn extract_outline_output_spec_id_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "pdf" => "capns:extract-outline-output.v1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
+    }
+}
+
+/// Get the output spec ID for extract-pages operation by extension
+///
+/// - PDF files: capns:extract-pages-output.v1 (has full schema)
+/// - Text files: std:obj.v1 (generic JSON object)
+pub fn extract_pages_output_spec_id_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "pdf" => "capns:extract-pages-output.v1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
     }
 }
 
@@ -37,11 +71,11 @@ pub fn media_spec_for_ext(ext: &str) -> &'static str {
 /// Build URN for conversation capability
 pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "conversation")
+        .tag("op", "conversation")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/prompt-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/conversation-response")
+        .tag("in", "std:str.v1")
+        .tag("out", "capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build conversation cap URN")
 }
@@ -49,11 +83,11 @@ pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
 /// Build URN for multiplechoice capability
 pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "multiplechoice")
+        .tag("op", "multiplechoice")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/prompt-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/multiplechoice-response")
+        .tag("in", "std:str.v1")
+        .tag("out", "capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build multiplechoice cap URN")
 }
@@ -61,11 +95,11 @@ pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
 /// Build URN for codegeneration capability
 pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "codegeneration")
+        .tag("op", "codegeneration")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/prompt-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/codegeneration-response")
+        .tag("in", "std:str.v1")
+        .tag("out", "capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build codegeneration cap URN")
 }
@@ -73,11 +107,11 @@ pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
 /// Build URN for creative capability
 pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "creative")
+        .tag("op", "creative")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/prompt-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/creative-response")
+        .tag("in", "std:str.v1")
+        .tag("out", "capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build creative cap URN")
 }
@@ -85,11 +119,11 @@ pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
 /// Build URN for summarization capability
 pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "summarization")
+        .tag("op", "summarization")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/utf8-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/summarization-response")
+        .tag("in", "std:str.v1")
+        .tag("out", "capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build summarization cap URN")
 }
@@ -101,8 +135,8 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
 /// Build URN for embeddings-dimensions capability
 pub fn embeddings_dimensions_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "embeddings_dimensions")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/uint")
+        .tag("op", "embeddings_dimensions")
+        .tag("out", "std:int.v1")
         .build()
         .expect("Failed to build embeddings-dimensions cap URN")
 }
@@ -110,9 +144,9 @@ pub fn embeddings_dimensions_urn() -> CapUrn {
 /// Build URN for embeddings-generation capability
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "generate_embeddings")
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/utf8-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/embeddings-result")
+        .tag("op", "generate_embeddings")
+        .tag("in", "std:str.v1")
+        .tag("out", "capns:generate-output.v1")
         .build()
         .expect("Failed to build embeddings-generation cap URN")
 }
@@ -124,7 +158,7 @@ pub fn embeddings_generation_urn() -> CapUrn {
 /// Build URN for model-download capability
 pub fn model_download_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "download")
+        .tag("op", "download")
         .tag("type", "model")
         .build()
         .expect("Failed to build model-download cap URN")
@@ -133,7 +167,7 @@ pub fn model_download_urn() -> CapUrn {
 /// Build URN for model-load capability
 pub fn model_load_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "load")
+        .tag("op", "load")
         .tag("type", "model")
         .build()
         .expect("Failed to build model-load cap URN")
@@ -142,7 +176,7 @@ pub fn model_load_urn() -> CapUrn {
 /// Build URN for model-unload capability
 pub fn model_unload_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "unload")
+        .tag("op", "unload")
         .tag("type", "model")
         .build()
         .expect("Failed to build model-unload cap URN")
@@ -151,7 +185,7 @@ pub fn model_unload_urn() -> CapUrn {
 /// Build URN for model-list capability
 pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "list")
+        .tag("op", "list")
         .tag("type", "model")
         .build()
         .expect("Failed to build model-list cap URN")
@@ -160,7 +194,7 @@ pub fn model_list_urn() -> CapUrn {
 /// Build URN for model-status capability
 pub fn model_status_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "status")
+        .tag("op", "status")
         .tag("type", "model")
         .build()
         .expect("Failed to build model-status cap URN")
@@ -169,7 +203,7 @@ pub fn model_status_urn() -> CapUrn {
 /// Build URN for model-contents capability
 pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "contents")
+        .tag("op", "contents")
         .tag("type", "model")
         .build()
         .expect("Failed to build model-contents cap URN")
@@ -182,10 +216,10 @@ pub fn model_contents_urn() -> CapUrn {
 /// Build URN for generate-thumbnail capability
 pub fn generate_thumbnail_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "generate_thumbnail")
+        .tag("op", "generate_thumbnail")
         .tag("ext", ext)
-        .tag("in", media_spec_for_ext(ext))
-        .tag("out", "content-type: image/png; profile=https://capns.org/schema/thumbnail-image")
+        .tag("in", input_spec_id_for_ext(ext))
+        .tag("out", "std:binary.v1")
         .build()
         .expect("Failed to build generate-thumbnail cap URN")
 }
@@ -193,10 +227,10 @@ pub fn generate_thumbnail_urn(ext: &str) -> CapUrn {
 /// Build URN for extract-pages capability
 pub fn extract_pages_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "extract_pages")
+        .tag("op", "extract_pages")
         .tag("ext", ext)
-        .tag("in", media_spec_for_ext(ext))
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/document-pages")
+        .tag("in", input_spec_id_for_ext(ext))
+        .tag("out", extract_pages_output_spec_id_for_ext(ext))
         .build()
         .expect("Failed to build extract-pages cap URN")
 }
@@ -204,10 +238,10 @@ pub fn extract_pages_urn(ext: &str) -> CapUrn {
 /// Build URN for extract-metadata capability
 pub fn extract_metadata_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "extract_metadata")
+        .tag("op", "extract_metadata")
         .tag("ext", ext)
-        .tag("in", media_spec_for_ext(ext))
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/file-metadata")
+        .tag("in", input_spec_id_for_ext(ext))
+        .tag("out", extract_metadata_output_spec_id_for_ext(ext))
         .build()
         .expect("Failed to build extract-metadata cap URN")
 }
@@ -215,10 +249,10 @@ pub fn extract_metadata_urn(ext: &str) -> CapUrn {
 /// Build URN for extract-outline capability
 pub fn extract_outline_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "extract_outline")
+        .tag("op", "extract_outline")
         .tag("ext", ext)
-        .tag("in", media_spec_for_ext(ext))
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/document-outline")
+        .tag("in", input_spec_id_for_ext(ext))
+        .tag("out", extract_outline_output_spec_id_for_ext(ext))
         .build()
         .expect("Failed to build extract-outline cap URN")
 }
@@ -230,11 +264,11 @@ pub fn extract_outline_urn(ext: &str) -> CapUrn {
 /// Build URN for frontmatter-summarization capability
 pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "generate_frontmatter_summary")
+        .tag("op", "generate_frontmatter_summary")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/utf8-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/frontmatter-summary")
+        .tag("in", "std:str.v1")
+        .tag("out", "std:str.v1")
         .build()
         .expect("Failed to build frontmatter-summarization cap URN")
 }
@@ -242,11 +276,11 @@ pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
 /// Build URN for structured-query capability
 pub fn structured_query_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "query_structured")
+        .tag("op", "query_structured")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "content-type: application/json; profile=https://capns.org/schema/structured-query-params")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/structured-query-result")
+        .tag("in", "std:obj.v1")
+        .tag("out", "capns:structured_query-output.v1")
         .build()
         .expect("Failed to build structured-query cap URN")
 }
@@ -254,11 +288,11 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
 /// Build URN for bit-choice capability
 pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "choose_bit")
+        .tag("op", "choose_bit")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/utf8-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/boolean-result")
+        .tag("in", "std:str.v1")
+        .tag("out", "std:bool.v1")
         .build()
         .expect("Failed to build bit-choice cap URN")
 }
@@ -266,11 +300,11 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
 /// Build URN for bit-choices capability
 pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "choose_bits")
+        .tag("op", "choose_bits")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "content-type: text/plain; profile=https://capns.org/schema/utf8-text")
-        .tag("out", "content-type: application/json; profile=https://capns.org/schema/booleans-result")
+        .tag("in", "std:str.v1")
+        .tag("out", "std:bool-array.v1")
         .build()
         .expect("Failed to build bit-choices cap URN")
 }
@@ -282,10 +316,10 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
 /// Build URN for scan-files-task capability
 pub fn scan_files_task_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "scan_files")
+        .tag("op", "scan_files")
         .tag("type", "task_creation")
-        .tag("in", "content-type: application/json; profile=https://filegrind.com/schema/file-path-array")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("in", "fgrnd:file-path-array.v1")
+        .tag("out", "capns:scan_files_task-output.v1")
         .build()
         .expect("Failed to build scan-files-task cap URN")
 }
@@ -293,11 +327,11 @@ pub fn scan_files_task_urn() -> CapUrn {
 /// Build URN for recategorization-task capability
 pub fn recategorization_task_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "recategorize_listing")
+        .tag("op", "recategorize_listing")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:recategorization_task-output.v1")
         .build()
         .expect("Failed to build recategorization-task cap URN")
 }
@@ -305,11 +339,11 @@ pub fn recategorization_task_urn(lang_code: &str) -> CapUrn {
 /// Build URN for listing-analysis-task capability
 pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "request_listing_analysis")
+        .tag("op", "request_listing_analysis")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-chain-id")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:listing_analysis_task-output.v1")
         .build()
         .expect("Failed to build listing-analysis-task cap URN")
 }
@@ -321,9 +355,9 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
 /// Build URN for chip-extraction tool capability
 pub fn chip_extraction_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "use_chip_extraction")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("op", "use_chip_extraction")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:chip_extraction_task-output.v1")
         .build()
         .expect("Failed to build chip-extraction tool cap URN")
 }
@@ -331,9 +365,9 @@ pub fn chip_extraction_tool_urn() -> CapUrn {
 /// Build URN for quick-summary tool capability
 pub fn quick_summary_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "use_quick_summary")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("op", "use_quick_summary")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:quick_summary_task-output.v1")
         .build()
         .expect("Failed to build quick-summary tool cap URN")
 }
@@ -341,9 +375,9 @@ pub fn quick_summary_tool_urn() -> CapUrn {
 /// Build URN for detailed-analysis tool capability
 pub fn detailed_analysis_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "use_detailed_analysis")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("op", "use_detailed_analysis")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:detailed_analysis_task-output.v1")
         .build()
         .expect("Failed to build detailed-analysis tool cap URN")
 }
@@ -351,9 +385,9 @@ pub fn detailed_analysis_tool_urn() -> CapUrn {
 /// Build URN for outline-extraction tool capability
 pub fn outline_extraction_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "use_outline_extraction")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("op", "use_outline_extraction")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:outline_extraction_task-output.v1")
         .build()
         .expect("Failed to build outline-extraction tool cap URN")
 }
@@ -361,9 +395,9 @@ pub fn outline_extraction_tool_urn() -> CapUrn {
 /// Build URN for embedding-generation tool capability
 pub fn embedding_generation_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "use_embedding_generation")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("op", "use_embedding_generation")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:embedding_generation_task-output.v1")
         .build()
         .expect("Failed to build embedding-generation tool cap URN")
 }
@@ -371,9 +405,9 @@ pub fn embedding_generation_tool_urn() -> CapUrn {
 /// Build URN for recategorize tool capability
 pub fn recategorize_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("action", "use_recategorize")
-        .tag("in", "content-type: text/plain; profile=https://filegrind.com/schema/listing-id")
-        .tag("out", "content-type: text/plain; profile=https://filegrind.com/schema/task-id")
+        .tag("op", "use_recategorize")
+        .tag("in", "fgrnd:listing-id.v1")
+        .tag("out", "capns:recategorize_task-output.v1")
         .build()
         .expect("Failed to build recategorize tool cap URN")
 }

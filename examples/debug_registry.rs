@@ -6,7 +6,7 @@ use capns::Cap;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Debug registry response parsing...");
     
-    let cap_urn = "cap:action=bitlogic;language=en;type=constrained";
+    let cap_urn = "cap:op=bitlogic;language=en;type=constrained";
     let url = format!("https://capns.org/{}", cap_urn);
     
     println!("Fetching from: {}", url);

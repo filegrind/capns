@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let registry = CapRegistry::new().await?;
     
     // Test with the problematic cap URN
-    let cap_urn = "cap:action=bitlogic;language=en;type=constrained";
+    let cap_urn = "cap:op=bitlogic;language=en;type=constrained";
     println!("\nFetching cap: {}", cap_urn);
     
     match registry.get_cap(cap_urn).await {
