@@ -5,7 +5,7 @@
       "language": "en",
       "type": "task_creation",
       "in": "fgrnd:listing-id.v1",
-      "out": "capns:listing_analysis_task-output.v1"
+      "out": "fgrnd:task-id.v1"
     }
   },
   "command": "listing_analysis_task",
@@ -24,7 +24,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:listing_analysis_task-output.v1",
+    "media_spec": "fgrnd:task-id.v1",
     "output_description": "Information about the created task chain"
   }
 }

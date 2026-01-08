@@ -47,6 +47,66 @@ pub const SPEC_ID_OBJ_ARRAY: &str = "std:obj-array.v1";
 pub const SPEC_ID_BINARY: &str = "std:binary.v1";
 
 // =============================================================================
+// FGRND-SPECIFIC SPEC IDS (well-known types for FileGrind)
+// =============================================================================
+
+/// Spec ID for listing ID (UUID)
+pub const SPEC_ID_FGRND_LISTING_ID: &str = "fgrnd:listing-id.v1";
+/// Spec ID for file path array
+pub const SPEC_ID_FGRND_FILE_PATH_ARRAY: &str = "fgrnd:file-path-array.v1";
+/// Spec ID for task ID (UUID)
+pub const SPEC_ID_FGRND_TASK_ID: &str = "fgrnd:task-id.v1";
+
+/// Profile URL for listing ID
+pub const PROFILE_FGRND_LISTING_ID: &str = "https://filegrind.com/schema/listing-id";
+/// Profile URL for file path array
+pub const PROFILE_FGRND_FILE_PATH_ARRAY: &str = "https://filegrind.com/schema/file-path-array";
+/// Profile URL for task ID
+pub const PROFILE_FGRND_TASK_ID: &str = "https://filegrind.com/schema/task-id";
+
+// =============================================================================
+// CAPNS OUTPUT SPEC IDS (well-known output types)
+// =============================================================================
+
+/// Spec ID for model download output
+pub const SPEC_ID_CAPNS_DOWNLOAD_OUTPUT: &str = "capns:download-output.v1";
+/// Spec ID for model load output
+pub const SPEC_ID_CAPNS_LOAD_OUTPUT: &str = "capns:load-output.v1";
+/// Spec ID for model unload output
+pub const SPEC_ID_CAPNS_UNLOAD_OUTPUT: &str = "capns:unload-output.v1";
+/// Spec ID for model list output
+pub const SPEC_ID_CAPNS_LIST_OUTPUT: &str = "capns:list-output.v1";
+/// Spec ID for model status output
+pub const SPEC_ID_CAPNS_STATUS_OUTPUT: &str = "capns:status-output.v1";
+/// Spec ID for model contents output
+pub const SPEC_ID_CAPNS_CONTENTS_OUTPUT: &str = "capns:contents-output.v1";
+/// Spec ID for embeddings generate output
+pub const SPEC_ID_CAPNS_GENERATE_OUTPUT: &str = "capns:generate-output.v1";
+/// Spec ID for structured query output
+pub const SPEC_ID_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "capns:structured_query-output.v1";
+/// Spec ID for questions array
+pub const SPEC_ID_CAPNS_QUESTIONS_ARRAY: &str = "capns:questions-array.v1";
+
+/// Profile URL for model download output
+pub const PROFILE_CAPNS_DOWNLOAD_OUTPUT: &str = "https://capns.org/schema/download-output";
+/// Profile URL for model load output
+pub const PROFILE_CAPNS_LOAD_OUTPUT: &str = "https://capns.org/schema/load-output";
+/// Profile URL for model unload output
+pub const PROFILE_CAPNS_UNLOAD_OUTPUT: &str = "https://capns.org/schema/unload-output";
+/// Profile URL for model list output
+pub const PROFILE_CAPNS_LIST_OUTPUT: &str = "https://capns.org/schema/list-output";
+/// Profile URL for model status output
+pub const PROFILE_CAPNS_STATUS_OUTPUT: &str = "https://capns.org/schema/status-output";
+/// Profile URL for model contents output
+pub const PROFILE_CAPNS_CONTENTS_OUTPUT: &str = "https://capns.org/schema/contents-output";
+/// Profile URL for embeddings generate output
+pub const PROFILE_CAPNS_GENERATE_OUTPUT: &str = "https://capns.org/schema/generate-output";
+/// Profile URL for structured query output
+pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schema/structured_query-output";
+/// Profile URL for questions array
+pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questions-array";
+
+// =============================================================================
 // PROFILE URLS (new canonical /schema/ path)
 // =============================================================================
 
@@ -251,6 +311,7 @@ fn resolve_def(spec_id: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, M
 /// Resolve a built-in spec ID
 fn resolve_builtin(spec_id: &str) -> Option<ResolvedMediaSpec> {
     let (media_type, profile_uri) = match spec_id {
+        // Standard primitives
         SPEC_ID_STR => ("text/plain", Some(PROFILE_STR)),
         SPEC_ID_INT => ("text/plain", Some(PROFILE_INT)),
         SPEC_ID_NUM => ("text/plain", Some(PROFILE_NUM)),
@@ -262,6 +323,20 @@ fn resolve_builtin(spec_id: &str) -> Option<ResolvedMediaSpec> {
         SPEC_ID_BOOL_ARRAY => ("application/json", Some(PROFILE_BOOL_ARRAY)),
         SPEC_ID_OBJ_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
         SPEC_ID_BINARY => ("application/octet-stream", None),
+        // FGRND-specific well-known types
+        SPEC_ID_FGRND_LISTING_ID => ("text/plain", Some(PROFILE_FGRND_LISTING_ID)),
+        SPEC_ID_FGRND_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGRND_FILE_PATH_ARRAY)),
+        SPEC_ID_FGRND_TASK_ID => ("text/plain", Some(PROFILE_FGRND_TASK_ID)),
+        // CAPNS output types
+        SPEC_ID_CAPNS_DOWNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_DOWNLOAD_OUTPUT)),
+        SPEC_ID_CAPNS_LOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LOAD_OUTPUT)),
+        SPEC_ID_CAPNS_UNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_UNLOAD_OUTPUT)),
+        SPEC_ID_CAPNS_LIST_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LIST_OUTPUT)),
+        SPEC_ID_CAPNS_STATUS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STATUS_OUTPUT)),
+        SPEC_ID_CAPNS_CONTENTS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_CONTENTS_OUTPUT)),
+        SPEC_ID_CAPNS_GENERATE_OUTPUT => ("application/json", Some(PROFILE_CAPNS_GENERATE_OUTPUT)),
+        SPEC_ID_CAPNS_STRUCTURED_QUERY_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT)),
+        SPEC_ID_CAPNS_QUESTIONS_ARRAY => ("application/json", Some(PROFILE_CAPNS_QUESTIONS_ARRAY)),
         _ => return None,
     };
 
@@ -288,6 +363,18 @@ pub fn is_builtin_spec_id(spec_id: &str) -> bool {
             | SPEC_ID_BOOL_ARRAY
             | SPEC_ID_OBJ_ARRAY
             | SPEC_ID_BINARY
+            | SPEC_ID_FGRND_LISTING_ID
+            | SPEC_ID_FGRND_FILE_PATH_ARRAY
+            | SPEC_ID_FGRND_TASK_ID
+            | SPEC_ID_CAPNS_DOWNLOAD_OUTPUT
+            | SPEC_ID_CAPNS_LOAD_OUTPUT
+            | SPEC_ID_CAPNS_UNLOAD_OUTPUT
+            | SPEC_ID_CAPNS_LIST_OUTPUT
+            | SPEC_ID_CAPNS_STATUS_OUTPUT
+            | SPEC_ID_CAPNS_CONTENTS_OUTPUT
+            | SPEC_ID_CAPNS_GENERATE_OUTPUT
+            | SPEC_ID_CAPNS_STRUCTURED_QUERY_OUTPUT
+            | SPEC_ID_CAPNS_QUESTIONS_ARRAY
     )
 }
 

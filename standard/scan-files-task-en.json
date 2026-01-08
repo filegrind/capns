@@ -4,7 +4,7 @@
       "op": "scan_files",
       "type": "task_creation",
       "in": "fgrnd:file-path-array.v1",
-      "out": "capns:scan_files_task-output.v1"
+      "out": "fgrnd:task-id.v1"
     }
   },
   "command": "scan_files_task",
@@ -23,7 +23,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:scan_files_task-output.v1",
+    "media_spec": "fgrnd:task-id.v1",
     "output_description": "Created task information"
   }
 }

@@ -3,7 +3,7 @@
     "tags": {
       "op": "use_quick_summary",
       "in": "fgrnd:listing-id.v1",
-      "out": "capns:quick_summary_task-output.v1"
+      "out": "fgrnd:task-id.v1"
     }
   },
   "command": "quick_summary_task",
@@ -22,7 +22,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:quick_summary_task-output.v1",
+    "media_spec": "fgrnd:task-id.v1",
     "output_description": "Created task information"
   }
 }
