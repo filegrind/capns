@@ -12,6 +12,23 @@
   "title": "Execute Structured Query",
   "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
   "metadata": {},
+  "media_specs": {
+    "capns:structured_query-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/structured_query-output",
+      "schema": {
+        "type": [
+          "object",
+          "array",
+          "string",
+          "number",
+          "boolean",
+          "null"
+        ],
+        "description": "Raw JSON result from query execution - schema varies by specific query"
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [

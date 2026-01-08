@@ -9,6 +9,148 @@
   "title": "Inspect Model Contents",
   "cap_description": "Inspect the contents and structure of a model",
   "metadata": {},
+  "media_specs": {
+    "capns:contents-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/contents-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_name",
+          "files",
+          "total_size_bytes",
+          "inspection_depth"
+        ],
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the inspected model"
+          },
+          "model_type": {
+            "type": "string",
+            "description": "Type/architecture of the model"
+          },
+          "files": {
+            "type": "array",
+            "description": "List of files in the model",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "size_bytes"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "File name"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "File path within model"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "File size in bytes"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "File type or role"
+                },
+                "checksum": {
+                  "type": "string",
+                  "description": "File checksum"
+                }
+              }
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Model parameter information",
+            "properties": {
+              "total_params": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of parameters"
+              },
+              "trainable_params": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Number of trainable parameters"
+              },
+              "non_trainable_params": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Number of non-trainable parameters"
+              },
+              "dtype": {
+                "type": "string",
+                "description": "Parameter data type"
+              }
+            }
+          },
+          "layers": {
+            "type": "array",
+            "description": "Model layer information (if depth=detailed)",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "type"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Layer name"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Layer type"
+                },
+                "parameters": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Number of parameters in layer"
+                },
+                "output_shape": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "description": "Output tensor shape"
+                }
+              }
+            }
+          },
+          "total_size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total model size in bytes"
+          },
+          "format": {
+            "type": "string",
+            "description": "Model format (e.g., 'pytorch', 'onnx', 'safetensors')"
+          },
+          "inspection_depth": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "detailed",
+              "full"
+            ],
+            "description": "Depth of inspection performed"
+          }
+        }
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "required": [

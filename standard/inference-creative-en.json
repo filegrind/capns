@@ -12,6 +12,71 @@
   "title": "Write Creatively in English",
   "cap_description": "Creative writing and content generation in English",
   "metadata": {},
+  "media_specs": {
+    "capns:llm_inference-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/llm_inference-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The generated creative content"
+          },
+          "genre": {
+            "type": "string",
+            "enum": [
+              "story",
+              "poetry",
+              "dialogue",
+              "description",
+              "screenplay",
+              "essay",
+              "other"
+            ],
+            "description": "Genre of creative content"
+          },
+          "word_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of words in generated content"
+          },
+          "creativity_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Assessed creativity level of output"
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Identified themes in the content"
+          },
+          "style_notes": {
+            "type": "string",
+            "description": "Notes about writing style used"
+          },
+          "tokens_used": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tokens consumed"
+          },
+          "model_used": {
+            "type": "string",
+            "description": "Model that generated the content"
+          }
+        },
+        "required": [
+          "content",
+          "word_count"
+        ]
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [

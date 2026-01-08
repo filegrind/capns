@@ -11,6 +11,44 @@
   "title": "Create Files Scan Task",
   "cap_description": "Create a task to scan a specific list of files",
   "metadata": {},
+  "media_specs": {
+    "fgnd:file-path-array.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://filegrind.com/schema/file-path-array",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minItems": 1,
+        "maxItems": 1000,
+        "description": "Array of file paths to scan"
+      }
+    },
+    "fgnd:task-id.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/scan_files_task-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "ID of the created task"
+          },
+          "task_type": {
+            "type": "string",
+            "description": "Type of task created"
+          }
+        },
+        "required": [
+          "task_id",
+          "task_type"
+        ]
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "required": [

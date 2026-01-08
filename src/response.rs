@@ -173,7 +173,13 @@ impl ResponseWrapper {
             ResponseContentType::Binary => {
                 // Binary outputs can't be validated as JSON, validate the response type instead
                 if let Some(output_def) = cap.get_output() {
-                    if !output_def.is_binary(media_specs) {
+                    let is_binary = output_def.is_binary(media_specs)
+                        .map_err(|e| ValidationError::InvalidMediaSpec {
+                            cap_urn: cap.urn_string(),
+                            field_name: "output".to_string(),
+                            error: e.to_string(),
+                        })?;
+                    if !is_binary {
                         return Err(ValidationError::InvalidOutputType {
                             cap_urn: cap.urn_string(),
                             expected_media_spec: output_def.media_spec.clone(),
@@ -202,20 +208,24 @@ impl ResponseWrapper {
     }
 
     /// Check if response matches expected output type based on media_spec
-    pub fn matches_output_type(&self, cap: &Cap) -> bool {
-        if let Some(output_def) = cap.get_output() {
-            let media_specs = cap.get_media_specs();
-            let is_output_binary = output_def.is_binary(media_specs);
-            let is_output_json = output_def.is_json(media_specs);
+    ///
+    /// # Errors
+    /// Returns error if the output spec ID cannot be resolved
+    pub fn matches_output_type(&self, cap: &Cap) -> Result<bool, crate::media_spec::MediaSpecError> {
+        let output_def = cap.get_output()
+            .ok_or_else(|| crate::media_spec::MediaSpecError::UnresolvableSpecId(
+                "cap has no output definition".to_string()
+            ))?;
 
-            match &self.content_type {
-                ResponseContentType::Json => is_output_json || !is_output_binary,
-                ResponseContentType::Text => !is_output_binary && !is_output_json,
-                ResponseContentType::Binary => is_output_binary,
-            }
-        } else {
-            false
-        }
+        let media_specs = cap.get_media_specs();
+        let is_output_binary = output_def.is_binary(media_specs)?;
+        let is_output_json = output_def.is_json(media_specs)?;
+
+        Ok(match &self.content_type {
+            ResponseContentType::Json => is_output_json || !is_output_binary,
+            ResponseContentType::Text => !is_output_binary && !is_output_json,
+            ResponseContentType::Binary => is_output_binary,
+        })
     }
 }
 

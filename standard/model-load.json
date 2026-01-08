@@ -9,6 +9,69 @@
   "title": "Load Model",
   "cap_description": "Load a model into memory for inference operations",
   "metadata": {},
+  "media_specs": {
+    "capns:load-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/load-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the model was loaded successfully"
+          },
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the loaded model"
+          },
+          "model_handle": {
+            "type": "string",
+            "description": "Handle/ID for the loaded model instance"
+          },
+          "device": {
+            "type": "string",
+            "enum": [
+              "cpu",
+              "cuda",
+              "mps"
+            ],
+            "description": "Device the model was loaded on"
+          },
+          "precision": {
+            "type": "string",
+            "enum": [
+              "float32",
+              "float16",
+              "int8",
+              "int4"
+            ],
+            "description": "Model precision"
+          },
+          "memory_usage_mb": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Memory usage in megabytes"
+          },
+          "load_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Load time in milliseconds"
+          },
+          "model_config": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Model configuration parameters"
+          }
+        },
+        "required": [
+          "success",
+          "model_name"
+        ]
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "required": [

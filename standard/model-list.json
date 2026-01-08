@@ -9,6 +9,82 @@
   "title": "List Models",
   "cap_description": "List available models and their status",
   "metadata": {},
+  "media_specs": {
+    "capns:list-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/list-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "models",
+          "total_count"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "description": "Array of model information",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "status"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Model name or identifier"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "loaded",
+                    "available",
+                    "downloading",
+                    "cached"
+                  ],
+                  "description": "Current model status"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Model size in bytes"
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Model version"
+                },
+                "repository": {
+                  "type": "string",
+                  "description": "Source repository"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Model description"
+                },
+                "last_accessed": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Last access time"
+                }
+              }
+            }
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of models"
+          },
+          "filter_applied": {
+            "type": "string",
+            "description": "Filter that was applied"
+          }
+        }
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "optional": [

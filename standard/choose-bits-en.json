@@ -12,6 +12,23 @@
   "title": "Make Multiple Choices",
   "cap_description": "Make multiple binary (yes/no, true/false) decisions based on content and multiple questions",
   "metadata": {},
+  "media_specs": {
+    "capns:questions-array.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/questions-array",
+      "schema": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 50,
+        "items": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 4096,
+          "description": "A binary question to answer about the content"
+        }
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [

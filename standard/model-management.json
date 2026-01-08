@@ -9,6 +9,70 @@
   "title": "Manage Model",
   "cap_description": "General model management operations including installation, configuration and lifecycle",
   "metadata": {},
+  "media_specs": {
+    "capns:manage-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/manage-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the operation was successful"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "init",
+              "config",
+              "validate",
+              "cleanup",
+              "info"
+            ],
+            "description": "Operation that was performed"
+          },
+          "model_name": {
+            "type": "string",
+            "description": "Model that was operated on (if applicable)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable result message"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Operation-specific details"
+          },
+          "execution_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Operation execution time in milliseconds"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Any warnings generated during operation"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Any errors encountered during operation"
+          }
+        },
+        "required": [
+          "success",
+          "operation",
+          "message"
+        ]
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "required": [

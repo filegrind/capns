@@ -12,6 +12,63 @@
   "title": "Answer Multiple Choice in English",
   "cap_description": "Logical reasoning and binary decision tasks in English",
   "metadata": {},
+  "media_specs": {
+    "capns:llm_inference-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/llm_inference-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "type": "string",
+            "description": "The logical decision or choice made"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Confidence score for the decision"
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "Explanation of the reasoning process"
+          },
+          "decision_type": {
+            "type": "string",
+            "enum": [
+              "binary",
+              "classification",
+              "reasoning",
+              "verification",
+              "comparison"
+            ],
+            "description": "Type of decision made"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Key evidence points used"
+          },
+          "tokens_used": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tokens consumed"
+          },
+          "model_used": {
+            "type": "string",
+            "description": "Model that made the decision"
+          }
+        },
+        "required": [
+          "decision",
+          "confidence"
+        ]
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [

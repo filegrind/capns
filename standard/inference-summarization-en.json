@@ -12,6 +12,81 @@
   "title": "Summarize in English",
   "cap_description": "Document and text summarization in English",
   "metadata": {},
+  "media_specs": {
+    "capns:llm_inference-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/llm_inference-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The generated summary text"
+          },
+          "summary_type": {
+            "type": "string",
+            "enum": [
+              "extractive",
+              "abstractive",
+              "bullet_points",
+              "executive",
+              "detailed",
+              "brief"
+            ],
+            "description": "Type of summary generated"
+          },
+          "compression_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Ratio of summary length to original length"
+          },
+          "original_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Length of original text in characters"
+          },
+          "summary_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Length of summary in characters"
+          },
+          "key_points": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extracted key points from the text"
+          },
+          "tokens_used": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tokens consumed for generation"
+          },
+          "model_used": {
+            "type": "string",
+            "description": "Model that generated the summary"
+          },
+          "generation_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Generation time in milliseconds"
+          },
+          "focus_area": {
+            "type": "string",
+            "description": "Focus area that was applied"
+          }
+        },
+        "required": [
+          "summary",
+          "summary_type",
+          "compression_ratio"
+        ]
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [

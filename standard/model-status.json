@@ -9,6 +9,88 @@
   "title": "Check Model Status",
   "cap_description": "Check the status and health of a specific model",
   "metadata": {},
+  "media_specs": {
+    "capns:status-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/status-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the model"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "loaded",
+              "available",
+              "downloading",
+              "cached",
+              "error"
+            ],
+            "description": "Current model status"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "degraded",
+              "unhealthy",
+              "unknown"
+            ],
+            "description": "Model health status"
+          },
+          "is_loaded": {
+            "type": "boolean",
+            "description": "Whether the model is currently loaded in memory"
+          },
+          "memory_usage_mb": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Current memory usage in megabytes"
+          },
+          "load_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the model was loaded"
+          },
+          "last_used": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last time the model was used"
+          },
+          "usage_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of times the model has been used"
+          },
+          "average_response_time_ms": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Average response time in milliseconds"
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Error message if status is 'error'"
+          },
+          "configuration": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Model configuration (if detailed=true)"
+          }
+        },
+        "required": [
+          "model_name",
+          "status",
+          "health",
+          "is_loaded"
+        ]
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "required": [

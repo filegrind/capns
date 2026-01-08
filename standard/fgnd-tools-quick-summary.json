@@ -10,6 +10,39 @@
   "title": "Create Quick Summary Task",
   "cap_description": "Fast extraction of basic metadata from document frontmatter - validates document, extracts title, contributors, keywords",
   "metadata": {},
+  "media_specs": {
+    "fgnd:listing-id.v1": {
+      "media_type": "text/plain",
+      "profile_uri": "https://filegrind.com/schema/listing-id",
+      "schema": {
+        "type": "string",
+        "pattern": "[0-9a-f-]{36}",
+        "description": "FileGrind listing UUID"
+      }
+    },
+    "fgnd:task-id.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/quick_summary_task-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "ID of the created task"
+          },
+          "task_type": {
+            "type": "string",
+            "description": "Type of task created"
+          }
+        },
+        "required": [
+          "task_id",
+          "task_type"
+        ]
+      }
+    }
+  },
   "accepts_stdin": false,
   "arguments": {
     "required": [

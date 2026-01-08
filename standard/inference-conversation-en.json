@@ -12,6 +12,64 @@
   "title": "Converse in English",
   "cap_description": "Natural conversation and chat responses in English",
   "metadata": {},
+  "media_specs": {
+    "capns:llm_inference-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/llm_inference-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "response": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The generated conversational response"
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Unique identifier for this conversation"
+          },
+          "tokens_used": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tokens consumed for generation"
+          },
+          "finish_reason": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "length",
+              "timeout"
+            ],
+            "description": "Why generation finished"
+          },
+          "model_used": {
+            "type": "string",
+            "description": "Model that generated the response"
+          },
+          "generation_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Generation time in milliseconds"
+          },
+          "context_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Length of context provided"
+          },
+          "temperature_used": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Temperature setting used"
+          }
+        },
+        "required": [
+          "response"
+        ]
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [

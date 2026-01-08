@@ -11,6 +11,129 @@
   "title": "Extract Document Outline",
   "cap_description": "Extract document outline/table of contents with hierarchical structure",
   "metadata": {},
+  "media_specs": {
+    "capns:extract-outline-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/extract-outline-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_file",
+          "document_type",
+          "total_pages",
+          "entries",
+          "has_outline",
+          "extraction_info"
+        ],
+        "properties": {
+          "source_file": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Source file path"
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Document format/type (PDF, EPUB, etc.)"
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of pages/sections in document"
+          },
+          "entries": {
+            "type": "array",
+            "description": "Root-level outline entries",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "title",
+                "level",
+                "children"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The title/label of this outline entry"
+                },
+                "level": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Hierarchical level (0 = top level, 1 = first sublevel, etc.)"
+                },
+                "page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "description": "Page/section number this entry points to (1-indexed)"
+                },
+                "source_ref": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Optional source reference (filename, anchor, etc.)"
+                },
+                "children": {
+                  "type": "array",
+                  "description": "Child entries under this one"
+                }
+              }
+            }
+          },
+          "has_outline": {
+            "type": "boolean",
+            "description": "Whether this document has any outline/bookmarks"
+          },
+          "extraction_info": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Metadata about the extraction process",
+            "required": [
+              "extractor_name",
+              "extractor_version",
+              "warnings"
+            ],
+            "properties": {
+              "extractor_name": {
+                "type": "string",
+                "description": "Tool that performed the extraction"
+              },
+              "extractor_version": {
+                "type": "string",
+                "description": "Version of the extraction tool"
+              },
+              "extracted_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Timestamp of extraction"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Any warnings or notes about the extraction"
+              }
+            }
+          },
+          "document_title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Document title (from metadata if available)"
+          }
+        }
+      }
+    }
+  },
   "accepts_stdin": true,
   "arguments": {
     "required": [
