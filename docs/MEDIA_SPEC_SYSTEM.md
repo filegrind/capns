@@ -46,7 +46,7 @@ Additional well-known spec IDs for specific domains:
 |---------|------------|-------------|
 | `capns:extract-metadata-output.v1` | `application/json` | Document metadata extraction output |
 | `capns:extract-outline-output.v1` | `application/json` | Document outline extraction output |
-| `capns:extract-pages-output.v1` | `application/json` | Document pages extraction output |
+| `capns:grind-output.v1` | `application/json` | File chips extraction output |
 | `capns:llm_inference-output.v1` | `application/json` | LLM inference response |
 | `capns:generate-output.v1` | `application/json` | Embeddings generation output |
 | `capns:structured_query-output.v1` | `application/json` | Structured query output |
