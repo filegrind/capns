@@ -1,20 +1,20 @@
 {
   "urn": {
     "tags": {
-      "op": "extract_pages",
+      "op": "grind",
       "ext": "pdf",
       "in": "std:binary.v1",
-      "out": "capns:extract-pages-output.v1"
+      "out": "capns:grind-output.v1"
     }
   },
-  "command": "extract-pages",
-  "title": "Extract Document Pages",
+  "command": "grind",
+  "title": "Extract File Chips",
   "cap_description": "Extract structured page content from the document",
   "metadata": {},
   "media_specs": {
-    "capns:extract-pages-output.v1": {
+    "capns:grind-output.v1": {
       "media_type": "application/json",
-      "profile_uri": "https://capns.org/schema/extract-pages-output",
+      "profile_uri": "https://capns.org/schema/grind-output",
       "schema": {
         "type": "object",
         "additionalProperties": false,
@@ -168,7 +168,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:extract-pages-output.v1",
+    "media_spec": "capns:grind-output.v1",
     "output_description": "Structured page content extracted from the document"
   }
 }

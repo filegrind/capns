@@ -1,15 +1,15 @@
 {
   "urn": {
     "tags": {
-      "op": "extract_pages",
-      "ext": "txt",
+      "op": "grind",
+      "ext": "log",
       "in": "std:str.v1",
       "out": "std:obj.v1"
     }
   },
-  "command": "extract-pages",
-  "title": "Extract Text Document Pages",
-  "cap_description": "Extract pages with text content from text files",
+  "command": "grind",
+  "title": "Extract Log File Chips",
+  "cap_description": "Grind with text content from log files",
   "metadata": {},
   "accepts_stdin": true,
   "arguments": {
@@ -17,7 +17,7 @@
       {
         "name": "file_path",
         "media_spec": "std:str.v1",
-        "arg_description": "Path to the text file to process",
+        "arg_description": "Path to the log file to process",
         "cli_flag": "file_path",
         "position": 0,
         "validation": {
@@ -49,6 +49,6 @@
   },
   "output": {
     "media_spec": "std:obj.v1",
-    "output_description": "Structured document pages with text content"
+    "output_description": "Structured file chips with text content"
   }
 }

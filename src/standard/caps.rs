@@ -47,13 +47,13 @@ pub fn extract_outline_output_spec_id_for_ext(ext: &str) -> &'static str {
     }
 }
 
-/// Get the output spec ID for extract-pages operation by extension
+/// Get the output spec ID for grind operation by extension
 ///
-/// - PDF files: capns:extract-pages-output.v1 (has full schema)
+/// - PDF files: capns:grind-output.v1 (has full schema)
 /// - Text files: std:obj.v1 (generic JSON object)
-pub fn extract_pages_output_spec_id_for_ext(ext: &str) -> &'static str {
+pub fn grind_output_spec_id_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "capns:extract-pages-output.v1",
+        "pdf" => "capns:grind-output.v1",
         "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
     }
 }
@@ -224,15 +224,15 @@ pub fn generate_thumbnail_urn(ext: &str) -> CapUrn {
         .expect("Failed to build generate-thumbnail cap URN")
 }
 
-/// Build URN for extract-pages capability
-pub fn extract_pages_urn(ext: &str) -> CapUrn {
+/// Build URN for grind capability
+pub fn grind_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "extract_pages")
+        .tag("op", "grind")
         .tag("ext", ext)
         .tag("in", input_spec_id_for_ext(ext))
-        .tag("out", extract_pages_output_spec_id_for_ext(ext))
+        .tag("out", grind_output_spec_id_for_ext(ext))
         .build()
-        .expect("Failed to build extract-pages cap URN")
+        .expect("Failed to build grind cap URN")
 }
 
 /// Build URN for extract-metadata capability
@@ -530,9 +530,9 @@ pub async fn extract_outline_cap(registry: Arc<CapRegistry>, ext: &str) -> Resul
     registry.get_cap(&urn.to_string()).await
 }
 
-/// Get extract-pages cap from registry
-pub async fn extract_pages_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<Cap, RegistryError> {
-    let urn = extract_pages_urn(ext);
+/// Get grind cap from registry
+pub async fn grind_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<Cap, RegistryError> {
+    let urn = grind_urn(ext);
     registry.get_cap(&urn.to_string()).await
 }
 
