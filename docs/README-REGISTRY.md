@@ -23,24 +23,24 @@ use capns::{CapRegistry, RegistryValidator};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simple: Get a ready-to-use cap
     let registry = CapRegistry::new().await?;
-    let cap = registry.get_cap("cap:action=extract;target=metadata").await?;
+    let cap = registry.get_cap("cap:op=extract;target=metadata").await?;
     println!("Got cap: {}", cap.urn_string());
     
     // Or try without failing
-    if let Some(cap) = registry.try_get_cap("cap:action=extract;target=metadata").await {
+    if let Some(cap) = registry.try_get_cap("cap:op=extract;target=metadata").await {
         println!("Cap available: {}", cap.urn_string());
     }
     
     // Get multiple caps at once
     let caps = registry.get_caps(&[
-        "cap:action=extract;target=metadata",
-        "cap:action=generate;target=thumbnail"
+        "cap:op=extract;target=metadata",
+        "cap:op=generate;target=thumbnail"
     ]).await?;
     println!("Got {} caps", caps.len());
     
     // Using validator for additional validation
     let validator = RegistryValidator::with_registry().await?;
-    let cap = validator.get_validated_cap("cap:action=extract;target=metadata").await?;
+    let cap = validator.get_validated_cap("cap:op=extract;target=metadata").await?;
     println!("Validated cap: {}", cap.urn_string());
     
     Ok(())
@@ -66,21 +66,21 @@ func main() {
         log.Fatal(err)
     }
     
-    cap, err := registry.GetCap("cap:action=extract;target=metadata")
+    cap, err := registry.GetCap("cap:op=extract;target=metadata")
     if err != nil {
         log.Fatal(err)
     }
     fmt.Printf("Got cap: %s\n", cap.UrnString())
     
     // Or try without failing
-    if cap := registry.TryGetCap("cap:action=extract;target=metadata"); cap != nil {
+    if cap := registry.TryGetCap("cap:op=extract;target=metadata"); cap != nil {
         fmt.Printf("Cap available: %s\n", cap.UrnString())
     }
     
     // Get multiple caps at once
     urns := []string{
-        "cap:action=extract;target=metadata",
-        "cap:action=generate;target=thumbnail",
+        "cap:op=extract;target=metadata",
+        "cap:op=generate;target=thumbnail",
     }
     caps, err := registry.GetCaps(urns)
     if err == nil {
@@ -93,7 +93,7 @@ func main() {
         log.Fatal(err)
     }
     
-    cap, err = validator.GetValidatedCap("cap:action=extract;target=metadata")
+    cap, err = validator.GetValidatedCap("cap:op=extract;target=metadata")
     if err != nil {
         log.Printf("Validation error: %v", err)
     } else {
@@ -111,7 +111,7 @@ int main() {
     // Simple: Get a ready-to-use cap
     CSCapRegistry *registry = [CSCapRegistry registry];
     
-    [registry getCap:@"cap:action=extract;target=metadata" completion:^(CSCap *cap, NSError *error) {
+    [registry getCap:@"cap:op=extract;target=metadata" completion:^(CSCap *cap, NSError *error) {
         if (cap) {
             NSLog(@"Got cap: %@", [cap urnString]);
         } else {
@@ -120,7 +120,7 @@ int main() {
     }];
     
     // Or try without failing
-    [registry tryGetCap:@"cap:action=extract;target=metadata" completion:^(CSCap *cap) {
+    [registry tryGetCap:@"cap:op=extract;target=metadata" completion:^(CSCap *cap) {
         if (cap) {
             NSLog(@"Cap available: %@", [cap urnString]);
         }
@@ -128,8 +128,8 @@ int main() {
     
     // Get multiple caps at once
     NSArray<NSString *> *urns = @[
-        @"cap:action=extract;target=metadata",
-        @"cap:action=generate;target=thumbnail"
+        @"cap:op=extract;target=metadata",
+        @"cap:op=generate;target=thumbnail"
     ];
     
     [registry getCaps:urns completion:^(NSArray<CSCap *> *caps, NSError *error) {
@@ -141,7 +141,7 @@ int main() {
     // Using validator for additional validation
     CSRegistryValidator *validator = [CSRegistryValidator validator];
     
-    [validator getValidatedCap:@"cap:action=extract;target=metadata" completion:^(CSCap *cap, NSError *error) {
+    [validator getValidatedCap:@"cap:op=extract;target=metadata" completion:^(CSCap *cap, NSError *error) {
         if (cap) {
             NSLog(@"Validated cap: %@", [cap urnString]);
         } else {
@@ -173,7 +173,7 @@ func main() {
     }
     
     // Get canonical cap
-    cap, err := sdk.GetStandardCapByUrnCanonical("cap:action=extract;target=metadata;")
+    cap, err := sdk.GetStandardCapByUrnCanonical("cap:op=extract;target=metadata;")
     if err != nil {
         log.Printf("Error getting canonical cap: %v", err)
     } else {
@@ -199,7 +199,7 @@ int main() {
     FGNDRegistryManager *manager = [FGNDRegistryManager manager];
     
     // Get canonical cap
-    [FGNDStandardCaps standardCapWithUrnCanonical:@"cap:action=extract;target=metadata;" completion:^(CSCap *cap, NSError *error) {
+    [FGNDStandardCaps standardCapWithUrnCanonical:@"cap:op=extract;target=metadata;" completion:^(CSCap *cap, NSError *error) {
         if (cap) {
             NSLog(@"Got canonical cap: %@", [cap urnString]);
         } else {
