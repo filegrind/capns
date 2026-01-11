@@ -28,18 +28,18 @@ Cap URNs use a flat tag-based format: `tag1=value1;tag2=value2;tag3=value3`
 
 **Examples:**
 ```
-action=extract;target=metadata;ext=pdf
-action=conversation;language=en;type=unconstrained
-action=generate;target=thumbnail;format=epub;output=binary
+op=extract;target=metadata;ext=pdf
+op=conversation;language=en;type=unconstrained
+op=generate;target=thumbnail;format=epub;output=binary
 ```
 
 **Wildcards:**
-- Use `*` to match any value: `action=extract;format=*;`
+- Use `*` to match any value: `op=extract;format=*;`
 - Wildcards enable flexible cap requests
 
 **Specificity:**
 - More specific caps are preferred over general ones
-- `action=extract;ext=pdf;` is more specific than `action=extract;`
+- `op=extract;ext=pdf;` is more specific than `op=extract;`
 
 ### Cap Definitions
 
@@ -98,7 +98,7 @@ Core implementation with full feature set.
 use capns::{CapUrn, Cap, CapUrnBuilder};
 
 // Create cap URN
-let key = CapUrn::from_string("cap:action=extract;target=metadata;")?;
+let key = CapUrn::from_string("cap:op=extract;target=metadata;")?;
 
 // Build cap URN with builder pattern
 let key = CapUrnBuilder::new()
@@ -119,7 +119,7 @@ Feature-complete Go implementation.
 import "github.com/fgnd/capns-go"
 
 // Create cap URN
-key, err := capns.NewCapUrnFromString("cap:action=extract;target=metadata;")
+key, err := capns.NewCapUrnFromString("cap:op=extract;target=metadata;")
 
 // Build with builder pattern
 key, err = capns.NewCapUrnBuilder().
@@ -142,7 +142,7 @@ Native Objective-C/Swift implementation for Apple platforms.
 
 // Create cap URN
 NSError *error;
-CSCapUrn *key = [CSCapUrn fromString:@"cap:action=extract;target=metadata;" 
+CSCapUrn *key = [CSCapUrn fromString:@"cap:op=extract;target=metadata;" 
                                              error:&error];
 
 // Build with builder pattern
@@ -164,8 +164,8 @@ CSCap *cap = [CSCap capWithUrn:key
 
 ```rust
 // Check if cap can handle request
-let cap_urn = CapUrn::from_string("cap:action=extract;target=metadata;ext=pdf")?;
-let request_key = CapUrn::from_string("action=extract;")?;
+let cap_urn = CapUrn::from_string("cap:op=extract;target=metadata;ext=pdf")?;
+let request_key = CapUrn::from_string("op=extract;")?;
 
 if cap_urn.can_handle(&request_key) {
     println!("Cap can handle this request");
@@ -175,8 +175,8 @@ if cap_urn.can_handle(&request_key) {
 ### Specificity Comparison
 
 ```rust
-let general = CapUrn::from_string("action=extract;")?;
-let specific = CapUrn::from_string("cap:action=extract;ext=pdf")?;
+let general = CapUrn::from_string("op=extract;")?;
+let specific = CapUrn::from_string("cap:op=extract;ext=pdf")?;
 
 if specific.is_more_specific_than(&general) {
     println!("Specific cap preferred");
@@ -201,19 +201,19 @@ let key = CapUrnBuilder::new()
 Common cap patterns are predefined:
 
 **Document Processing:**
-- `action=extract;target=metadata;format={pdf,txt,md,...}`
-- `action=extract;target=pages;format={pdf,epub,...}`
-- `action=extract;target=outline;format={pdf,...}`
-- `action=generate;target=thumbnail;format={pdf,epub,...};output=binary`
+- `op=extract;target=metadata;format={pdf,txt,md,...}`
+- `op=extract;target=pages;format={pdf,epub,...}`
+- `op=extract;target=outline;format={pdf,...}`
+- `op=generate;target=thumbnail;format={pdf,epub,...};output=binary`
 
 **AI/ML Inference:**
-- `action={conversation,analysis,embedding};type=constrained;language={en,es,multilingual,...}`
-- `action=generate;target=embeddings;`
-- `action=dimensions;target=embeddings;`
+- `op={conversation,analysis,embedding};type=constrained;language={en,es,multilingual,...}`
+- `op=generate;target=embeddings;`
+- `op=dimensions;target=embeddings;`
 
 **File Operations:**
-- `action=validate;type=file`
-- `action=read;type=file;format={json,xml,csv,...}`
+- `op=validate;type=file`
+- `op=read;type=file;format={json,xml,csv,...}`
 
 ## Input/Output Handling
 
@@ -251,7 +251,7 @@ let cap = extract_metadata_cap();
 provider_registry.register_cap("pdf-provider", cap);
 
 // Find best provider for cap
-let caller = provider_registry.can("cap:action=extract;target=metadata;ext=pdf")?;
+let caller = provider_registry.can("cap:op=extract;target=metadata;ext=pdf")?;
 let result = caller.call(args).await?;
 ```
 
@@ -267,7 +267,7 @@ let cap = extract_metadata_cap();
 
 // Customize for specific file type
 let mut pdf_cap = cap.clone();
-pdf_cap.urn = CapUrn::from_string("cap:action=extract;target=metadata;ext=pdf")?;
+pdf_cap.urn = CapUrn::from_string("cap:op=extract;target=metadata;ext=pdf")?;
 ```
 
 ## Validation
