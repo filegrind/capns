@@ -1,9 +1,9 @@
 //! Profile Schema Registry
 //!
-//! Downloads and caches JSON Schema profiles from profile URLs.
+//! Registry for JSON Schema profiles. Downloads and caches schemas from profile URLs
+//! for validating data against media spec type definitions.
 //! Embeds default schemas for standard types (string, integer, number, boolean, object, arrays).
 //! Uses a two-level cache: disk-based cached schemas and in-memory compiled schemas.
-//! Pattern matches CapRegistry for consistency.
 
 use jsonschema::JSONSchema;
 use serde::{Deserialize, Serialize};
@@ -162,7 +162,11 @@ impl ProfileSchemaRegistry {
     /// Create a new ProfileSchemaRegistry with standard schemas bundled
     pub async fn new() -> Result<Self, ProfileSchemaError> {
         let cache_dir = Self::get_cache_dir()?;
+        Self::new_with_cache_dir(cache_dir).await
+    }
 
+    /// Create a new ProfileSchemaRegistry with a custom cache directory
+    pub async fn new_with_cache_dir(cache_dir: PathBuf) -> Result<Self, ProfileSchemaError> {
         fs::create_dir_all(&cache_dir).map_err(|e| {
             ProfileSchemaError::CacheError(format!("Failed to create cache directory: {}", e))
         })?;
@@ -503,16 +507,26 @@ pub enum ProfileSchemaError {
 mod tests {
     use super::*;
     use serde_json::json;
+    use tempfile::TempDir;
+
+    /// Create a registry with an isolated temporary cache directory
+    async fn create_test_registry() -> (ProfileSchemaRegistry, TempDir) {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let registry = ProfileSchemaRegistry::new_with_cache_dir(temp_dir.path().to_path_buf())
+            .await
+            .expect("Failed to create registry");
+        (registry, temp_dir)
+    }
 
     #[tokio::test]
     async fn test_registry_creation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
         assert!(registry.cache_dir.exists());
     }
 
     #[tokio::test]
     async fn test_embedded_schemas_loaded() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Check that embedded schemas are available
         assert!(registry.schema_exists(PROFILE_STR));
@@ -528,7 +542,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_string_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string
         assert!(registry.validate(PROFILE_STR, &json!("hello")).await.is_ok());
@@ -539,7 +553,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_integer_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid integer
         assert!(registry.validate(PROFILE_INT, &json!(42)).await.is_ok());
@@ -553,7 +567,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_number_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid number (integer)
         assert!(registry.validate(PROFILE_NUM, &json!(42)).await.is_ok());
@@ -567,7 +581,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_boolean_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid boolean
         assert!(registry.validate(PROFILE_BOOL, &json!(true)).await.is_ok());
@@ -579,7 +593,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_object_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid object
         assert!(registry.validate(PROFILE_OBJ, &json!({"key": "value"})).await.is_ok());
@@ -590,7 +604,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_string_array_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string array
         assert!(registry.validate(PROFILE_STR_ARRAY, &json!(["a", "b", "c"])).await.is_ok());
@@ -604,7 +618,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_unknown_profile_skips_validation() {
-        let registry = ProfileSchemaRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = create_test_registry().await;
 
         // Unknown profile should return Ok - skip validation
         let result = registry.validate("https://example.com/unknown-profile", &json!("anything")).await;

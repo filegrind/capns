@@ -15,7 +15,7 @@ pub mod caller;
 pub mod response;
 pub mod caphost_registry;
 pub mod media_spec;
-pub mod profile_schema_cache;
+pub mod profile_schema_registry;
 
 pub use cap_urn::*;
 pub use cap::*;
@@ -28,4 +28,4 @@ pub use caller::*;
 pub use response::*;
 pub use caphost_registry::*;
 pub use media_spec::*;
-pub use profile_schema_cache::{ProfileSchemaRegistry, ProfileSchemaError};
+pub use profile_schema_registry::{ProfileSchemaRegistry, ProfileSchemaError};

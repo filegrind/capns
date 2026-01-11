@@ -7,7 +7,7 @@
 
 use crate::{Cap, CapArgument, CapOutput};
 use crate::media_spec::resolve_spec_id;
-use crate::profile_schema_cache::ProfileSchemaRegistry;
+use crate::profile_schema_registry::ProfileSchemaRegistry;
 use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
