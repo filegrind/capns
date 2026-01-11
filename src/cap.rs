@@ -239,6 +239,26 @@ impl CapOutput {
     }
 }
 
+/// Registration attribution - who registered this capability and when
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegisteredBy {
+    /// Username of the user who registered this capability
+    pub username: String,
+
+    /// ISO 8601 timestamp of when the capability was registered
+    pub registered_at: String,
+}
+
+impl RegisteredBy {
+    /// Create a new registration attribution
+    pub fn new(username: impl Into<String>, registered_at: impl Into<String>) -> Self {
+        Self {
+            username: username.into(),
+            registered_at: registered_at.into(),
+        }
+    }
+}
+
 /// Formal cap definition
 ///
 /// A cap definition includes:
@@ -280,6 +300,9 @@ pub struct Cap {
 
     /// Arbitrary metadata as JSON object
     pub metadata_json: Option<serde_json::Value>,
+
+    /// Registration attribution - who registered this capability and when
+    pub registered_by: Option<RegisteredBy>,
 }
 
 // Custom PartialEq implementation that includes all fields
@@ -294,7 +317,8 @@ impl PartialEq for Cap {
         self.arguments == other.arguments &&
         self.output == other.output &&
         self.accepts_stdin == other.accepts_stdin &&
-        self.metadata_json == other.metadata_json
+        self.metadata_json == other.metadata_json &&
+        self.registered_by == other.registered_by
     }
 }
 
@@ -344,6 +368,10 @@ impl Serialize for Cap {
             state.serialize_field("metadata_json", &self.metadata_json)?;
         }
 
+        if self.registered_by.is_some() {
+            state.serialize_field("registered_by", &self.registered_by)?;
+        }
+
         state.end()
     }
 }
@@ -370,6 +398,7 @@ impl<'de> Deserialize<'de> for Cap {
             #[serde(default)]
             accepts_stdin: bool,
             metadata_json: Option<serde_json::Value>,
+            registered_by: Option<RegisteredBy>,
         }
 
         let registry_cap = CapRegistry::deserialize(deserializer)?;
@@ -406,6 +435,7 @@ impl<'de> Deserialize<'de> for Cap {
             output: registry_cap.output,
             accepts_stdin: registry_cap.accepts_stdin,
             metadata_json: registry_cap.metadata_json,
+            registered_by: registry_cap.registered_by,
         })
     }
 }
@@ -674,6 +704,7 @@ impl Cap {
             output: None,
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         }
     }
 
@@ -690,6 +721,7 @@ impl Cap {
             output: None,
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         }
     }
 
@@ -711,6 +743,7 @@ impl Cap {
             output: None,
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         }
     }
 
@@ -733,6 +766,7 @@ impl Cap {
             output: None,
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         }
     }
 
@@ -754,6 +788,7 @@ impl Cap {
             output: None,
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         }
     }
 
@@ -790,6 +825,7 @@ impl Cap {
             output,
             accepts_stdin: false,
             metadata_json,
+            registered_by: None,
         }
     }
 
@@ -851,7 +887,22 @@ impl Cap {
     pub fn has_metadata(&self, key: &str) -> bool {
         self.metadata.contains_key(key)
     }
-    
+
+    /// Get the registration attribution
+    pub fn get_registered_by(&self) -> Option<&RegisteredBy> {
+        self.registered_by.as_ref()
+    }
+
+    /// Set the registration attribution
+    pub fn set_registered_by(&mut self, registered_by: RegisteredBy) {
+        self.registered_by = Some(registered_by);
+    }
+
+    /// Clear the registration attribution
+    pub fn clear_registered_by(&mut self) {
+        self.registered_by = None;
+    }
+
     /// Get the command
     pub fn get_command(&self) -> &String {
         &self.command

@@ -196,6 +196,7 @@ mod tests {
             output: Some(CapOutput::new(SPEC_ID_STR, "Test output")),
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         };
 
         registry.register_caphost("test-host".to_string(), host, vec![cap]).await.unwrap();
@@ -231,6 +232,7 @@ mod tests {
             output: Some(CapOutput::new(SPEC_ID_STR, "General output")),
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         };
 
         // Register specific host
@@ -248,6 +250,7 @@ mod tests {
             output: Some(CapOutput::new(SPEC_ID_STR, "Specific output")),
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         };
 
         registry.register_caphost("general".to_string(), general_host, vec![general_cap]).await.unwrap();
@@ -291,6 +294,7 @@ mod tests {
             output: None,
             accepts_stdin: false,
             metadata_json: None,
+            registered_by: None,
         };
 
         tokio::runtime::Runtime::new().unwrap().block_on(async {
