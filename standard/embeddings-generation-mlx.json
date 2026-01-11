@@ -1,0 +1,167 @@
+{
+  "urn": {
+    "tags": {
+      "op": "generate_embeddings",
+      "in": "std:str.v1",
+      "out": "capns:embeddings-output.v1",
+      "model_type": "mlx"
+    }
+  },
+  "command": "embeddings",
+  "title": "Generate Vector Embeddings (MLX)",
+  "cap_description": "Generate vector embeddings from text using MLX-based models on Apple Silicon",
+  "metadata": {},
+  "media_specs": {
+    "capns:embeddings-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/embeddings-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "model_name",
+          "embedding_dim",
+          "total_chunks",
+          "results"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the embedding generation succeeded"
+          },
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the embedding model used"
+          },
+          "embedding_dim": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Dimensionality of the embedding vectors"
+          },
+          "total_chunks": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of text chunks processed"
+          },
+          "results": {
+            "type": "array",
+            "description": "Array of embedding results for each chunk",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "chunk",
+                "embedding"
+              ],
+              "properties": {
+                "chunk": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "chunk_index",
+                    "text",
+                    "start_offset",
+                    "end_offset"
+                  ],
+                  "properties": {
+                    "chunk_index": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Index of this chunk"
+                    },
+                    "text": {
+                      "type": "string",
+                      "description": "The text content of this chunk"
+                    },
+                    "start_offset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Start byte offset in original text"
+                    },
+                    "end_offset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "End byte offset in original text"
+                    }
+                  }
+                },
+                "embedding": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "The embedding vector for this chunk"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "media_spec": "std:str.v1",
+        "arg_description": "Path to MLX embedding model directory",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "text",
+        "media_spec": "std:str.v1",
+        "arg_description": "Input text to generate embeddings for",
+        "cli_flag": "--text",
+        "validation": {
+          "min_length": 1,
+          "max_length": 1000000
+        }
+      },
+      {
+        "name": "file",
+        "media_spec": "std:str.v1",
+        "arg_description": "Path to input file to generate embeddings from",
+        "cli_flag": "--file",
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      },
+      {
+        "name": "chunk_size",
+        "media_spec": "std:int.v1",
+        "arg_description": "Chunk size in words for splitting input text",
+        "cli_flag": "--chunk-size",
+        "default_value": 400,
+        "validation": {
+          "min": 10,
+          "max": 2000
+        }
+      },
+      {
+        "name": "chunk_overlap",
+        "media_spec": "std:int.v1",
+        "arg_description": "Chunk overlap in words when splitting input text",
+        "cli_flag": "--chunk-overlap",
+        "default_value": 50,
+        "validation": {
+          "min": 0,
+          "max": 500
+        }
+      }
+    ]
+  },
+  "output": {
+    "media_spec": "capns:embeddings-output.v1",
+    "output_description": "JSON containing embeddings, chunk metadata and model information"
+  }
+}

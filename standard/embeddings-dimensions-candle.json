@@ -1,0 +1,37 @@
+{
+  "urn": {
+    "tags": {
+      "op": "embeddings_dimensions",
+      "out": "std:int.v1",
+      "model_type": "candle"
+    }
+  },
+  "command": "dimensions",
+  "title": "Get Embeddings Dimensions (Candle)",
+  "cap_description": "Query the dimensionality of embeddings for a given Candle model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "optional": [
+      {
+        "name": "model",
+        "media_spec": "std:str.v1",
+        "arg_description": "HuggingFace model name to query dimensions for",
+        "cli_flag": "--model",
+        "default_value": "sentence-transformers/all-MiniLM-L6-v2",
+        "validation": {
+          "min_length": 1,
+          "max_length": 256
+        }
+      }
+    ]
+  },
+  "output": {
+    "media_spec": "std:int.v1",
+    "output_description": "Dimensionality of the embeddings (positive integer)",
+    "validation": {
+      "min": 1,
+      "max": 100000
+    }
+  }
+}

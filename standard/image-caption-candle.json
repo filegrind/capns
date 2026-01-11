@@ -1,0 +1,101 @@
+{
+  "urn": {
+    "tags": {
+      "op": "generate_caption",
+      "in": "std:binary.v1",
+      "out": "capns:caption-output.v1",
+      "model_type": "candle"
+    }
+  },
+  "command": "caption",
+  "title": "Generate Image Caption (Candle)",
+  "cap_description": "Generate image captions using BLIP models with Candle ML framework",
+  "metadata": {},
+  "media_specs": {
+    "capns:caption-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/caption-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_name",
+          "image_path",
+          "caption"
+        ],
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the BLIP model used"
+          },
+          "image_path": {
+            "type": "string",
+            "description": "Path to the captioned image"
+          },
+          "caption": {
+            "type": "string",
+            "description": "Generated caption for the image"
+          },
+          "generation_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Caption generation time in milliseconds"
+          }
+        }
+      }
+    }
+  },
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "image",
+        "media_spec": "std:str.v1",
+        "arg_description": "Path to the image file to caption",
+        "cli_flag": "--image",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "prompt",
+        "media_spec": "std:str.v1",
+        "arg_description": "Optional prompt to guide the captioning",
+        "cli_flag": "--prompt",
+        "validation": {
+          "min_length": 1,
+          "max_length": 512
+        }
+      },
+      {
+        "name": "model",
+        "media_spec": "std:str.v1",
+        "arg_description": "BLIP model name from HuggingFace",
+        "cli_flag": "--model",
+        "default_value": "Salesforce/blip-image-captioning-large",
+        "validation": {
+          "min_length": 1,
+          "max_length": 256
+        }
+      },
+      {
+        "name": "output",
+        "media_spec": "std:str.v1",
+        "arg_description": "Output JSON file path",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "media_spec": "capns:caption-output.v1",
+    "output_description": "Generated caption with model metadata"
+  }
+}

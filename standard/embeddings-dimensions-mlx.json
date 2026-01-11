@@ -1,0 +1,36 @@
+{
+  "urn": {
+    "tags": {
+      "op": "embeddings_dimensions",
+      "out": "std:int.v1",
+      "model_type": "mlx"
+    }
+  },
+  "command": "dimensions",
+  "title": "Get Embeddings Dimensions (MLX)",
+  "cap_description": "Query the dimensionality of embeddings for a given MLX model",
+  "metadata": {},
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "media_spec": "std:str.v1",
+        "arg_description": "Path to MLX embedding model directory",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "min_length": 1
+        }
+      }
+    ]
+  },
+  "output": {
+    "media_spec": "std:int.v1",
+    "output_description": "Dimensionality of the embeddings (positive integer)",
+    "validation": {
+      "min": 1,
+      "max": 100000
+    }
+  }
+}

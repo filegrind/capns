@@ -1,0 +1,161 @@
+{
+  "urn": {
+    "tags": {
+      "op": "generate_text",
+      "type": "llm",
+      "in": "std:str.v1",
+      "out": "capns:llm_inference-output.v1",
+      "model_type": "mlx"
+    }
+  },
+  "command": "llm",
+  "title": "Generate Text with LLM (MLX)",
+  "cap_description": "Generate text using MLX-based LLM models on Apple Silicon",
+  "metadata": {},
+  "media_specs": {
+    "capns:llm_inference-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/llm_inference-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "generated_text",
+          "model_name",
+          "tokens_generated"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether generation succeeded"
+          },
+          "generated_text": {
+            "type": "string",
+            "description": "The generated text response"
+          },
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the model used for generation"
+          },
+          "tokens_generated": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tokens generated"
+          },
+          "generation_time_ms": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Generation time in milliseconds"
+          },
+          "prompt_tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tokens in the prompt"
+          },
+          "finish_reason": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "length"
+            ],
+            "description": "Why generation finished"
+          }
+        }
+      }
+    }
+  },
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "model",
+        "media_spec": "std:str.v1",
+        "arg_description": "Path to MLX model directory or HuggingFace model ID",
+        "cli_flag": "--model",
+        "position": 0,
+        "validation": {
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "prompt",
+        "media_spec": "std:str.v1",
+        "arg_description": "Input text prompt for generation",
+        "cli_flag": "--prompt",
+        "validation": {
+          "min_length": 1,
+          "max_length": 65536
+        }
+      },
+      {
+        "name": "max_tokens",
+        "media_spec": "std:int.v1",
+        "arg_description": "Maximum number of tokens to generate",
+        "cli_flag": "--max-tokens",
+        "default_value": 512,
+        "validation": {
+          "min": 1,
+          "max": 8192
+        }
+      },
+      {
+        "name": "temperature",
+        "media_spec": "std:num.v1",
+        "arg_description": "Sampling temperature (0.0-2.0)",
+        "cli_flag": "--temperature",
+        "default_value": 0.7,
+        "validation": {
+          "min": 0,
+          "max": 2
+        }
+      },
+      {
+        "name": "top_p",
+        "media_spec": "std:num.v1",
+        "arg_description": "Top-p (nucleus) sampling parameter",
+        "cli_flag": "--top-p",
+        "default_value": 0.9,
+        "validation": {
+          "min": 0,
+          "max": 1
+        }
+      },
+      {
+        "name": "repetition_penalty",
+        "media_spec": "std:num.v1",
+        "arg_description": "Repetition penalty",
+        "cli_flag": "--repetition-penalty",
+        "default_value": 1.1,
+        "validation": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "name": "seed",
+        "media_spec": "std:int.v1",
+        "arg_description": "Random seed for reproducibility",
+        "cli_flag": "--seed",
+        "validation": {
+          "min": 0,
+          "max": 4294967295
+        }
+      },
+      {
+        "name": "stream",
+        "media_spec": "std:bool.v1",
+        "arg_description": "Enable streaming output",
+        "cli_flag": "--stream",
+        "default_value": false
+      }
+    ]
+  },
+  "output": {
+    "media_spec": "capns:llm_inference-output.v1",
+    "output_description": "Generated text with metadata including tokens and timing"
+  }
+}

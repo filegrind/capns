@@ -1,0 +1,156 @@
+{
+  "urn": {
+    "tags": {
+      "op": "generate_image_embeddings",
+      "in": "std:binary.v1",
+      "out": "capns:image-embeddings-output.v1",
+      "model_type": "candle"
+    }
+  },
+  "command": "image-embed",
+  "title": "Generate Image Embeddings (Candle)",
+  "cap_description": "Generate image embeddings using CLIP models with Candle ML framework",
+  "metadata": {},
+  "media_specs": {
+    "capns:image-embeddings-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/image-embeddings-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_name",
+          "embedding_dim",
+          "image_path",
+          "embedding"
+        ],
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the CLIP model used"
+          },
+          "embedding_dim": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Dimensionality of the embedding vector"
+          },
+          "image_path": {
+            "type": "string",
+            "description": "Path to the embedded image"
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "The image embedding vector"
+          },
+          "generation_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Embedding generation time in milliseconds"
+          }
+        }
+      }
+    },
+    "capns:image-embeddings-batch-output.v1": {
+      "media_type": "application/json",
+      "profile_uri": "https://capns.org/schema/image-embeddings-batch-output",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_name",
+          "embedding_dim",
+          "total_images",
+          "results"
+        ],
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the CLIP model used"
+          },
+          "embedding_dim": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Dimensionality of the embedding vectors"
+          },
+          "total_images": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of images processed"
+          },
+          "results": {
+            "type": "array",
+            "description": "Array of image embedding results",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "image_path",
+                "embedding"
+              ],
+              "properties": {
+                "image_path": {
+                  "type": "string",
+                  "description": "Path to the image"
+                },
+                "embedding": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "The embedding vector"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "accepts_stdin": false,
+  "arguments": {
+    "required": [
+      {
+        "name": "image",
+        "media_spec": "std:str.v1",
+        "arg_description": "Path to the image file to embed",
+        "cli_flag": "--image",
+        "position": 0,
+        "validation": {
+          "pattern": "^[^\\0]+$",
+          "min_length": 1
+        }
+      }
+    ],
+    "optional": [
+      {
+        "name": "model",
+        "media_spec": "std:str.v1",
+        "arg_description": "CLIP model name from HuggingFace",
+        "cli_flag": "--model",
+        "default_value": "openai/clip-vit-base-patch32",
+        "validation": {
+          "min_length": 1,
+          "max_length": 256
+        }
+      },
+      {
+        "name": "output",
+        "media_spec": "std:str.v1",
+        "arg_description": "Output JSON file path",
+        "cli_flag": "--output",
+        "validation": {
+          "pattern": "^[^\\0]+$"
+        }
+      }
+    ]
+  },
+  "output": {
+    "media_spec": "capns:image-embeddings-output.v1",
+    "output_description": "Image embedding vector with model metadata"
+  }
+}
