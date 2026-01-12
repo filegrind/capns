@@ -135,7 +135,7 @@ When multiple caps match a request, select the one with highest specificity:
 - `cap:op=generate` has specificity 1
 - Higher specificity wins
 
-### 16. Provider Selection Algorithm (`find_best_caphost`)
+### 16. Provider Selection Algorithm (`find_best_cap_set`)
 1. For each registered provider, check if `provider.cap.matches(request)`
 2. Collect all matching providers
 3. Select the one with highest specificity

@@ -13,7 +13,7 @@ pub mod registry;
 pub mod standard;
 pub mod caller;
 pub mod response;
-pub mod caphost_registry;
+pub mod cap_matrix;
 pub mod media_spec;
 pub mod profile_schema_registry;
 
@@ -26,6 +26,6 @@ pub use registry::*;
 pub use standard::*;
 pub use caller::*;
 pub use response::*;
-pub use caphost_registry::*;
+pub use cap_matrix::*;
 pub use media_spec::*;
 pub use profile_schema_registry::{ProfileSchemaRegistry, ProfileSchemaError};

@@ -8,12 +8,12 @@ use crate::media_spec::{resolve_spec_id, ResolvedMediaSpec};
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
     cap: String,
-    cap_host: Box<dyn CapHost>,
+    cap_set: Box<dyn CapSet>,
     cap_definition: Cap,
 }
 
 /// Trait for Cap Host communication
-pub trait CapHost: Send + Sync + std::fmt::Debug {
+pub trait CapSet: Send + Sync + std::fmt::Debug {
     fn execute_cap(
         &self,
         cap_urn: &str,
@@ -27,12 +27,12 @@ impl CapCaller {
     /// Create a new cap caller with validation
     pub fn new(
         cap: String,
-        cap_host: Box<dyn CapHost>,
+        cap_set: Box<dyn CapSet>,
         cap_definition: Cap,
     ) -> Self {
         Self {
             cap,
-            cap_host,
+            cap_set,
             cap_definition,
         }
     }
@@ -84,7 +84,7 @@ impl CapCaller {
             .collect();
 
         // Execute via cap host method with stdin support
-        let (binary_output, text_output) = self.cap_host.execute_cap(
+        let (binary_output, text_output) = self.cap_set.execute_cap(
             &self.cap,
             &string_positional_args,
             &string_named_args,
