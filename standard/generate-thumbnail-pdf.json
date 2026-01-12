@@ -2,12 +2,14 @@
   "urn": {
     "tags": {
       "op": "generate_thumbnail",
+      "ext": "pdf",
+      "in": "std:binary.v1",
       "out": "std:binary.v1"
     }
   },
   "command": "generate-thumbnail",
   "title": "Generate Thumbnail",
-  "cap_description": "Generate a thumbnail image preview of the file",
+  "cap_description": "Generate a thumbnail image preview of the document",
   "metadata": {},
   "accepts_stdin": true,
   "arguments": {
@@ -48,22 +50,22 @@
         }
       },
       {
-        "name": "index_range",
-        "media_spec": "std:str.v1",
-        "arg_description": "Index Range to generate thumbnails from (1-based).",
-        "cli_flag": "--index-range",
-        "default_value": "1",
-        "validation": {
-          "pattern": "^\\d+(-\\d*)?$"
-        }
-      },
-      {
         "name": "output_file",
         "media_spec": "std:str.v1",
         "arg_description": "Write thumbnail to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
           "pattern": "\\.(png|jpg|jpeg)$"
+        }
+      },
+      {
+        "name": "index_range",
+        "media_spec": "std:str.v1",
+        "arg_description": "Index Range to generate thumbnails from (1-based). Examples: '1' (single page), '1-5' (pages 1-5), '3-' (page 3 to end)",
+        "cli_flag": "--index-range",
+        "default_value": "1",
+        "validation": {
+          "pattern": "^\\d+(-\\d*)?$"
         }
       }
     ]

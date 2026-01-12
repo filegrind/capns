@@ -157,10 +157,10 @@
         }
       },
       {
-        "name": "page_range",
+        "name": "index_range",
         "media_spec": "std:str.v1",
-        "arg_description": "Page range to extract (e.g., '1-5' or '10-')",
-        "cli_flag": "--page-range",
+        "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
+        "cli_flag": "--index-range",
         "validation": {
           "pattern": "^\\d+(-\\d*)?$"
         }
