@@ -3,7 +3,6 @@
     "tags": {
       "op": "generate_thumbnail",
       "ext": "pdf",
-      "in": "std:binary.v1",
       "out": "std:binary.v1"
     }
   },
