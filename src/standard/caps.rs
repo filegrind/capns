@@ -214,14 +214,21 @@ pub fn model_contents_urn() -> CapUrn {
 // -----------------------------------------------------------------------------
 
 /// Build URN for generate-thumbnail capability
-pub fn generate_thumbnail_urn(ext: &str) -> CapUrn {
-    CapUrnBuilder::new()
+///
+/// If `ext` is Some, builds a URN with the extension tag.
+/// If `ext` is None, builds a generic fallback URN that matches any file type.
+/// The `in` tag is not included - providers can specify it if they need to be
+/// more specific, but the default matching uses implicit wildcards.
+pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
+    let mut builder = CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
-        .tag("ext", ext)
-        .tag("in", input_spec_id_for_ext(ext))
-        .tag("out", "std:binary.v1")
-        .build()
-        .expect("Failed to build generate-thumbnail cap URN")
+        .tag("out", "std:binary.v1");
+
+    if let Some(e) = ext {
+        builder = builder.tag("ext", e);
+    }
+
+    builder.build().expect("Failed to build generate-thumbnail cap URN")
 }
 
 /// Build URN for grind capability
@@ -519,7 +526,7 @@ pub async fn extract_metadata_cap(registry: Arc<CapRegistry>, ext: &str) -> Resu
 }
 
 /// Get generate-thumbnail cap from registry
-pub async fn generate_thumbnail_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<Cap, RegistryError> {
+pub async fn generate_thumbnail_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
     let urn = generate_thumbnail_urn(ext);
     registry.get_cap(&urn.to_string()).await
 }

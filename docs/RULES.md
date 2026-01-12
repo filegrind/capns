@@ -60,53 +60,127 @@ No reserved tag names - anything goes for tag keys.
 
 ### 10. Wildcard Support
 - Wildcard `*` is accepted only as tag value, not as tag key
-- When used as a tag value, `*` matches any value for that tag key
+- When used as a tag value, `*` matches any value for that tag key (see Matching Semantics below)
 
 ### 11. No Empty Components
 Tags with no values are not accepted. Both key and value must be non-empty after trimming whitespace.
 
-### 12. Matching Specificity
-As more tags are specified, URNs become more specific:
-- `cap:` matches any URN
-- `cap:prop=*` matches any URN that has a `prop` tag with any value
-- `cap:prop=1` matches only URNs that have `prop=1`, regardless of other tags
+## Matching Semantics (CRITICAL)
 
-### 13. Exact Tag Matching
-`cap:prop=1` matches only URNs that have `prop=1` irrespective of other tags present.
+This section defines how cap URN matching works when finding a provider/capability that can satisfy a request. This is the core algorithm that ALL implementations MUST follow exactly.
 
-### 14. Subset Matching
-Only the tags specified in the criteria affect matching. URNs with extra tags not mentioned in the criteria still match if they satisfy all specified criteria.
+### 12. Missing Tags as Implicit Wildcards
+A missing tag is semantically equivalent to `tag=*`. This means:
+- `cap:op=generate` is equivalent to `cap:op=generate;ext=*;in=*;out=*;...` for all possible tags
+- A cap with fewer tags can match requests with more tags (the cap can handle "any" value for missing dimensions)
 
-### 15. Duplicate Keys
+### 13. The `matches(cap, request)` Function
+Given a **cap** (what a provider offers) and a **request** (what is being asked for), the cap matches the request if and only if:
+
+**Step 1: Check all tags in the REQUEST**
+For each `(key, value)` in request.tags:
+- If cap has the same key:
+  - If cap's value is `*` → OK (cap can handle any value)
+  - If request's value is `*` → OK (request accepts any value)
+  - If cap's value equals request's value → OK
+  - Otherwise → NO MATCH
+- If cap is missing this key → OK (missing = implicit `*`, cap can handle any value)
+
+**Step 2: Check all tags in the CAP that request doesn't have**
+For each `(key, value)` in cap.tags where request doesn't have this key:
+- This is fine - the cap is just more specific than needed
+- The request "doesn't care" about this dimension, so any value is acceptable
+
+**Result:** If all checks pass, the cap matches the request.
+
+### 14. Matching Examples
+
+```
+# Example 1: Basic matching
+Cap:     cap:op=generate;ext=pdf
+Request: cap:op=generate;ext=pdf
+Result:  MATCH (exact match)
+
+# Example 2: Cap can handle any ext
+Cap:     cap:op=generate           (missing ext = implicit ext=*)
+Request: cap:op=generate;ext=pdf
+Result:  MATCH (cap can handle any ext, including pdf)
+
+# Example 3: Cap is more specific than needed
+Cap:     cap:op=generate;ext=pdf;version=2
+Request: cap:op=generate;ext=pdf
+Result:  MATCH (request doesn't care about version)
+
+# Example 4: Request uses wildcard
+Cap:     cap:op=generate;ext=pdf
+Request: cap:op=generate;ext=*
+Result:  MATCH (request accepts any ext, pdf is acceptable)
+
+# Example 5: Value mismatch
+Cap:     cap:op=generate;ext=pdf
+Request: cap:op=generate;ext=docx
+Result:  NO MATCH (pdf ≠ docx)
+
+# Example 6: Fallback provider pattern
+Cap:     cap:op=generate_thumbnail;out=std:binary.v1   (no ext)
+Request: cap:op=generate_thumbnail;out=std:binary.v1;ext=wav
+Result:  MATCH (cap can handle any ext including wav)
+```
+
+### 15. Specificity for Best Match Selection
+When multiple caps match a request, select the one with highest specificity:
+- Specificity = count of non-wildcard tags
+- `cap:op=generate;ext=pdf` has specificity 2
+- `cap:op=generate;ext=*` has specificity 1 (wildcard doesn't count)
+- `cap:op=generate` has specificity 1
+- Higher specificity wins
+
+### 16. Provider Selection Algorithm (`find_best_caphost`)
+1. For each registered provider, check if `provider.cap.matches(request)`
+2. Collect all matching providers
+3. Select the one with highest specificity
+4. If tie, implementation-defined (typically first registered wins)
+
+### 17. Key Insight: Asymmetric Matching
+The matching is intentionally asymmetric:
+- A cap with FEWER tags (more general) can match requests with MORE tags
+- A cap with MORE tags (more specific) can also match requests with FEWER tags (request doesn't constrain those dimensions)
+
+This enables the fallback pattern:
+- Specific providers: `cap:op=generate_thumbnail;ext=pdf` (only handles PDF)
+- Fallback provider: `cap:op=generate_thumbnail` (handles any ext)
+- Request for `ext=wav` → specific provider doesn't match, fallback does
+
+### 18. Duplicate Keys
 Duplicate keys in the same URN result in an error - last occurrence does not win.
 
-### 16. UTF-8 Support
+### 19. UTF-8 Support
 Full UTF-8 character support within the allowed character set restrictions.
 
-### 17. Numeric Values
+### 20. Numeric Values
 - Tag keys cannot be pure numeric
 - Tag values can be pure numeric
 
-### 18. Empty Cap URN
+### 21. Empty Cap URN
 `cap:` with no tags is valid and means "matches all URNs" (universal matcher).
 
-### 19. Length Restrictions
+### 22. Length Restrictions
 The only length restriction is that the URL `https://capns.org/{cap_urn}` must be a valid URL. This imposes practical limits based on URL length constraints (typically ~2000 characters).
 
-### 20. Wildcard Restrictions
+### 23. Wildcard Restrictions
 Asterisk (`*`) in tag keys is not valid. Asterisk is only valid in tag values to signify wildcard matching.
 
-### 21. Colon Treatment
+### 24. Colon Treatment
 Forward slashes (`/`) and colons (`:`) are valid anywhere in tag components and treated as normal characters, except for the mandatory `cap:` prefix which is not part of the tag structure.
 
-### 22. Quote Errors
+### 25. Quote Errors
 - **Unterminated Quote:** A quoted value that starts with `"` but never closes is an error
 - **Invalid Escape Sequence:** Inside a quoted value, `\` followed by anything other than `"` or `\` is an error
 - Examples of errors:
   - `cap:key="unterminated` → UnterminatedQuote error
   - `cap:key="bad\n"` → InvalidEscapeSequence error (only `\"` and `\\` allowed)
 
-### 23. Semantic Equivalence
+### 26. Semantic Equivalence
 - `cap:key=simple` and `cap:key="simple"` both parse to `{key: "simple"}` (lowercase)
 - `cap:key="Simple"` parses to `{key: "Simple"}` (preserved) - NOT equal to unquoted
 - The quoting information is not stored; serialization re-determines quoting based on value content
