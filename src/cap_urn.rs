@@ -1135,4 +1135,109 @@ mod tests {
         assert_eq!(unquoted.to_string(), "cap:key=simple");
         assert_eq!(quoted.to_string(), "cap:key=simple");
     }
+
+    // ============================================================================
+    // MATCHING SEMANTICS SPECIFICATION TESTS
+    // These 9 tests verify the exact matching semantics from RULES.md Sections 12-17
+    // All implementations (Rust, Go, JS, ObjC) must pass these identically
+    // ============================================================================
+
+    #[test]
+    fn test_matching_semantics_test1_exact_match() {
+        // Test 1: Exact match
+        // Cap:     cap:op=generate;ext=pdf
+        // Request: cap:op=generate;ext=pdf
+        // Result:  MATCH
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        assert!(cap.matches(&request), "Test 1: Exact match should succeed");
+    }
+
+    #[test]
+    fn test_matching_semantics_test2_cap_missing_tag() {
+        // Test 2: Cap missing tag (implicit wildcard)
+        // Cap:     cap:op=generate
+        // Request: cap:op=generate;ext=pdf
+        // Result:  MATCH (cap can handle any ext)
+        let cap = CapUrn::from_string("cap:op=generate").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        assert!(cap.matches(&request), "Test 2: Cap missing tag should match (implicit wildcard)");
+    }
+
+    #[test]
+    fn test_matching_semantics_test3_cap_has_extra_tag() {
+        // Test 3: Cap has extra tag
+        // Cap:     cap:op=generate;ext=pdf;version=2
+        // Request: cap:op=generate;ext=pdf
+        // Result:  MATCH (request doesn't constrain version)
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf;version=2").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        assert!(cap.matches(&request), "Test 3: Cap with extra tag should match");
+    }
+
+    #[test]
+    fn test_matching_semantics_test4_request_has_wildcard() {
+        // Test 4: Request has wildcard
+        // Cap:     cap:op=generate;ext=pdf
+        // Request: cap:op=generate;ext=*
+        // Result:  MATCH (request accepts any ext)
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=*").unwrap();
+        assert!(cap.matches(&request), "Test 4: Request wildcard should match");
+    }
+
+    #[test]
+    fn test_matching_semantics_test5_cap_has_wildcard() {
+        // Test 5: Cap has wildcard
+        // Cap:     cap:op=generate;ext=*
+        // Request: cap:op=generate;ext=pdf
+        // Result:  MATCH (cap handles any ext)
+        let cap = CapUrn::from_string("cap:op=generate;ext=*").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        assert!(cap.matches(&request), "Test 5: Cap wildcard should match");
+    }
+
+    #[test]
+    fn test_matching_semantics_test6_value_mismatch() {
+        // Test 6: Value mismatch
+        // Cap:     cap:op=generate;ext=pdf
+        // Request: cap:op=generate;ext=docx
+        // Result:  NO MATCH
+        let cap = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=docx").unwrap();
+        assert!(!cap.matches(&request), "Test 6: Value mismatch should not match");
+    }
+
+    #[test]
+    fn test_matching_semantics_test7_fallback_pattern() {
+        // Test 7: Fallback pattern
+        // Cap:     cap:op=generate_thumbnail;out=std:binary.v1
+        // Request: cap:op=generate_thumbnail;out=std:binary.v1;ext=wav
+        // Result:  MATCH (cap has implicit ext=*)
+        let cap = CapUrn::from_string("cap:op=generate_thumbnail;out=std:binary.v1").unwrap();
+        let request = CapUrn::from_string("cap:op=generate_thumbnail;out=std:binary.v1;ext=wav").unwrap();
+        assert!(cap.matches(&request), "Test 7: Fallback pattern should match (cap missing ext = implicit wildcard)");
+    }
+
+    #[test]
+    fn test_matching_semantics_test8_empty_cap_matches_anything() {
+        // Test 8: Empty cap matches anything
+        // Cap:     cap:
+        // Request: cap:op=generate;ext=pdf
+        // Result:  MATCH
+        let cap = CapUrn::from_string("cap:").unwrap();
+        let request = CapUrn::from_string("cap:op=generate;ext=pdf").unwrap();
+        assert!(cap.matches(&request), "Test 8: Empty cap should match anything");
+    }
+
+    #[test]
+    fn test_matching_semantics_test9_cross_dimension_independence() {
+        // Test 9: Cross-dimension independence
+        // Cap:     cap:op=generate
+        // Request: cap:ext=pdf
+        // Result:  MATCH (both have implicit wildcards for missing tags)
+        let cap = CapUrn::from_string("cap:op=generate").unwrap();
+        let request = CapUrn::from_string("cap:ext=pdf").unwrap();
+        assert!(cap.matches(&request), "Test 9: Cross-dimension independence should match");
+    }
 }

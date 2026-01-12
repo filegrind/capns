@@ -217,8 +217,7 @@ pub fn model_contents_urn() -> CapUrn {
 ///
 /// If `ext` is Some, builds a URN with the extension tag.
 /// If `ext` is None, builds a generic fallback URN that matches any file type.
-/// The `in` tag is not included - providers can specify it if they need to be
-/// more specific, but the default matching uses implicit wildcards.
+/// The `in` tag is not included it doesn't need to be as ext implies it.
 pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     let mut builder = CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
