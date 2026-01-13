@@ -2,8 +2,9 @@
   "urn": {
     "tags": {
       "op": "embeddings_dimensions",
-      "out": "std:int.v1",
-      "model_type": "mlx"
+      "model_type": "mlx",
+      "in": "std:void.v1",
+      "out": "std:int.v1"
     }
   },
   "command": "dimensions",

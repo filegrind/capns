@@ -4,9 +4,9 @@
       "op": "analyze_image",
       "type": "vision",
       "format": "gguf",
+      "model_type": "gguf",
       "in": "std:binary.v1",
-      "out": "capns:vision_inference-output.v1",
-      "model_type": "gguf"
+      "out": "capns:vision_inference-output.v1"
     }
   },
   "command": "vision",

@@ -331,9 +331,15 @@ impl Serialize for Cap {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("Cap", 11)?;
 
-        // Serialize urn as tags object
+        // Serialize urn as tags object (including in/out direction specs)
+        let mut all_tags = serde_json::Map::new();
+        all_tags.insert("in".to_string(), serde_json::Value::String(self.urn.in_spec.clone()));
+        all_tags.insert("out".to_string(), serde_json::Value::String(self.urn.out_spec.clone()));
+        for (k, v) in &self.urn.tags {
+            all_tags.insert(k.clone(), serde_json::Value::String(v.clone()));
+        }
         state.serialize_field("urn", &serde_json::json!({
-            "tags": self.urn.tags
+            "tags": all_tags
         }))?;
 
         state.serialize_field("title", &self.title)?;
@@ -410,8 +416,25 @@ impl<'de> Deserialize<'de> for Cap {
             },
             serde_json::Value::Object(urn_obj) => {
                 if let Some(tags) = urn_obj.get("tags").and_then(|t| t.as_object()) {
-                    let mut urn_builder = crate::cap_urn::CapUrnBuilder::new();
+                    // Extract required in/out specs first
+                    let in_spec = tags.get("in")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| serde::de::Error::custom("Missing required 'in' tag in urn - caps must declare their input type (use std:void.v1 for no input)"))?
+                        .to_string();
+                    let out_spec = tags.get("out")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| serde::de::Error::custom("Missing required 'out' tag in urn - caps must declare their output type"))?
+                        .to_string();
+
+                    // Build CapUrn with direction specs and other tags
+                    let mut urn_builder = crate::cap_urn::CapUrnBuilder::new()
+                        .in_spec(&in_spec)
+                        .out_spec(&out_spec);
                     for (key, value) in tags {
+                        // Skip in/out as they're handled via in_spec/out_spec
+                        if key == "in" || key == "out" {
+                            continue;
+                        }
                         if let Some(val_str) = value.as_str() {
                             urn_builder = urn_builder.tag(key, val_str);
                         }
@@ -1008,26 +1031,33 @@ impl CapOutput {
 mod tests {
     use super::*;
 
+    // Helper to create test URN with required in/out specs
+    fn test_urn(tags: &str) -> String {
+        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+    }
+
     #[test]
     fn test_cap_creation() {
-        let urn = CapUrn::from_string("cap:op=transform;format=json;type=data_processing").unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
-        // Alphabetical order: format < op < type
-        assert_eq!(cap.urn_string(), "cap:format=json;op=transform;type=data_processing");
+        // Alphabetical order: format < in < op < out < type
+        assert!(cap.urn_string().contains("op=transform"));
+        assert!(cap.urn_string().contains("in=std:void.v1"));
+        assert!(cap.urn_string().contains("out=std:obj.v1"));
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
 
     #[test]
     fn test_cap_with_metadata() {
-        let urn = CapUrn::from_string("cap:op=arithmetic;type=compute;subtype=math").unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=arithmetic;type=compute;subtype=math")).unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
-        
+
         let cap = Cap::with_metadata(urn, "Perform Mathematical Operations".to_string(), "test-command".to_string(), metadata);
-        
+
         assert_eq!(cap.title, "Perform Mathematical Operations");
         assert_eq!(cap.get_metadata("precision"), Some(&"double".to_string()));
         assert_eq!(cap.get_metadata("operations"), Some(&"add,subtract,multiply,divide".to_string()));
@@ -1037,24 +1067,24 @@ mod tests {
 
     #[test]
     fn test_cap_matching() {
-        let urn = CapUrn::from_string("cap:op=transform;format=json;type=data_processing").unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
-        
-        assert!(cap.matches_request("cap:op=transform;format=json;type=data_processing"));
-        assert!(cap.matches_request("cap:op=transform;format=*;type=data_processing")); // Request wants any format, cap handles json specifically
-        assert!(cap.matches_request("cap:type=data_processing")); // Request is subset, cap has all required tags
-        assert!(!cap.matches_request("cap:type=compute"));
+
+        assert!(cap.matches_request(&test_urn("op=transform;format=json;type=data_processing")));
+        assert!(cap.matches_request(&test_urn("op=transform;format=*;type=data_processing"))); // Request wants any format, cap handles json specifically
+        assert!(cap.matches_request(&test_urn("type=data_processing"))); // Request is subset, cap has all required tags
+        assert!(!cap.matches_request(&test_urn("type=compute")));
     }
 
     #[test]
     fn test_cap_title() {
-        let urn = CapUrn::from_string("cap:op=extract;target=metadata").unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let mut cap = Cap::new(urn, "Extract Document Metadata".to_string(), "extract-metadata".to_string());
-        
+
         // Test title getter
         assert_eq!(cap.get_title(), &"Extract Document Metadata".to_string());
         assert_eq!(cap.title, "Extract Document Metadata");
-        
+
         // Test title setter
         cap.set_title("Extract File Metadata".to_string());
         assert_eq!(cap.get_title(), &"Extract File Metadata".to_string());
@@ -1063,16 +1093,16 @@ mod tests {
 
     #[test]
     fn test_cap_definition_equality() {
-        let urn1 = CapUrn::from_string("cap:op=transform;format=json").unwrap();
-        let urn2 = CapUrn::from_string("cap:op=transform;format=json").unwrap();
-        
+        let urn1 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
+        let urn2 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
+
         let cap1 = Cap::new(urn1, "Transform JSON Data".to_string(), "transform".to_string());
         let cap2 = Cap::new(urn2.clone(), "Transform JSON Data".to_string(), "transform".to_string());
         let cap3 = Cap::new(urn2, "Convert JSON Format".to_string(), "transform".to_string());
-        
+
         // Same cap definition (all fields identical) should be equal
         assert_eq!(cap1, cap2);
-        
+
         // Cap definitions with different titles should not be equal (like any JSON object comparison)
         assert_ne!(cap1, cap3);
         assert_ne!(cap2, cap3);
@@ -1080,16 +1110,16 @@ mod tests {
 
     #[test]
     fn test_cap_accepts_stdin() {
-        let urn = CapUrn::from_string("cap:op=generate;target=embeddings").unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=generate;target=embeddings")).unwrap();
         let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
-        
+
         // By default, caps should not accept stdin
         assert!(!cap.accepts_stdin);
-        
+
         // Enable stdin support
         cap.accepts_stdin = true;
         assert!(cap.accepts_stdin);
-        
+
         // Test serialization/deserialization preserves the field
         let serialized = serde_json::to_string(&cap).unwrap();
         let deserialized: Cap = serde_json::from_str(&serialized).unwrap();

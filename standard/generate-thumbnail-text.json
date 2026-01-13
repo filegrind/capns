@@ -3,6 +3,7 @@
     "tags": {
       "op": "generate_thumbnail",
       "ext": "text",
+      "in": "std:void.v1",
       "out": "std:binary.v1"
     }
   },

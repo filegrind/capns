@@ -2,9 +2,9 @@
   "urn": {
     "tags": {
       "op": "generate_image_embeddings",
+      "model_type": "candle",
       "in": "std:binary.v1",
-      "out": "capns:image-embeddings-output.v1",
-      "model_type": "candle"
+      "out": "capns:image-embeddings-output.v1"
     }
   },
   "command": "image-embed",

@@ -2,7 +2,9 @@
   "urn": {
     "tags": {
       "op": "unload",
-      "type": "model"
+      "type": "model",
+      "in": "std:void.v1",
+      "out": "capns:unload-output.v1"
     }
   },
   "command": "unload",

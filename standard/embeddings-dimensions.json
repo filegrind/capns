@@ -2,6 +2,7 @@
   "urn": {
     "tags": {
       "op": "embeddings_dimensions",
+      "in": "std:void.v1",
       "out": "std:int.v1"
     }
   },

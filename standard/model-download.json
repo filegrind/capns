@@ -2,7 +2,9 @@
   "urn": {
     "tags": {
       "op": "download",
-      "type": "model"
+      "type": "model",
+      "in": "std:void.v1",
+      "out": "capns:download-output.v1"
     }
   },
   "command": "download",

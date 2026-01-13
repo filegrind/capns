@@ -2,9 +2,9 @@
   "urn": {
     "tags": {
       "op": "generate_caption",
+      "model_type": "candle",
       "in": "std:binary.v1",
-      "out": "capns:caption-output.v1",
-      "model_type": "candle"
+      "out": "capns:caption-output.v1"
     }
   },
   "command": "caption",

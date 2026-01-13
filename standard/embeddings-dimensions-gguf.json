@@ -3,8 +3,9 @@
     "tags": {
       "op": "embeddings_dimensions",
       "format": "gguf",
-      "out": "std:int.v1",
-      "model_type": "gguf"
+      "model_type": "gguf",
+      "in": "std:void.v1",
+      "out": "std:int.v1"
     }
   },
   "command": "dimensions",

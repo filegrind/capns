@@ -2,9 +2,9 @@
   "urn": {
     "tags": {
       "op": "generate_embeddings",
+      "model_type": "candle",
       "in": "std:str.v1",
-      "out": "capns:embeddings-output.v1",
-      "model_type": "candle"
+      "out": "capns:embeddings-output.v1"
     }
   },
   "command": "generate",

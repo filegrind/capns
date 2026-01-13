@@ -3,9 +3,9 @@
     "tags": {
       "op": "analyze_image",
       "type": "vision",
+      "model_type": "mlx",
       "in": "std:binary.v1",
-      "out": "capns:vision_inference-output.v1",
-      "model_type": "mlx"
+      "out": "capns:vision_inference-output.v1"
     }
   },
   "command": "vision",

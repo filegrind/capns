@@ -2,7 +2,9 @@
   "urn": {
     "tags": {
       "op": "management",
-      "type": "model"
+      "type": "model",
+      "in": "std:void.v1",
+      "out": "capns:manage-output.v1"
     }
   },
   "command": "manage",

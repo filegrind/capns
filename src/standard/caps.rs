@@ -74,8 +74,8 @@ pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
         .tag("op", "conversation")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "std:str.v1")
-        .tag("out", "capns:llm_inference-output.v1")
+        .in_spec("std:str.v1")
+        .out_spec("capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build conversation cap URN")
 }
@@ -86,8 +86,8 @@ pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "multiplechoice")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "std:str.v1")
-        .tag("out", "capns:llm_inference-output.v1")
+        .in_spec("std:str.v1")
+        .out_spec("capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build multiplechoice cap URN")
 }
@@ -98,8 +98,8 @@ pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
         .tag("op", "codegeneration")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "std:str.v1")
-        .tag("out", "capns:llm_inference-output.v1")
+        .in_spec("std:str.v1")
+        .out_spec("capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build codegeneration cap URN")
 }
@@ -110,8 +110,8 @@ pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
         .tag("op", "creative")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "std:str.v1")
-        .tag("out", "capns:llm_inference-output.v1")
+        .in_spec("std:str.v1")
+        .out_spec("capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build creative cap URN")
 }
@@ -122,8 +122,8 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "summarization")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .tag("in", "std:str.v1")
-        .tag("out", "capns:llm_inference-output.v1")
+        .in_spec("std:str.v1")
+        .out_spec("capns:llm_inference-output.v1")
         .build()
         .expect("Failed to build summarization cap URN")
 }
@@ -136,7 +136,8 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
 pub fn embeddings_dimensions_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "embeddings_dimensions")
-        .tag("out", "std:int.v1")
+        .in_spec("std:void.v1")
+        .out_spec("std:int.v1")
         .build()
         .expect("Failed to build embeddings-dimensions cap URN")
 }
@@ -145,8 +146,8 @@ pub fn embeddings_dimensions_urn() -> CapUrn {
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_embeddings")
-        .tag("in", "std:str.v1")
-        .tag("out", "capns:generate-output.v1")
+        .in_spec("std:str.v1")
+        .out_spec("capns:generate-output.v1")
         .build()
         .expect("Failed to build embeddings-generation cap URN")
 }
@@ -160,6 +161,8 @@ pub fn model_download_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "download")
         .tag("type", "model")
+        .in_spec("std:void.v1")
+        .out_spec("capns:download-output.v1")
         .build()
         .expect("Failed to build model-download cap URN")
 }
@@ -169,6 +172,8 @@ pub fn model_load_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "load")
         .tag("type", "model")
+        .in_spec("std:void.v1")
+        .out_spec("capns:load-output.v1")
         .build()
         .expect("Failed to build model-load cap URN")
 }
@@ -178,6 +183,8 @@ pub fn model_unload_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "unload")
         .tag("type", "model")
+        .in_spec("std:void.v1")
+        .out_spec("capns:unload-output.v1")
         .build()
         .expect("Failed to build model-unload cap URN")
 }
@@ -187,6 +194,8 @@ pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "list")
         .tag("type", "model")
+        .in_spec("std:void.v1")
+        .out_spec("capns:list-output.v1")
         .build()
         .expect("Failed to build model-list cap URN")
 }
@@ -196,6 +205,8 @@ pub fn model_status_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "status")
         .tag("type", "model")
+        .in_spec("std:void.v1")
+        .out_spec("capns:status-output.v1")
         .build()
         .expect("Failed to build model-status cap URN")
 }
@@ -205,6 +216,8 @@ pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "contents")
         .tag("type", "model")
+        .in_spec("std:void.v1")
+        .out_spec("capns:contents-output.v1")
         .build()
         .expect("Failed to build model-contents cap URN")
 }
@@ -217,11 +230,11 @@ pub fn model_contents_urn() -> CapUrn {
 ///
 /// If `ext` is Some, builds a URN with the extension tag.
 /// If `ext` is None, builds a generic fallback URN that matches any file type.
-/// The `in` tag is not included it doesn't need to be as ext implies it.
 pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     let mut builder = CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
-        .tag("out", "std:binary.v1");
+        .in_spec("std:void.v1")
+        .out_spec("std:binary.v1");
 
     if let Some(e) = ext {
         builder = builder.tag("ext", e);
@@ -235,8 +248,8 @@ pub fn grind_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "grind")
         .tag("ext", ext)
-        .tag("in", input_spec_id_for_ext(ext))
-        .tag("out", grind_output_spec_id_for_ext(ext))
+        .in_spec(input_spec_id_for_ext(ext))
+        .out_spec(grind_output_spec_id_for_ext(ext))
         .build()
         .expect("Failed to build grind cap URN")
 }
@@ -246,8 +259,8 @@ pub fn extract_metadata_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_metadata")
         .tag("ext", ext)
-        .tag("in", input_spec_id_for_ext(ext))
-        .tag("out", extract_metadata_output_spec_id_for_ext(ext))
+        .in_spec(input_spec_id_for_ext(ext))
+        .out_spec(extract_metadata_output_spec_id_for_ext(ext))
         .build()
         .expect("Failed to build extract-metadata cap URN")
 }
@@ -257,8 +270,8 @@ pub fn extract_outline_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_outline")
         .tag("ext", ext)
-        .tag("in", input_spec_id_for_ext(ext))
-        .tag("out", extract_outline_output_spec_id_for_ext(ext))
+        .in_spec(input_spec_id_for_ext(ext))
+        .out_spec(extract_outline_output_spec_id_for_ext(ext))
         .build()
         .expect("Failed to build extract-outline cap URN")
 }
@@ -273,8 +286,8 @@ pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "generate_frontmatter_summary")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "std:str.v1")
-        .tag("out", "std:str.v1")
+        .in_spec("std:str.v1")
+        .out_spec("std:str.v1")
         .build()
         .expect("Failed to build frontmatter-summarization cap URN")
 }
@@ -285,8 +298,8 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
         .tag("op", "query_structured")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "std:obj.v1")
-        .tag("out", "capns:structured_query-output.v1")
+        .in_spec("std:obj.v1")
+        .out_spec("capns:structured_query-output.v1")
         .build()
         .expect("Failed to build structured-query cap URN")
 }
@@ -297,8 +310,8 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bit")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "std:str.v1")
-        .tag("out", "std:bool.v1")
+        .in_spec("std:str.v1")
+        .out_spec("std:bool.v1")
         .build()
         .expect("Failed to build bit-choice cap URN")
 }
@@ -309,8 +322,8 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bits")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .tag("in", "std:str.v1")
-        .tag("out", "std:bool-array.v1")
+        .in_spec("std:str.v1")
+        .out_spec("std:bool-array.v1")
         .build()
         .expect("Failed to build bit-choices cap URN")
 }
@@ -324,8 +337,8 @@ pub fn scan_files_task_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "scan_files")
         .tag("type", "task_creation")
-        .tag("in", "fgnd:file-path-array.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:file-path-array.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build scan-files-task cap URN")
 }
@@ -336,8 +349,8 @@ pub fn recategorization_task_urn(lang_code: &str) -> CapUrn {
         .tag("op", "recategorize_listing")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build recategorization-task cap URN")
 }
@@ -348,8 +361,8 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
         .tag("op", "request_listing_analysis")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build listing-analysis-task cap URN")
 }
@@ -362,8 +375,8 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
 pub fn grinder_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_grinder")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build grinder tool cap URN")
 }
@@ -372,8 +385,8 @@ pub fn grinder_tool_urn() -> CapUrn {
 pub fn quick_summary_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_quick_summary")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build quick-summary tool cap URN")
 }
@@ -382,8 +395,8 @@ pub fn quick_summary_tool_urn() -> CapUrn {
 pub fn detailed_analysis_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_detailed_analysis")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build detailed-analysis tool cap URN")
 }
@@ -392,8 +405,8 @@ pub fn detailed_analysis_tool_urn() -> CapUrn {
 pub fn outline_extraction_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_outline_extraction")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build outline-extraction tool cap URN")
 }
@@ -402,8 +415,8 @@ pub fn outline_extraction_tool_urn() -> CapUrn {
 pub fn embedding_generation_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_embedding_generation")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build embedding-generation tool cap URN")
 }
@@ -412,8 +425,8 @@ pub fn embedding_generation_tool_urn() -> CapUrn {
 pub fn recategorize_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_recategorize")
-        .tag("in", "fgnd:listing-id.v1")
-        .tag("out", "fgnd:task-id.v1")
+        .in_spec("fgnd:listing-id.v1")
+        .out_spec("fgnd:task-id.v1")
         .build()
         .expect("Failed to build recategorize tool cap URN")
 }

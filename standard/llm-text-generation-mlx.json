@@ -3,9 +3,9 @@
     "tags": {
       "op": "generate_text",
       "type": "llm",
+      "model_type": "mlx",
       "in": "std:str.v1",
-      "out": "capns:llm_inference-output.v1",
-      "model_type": "mlx"
+      "out": "capns:llm_inference-output.v1"
     }
   },
   "command": "llm",

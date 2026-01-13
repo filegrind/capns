@@ -204,10 +204,15 @@ impl SchemaResolver for FileSchemaResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::standard::media::{SPEC_ID_OBJ, SPEC_ID_STR};
+    use crate::standard::media::SPEC_ID_STR;
     use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
     use crate::CapUrn;
     use serde_json::json;
+
+    // Helper to create test URN with required in/out specs
+    fn test_urn(tags: &str) -> String {
+        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+    }
 
     #[test]
     fn test_argument_schema_validation_success() {
@@ -223,7 +228,7 @@ mod tests {
         });
 
         // Create cap with media_specs containing the schema
-        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
         cap.add_media_spec(
             "my:user-data.v1",
@@ -258,7 +263,7 @@ mod tests {
         });
 
         // Create cap with media_specs containing the schema
-        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
         cap.add_media_spec(
             "my:user-data.v1",
@@ -294,7 +299,7 @@ mod tests {
         });
 
         // Create cap with media_specs containing the schema
-        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
         cap.add_media_spec(
             "my:query-result.v1",
@@ -316,7 +321,7 @@ mod tests {
         let mut validator = SchemaValidator::new();
 
         // Create cap - using built-in spec ID which has no local schema
-        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
         // Argument using built-in spec ID (no local schema)
@@ -336,7 +341,7 @@ mod tests {
     fn test_unresolvable_spec_id_fails_hard() {
         let mut validator = SchemaValidator::new();
 
-        let urn = CapUrn::from_string("cap:type=test;op=validate").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
         // Argument with unknown spec ID

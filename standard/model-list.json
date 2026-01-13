@@ -2,7 +2,9 @@
   "urn": {
     "tags": {
       "op": "list",
-      "type": "model"
+      "type": "model",
+      "in": "std:void.v1",
+      "out": "capns:list-output.v1"
     }
   },
   "command": "list",

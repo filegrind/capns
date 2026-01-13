@@ -45,6 +45,8 @@ pub const SPEC_ID_BOOL_ARRAY: &str = "std:bool-array.v1";
 pub const SPEC_ID_OBJ_ARRAY: &str = "std:obj-array.v1";
 /// Spec ID for binary data
 pub const SPEC_ID_BINARY: &str = "std:binary.v1";
+/// Spec ID for void (no input) - used for caps that take no stdin input
+pub const SPEC_ID_VOID: &str = "std:void.v1";
 
 // =============================================================================
 // FGND-SPECIFIC SPEC IDS (well-known types for FileGrind)
@@ -133,6 +135,8 @@ pub const PROFILE_NUM_ARRAY: &str = "https://capns.org/schema/num-array";
 pub const PROFILE_BOOL_ARRAY: &str = "https://capns.org/schema/bool-array";
 /// Profile URL for object array type
 pub const PROFILE_OBJ_ARRAY: &str = "https://capns.org/schema/obj-array";
+/// Profile URL for void (no input)
+pub const PROFILE_VOID: &str = "https://capns.org/schema/void";
 
 // =============================================================================
 // MEDIA SPEC DEFINITION (for cap definitions)
@@ -323,6 +327,7 @@ fn resolve_builtin(spec_id: &str) -> Option<ResolvedMediaSpec> {
         SPEC_ID_BOOL_ARRAY => ("application/json", Some(PROFILE_BOOL_ARRAY)),
         SPEC_ID_OBJ_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
         SPEC_ID_BINARY => ("application/octet-stream", None),
+        SPEC_ID_VOID => ("application/x-void", Some(PROFILE_VOID)),
         // FGND-specific well-known types
         SPEC_ID_FGND_LISTING_ID => ("text/plain", Some(PROFILE_FGND_LISTING_ID)),
         SPEC_ID_FGND_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGND_FILE_PATH_ARRAY)),
@@ -363,6 +368,7 @@ pub fn is_builtin_spec_id(spec_id: &str) -> bool {
             | SPEC_ID_BOOL_ARRAY
             | SPEC_ID_OBJ_ARRAY
             | SPEC_ID_BINARY
+            | SPEC_ID_VOID
             | SPEC_ID_FGND_LISTING_ID
             | SPEC_ID_FGND_FILE_PATH_ARRAY
             | SPEC_ID_FGND_TASK_ID

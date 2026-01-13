@@ -4,9 +4,9 @@
       "op": "generate_text",
       "type": "llm",
       "format": "gguf",
+      "model_type": "gguf",
       "in": "std:str.v1",
-      "out": "capns:llm_inference-output.v1",
-      "model_type": "gguf"
+      "out": "capns:llm_inference-output.v1"
     }
   },
   "command": "generate",
