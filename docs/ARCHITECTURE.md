@@ -55,7 +55,7 @@ A `CapMatrix` stores capability providers for a single domain (e.g., all provide
 
 ```rust
 pub struct CapMatrix {
-    hosts: HashMap<String, CapSetEntry>,
+    sets: HashMap<String, CapSetEntry>,
 }
 
 struct CapSetEntry {
@@ -234,7 +234,7 @@ The architecture is designed for concurrent access:
 
 | Error | Description |
 |-------|-------------|
-| `CapMatrixError::NoHostsFound` | No capability matches the request |
+| `CapMatrixError::NoSetsFound` | No capability matches the request |
 | `CapMatrixError::InvalidUrn` | Request URN is malformed |
 | `CapMatrixError::RegistryError` | Lock acquisition failed |
 
@@ -252,7 +252,7 @@ match cap_cube.can("cap:op=generate_thumbnail;ext=pdf") {
         let result = caller.call(vec![], vec![], None).await?;
         println!("Result: {:?}", result.as_bytes());
     }
-    Err(CapMatrixError::NoHostsFound(urn)) => {
+    Err(CapMatrixError::NoSetsFound(urn)) => {
         println!("No provider found for: {}", urn);
     }
     Err(e) => return Err(e.into()),

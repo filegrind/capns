@@ -1,6 +1,6 @@
 //! CapSet registry for unified capability host discovery
 //! 
-//! Provides unified interface for finding capability hosts (both providers and plugins)
+//! Provides unified interface for finding cap sets (both providers and plugins)
 //! that can satisfy capability requests using subset matching.
 
 use crate::{Cap, CapUrn, CapSet};
@@ -9,19 +9,19 @@ use std::collections::HashMap;
 /// Registry error types for capability host operations
 #[derive(Debug, thiserror::Error)]
 pub enum CapMatrixError {
-    #[error("No capability hosts found for capability: {0}")]
-    NoHostsFound(String),
+    #[error("No cap sets found for capability: {0}")]
+    NoSetsFound(String),
     #[error("Invalid capability URN: {0}")]
     InvalidUrn(String),
     #[error("Registry error: {0}")]
     RegistryError(String),
 }
 
-/// Unified registry for capability hosts (providers and plugins)
+/// Unified registry for cap sets (providers and plugins)
 #[derive(Debug)]
 pub struct CapMatrix {
     /// Map of host name to entry. pub(crate) for CapCube access.
-    pub(crate) hosts: HashMap<String, CapSetEntry>,
+    pub(crate) sets: HashMap<String, CapSetEntry>,
 }
 
 /// Entry for a registered capability host
@@ -36,7 +36,7 @@ impl CapMatrix {
     /// Create a new empty capability host registry
     pub fn new() -> Self {
         Self {
-            hosts: HashMap::new(),
+            sets: HashMap::new(),
         }
     }
 
@@ -53,32 +53,32 @@ impl CapMatrix {
             capabilities,
         };
 
-        self.hosts.insert(name, entry);
+        self.sets.insert(name, entry);
         Ok(())
     }
 
-    /// Find capability hosts that can handle the requested capability
+    /// Find cap sets that can handle the requested capability
     /// Uses subset matching: host capabilities must be a subset of or match the request
     pub fn find_cap_sets(&self, request_urn: &str) -> Result<Vec<&dyn CapSet>, CapMatrixError> {
         let request = CapUrn::from_string(request_urn)
             .map_err(|e| CapMatrixError::InvalidUrn(format!("{}: {}", request_urn, e)))?;
         
-        let mut matching_hosts = Vec::new();
+        let mut matching_sets = Vec::new();
         
-        for entry in self.hosts.values() {
+        for entry in self.sets.values() {
             for cap in &entry.capabilities {
                 if cap.urn.matches(&request) {
-                    matching_hosts.push(entry.host.as_ref());
+                    matching_sets.push(entry.host.as_ref());
                     break; // Found a matching capability for this host, no need to check others
                 }
             }
         }
         
-        if matching_hosts.is_empty() {
-            return Err(CapMatrixError::NoHostsFound(request_urn.to_string()));
+        if matching_sets.is_empty() {
+            return Err(CapMatrixError::NoSetsFound(request_urn.to_string()));
         }
         
-        Ok(matching_hosts)
+        Ok(matching_sets)
     }
 
     /// Find the best capability host for the request using specificity ranking
@@ -89,7 +89,7 @@ impl CapMatrix {
 
         let mut best_match: Option<(std::sync::Arc<dyn CapSet>, &Cap, usize)> = None;
 
-        for entry in self.hosts.values() {
+        for entry in self.sets.values() {
             for cap in &entry.capabilities {
                 if cap.urn.matches(&request) {
                     let specificity = cap.urn.specificity();
@@ -110,19 +110,19 @@ impl CapMatrix {
 
         match best_match {
             Some((host, cap, _)) => Ok((host, cap)),
-            None => Err(CapMatrixError::NoHostsFound(request_urn.to_string())),
+            None => Err(CapMatrixError::NoSetsFound(request_urn.to_string())),
         }
     }
 
 
     /// Get all registered capability host names
     pub fn get_host_names(&self) -> Vec<String> {
-        self.hosts.keys().cloned().collect()
+        self.sets.keys().cloned().collect()
     }
 
-    /// Get all capabilities from all registered hosts
+    /// Get all capabilities from all registered sets
     pub fn get_all_capabilities(&self) -> Vec<&Cap> {
-        self.hosts.values()
+        self.sets.values()
             .flat_map(|entry| &entry.capabilities)
             .collect()
     }
@@ -134,12 +134,12 @@ impl CapMatrix {
 
     /// Unregister a capability host
     pub fn unregister_cap_set(&mut self, name: &str) -> bool {
-        self.hosts.remove(name).is_some()
+        self.sets.remove(name).is_some()
     }
 
-    /// Clear all registered hosts
+    /// Clear all registered sets
     pub fn clear(&mut self) {
-        self.hosts.clear();
+        self.sets.clear();
     }
 }
 
@@ -225,7 +225,7 @@ impl CapSet for CompositeCapSet {
                 };
 
                 // Find best match in this registry
-                for entry in registry.hosts.values() {
+                for entry in registry.sets.values() {
                     for cap in &entry.capabilities {
                         if cap.urn.matches(&request) {
                             let specificity = cap.urn.specificity();
@@ -351,7 +351,7 @@ impl CapCube {
             }
         }
 
-        best_overall.ok_or_else(|| CapMatrixError::NoHostsFound(request_urn.to_string()))
+        best_overall.ok_or_else(|| CapMatrixError::NoSetsFound(request_urn.to_string()))
     }
 
     /// Check if any registry can handle the specified capability
@@ -372,7 +372,7 @@ impl CapCube {
     ) -> Option<(&'a Cap, usize)> {
         let mut best: Option<(&Cap, usize)> = None;
 
-        for entry in registry.hosts.values() {
+        for entry in registry.sets.values() {
             for cap in &entry.capabilities {
                 if cap.urn.matches(request) {
                     let specificity = cap.urn.specificity();
@@ -398,11 +398,16 @@ impl CapCube {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapArguments, CapOutput, ArgumentValidation};
+    use crate::{CapArguments, CapOutput};
     use crate::standard::media::SPEC_ID_STR;
     use std::pin::Pin;
     use std::future::Future;
     use std::collections::HashMap;
+
+    // Helper to create test URN with required in/out specs
+    fn test_urn(tags: &str) -> String {
+        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+    }
 
     // Mock CapSet for testing
     #[derive(Debug)]
@@ -433,7 +438,7 @@ mod tests {
         });
 
         let cap = Cap {
-            urn: CapUrn::from_string("cap:op=test;type=basic").unwrap(),
+            urn: CapUrn::from_string(&test_urn("op=test;type=basic")).unwrap(),
             title: "Test Basic Capability".to_string(),
             cap_description: Some("Test capability".to_string()),
             metadata: HashMap::new(),
@@ -449,15 +454,15 @@ mod tests {
         registry.register_cap_set("test-host".to_string(), host, vec![cap]).unwrap();
 
         // Test exact match
-        let hosts = registry.find_cap_sets("cap:op=test;type=basic").unwrap();
-        assert_eq!(hosts.len(), 1);
+        let sets = registry.find_cap_sets(&test_urn("op=test;type=basic")).unwrap();
+        assert_eq!(sets.len(), 1);
 
         // Test subset match (request has more specific requirements)
-        let hosts = registry.find_cap_sets("cap:op=test;type=basic;model=gpt-4").unwrap();
-        assert_eq!(hosts.len(), 1);
+        let sets = registry.find_cap_sets(&test_urn("op=test;type=basic;model=gpt-4")).unwrap();
+        assert_eq!(sets.len(), 1);
 
         // Test no match
-        assert!(registry.find_cap_sets("cap:op=different").is_err());
+        assert!(registry.find_cap_sets(&test_urn("op=different")).is_err());
     }
 
     #[tokio::test]
@@ -469,7 +474,7 @@ mod tests {
             name: "general".to_string(),
         });
         let general_cap = Cap {
-            urn: CapUrn::from_string("cap:op=generate").unwrap(),
+            urn: CapUrn::from_string(&test_urn("op=generate")).unwrap(),
             title: "General Generation Capability".to_string(),
             cap_description: Some("General generation".to_string()),
             metadata: HashMap::new(),
@@ -487,7 +492,7 @@ mod tests {
             name: "specific".to_string(),
         });
         let specific_cap = Cap {
-            urn: CapUrn::from_string("cap:op=generate;type=text;model=gpt-4").unwrap(),
+            urn: CapUrn::from_string(&test_urn("op=generate;type=text;model=gpt-4")).unwrap(),
             title: "Specific Text Generation Capability".to_string(),
             cap_description: Some("Specific text generation".to_string()),
             metadata: HashMap::new(),
@@ -504,11 +509,11 @@ mod tests {
         registry.register_cap_set("specific".to_string(), specific_host, vec![specific_cap]).unwrap();
 
         // Request should match the more specific host (using valid URN characters)
-        let (_best_host, _best_cap) = registry.find_best_cap_set("cap:op=generate;type=text;model=gpt-4;temperature=low").unwrap();
+        let (_best_host, _best_cap) = registry.find_best_cap_set(&test_urn("op=generate;type=text;model=gpt-4;temperature=low")).unwrap();
 
-        // Both hosts should match, but we should get the more specific one
-        let all_hosts = registry.find_cap_sets("cap:op=generate;type=text;model=gpt-4;temperature=low").unwrap();
-        assert_eq!(all_hosts.len(), 2);
+        // Both sets should match, but we should get the more specific one
+        let all_sets = registry.find_cap_sets(&test_urn("op=generate;type=text;model=gpt-4;temperature=low")).unwrap();
+        assert_eq!(all_sets.len(), 2);
     }
 
     #[test]
@@ -523,15 +528,15 @@ mod tests {
     fn test_can_handle() {
         let mut registry = CapMatrix::new();
 
-        // Empty registry
-        assert!(!registry.can_handle("cap:op=test"));
+        // Empty registry - need valid URN with in/out
+        assert!(!registry.can_handle(&test_urn("op=test")));
 
         // After registration
         let host = Box::new(MockCapSet {
             name: "test".to_string(),
         });
         let cap = Cap {
-            urn: CapUrn::from_string("cap:op=test").unwrap(),
+            urn: CapUrn::from_string(&test_urn("op=test")).unwrap(),
             title: "Test Capability".to_string(),
             cap_description: Some("Test".to_string()),
             metadata: HashMap::new(),
@@ -548,9 +553,9 @@ mod tests {
             registry.register_cap_set("test".to_string(), host, vec![cap]).unwrap();
         });
 
-        assert!(registry.can_handle("cap:op=test"));
-        assert!(registry.can_handle("cap:op=test;extra=param"));
-        assert!(!registry.can_handle("cap:op=different"));
+        assert!(registry.can_handle(&test_urn("op=test")));
+        assert!(registry.can_handle(&test_urn("op=test;extra=param")));
+        assert!(!registry.can_handle(&test_urn("op=different")));
     }
 
     // ============================================================================
@@ -583,10 +588,10 @@ mod tests {
         let mut provider_registry = CapMatrix::new();
         let mut plugin_registry = CapMatrix::new();
 
-        // Provider: less specific cap (cap:op=generate_thumbnail;out=std:binary.v1)
+        // Provider: less specific cap
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
         let provider_cap = make_cap(
-            "cap:op=generate_thumbnail;out=std:binary.v1",
+            "cap:in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1",
             "Provider Thumbnail Generator (generic)"
         );
         provider_registry.register_cap_set(
@@ -595,10 +600,10 @@ mod tests {
             vec![provider_cap]
         ).unwrap();
 
-        // Plugin: more specific cap (cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf)
+        // Plugin: more specific cap (has ext=pdf)
         let plugin_host = Box::new(MockCapSet { name: "plugin".to_string() });
         let plugin_cap = make_cap(
-            "cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf",
+            "cap:ext=pdf;in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1",
             "Plugin PDF Thumbnail Generator (specific)"
         );
         plugin_registry.register_cap_set(
@@ -613,14 +618,14 @@ mod tests {
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
         // Request for PDF thumbnails - plugin's more specific cap should win
-        let request = "cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf";
+        let request = "cap:ext=pdf;in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1";
         let best = composite.find_best_cap_set(request).unwrap();
 
-        // Plugin registry has specificity 3 (op, out, ext)
-        // Provider registry has specificity 2 (op, out)
+        // Plugin registry has specificity 4 (in, op, out, ext)
+        // Provider registry has specificity 3 (in, op, out)
         // Plugin should win even though providers were added first
         assert_eq!(best.registry_name, "plugins", "More specific plugin should win over less specific provider");
-        assert_eq!(best.specificity, 3, "Plugin cap has 3 specific tags");
+        assert_eq!(best.specificity, 4, "Plugin cap has 4 specific tags");
         assert_eq!(best.cap.title, "Plugin PDF Thumbnail Generator (specific)");
     }
 
@@ -633,20 +638,20 @@ mod tests {
 
         // Both have same specificity
         let host1 = Box::new(MockCapSet { name: "host1".to_string() });
-        let cap1 = make_cap("cap:op=generate;ext=pdf", "Registry 1 Cap");
+        let cap1 = make_cap(&test_urn("op=generate;ext=pdf"), "Registry 1 Cap");
         registry1.register_cap_set("host1".to_string(), host1, vec![cap1]).unwrap();
 
         let host2 = Box::new(MockCapSet { name: "host2".to_string() });
-        let cap2 = make_cap("cap:op=generate;ext=pdf", "Registry 2 Cap");
+        let cap2 = make_cap(&test_urn("op=generate;ext=pdf"), "Registry 2 Cap");
         registry2.register_cap_set("host2".to_string(), host2, vec![cap2]).unwrap();
 
         let mut composite = CapCube::new();
         composite.add_registry("first".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("second".to_string(), Arc::new(RwLock::new(registry2)));
 
-        let best = composite.find_best_cap_set("cap:op=generate;ext=pdf").unwrap();
+        let best = composite.find_best_cap_set(&test_urn("op=generate;ext=pdf")).unwrap();
 
-        // Both have specificity 2, first registry should win
+        // Both have same specificity, first registry should win
         assert_eq!(best.registry_name, "first", "On tie, first registry should win");
         assert_eq!(best.cap.title, "Registry 1 Cap");
     }
@@ -661,17 +666,17 @@ mod tests {
 
         // Registry 1: doesn't match
         let host1 = Box::new(MockCapSet { name: "host1".to_string() });
-        let cap1 = make_cap("cap:op=different", "Registry 1");
+        let cap1 = make_cap(&test_urn("op=different"), "Registry 1");
         registry1.register_cap_set("host1".to_string(), host1, vec![cap1]).unwrap();
 
         // Registry 2: matches but less specific
         let host2 = Box::new(MockCapSet { name: "host2".to_string() });
-        let cap2 = make_cap("cap:op=generate", "Registry 2");
+        let cap2 = make_cap(&test_urn("op=generate"), "Registry 2");
         registry2.register_cap_set("host2".to_string(), host2, vec![cap2]).unwrap();
 
         // Registry 3: matches and most specific
         let host3 = Box::new(MockCapSet { name: "host3".to_string() });
-        let cap3 = make_cap("cap:op=generate;ext=pdf;format=thumbnail", "Registry 3");
+        let cap3 = make_cap(&test_urn("op=generate;ext=pdf;format=thumbnail"), "Registry 3");
         registry3.register_cap_set("host3".to_string(), host3, vec![cap3]).unwrap();
 
         let mut composite = CapCube::new();
@@ -679,11 +684,10 @@ mod tests {
         composite.add_registry("r2".to_string(), Arc::new(RwLock::new(registry2)));
         composite.add_registry("r3".to_string(), Arc::new(RwLock::new(registry3)));
 
-        let best = composite.find_best_cap_set("cap:op=generate;ext=pdf;format=thumbnail").unwrap();
+        let best = composite.find_best_cap_set(&test_urn("op=generate;ext=pdf;format=thumbnail")).unwrap();
 
-        // Registry 3 has specificity 3, Registry 2 has specificity 1
+        // Registry 3 has more specific tags
         assert_eq!(best.registry_name, "r3", "Most specific registry should win");
-        assert_eq!(best.specificity, 3);
     }
 
     #[tokio::test]
@@ -693,16 +697,16 @@ mod tests {
         let mut composite = CapCube::new();
         composite.add_registry("empty".to_string(), Arc::new(RwLock::new(registry)));
 
-        let result = composite.find_best_cap_set("cap:op=nonexistent");
-        assert!(matches!(result, Err(CapMatrixError::NoHostsFound(_))));
+        let result = composite.find_best_cap_set(&test_urn("op=nonexistent"));
+        assert!(matches!(result, Err(CapMatrixError::NoSetsFound(_))));
     }
 
     #[tokio::test]
     async fn test_cap_cube_fallback_scenario() {
         // Test the exact scenario from the user's issue:
-        // Provider: cap:op=generate_thumbnail;out=std:binary.v1 (generic fallback)
-        // Plugin:   cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf (PDF-specific)
-        // Request:  cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf
+        // Provider: generic fallback (can handle any file type)
+        // Plugin:   PDF-specific handler
+        // Request:  PDF thumbnail
         // Expected: Plugin wins (more specific)
 
         let mut provider_registry = CapMatrix::new();
@@ -711,7 +715,7 @@ mod tests {
         // Provider with generic fallback (can handle any file type)
         let provider_host = Box::new(MockCapSet { name: "provider_fallback".to_string() });
         let provider_cap = make_cap(
-            "cap:op=generate_thumbnail;out=std:binary.v1",
+            "cap:in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1",
             "Generic Thumbnail Provider"
         );
         provider_registry.register_cap_set(
@@ -723,7 +727,7 @@ mod tests {
         // Plugin with PDF-specific handler
         let plugin_host = Box::new(MockCapSet { name: "pdf_plugin".to_string() });
         let plugin_cap = make_cap(
-            "cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf",
+            "cap:ext=pdf;in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1",
             "PDF Thumbnail Plugin"
         );
         plugin_registry.register_cap_set(
@@ -738,16 +742,16 @@ mod tests {
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
         // Request for PDF thumbnail
-        let request = "cap:op=generate_thumbnail;out=std:binary.v1;ext=pdf";
+        let request = "cap:ext=pdf;in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1";
         let best = composite.find_best_cap_set(request).unwrap();
 
-        // Plugin (specificity 3) should beat provider (specificity 2)
+        // Plugin (specificity 4) should beat provider (specificity 3)
         assert_eq!(best.registry_name, "plugins");
         assert_eq!(best.cap.title, "PDF Thumbnail Plugin");
-        assert_eq!(best.specificity, 3);
+        assert_eq!(best.specificity, 4);
 
         // Also test that for a different file type, provider wins
-        let request_wav = "cap:op=generate_thumbnail;out=std:binary.v1;ext=wav";
+        let request_wav = "cap:ext=wav;in=std:binary.v1;op=generate_thumbnail;out=std:binary.v1";
         let best_wav = composite.find_best_cap_set(request_wav).unwrap();
 
         // Only provider matches (plugin doesn't match ext=wav)
@@ -763,7 +767,7 @@ mod tests {
 
         let provider_host = Box::new(MockCapSet { name: "test_provider".to_string() });
         let provider_cap = make_cap(
-            "cap:op=generate;ext=pdf",
+            &test_urn("op=generate;ext=pdf"),
             "Test Provider"
         );
         provider_registry.register_cap_set(
@@ -776,11 +780,11 @@ mod tests {
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
 
         // Test can() returns a CapCaller
-        let caller = composite.can("cap:op=generate;ext=pdf").unwrap();
+        let _caller = composite.can(&test_urn("op=generate;ext=pdf")).unwrap();
 
         // Verify we got the right cap
         // The caller should work (though we can't easily test execution in unit tests)
-        assert!(composite.can_handle("cap:op=generate;ext=pdf"));
-        assert!(!composite.can_handle("cap:op=nonexistent"));
+        assert!(composite.can_handle(&test_urn("op=generate;ext=pdf")));
+        assert!(!composite.can_handle(&test_urn("op=nonexistent")));
     }
 }

@@ -404,19 +404,40 @@ pub enum RegistryError {
 mod tests {
     use super::*;
     use tokio;
+    use tempfile::TempDir;
+
+    // Helper to create registry with a temporary cache directory
+    async fn registry_with_temp_cache() -> (CapRegistry, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().to_path_buf();
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+
+        let registry = CapRegistry {
+            client,
+            cache_dir,
+            cached_caps: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        (registry, temp_dir)
+    }
 
     #[tokio::test]
     async fn test_registry_creation() {
-        let registry = CapRegistry::new().await.unwrap();
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
         assert!(registry.cache_dir.exists());
     }
 
     #[tokio::test]
     async fn test_cache_key_generation() {
-        let registry = CapRegistry::new().await.unwrap();
-        let key1 = registry.cache_key("cap:op=extract;target=metadata");
-        let key2 = registry.cache_key("cap:op=extract;target=metadata");
-        let key3 = registry.cache_key("cap:op=different");
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+        // Use URNs with required in/out
+        let key1 = registry.cache_key("cap:in=std:void.v1;op=extract;out=std:obj.v1;target=metadata");
+        let key2 = registry.cache_key("cap:in=std:void.v1;op=extract;out=std:obj.v1;target=metadata");
+        let key3 = registry.cache_key("cap:in=std:void.v1;op=different;out=std:obj.v1");
 
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);

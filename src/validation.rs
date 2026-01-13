@@ -819,12 +819,17 @@ mod tests {
     use crate::standard::media::{SPEC_ID_STR, SPEC_ID_INT};
     use serde_json::json;
 
+    // Helper to create test URN with required in/out specs
+    fn test_urn(tags: &str) -> String {
+        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+    }
+
     #[tokio::test]
     async fn test_input_validation_success() {
         let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
         let validator = InputValidator::new(schema_registry);
 
-        let urn = CapUrn::from_string("cap:type=test;op=cap").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         let mut args = CapArguments::new();
@@ -847,7 +852,7 @@ mod tests {
         let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
         let validator = InputValidator::new(schema_registry);
 
-        let urn = CapUrn::from_string("cap:type=test;op=cap").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         let mut args = CapArguments::new();
@@ -877,7 +882,7 @@ mod tests {
         let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
         let validator = InputValidator::new(schema_registry);
 
-        let urn = CapUrn::from_string("cap:type=test;op=cap").unwrap();
+        let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         let mut args = CapArguments::new();

@@ -134,21 +134,17 @@ impl CapCaller {
         operation.replace('_', "-")
     }
 
-    /// Resolve the output spec ID from the cap URN's 'out' tag.
+    /// Resolve the output spec ID from the cap URN's out_spec.
     ///
     /// This method fails hard if:
     /// - The cap URN is invalid
-    /// - The 'out' tag is missing (caps must declare their output type)
     /// - The spec ID cannot be resolved (not in media_specs and not a built-in)
     fn resolve_output_spec(&self) -> Result<ResolvedMediaSpec> {
         let cap_urn = CapUrn::from_string(&self.cap)
             .map_err(|e| anyhow!("Invalid cap URN '{}': {}", self.cap, e))?;
 
-        let spec_id = cap_urn.get_tag("out")
-            .ok_or_else(|| anyhow!(
-                "Cap URN '{}' is missing required 'out' tag - caps must declare their output type",
-                self.cap
-            ))?;
+        // Direction specs are now required first-class fields
+        let spec_id = cap_urn.out_spec();
 
         resolve_spec_id(spec_id, self.cap_definition.get_media_specs())
             .map_err(|e| anyhow!(
