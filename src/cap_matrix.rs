@@ -1005,7 +1005,7 @@ mod tests {
         // Provider: less specific cap
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
         let provider_cap = make_cap(
-            "cap:in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1",
+            r#"cap:in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
             "Provider Thumbnail Generator (generic)"
         );
         provider_registry.register_cap_set(
@@ -1017,7 +1017,7 @@ mod tests {
         // Plugin: more specific cap (has ext=pdf)
         let plugin_host = Box::new(MockCapSet { name: "plugin".to_string() });
         let plugin_cap = make_cap(
-            "cap:ext=pdf;in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1",
+            r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
             "Plugin PDF Thumbnail Generator (specific)"
         );
         plugin_registry.register_cap_set(
@@ -1032,7 +1032,7 @@ mod tests {
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
         // Request for PDF thumbnails - plugin's more specific cap should win
-        let request = "cap:ext=pdf;in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1";
+        let request = r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#;
         let best = composite.find_best_cap_set(request).unwrap();
 
         // Plugin registry has specificity 4 (in, op, out, ext)
@@ -1129,7 +1129,7 @@ mod tests {
         // Provider with generic fallback (can handle any file type)
         let provider_host = Box::new(MockCapSet { name: "provider_fallback".to_string() });
         let provider_cap = make_cap(
-            "cap:in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1",
+            r#"cap:in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
             "Generic Thumbnail Provider"
         );
         provider_registry.register_cap_set(
@@ -1141,7 +1141,7 @@ mod tests {
         // Plugin with PDF-specific handler
         let plugin_host = Box::new(MockCapSet { name: "pdf_plugin".to_string() });
         let plugin_cap = make_cap(
-            "cap:ext=pdf;in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1",
+            r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
             "PDF Thumbnail Plugin"
         );
         plugin_registry.register_cap_set(
@@ -1156,7 +1156,7 @@ mod tests {
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
         // Request for PDF thumbnail
-        let request = "cap:ext=pdf;in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1";
+        let request = r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#;
         let best = composite.find_best_cap_set(request).unwrap();
 
         // Plugin (specificity 4) should beat provider (specificity 3)
@@ -1165,7 +1165,7 @@ mod tests {
         assert_eq!(best.specificity, 4);
 
         // Also test that for a different file type, provider wins
-        let request_wav = "cap:ext=wav;in=media:type=binary;v=1;op=generate_thumbnail;out=media:type=binary;v=1";
+        let request_wav = r#"cap:ext=wav;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#;
         let best_wav = composite.find_best_cap_set(request_wav).unwrap();
 
         // Only provider matches (plugin doesn't match ext=wav)
@@ -1212,7 +1212,7 @@ mod tests {
 
         // Create a cap that converts binary to str
         let cap = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=extract_text;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract_text;out="media:type=string;v=1""#).unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: Some("Extract text from binary".to_string()),
             metadata: HashMap::new(),
@@ -1244,7 +1244,7 @@ mod tests {
 
         // binary -> str
         let cap1 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=extract_text;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract_text;out="media:type=string;v=1""#).unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1259,7 +1259,7 @@ mod tests {
 
         // binary -> obj (JSON)
         let cap2 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=parse_json;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=parse_json;out="media:type=object;v=1""#).unwrap(),
             title: "JSON Parser".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1294,7 +1294,7 @@ mod tests {
 
         // binary -> str
         let cap1 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=extract;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract;out="media:type=string;v=1""#).unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1309,7 +1309,7 @@ mod tests {
 
         // str -> obj
         let cap2 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=string;v=1;op=parse;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=parse;out="media:type=object;v=1""#).unwrap(),
             title: "Str to Obj".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1348,7 +1348,7 @@ mod tests {
 
         // Create a chain: binary -> str -> obj
         let cap1 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=extract;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract;out="media:type=string;v=1""#).unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1362,7 +1362,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=string;v=1;op=parse;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=parse;out="media:type=object;v=1""#).unwrap(),
             title: "Str to Obj".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1405,7 +1405,7 @@ mod tests {
 
         // Create multiple paths: A -> B -> C and A -> C directly
         let cap1 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=step1;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=step1;out="media:type=string;v=1""#).unwrap(),
             title: "A to B".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1419,7 +1419,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=string;v=1;op=step2;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=step2;out="media:type=object;v=1""#).unwrap(),
             title: "B to C".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1433,7 +1433,7 @@ mod tests {
         };
 
         let cap3 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=direct;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=direct;out="media:type=object;v=1""#).unwrap(),
             title: "A to C Direct".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1465,7 +1465,7 @@ mod tests {
 
         // Add multiple caps with different specificities for same conversion
         let cap1 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=generic;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=generic;out="media:type=string;v=1""#).unwrap(),
             title: "Generic".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1479,7 +1479,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string("cap:ext=pdf;in=media:type=binary;v=1;op=specific;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:ext=pdf;in="media:type=binary;v=1";op=specific;out="media:type=string;v=1""#).unwrap(),
             title: "Specific PDF".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1512,7 +1512,7 @@ mod tests {
         // Provider: binary -> str
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
         let provider_cap = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=extract;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract;out="media:type=string;v=1""#).unwrap(),
             title: "Provider Text Extractor".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1533,7 +1533,7 @@ mod tests {
         // Plugin: str -> obj
         let plugin_host = Box::new(MockCapSet { name: "plugin".to_string() });
         let plugin_cap = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=string;v=1;op=parse;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=parse;out="media:type=object;v=1""#).unwrap(),
             title: "Plugin JSON Parser".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1592,7 +1592,7 @@ mod tests {
         let mut graph = CapGraph::new();
 
         let cap1 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=binary;v=1;op=a;out=media:type=string;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=a;out="media:type=string;v=1""#).unwrap(),
             title: "Cap 1".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1606,7 +1606,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string("cap:in=media:type=string;v=1;op=b;out=media:type=object;v=1").unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=b;out="media:type=object;v=1""#).unwrap(),
             title: "Cap 2".to_string(),
             cap_description: None,
             metadata: HashMap::new(),

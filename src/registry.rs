@@ -443,57 +443,66 @@ mod json_parse_tests {
 }
 
 #[cfg(test)]
-mod url_tests {
+mod url_encoding_tests {
     use super::*;
-    
-    #[test]
-    fn test_url_construction() {
-        let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
-        let normalized = normalize_cap_urn(urn);
 
-        // Only encode the tags part after "cap:"
+    /// Test that URL construction keeps "cap:" literal and only encodes the tags part
+    /// This guards against the bug where encoding "cap:" as "cap%3A" causes 404s
+    #[test]
+    fn test_url_keeps_cap_prefix_literal() {
+        let urn = r#"cap:in="media:type=string;v=1";op=test;out="media:type=object;v=1""#;
+        let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
         let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
 
-        // The URL should have literal "cap:" prefix and encoded tags
-        let expected_url = "https://capns.org/cap:in%3D%22media%3Atype%3Dlisting-id%3Bv%3D1%22%3Bop%3Duse_grinder%3Bout%3D%22media%3Atype%3Dtask-id%3Bv%3D1%22";
-        assert_eq!(url, expected_url);
+        // URL must start with literal "cap:" not "cap%3A"
+        assert!(url.contains("/cap:"), "URL must contain literal '/cap:' not encoded");
+        assert!(!url.contains("cap%3A"), "URL must not encode 'cap:' as 'cap%3A'");
     }
-}
 
-#[cfg(test)]
-mod http_tests {
-    use super::*;
-    
-    #[tokio::test]
-    async fn test_fetch_from_registry() {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap();
-
+    /// Test that quoted values in cap URNs are properly URL-encoded
+    #[test]
+    fn test_url_encodes_quoted_media_urns() {
         let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
-        let normalized_urn = normalize_cap_urn(urn);
-        // Only encode the tags part after "cap:"
-        let tags_part = normalized_urn.strip_prefix("cap:").unwrap_or(&normalized_urn);
+        let normalized = normalize_cap_urn(urn);
+        let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
         let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
 
-        println!("Fetching URL: {}", url);
+        // Quotes must be encoded as %22
+        assert!(url.contains("%22"), "Quotes must be URL-encoded as %22");
+        // Equals must be encoded as %3D
+        assert!(url.contains("%3D"), "Equals signs must be URL-encoded as %3D");
+        // Semicolons must be encoded as %3B
+        assert!(url.contains("%3B"), "Semicolons must be URL-encoded as %3B");
+        // Colons in media URNs must be encoded as %3A
+        assert!(url.contains("%3A"), "Colons must be URL-encoded as %3A");
+    }
 
-        let response = client.get(&url).send().await.expect("Request failed");
+    /// Test the exact URL format expected by the capns.org API
+    #[test]
+    fn test_exact_url_format() {
+        let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
+        let normalized = normalize_cap_urn(urn);
+        let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
+        let encoded_tags = urlencoding::encode(tags_part);
+        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
 
-        println!("Status: {}", response.status());
+        let expected_url = "https://capns.org/cap:in%3D%22media%3Atype%3Dlisting-id%3Bv%3D1%22%3Bop%3Duse_grinder%3Bout%3D%22media%3Atype%3Dtask-id%3Bv%3D1%22";
+        assert_eq!(url, expected_url);
+    }
 
-        let body = response.text().await.expect("Failed to get body");
-        println!("Body length: {}", body.len());
-        println!("Body (first 500 chars): {}", &body[..body.len().min(500)]);
+    /// Test that normalization handles various input formats
+    #[test]
+    fn test_normalize_handles_different_tag_orders() {
+        // Different tag orders should normalize to the same canonical form
+        let urn1 = r#"cap:op=test;in="media:type=string;v=1";out="media:type=object;v=1""#;
+        let urn2 = r#"cap:in="media:type=string;v=1";out="media:type=object;v=1";op=test"#;
 
-        // Try to parse as Cap
-        match serde_json::from_str::<crate::Cap>(&body) {
-            Ok(cap) => println!("Successfully parsed cap: {}", cap.title),
-            Err(e) => println!("Parse error: {}", e),
-        }
+        let normalized1 = normalize_cap_urn(urn1);
+        let normalized2 = normalize_cap_urn(urn2);
+
+        assert_eq!(normalized1, normalized2, "Different tag orders should normalize to same form");
     }
 }
