@@ -1,115 +1,35 @@
-//! MediaSpec parsing, spec ID resolution, and media type handling
+//! MediaSpec parsing and media URN resolution
 //!
 //! This module provides:
-//! - Spec ID resolution (e.g., `std:str.v1` → resolved media spec)
+//! - Media URN resolution (e.g., `media:type=string;v=1` → resolved media spec)
 //! - MediaSpec parsing (canonical form: `text/plain; profile=https://...`)
 //! - MediaSpecDef for defining specs in cap definitions
 //!
-//! ## Spec ID Format
-//! Spec IDs are references like `std:str.v1` that resolve to media type definitions.
+//! ## Media URN Format
+//! Media URNs are tagged URNs with "media" prefix, e.g., `media:type=string;v=1`
 //! Built-in primitives are available without explicit declaration.
 //!
 //! ## MediaSpec Format
 //! Canonical form: `<media-type>; profile=<url>`
 //! Example: `text/plain; profile=https://capns.org/schema/str`
-//!
-//! Note: The old `content-type:` prefix is NO LONGER SUPPORTED.
 
+use crate::media_urn::{
+    MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_NUMBER, MEDIA_BOOLEAN, MEDIA_OBJECT,
+    MEDIA_STRING_ARRAY, MEDIA_INTEGER_ARRAY, MEDIA_NUMBER_ARRAY, MEDIA_BOOLEAN_ARRAY, MEDIA_OBJECT_ARRAY,
+    MEDIA_BINARY,
+    // FGND types
+    MEDIA_LISTING_ID, MEDIA_FILE_PATH_ARRAY, MEDIA_TASK_ID,
+    // CAPNS output types
+    MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
+    MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
+    MEDIA_GENERATE_OUTPUT, MEDIA_STRUCTURED_QUERY_OUTPUT, MEDIA_QUESTIONS_ARRAY,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
 // =============================================================================
-// SPEC ID CONSTANTS
-// =============================================================================
-
-/// Spec ID for string type
-pub const SPEC_ID_STR: &str = "std:str.v1";
-/// Spec ID for integer type
-pub const SPEC_ID_INT: &str = "std:int.v1";
-/// Spec ID for number type
-pub const SPEC_ID_NUM: &str = "std:num.v1";
-/// Spec ID for boolean type
-pub const SPEC_ID_BOOL: &str = "std:bool.v1";
-/// Spec ID for JSON object type
-pub const SPEC_ID_OBJ: &str = "std:obj.v1";
-/// Spec ID for string array type
-pub const SPEC_ID_STR_ARRAY: &str = "std:str-array.v1";
-/// Spec ID for integer array type
-pub const SPEC_ID_INT_ARRAY: &str = "std:int-array.v1";
-/// Spec ID for number array type
-pub const SPEC_ID_NUM_ARRAY: &str = "std:num-array.v1";
-/// Spec ID for boolean array type
-pub const SPEC_ID_BOOL_ARRAY: &str = "std:bool-array.v1";
-/// Spec ID for object array type
-pub const SPEC_ID_OBJ_ARRAY: &str = "std:obj-array.v1";
-/// Spec ID for binary data
-pub const SPEC_ID_BINARY: &str = "std:binary.v1";
-/// Spec ID for void (no input) - used for caps that take no stdin input
-pub const SPEC_ID_VOID: &str = "std:void.v1";
-
-// =============================================================================
-// FGND-SPECIFIC SPEC IDS (well-known types for FileGrind)
-// =============================================================================
-
-/// Spec ID for listing ID (UUID)
-pub const SPEC_ID_FGND_LISTING_ID: &str = "fgnd:listing-id.v1";
-/// Spec ID for file path array
-pub const SPEC_ID_FGND_FILE_PATH_ARRAY: &str = "fgnd:file-path-array.v1";
-/// Spec ID for task ID (UUID)
-pub const SPEC_ID_FGND_TASK_ID: &str = "fgnd:task-id.v1";
-
-/// Profile URL for listing ID
-pub const PROFILE_FGND_LISTING_ID: &str = "https://filegrind.com/schema/listing-id";
-/// Profile URL for file path array
-pub const PROFILE_FGND_FILE_PATH_ARRAY: &str = "https://filegrind.com/schema/file-path-array";
-/// Profile URL for task ID
-pub const PROFILE_FGND_TASK_ID: &str = "https://filegrind.com/schema/task-id";
-
-// =============================================================================
-// CAPNS OUTPUT SPEC IDS (well-known output types)
-// =============================================================================
-
-/// Spec ID for model download output
-pub const SPEC_ID_CAPNS_DOWNLOAD_OUTPUT: &str = "capns:download-output.v1";
-/// Spec ID for model load output
-pub const SPEC_ID_CAPNS_LOAD_OUTPUT: &str = "capns:load-output.v1";
-/// Spec ID for model unload output
-pub const SPEC_ID_CAPNS_UNLOAD_OUTPUT: &str = "capns:unload-output.v1";
-/// Spec ID for model list output
-pub const SPEC_ID_CAPNS_LIST_OUTPUT: &str = "capns:list-output.v1";
-/// Spec ID for model status output
-pub const SPEC_ID_CAPNS_STATUS_OUTPUT: &str = "capns:status-output.v1";
-/// Spec ID for model contents output
-pub const SPEC_ID_CAPNS_CONTENTS_OUTPUT: &str = "capns:contents-output.v1";
-/// Spec ID for embeddings generate output
-pub const SPEC_ID_CAPNS_GENERATE_OUTPUT: &str = "capns:generate-output.v1";
-/// Spec ID for structured query output
-pub const SPEC_ID_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "capns:structured_query-output.v1";
-/// Spec ID for questions array
-pub const SPEC_ID_CAPNS_QUESTIONS_ARRAY: &str = "capns:questions-array.v1";
-
-/// Profile URL for model download output
-pub const PROFILE_CAPNS_DOWNLOAD_OUTPUT: &str = "https://capns.org/schema/download-output";
-/// Profile URL for model load output
-pub const PROFILE_CAPNS_LOAD_OUTPUT: &str = "https://capns.org/schema/load-output";
-/// Profile URL for model unload output
-pub const PROFILE_CAPNS_UNLOAD_OUTPUT: &str = "https://capns.org/schema/unload-output";
-/// Profile URL for model list output
-pub const PROFILE_CAPNS_LIST_OUTPUT: &str = "https://capns.org/schema/list-output";
-/// Profile URL for model status output
-pub const PROFILE_CAPNS_STATUS_OUTPUT: &str = "https://capns.org/schema/status-output";
-/// Profile URL for model contents output
-pub const PROFILE_CAPNS_CONTENTS_OUTPUT: &str = "https://capns.org/schema/contents-output";
-/// Profile URL for embeddings generate output
-pub const PROFILE_CAPNS_GENERATE_OUTPUT: &str = "https://capns.org/schema/generate-output";
-/// Profile URL for structured query output
-pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schema/structured_query-output";
-/// Profile URL for questions array
-pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questions-array";
-
-// =============================================================================
-// PROFILE URLS (new canonical /schema/ path)
+// PROFILE URLS (canonical /schema/ path)
 // =============================================================================
 
 /// Base URL for capns schemas
@@ -139,6 +59,40 @@ pub const PROFILE_OBJ_ARRAY: &str = "https://capns.org/schema/obj-array";
 pub const PROFILE_VOID: &str = "https://capns.org/schema/void";
 
 // =============================================================================
+// FGND-SPECIFIC PROFILE URLS
+// =============================================================================
+
+/// Profile URL for listing ID
+pub const PROFILE_FGND_LISTING_ID: &str = "https://filegrind.com/schema/listing-id";
+/// Profile URL for file path array
+pub const PROFILE_FGND_FILE_PATH_ARRAY: &str = "https://filegrind.com/schema/file-path-array";
+/// Profile URL for task ID
+pub const PROFILE_FGND_TASK_ID: &str = "https://filegrind.com/schema/task-id";
+
+// =============================================================================
+// CAPNS OUTPUT PROFILE URLS
+// =============================================================================
+
+/// Profile URL for model download output
+pub const PROFILE_CAPNS_DOWNLOAD_OUTPUT: &str = "https://capns.org/schema/download-output";
+/// Profile URL for model load output
+pub const PROFILE_CAPNS_LOAD_OUTPUT: &str = "https://capns.org/schema/load-output";
+/// Profile URL for model unload output
+pub const PROFILE_CAPNS_UNLOAD_OUTPUT: &str = "https://capns.org/schema/unload-output";
+/// Profile URL for model list output
+pub const PROFILE_CAPNS_LIST_OUTPUT: &str = "https://capns.org/schema/list-output";
+/// Profile URL for model status output
+pub const PROFILE_CAPNS_STATUS_OUTPUT: &str = "https://capns.org/schema/status-output";
+/// Profile URL for model contents output
+pub const PROFILE_CAPNS_CONTENTS_OUTPUT: &str = "https://capns.org/schema/contents-output";
+/// Profile URL for embeddings generate output
+pub const PROFILE_CAPNS_GENERATE_OUTPUT: &str = "https://capns.org/schema/generate-output";
+/// Profile URL for structured query output
+pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schema/structured-query-output";
+/// Profile URL for questions array
+pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questions-array";
+
+// =============================================================================
 // MEDIA SPEC DEFINITION (for cap definitions)
 // =============================================================================
 
@@ -148,12 +102,12 @@ pub const PROFILE_VOID: &str = "https://capns.org/schema/void";
 ///
 /// ## String Form (compact)
 /// ```json
-/// "std:str.v1": "text/plain; profile=https://capns.org/schema/str"
+/// "media:type=string;v=1": "text/plain; profile=https://capns.org/schema/str"
 /// ```
 ///
 /// ## Object Form (rich, with optional local schema)
 /// ```json
-/// "my:output-spec.v1": {
+/// "media:type=my-output;v=1": {
 ///   "media_type": "application/json",
 ///   "profile_uri": "https://example.com/schema/my-output",
 ///   "schema": { "type": "object", ... }
@@ -215,12 +169,12 @@ impl MediaSpecDef {
 
 /// Fully resolved media spec with all fields populated
 ///
-/// This is the result of resolving a spec ID through the media_specs table
+/// This is the result of resolving a media URN through the media_specs table
 /// or from a built-in definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedMediaSpec {
-    /// The spec ID that was resolved
-    pub spec_id: String,
+    /// The media URN that was resolved
+    pub media_urn: String,
     /// The MIME media type (e.g., "application/json", "text/plain")
     pub media_type: String,
     /// Optional profile URI
@@ -257,10 +211,10 @@ impl ResolvedMediaSpec {
 }
 
 // =============================================================================
-// SPEC ID RESOLUTION
+// MEDIA URN RESOLUTION
 // =============================================================================
 
-/// Resolve a spec ID to a full media spec definition
+/// Resolve a media URN to a full media spec definition
 ///
 /// Resolution order:
 /// 1. Look up in provided media_specs map
@@ -268,43 +222,43 @@ impl ResolvedMediaSpec {
 /// 3. If neither, fail hard with an error
 ///
 /// # Arguments
-/// * `spec_id` - The spec ID to resolve (e.g., "std:str.v1")
+/// * `media_urn` - The media URN to resolve (e.g., "media:type=string;v=1")
 /// * `media_specs` - The media_specs map from the cap definition
 ///
 /// # Errors
-/// Returns `MediaSpecError::UnresolvableSpecId` if the spec ID cannot be resolved.
-pub fn resolve_spec_id(
-    spec_id: &str,
+/// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
+pub fn resolve_media_urn(
+    media_urn: &str,
     media_specs: &HashMap<String, MediaSpecDef>,
 ) -> Result<ResolvedMediaSpec, MediaSpecError> {
     // First, try to look up in the provided media_specs
-    if let Some(def) = media_specs.get(spec_id) {
-        return resolve_def(spec_id, def);
+    if let Some(def) = media_specs.get(media_urn) {
+        return resolve_def(media_urn, def);
     }
 
     // Second, check if it's a built-in primitive
-    if let Some(resolved) = resolve_builtin(spec_id) {
+    if let Some(resolved) = resolve_builtin(media_urn) {
         return Ok(resolved);
     }
 
     // Fail hard - no fallbacks
-    Err(MediaSpecError::UnresolvableSpecId(spec_id.to_string()))
+    Err(MediaSpecError::UnresolvableMediaUrn(media_urn.to_string()))
 }
 
 /// Resolve a MediaSpecDef to a ResolvedMediaSpec
-fn resolve_def(spec_id: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, MediaSpecError> {
+fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, MediaSpecError> {
     match def {
         MediaSpecDef::String(s) => {
             let parsed = MediaSpec::parse(s)?;
             Ok(ResolvedMediaSpec {
-                spec_id: spec_id.to_string(),
+                media_urn: media_urn.to_string(),
                 media_type: parsed.media_type,
                 profile_uri: parsed.profile,
                 schema: None,
             })
         }
         MediaSpecDef::Object(obj) => Ok(ResolvedMediaSpec {
-            spec_id: spec_id.to_string(),
+            media_urn: media_urn.to_string(),
             media_type: obj.media_type.clone(),
             profile_uri: Some(obj.profile_uri.clone()),
             schema: obj.schema.clone(),
@@ -312,75 +266,75 @@ fn resolve_def(spec_id: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, M
     }
 }
 
-/// Resolve a built-in spec ID
-fn resolve_builtin(spec_id: &str) -> Option<ResolvedMediaSpec> {
-    let (media_type, profile_uri) = match spec_id {
+/// Resolve a built-in media URN
+fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
+    let (media_type, profile_uri) = match media_urn {
         // Standard primitives
-        SPEC_ID_STR => ("text/plain", Some(PROFILE_STR)),
-        SPEC_ID_INT => ("text/plain", Some(PROFILE_INT)),
-        SPEC_ID_NUM => ("text/plain", Some(PROFILE_NUM)),
-        SPEC_ID_BOOL => ("text/plain", Some(PROFILE_BOOL)),
-        SPEC_ID_OBJ => ("application/json", Some(PROFILE_OBJ)),
-        SPEC_ID_STR_ARRAY => ("application/json", Some(PROFILE_STR_ARRAY)),
-        SPEC_ID_INT_ARRAY => ("application/json", Some(PROFILE_INT_ARRAY)),
-        SPEC_ID_NUM_ARRAY => ("application/json", Some(PROFILE_NUM_ARRAY)),
-        SPEC_ID_BOOL_ARRAY => ("application/json", Some(PROFILE_BOOL_ARRAY)),
-        SPEC_ID_OBJ_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
-        SPEC_ID_BINARY => ("application/octet-stream", None),
-        SPEC_ID_VOID => ("application/x-void", Some(PROFILE_VOID)),
+        MEDIA_STRING => ("text/plain", Some(PROFILE_STR)),
+        MEDIA_INTEGER => ("text/plain", Some(PROFILE_INT)),
+        MEDIA_NUMBER => ("text/plain", Some(PROFILE_NUM)),
+        MEDIA_BOOLEAN => ("text/plain", Some(PROFILE_BOOL)),
+        MEDIA_OBJECT => ("application/json", Some(PROFILE_OBJ)),
+        MEDIA_STRING_ARRAY => ("application/json", Some(PROFILE_STR_ARRAY)),
+        MEDIA_INTEGER_ARRAY => ("application/json", Some(PROFILE_INT_ARRAY)),
+        MEDIA_NUMBER_ARRAY => ("application/json", Some(PROFILE_NUM_ARRAY)),
+        MEDIA_BOOLEAN_ARRAY => ("application/json", Some(PROFILE_BOOL_ARRAY)),
+        MEDIA_OBJECT_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
+        MEDIA_BINARY => ("application/octet-stream", None),
+        MEDIA_VOID => ("application/x-void", Some(PROFILE_VOID)),
         // FGND-specific well-known types
-        SPEC_ID_FGND_LISTING_ID => ("text/plain", Some(PROFILE_FGND_LISTING_ID)),
-        SPEC_ID_FGND_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGND_FILE_PATH_ARRAY)),
-        SPEC_ID_FGND_TASK_ID => ("text/plain", Some(PROFILE_FGND_TASK_ID)),
+        MEDIA_LISTING_ID => ("text/plain", Some(PROFILE_FGND_LISTING_ID)),
+        MEDIA_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGND_FILE_PATH_ARRAY)),
+        MEDIA_TASK_ID => ("text/plain", Some(PROFILE_FGND_TASK_ID)),
         // CAPNS output types
-        SPEC_ID_CAPNS_DOWNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_DOWNLOAD_OUTPUT)),
-        SPEC_ID_CAPNS_LOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LOAD_OUTPUT)),
-        SPEC_ID_CAPNS_UNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_UNLOAD_OUTPUT)),
-        SPEC_ID_CAPNS_LIST_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LIST_OUTPUT)),
-        SPEC_ID_CAPNS_STATUS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STATUS_OUTPUT)),
-        SPEC_ID_CAPNS_CONTENTS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_CONTENTS_OUTPUT)),
-        SPEC_ID_CAPNS_GENERATE_OUTPUT => ("application/json", Some(PROFILE_CAPNS_GENERATE_OUTPUT)),
-        SPEC_ID_CAPNS_STRUCTURED_QUERY_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT)),
-        SPEC_ID_CAPNS_QUESTIONS_ARRAY => ("application/json", Some(PROFILE_CAPNS_QUESTIONS_ARRAY)),
+        MEDIA_DOWNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_DOWNLOAD_OUTPUT)),
+        MEDIA_LOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LOAD_OUTPUT)),
+        MEDIA_UNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_UNLOAD_OUTPUT)),
+        MEDIA_LIST_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LIST_OUTPUT)),
+        MEDIA_STATUS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STATUS_OUTPUT)),
+        MEDIA_CONTENTS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_CONTENTS_OUTPUT)),
+        MEDIA_GENERATE_OUTPUT => ("application/json", Some(PROFILE_CAPNS_GENERATE_OUTPUT)),
+        MEDIA_STRUCTURED_QUERY_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT)),
+        MEDIA_QUESTIONS_ARRAY => ("application/json", Some(PROFILE_CAPNS_QUESTIONS_ARRAY)),
         _ => return None,
     };
 
     Some(ResolvedMediaSpec {
-        spec_id: spec_id.to_string(),
+        media_urn: media_urn.to_string(),
         media_type: media_type.to_string(),
         profile_uri: profile_uri.map(String::from),
         schema: None, // Built-ins don't have local schemas
     })
 }
 
-/// Check if a spec ID is a built-in primitive
-pub fn is_builtin_spec_id(spec_id: &str) -> bool {
+/// Check if a media URN is a built-in primitive
+pub fn is_builtin_media_urn(media_urn: &str) -> bool {
     matches!(
-        spec_id,
-        SPEC_ID_STR
-            | SPEC_ID_INT
-            | SPEC_ID_NUM
-            | SPEC_ID_BOOL
-            | SPEC_ID_OBJ
-            | SPEC_ID_STR_ARRAY
-            | SPEC_ID_INT_ARRAY
-            | SPEC_ID_NUM_ARRAY
-            | SPEC_ID_BOOL_ARRAY
-            | SPEC_ID_OBJ_ARRAY
-            | SPEC_ID_BINARY
-            | SPEC_ID_VOID
-            | SPEC_ID_FGND_LISTING_ID
-            | SPEC_ID_FGND_FILE_PATH_ARRAY
-            | SPEC_ID_FGND_TASK_ID
-            | SPEC_ID_CAPNS_DOWNLOAD_OUTPUT
-            | SPEC_ID_CAPNS_LOAD_OUTPUT
-            | SPEC_ID_CAPNS_UNLOAD_OUTPUT
-            | SPEC_ID_CAPNS_LIST_OUTPUT
-            | SPEC_ID_CAPNS_STATUS_OUTPUT
-            | SPEC_ID_CAPNS_CONTENTS_OUTPUT
-            | SPEC_ID_CAPNS_GENERATE_OUTPUT
-            | SPEC_ID_CAPNS_STRUCTURED_QUERY_OUTPUT
-            | SPEC_ID_CAPNS_QUESTIONS_ARRAY
+        media_urn,
+        MEDIA_STRING
+            | MEDIA_INTEGER
+            | MEDIA_NUMBER
+            | MEDIA_BOOLEAN
+            | MEDIA_OBJECT
+            | MEDIA_STRING_ARRAY
+            | MEDIA_INTEGER_ARRAY
+            | MEDIA_NUMBER_ARRAY
+            | MEDIA_BOOLEAN_ARRAY
+            | MEDIA_OBJECT_ARRAY
+            | MEDIA_BINARY
+            | MEDIA_VOID
+            | MEDIA_LISTING_ID
+            | MEDIA_FILE_PATH_ARRAY
+            | MEDIA_TASK_ID
+            | MEDIA_DOWNLOAD_OUTPUT
+            | MEDIA_LOAD_OUTPUT
+            | MEDIA_UNLOAD_OUTPUT
+            | MEDIA_LIST_OUTPUT
+            | MEDIA_STATUS_OUTPUT
+            | MEDIA_CONTENTS_OUTPUT
+            | MEDIA_GENERATE_OUTPUT
+            | MEDIA_STRUCTURED_QUERY_OUTPUT
+            | MEDIA_QUESTIONS_ARRAY
     )
 }
 
@@ -410,21 +364,11 @@ impl MediaSpec {
     /// - `text/plain; profile=https://capns.org/schema/str`
     /// - `application/json; profile=https://capns.org/schema/obj`
     /// - `application/octet-stream`
-    ///
-    /// Note: The old `content-type:` prefix is NO LONGER supported.
     pub fn parse(s: &str) -> Result<Self, MediaSpecError> {
         let s = s.trim();
 
         if s.is_empty() {
             return Err(MediaSpecError::EmptyMediaType);
-        }
-
-        // Check for old content-type: prefix and FAIL HARD
-        let lower = s.to_lowercase();
-        if lower.starts_with("content-type:") {
-            return Err(MediaSpecError::LegacyContentTypePrefix(
-                "media_spec must not start with 'content-type:' - use canonical form '<media-type>; profile=<url>'".to_string()
-            ));
         }
 
         // Split by semicolon to separate media type from parameters
@@ -560,10 +504,8 @@ pub enum MediaSpecError {
     InvalidMediaType(String),
     /// Unterminated quote in profile value
     UnterminatedQuote,
-    /// Spec ID cannot be resolved (not in media_specs and not a built-in)
-    UnresolvableSpecId(String),
-    /// Legacy content-type: prefix detected (not supported)
-    LegacyContentTypePrefix(String),
+    /// Media URN cannot be resolved (not in media_specs and not a built-in)
+    UnresolvableMediaUrn(String),
 }
 
 impl fmt::Display for MediaSpecError {
@@ -578,35 +520,18 @@ impl fmt::Display for MediaSpecError {
             MediaSpecError::UnterminatedQuote => {
                 write!(f, "unterminated quote in profile value")
             }
-            MediaSpecError::UnresolvableSpecId(id) => {
+            MediaSpecError::UnresolvableMediaUrn(urn) => {
                 write!(
                     f,
-                    "cannot resolve spec ID '{}' - not found in media_specs and not a built-in primitive",
-                    id
+                    "cannot resolve media URN '{}' - not found in media_specs and not a built-in primitive",
+                    urn
                 )
-            }
-            MediaSpecError::LegacyContentTypePrefix(msg) => {
-                write!(f, "{}", msg)
             }
         }
     }
 }
 
 impl std::error::Error for MediaSpecError {}
-
-// =============================================================================
-// BACKWARD COMPATIBILITY ALIASES (for old field name)
-// =============================================================================
-
-// These are provided so existing code that uses `content_type` field can still work
-// during migration. The canonical field name is now `media_type`.
-impl MediaSpec {
-    /// Alias for media_type (backward compatibility)
-    #[deprecated(note = "use media_type instead")]
-    pub fn content_type(&self) -> &str {
-        &self.media_type
-    }
-}
 
 // =============================================================================
 // TESTS
@@ -681,18 +606,6 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_content_type_prefix_fails() {
-        let result =
-            MediaSpec::parse("content-type: application/json; profile=https://example.com");
-        assert!(result.is_err());
-        if let Err(MediaSpecError::LegacyContentTypePrefix(_)) = result {
-            // Expected
-        } else {
-            panic!("Expected LegacyContentTypePrefix error");
-        }
-    }
-
-    #[test]
     fn test_invalid_media_type() {
         let result = MediaSpec::parse("invalid");
         assert!(result.is_err());
@@ -725,14 +638,14 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // Spec ID resolution tests
+    // Media URN resolution tests
     // -------------------------------------------------------------------------
 
     #[test]
     fn test_resolve_builtin_str() {
         let media_specs = HashMap::new();
-        let resolved = resolve_spec_id(SPEC_ID_STR, &media_specs).unwrap();
-        assert_eq!(resolved.spec_id, SPEC_ID_STR);
+        let resolved = resolve_media_urn(MEDIA_STRING, &media_specs).unwrap();
+        assert_eq!(resolved.media_urn, MEDIA_STRING);
         assert_eq!(resolved.media_type, "text/plain");
         assert_eq!(resolved.profile_uri, Some(PROFILE_STR.to_string()));
         assert!(resolved.schema.is_none());
@@ -741,7 +654,7 @@ mod tests {
     #[test]
     fn test_resolve_builtin_obj() {
         let media_specs = HashMap::new();
-        let resolved = resolve_spec_id(SPEC_ID_OBJ, &media_specs).unwrap();
+        let resolved = resolve_media_urn(MEDIA_OBJECT, &media_specs).unwrap();
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(resolved.profile_uri, Some(PROFILE_OBJ.to_string()));
     }
@@ -749,7 +662,7 @@ mod tests {
     #[test]
     fn test_resolve_builtin_binary() {
         let media_specs = HashMap::new();
-        let resolved = resolve_spec_id(SPEC_ID_BINARY, &media_specs).unwrap();
+        let resolved = resolve_media_urn(MEDIA_BINARY, &media_specs).unwrap();
         assert_eq!(resolved.media_type, "application/octet-stream");
         assert!(resolved.profile_uri.is_none());
         assert!(resolved.is_binary());
@@ -759,12 +672,12 @@ mod tests {
     fn test_resolve_custom_string_form() {
         let mut media_specs = HashMap::new();
         media_specs.insert(
-            "my:custom-spec.v1".to_string(),
+            "media:type=custom-spec;v=1".to_string(),
             MediaSpecDef::String("application/json; profile=https://example.com/schema".to_string()),
         );
 
-        let resolved = resolve_spec_id("my:custom-spec.v1", &media_specs).unwrap();
-        assert_eq!(resolved.spec_id, "my:custom-spec.v1");
+        let resolved = resolve_media_urn("media:type=custom-spec;v=1", &media_specs).unwrap();
+        assert_eq!(resolved.media_urn, "media:type=custom-spec;v=1");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
@@ -783,7 +696,7 @@ mod tests {
             }
         });
         media_specs.insert(
-            "my:output-spec.v1".to_string(),
+            "media:type=output-spec;v=1".to_string(),
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/output".to_string(),
@@ -791,8 +704,8 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_spec_id("my:output-spec.v1", &media_specs).unwrap();
-        assert_eq!(resolved.spec_id, "my:output-spec.v1");
+        let resolved = resolve_media_urn("media:type=output-spec;v=1", &media_specs).unwrap();
+        assert_eq!(resolved.media_urn, "media:type=output-spec;v=1");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
@@ -804,12 +717,12 @@ mod tests {
     #[test]
     fn test_resolve_unresolvable_fails_hard() {
         let media_specs = HashMap::new();
-        let result = resolve_spec_id("unknown:spec.v1", &media_specs);
+        let result = resolve_media_urn("media:type=unknown;v=1", &media_specs);
         assert!(result.is_err());
-        if let Err(MediaSpecError::UnresolvableSpecId(id)) = result {
-            assert_eq!(id, "unknown:spec.v1");
+        if let Err(MediaSpecError::UnresolvableMediaUrn(urn)) = result {
+            assert_eq!(urn, "media:type=unknown;v=1");
         } else {
-            panic!("Expected UnresolvableSpecId error");
+            panic!("Expected UnresolvableMediaUrn error");
         }
     }
 
@@ -818,11 +731,11 @@ mod tests {
         // Custom definition in media_specs takes precedence over built-in
         let mut media_specs = HashMap::new();
         media_specs.insert(
-            SPEC_ID_STR.to_string(),
+            MEDIA_STRING.to_string(),
             MediaSpecDef::String("application/json; profile=https://custom.example.com/str".to_string()),
         );
 
-        let resolved = resolve_spec_id(SPEC_ID_STR, &media_specs).unwrap();
+        let resolved = resolve_media_urn(MEDIA_STRING, &media_specs).unwrap();
         // Custom definition used, not built-in
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
@@ -832,12 +745,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_builtin_spec_id() {
-        assert!(is_builtin_spec_id(SPEC_ID_STR));
-        assert!(is_builtin_spec_id(SPEC_ID_INT));
-        assert!(is_builtin_spec_id(SPEC_ID_BINARY));
-        assert!(!is_builtin_spec_id("my:custom-spec.v1"));
-        assert!(!is_builtin_spec_id("random-string"));
+    fn test_is_builtin_media_urn() {
+        assert!(is_builtin_media_urn(MEDIA_STRING));
+        assert!(is_builtin_media_urn(MEDIA_INTEGER));
+        assert!(is_builtin_media_urn(MEDIA_BINARY));
+        assert!(!is_builtin_media_urn("media:type=custom-spec;v=1"));
+        assert!(!is_builtin_media_urn("random-string"));
     }
 
     // -------------------------------------------------------------------------
@@ -886,7 +799,7 @@ mod tests {
     #[test]
     fn test_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
-            spec_id: "test".to_string(),
+            media_urn: "test".to_string(),
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
             schema: None,
@@ -898,7 +811,7 @@ mod tests {
     #[test]
     fn test_resolved_is_json() {
         let resolved = ResolvedMediaSpec {
-            spec_id: "test".to_string(),
+            media_urn: "test".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
             schema: None,
@@ -910,7 +823,7 @@ mod tests {
     #[test]
     fn test_resolved_is_text() {
         let resolved = ResolvedMediaSpec {
-            spec_id: "test".to_string(),
+            media_urn: "test".to_string(),
             media_type: "text/plain".to_string(),
             profile_uri: None,
             schema: None,

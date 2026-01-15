@@ -122,8 +122,8 @@ Request: cap:op=generate;ext=docx
 Result:  NO MATCH (pdf ≠ docx)
 
 # Example 6: Fallback provider pattern
-Cap:     cap:op=generate_thumbnail;out=std:binary.v1   (no ext)
-Request: cap:op=generate_thumbnail;out=std:binary.v1;ext=wav
+Cap:     cap:op=generate_thumbnail;out=media:type=binary;v=1   (no ext)
+Request: cap:op=generate_thumbnail;out=media:type=binary;v=1;ext=wav
 Result:  MATCH (cap can handle any ext including wav)
 ```
 

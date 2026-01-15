@@ -6,7 +6,7 @@
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
 use crate::{Cap, CapArgument, CapOutput};
-use crate::media_spec::resolve_spec_id;
+use crate::media_spec::resolve_media_urn;
 use crate::profile_schema_registry::ProfileSchemaRegistry;
 use serde_json::Value;
 use std::fmt;
@@ -274,7 +274,7 @@ impl InputValidator {
         let media_specs = cap.get_media_specs();
 
         // Resolve the spec ID from the argument definition
-        let resolved = resolve_spec_id(&arg_def.media_spec, media_specs)
+        let resolved = resolve_media_urn(&arg_def.media_urn, media_specs)
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
                 field_name: arg_def.name.clone(),
@@ -287,7 +287,7 @@ impl InputValidator {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
                     argument_name: arg_def.name.clone(),
-                    expected_media_spec: arg_def.media_spec.clone(),
+                    expected_media_spec: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: vec!["Expected base64-encoded string for binary type".to_string()],
                 });
@@ -302,7 +302,7 @@ impl InputValidator {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
                     argument_name: arg_def.name.clone(),
-                    expected_media_spec: arg_def.media_spec.clone(),
+                    expected_media_spec: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -316,7 +316,7 @@ impl InputValidator {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
                     argument_name: arg_def.name.clone(),
-                    expected_media_spec: arg_def.media_spec.clone(),
+                    expected_media_spec: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -514,7 +514,7 @@ impl OutputValidator {
         let media_specs = cap.get_media_specs();
 
         // Resolve the spec ID from the output definition
-        let resolved = resolve_spec_id(&output_def.media_spec, media_specs)
+        let resolved = resolve_media_urn(&output_def.media_urn, media_specs)
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
                 field_name: "output".to_string(),
@@ -526,7 +526,7 @@ impl OutputValidator {
             if !matches!(value, Value::String(_)) {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
-                    expected_media_spec: output_def.media_spec.clone(),
+                    expected_media_spec: output_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: vec!["Expected base64-encoded string for binary type".to_string()],
                 });
@@ -540,7 +540,7 @@ impl OutputValidator {
             if let Err(errors) = self.validate_with_local_schema(schema, value) {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
-                    expected_media_spec: output_def.media_spec.clone(),
+                    expected_media_spec: output_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -553,7 +553,7 @@ impl OutputValidator {
             if let Err(errors) = self.schema_registry.validate(profile, value).await {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
-                    expected_media_spec: output_def.media_spec.clone(),
+                    expected_media_spec: output_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -720,7 +720,7 @@ impl CapValidator {
 
         // Validate that all media_spec IDs can be resolved
         for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
-            resolve_spec_id(&arg.media_spec, media_specs)
+            resolve_media_urn(&arg.media_urn, media_specs)
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
                     field_name: arg.name.clone(),
@@ -729,7 +729,7 @@ impl CapValidator {
         }
 
         if let Some(output) = cap.get_output() {
-            resolve_spec_id(&output.media_spec, media_specs)
+            resolve_media_urn(&output.media_urn, media_specs)
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
                     field_name: "output".to_string(),
@@ -816,12 +816,12 @@ impl Default for SchemaValidator {
 mod tests {
     use super::*;
     use crate::{CapUrn, CapArguments};
-    use crate::standard::media::{SPEC_ID_STR, SPEC_ID_INT};
+    use crate::standard::media::{MEDIA_STRING, MEDIA_INTEGER};
     use serde_json::json;
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
     }
 
     #[tokio::test]
@@ -835,7 +835,7 @@ mod tests {
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
             "file_path",
-            SPEC_ID_STR,
+            MEDIA_STRING,
             "Path to file",
             "--file",
         ));
@@ -858,7 +858,7 @@ mod tests {
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
             "file_path",
-            SPEC_ID_STR,
+            MEDIA_STRING,
             "Path to file",
             "--file",
         ));
@@ -888,7 +888,7 @@ mod tests {
         let mut args = CapArguments::new();
         args.add_required(CapArgument::new(
             "width",
-            SPEC_ID_INT,
+            MEDIA_INTEGER,
             "Width value",
             "--width",
         ));

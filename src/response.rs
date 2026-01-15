@@ -182,7 +182,7 @@ impl ResponseWrapper {
                     if !is_binary {
                         return Err(ValidationError::InvalidOutputType {
                             cap_urn: cap.urn_string(),
-                            expected_media_spec: output_def.media_spec.clone(),
+                            expected_media_spec: output_def.media_urn.clone(),
                             actual_value: JsonValue::String(format!("{} bytes of binary data", self.raw_bytes.len())),
                             schema_errors: vec!["Expected non-binary output but received binary data".to_string()],
                         });
@@ -213,7 +213,7 @@ impl ResponseWrapper {
     /// Returns error if the output spec ID cannot be resolved
     pub fn matches_output_type(&self, cap: &Cap) -> Result<bool, crate::media_spec::MediaSpecError> {
         let output_def = cap.get_output()
-            .ok_or_else(|| crate::media_spec::MediaSpecError::UnresolvableSpecId(
+            .ok_or_else(|| crate::media_spec::MediaSpecError::UnresolvableMediaUrn(
                 "cap has no output definition".to_string()
             ))?;
 

@@ -7,54 +7,62 @@
 use crate::{
     Cap, CapUrn, CapUrnBuilder, CapRegistry, RegistryError
 };
+use crate::media_urn::{
+    MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
+    MEDIA_BOOLEAN_ARRAY,
+    MEDIA_LISTING_ID, MEDIA_FILE_PATH_ARRAY, MEDIA_TASK_ID,
+    MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
+    MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
+    MEDIA_GENERATE_OUTPUT, MEDIA_STRUCTURED_QUERY_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT,
+};
 use std::sync::Arc;
 
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
-/// Get the input spec ID for a given file extension
+/// Get the input media URN for a given file extension
 ///
-/// Returns spec IDs for document input types:
-/// - Binary files (pdf): std:binary.v1
-/// - Text files (md, rst, log, txt): std:str.v1
-pub fn input_spec_id_for_ext(ext: &str) -> &'static str {
+/// Returns media URNs for document input types:
+/// - Binary files (pdf): media:type=binary;v=1
+/// - Text files (md, rst, log, txt): media:type=string;v=1
+pub fn input_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "std:binary.v1",
-        "md" | "rst" | "log" | "txt" | "text" | _ => "std:str.v1",
+        "pdf" => MEDIA_BINARY,
+        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_STRING,
     }
 }
 
-/// Get the output spec ID for extract-metadata operation by extension
+/// Get the output media URN for extract-metadata operation by extension
 ///
-/// - PDF files: capns:extract-metadata-output.v1 (has full schema)
-/// - Text files: std:obj.v1 (generic JSON object)
-pub fn extract_metadata_output_spec_id_for_ext(ext: &str) -> &'static str {
+/// - PDF files: media:type=extract-metadata-output;v=1 (has full schema)
+/// - Text files: media:type=object;v=1 (generic JSON object)
+pub fn extract_metadata_output_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "capns:extract-metadata-output.v1",
-        "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
+        "pdf" => "media:type=extract-metadata-output;v=1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
     }
 }
 
-/// Get the output spec ID for extract-outline operation by extension
+/// Get the output media URN for extract-outline operation by extension
 ///
-/// - PDF files: capns:extract-outline-output.v1 (has full schema)
-/// - Text files: std:obj.v1 (generic JSON object)
-pub fn extract_outline_output_spec_id_for_ext(ext: &str) -> &'static str {
+/// - PDF files: media:type=extract-outline-output;v=1 (has full schema)
+/// - Text files: media:type=object;v=1 (generic JSON object)
+pub fn extract_outline_output_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "capns:extract-outline-output.v1",
-        "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
+        "pdf" => "media:type=extract-outline-output;v=1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
     }
 }
 
-/// Get the output spec ID for grind operation by extension
+/// Get the output media URN for grind operation by extension
 ///
-/// - PDF files: capns:grind-output.v1 (has full schema)
-/// - Text files: std:obj.v1 (generic JSON object)
-pub fn grind_output_spec_id_for_ext(ext: &str) -> &'static str {
+/// - PDF files: media:type=grind-output;v=1 (has full schema)
+/// - Text files: media:type=object;v=1 (generic JSON object)
+pub fn grind_output_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "capns:grind-output.v1",
-        "md" | "rst" | "log" | "txt" | "text" | _ => "std:obj.v1",
+        "pdf" => "media:type=grind-output;v=1",
+        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
     }
 }
 
@@ -74,8 +82,8 @@ pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
         .tag("op", "conversation")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .in_spec("std:str.v1")
-        .out_spec("capns:llm_inference-output.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build conversation cap URN")
 }
@@ -86,8 +94,8 @@ pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "multiplechoice")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .in_spec("std:str.v1")
-        .out_spec("capns:llm_inference-output.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build multiplechoice cap URN")
 }
@@ -98,8 +106,8 @@ pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
         .tag("op", "codegeneration")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .in_spec("std:str.v1")
-        .out_spec("capns:llm_inference-output.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build codegeneration cap URN")
 }
@@ -110,8 +118,8 @@ pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
         .tag("op", "creative")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .in_spec("std:str.v1")
-        .out_spec("capns:llm_inference-output.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build creative cap URN")
 }
@@ -122,8 +130,8 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "summarization")
         .tag("type", "constrained")
         .tag("language", lang_code)
-        .in_spec("std:str.v1")
-        .out_spec("capns:llm_inference-output.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build summarization cap URN")
 }
@@ -136,8 +144,8 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
 pub fn embeddings_dimensions_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "embeddings_dimensions")
-        .in_spec("std:void.v1")
-        .out_spec("std:int.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_INTEGER)
         .build()
         .expect("Failed to build embeddings-dimensions cap URN")
 }
@@ -146,8 +154,8 @@ pub fn embeddings_dimensions_urn() -> CapUrn {
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_embeddings")
-        .in_spec("std:str.v1")
-        .out_spec("capns:generate-output.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_GENERATE_OUTPUT)
         .build()
         .expect("Failed to build embeddings-generation cap URN")
 }
@@ -161,8 +169,8 @@ pub fn model_download_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "download")
         .tag("type", "model")
-        .in_spec("std:void.v1")
-        .out_spec("capns:download-output.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_DOWNLOAD_OUTPUT)
         .build()
         .expect("Failed to build model-download cap URN")
 }
@@ -172,8 +180,8 @@ pub fn model_load_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "load")
         .tag("type", "model")
-        .in_spec("std:void.v1")
-        .out_spec("capns:load-output.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_LOAD_OUTPUT)
         .build()
         .expect("Failed to build model-load cap URN")
 }
@@ -183,8 +191,8 @@ pub fn model_unload_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "unload")
         .tag("type", "model")
-        .in_spec("std:void.v1")
-        .out_spec("capns:unload-output.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_UNLOAD_OUTPUT)
         .build()
         .expect("Failed to build model-unload cap URN")
 }
@@ -194,8 +202,8 @@ pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "list")
         .tag("type", "model")
-        .in_spec("std:void.v1")
-        .out_spec("capns:list-output.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_LIST_OUTPUT)
         .build()
         .expect("Failed to build model-list cap URN")
 }
@@ -205,8 +213,8 @@ pub fn model_status_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "status")
         .tag("type", "model")
-        .in_spec("std:void.v1")
-        .out_spec("capns:status-output.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_STATUS_OUTPUT)
         .build()
         .expect("Failed to build model-status cap URN")
 }
@@ -216,8 +224,8 @@ pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "contents")
         .tag("type", "model")
-        .in_spec("std:void.v1")
-        .out_spec("capns:contents-output.v1")
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_CONTENTS_OUTPUT)
         .build()
         .expect("Failed to build model-contents cap URN")
 }
@@ -233,8 +241,8 @@ pub fn model_contents_urn() -> CapUrn {
 pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     let mut builder = CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
-        .in_spec("std:void.v1")
-        .out_spec("std:binary.v1");
+        .in_spec(MEDIA_VOID)
+        .out_spec(MEDIA_BINARY);
 
     if let Some(e) = ext {
         builder = builder.tag("ext", e);
@@ -248,8 +256,8 @@ pub fn grind_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "grind")
         .tag("ext", ext)
-        .in_spec(input_spec_id_for_ext(ext))
-        .out_spec(grind_output_spec_id_for_ext(ext))
+        .in_spec(input_media_urn_for_ext(ext))
+        .out_spec(grind_output_media_urn_for_ext(ext))
         .build()
         .expect("Failed to build grind cap URN")
 }
@@ -259,8 +267,8 @@ pub fn extract_metadata_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_metadata")
         .tag("ext", ext)
-        .in_spec(input_spec_id_for_ext(ext))
-        .out_spec(extract_metadata_output_spec_id_for_ext(ext))
+        .in_spec(input_media_urn_for_ext(ext))
+        .out_spec(extract_metadata_output_media_urn_for_ext(ext))
         .build()
         .expect("Failed to build extract-metadata cap URN")
 }
@@ -270,8 +278,8 @@ pub fn extract_outline_urn(ext: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_outline")
         .tag("ext", ext)
-        .in_spec(input_spec_id_for_ext(ext))
-        .out_spec(extract_outline_output_spec_id_for_ext(ext))
+        .in_spec(input_media_urn_for_ext(ext))
+        .out_spec(extract_outline_output_media_urn_for_ext(ext))
         .build()
         .expect("Failed to build extract-outline cap URN")
 }
@@ -286,8 +294,8 @@ pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "generate_frontmatter_summary")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .in_spec("std:str.v1")
-        .out_spec("std:str.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_STRING)
         .build()
         .expect("Failed to build frontmatter-summarization cap URN")
 }
@@ -298,8 +306,8 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
         .tag("op", "query_structured")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .in_spec("std:obj.v1")
-        .out_spec("capns:structured_query-output.v1")
+        .in_spec(MEDIA_OBJECT)
+        .out_spec(MEDIA_STRUCTURED_QUERY_OUTPUT)
         .build()
         .expect("Failed to build structured-query cap URN")
 }
@@ -310,8 +318,8 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bit")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .in_spec("std:str.v1")
-        .out_spec("std:bool.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_BOOLEAN)
         .build()
         .expect("Failed to build bit-choice cap URN")
 }
@@ -322,8 +330,8 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bits")
         .tag("language", lang_code)
         .tag("type", "constrained")
-        .in_spec("std:str.v1")
-        .out_spec("std:bool-array.v1")
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_BOOLEAN_ARRAY)
         .build()
         .expect("Failed to build bit-choices cap URN")
 }
@@ -337,8 +345,8 @@ pub fn scan_files_task_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "scan_files")
         .tag("type", "task_creation")
-        .in_spec("fgnd:file-path-array.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_FILE_PATH_ARRAY)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build scan-files-task cap URN")
 }
@@ -349,8 +357,8 @@ pub fn recategorization_task_urn(lang_code: &str) -> CapUrn {
         .tag("op", "recategorize_listing")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build recategorization-task cap URN")
 }
@@ -361,8 +369,8 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
         .tag("op", "request_listing_analysis")
         .tag("language", lang_code)
         .tag("type", "task_creation")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build listing-analysis-task cap URN")
 }
@@ -375,8 +383,8 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
 pub fn grinder_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_grinder")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build grinder tool cap URN")
 }
@@ -385,8 +393,8 @@ pub fn grinder_tool_urn() -> CapUrn {
 pub fn quick_summary_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_quick_summary")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build quick-summary tool cap URN")
 }
@@ -395,8 +403,8 @@ pub fn quick_summary_tool_urn() -> CapUrn {
 pub fn detailed_analysis_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_detailed_analysis")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build detailed-analysis tool cap URN")
 }
@@ -405,8 +413,8 @@ pub fn detailed_analysis_tool_urn() -> CapUrn {
 pub fn outline_extraction_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_outline_extraction")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build outline-extraction tool cap URN")
 }
@@ -415,8 +423,8 @@ pub fn outline_extraction_tool_urn() -> CapUrn {
 pub fn embedding_generation_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_embedding_generation")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build embedding-generation tool cap URN")
 }
@@ -425,8 +433,8 @@ pub fn embedding_generation_tool_urn() -> CapUrn {
 pub fn recategorize_tool_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "use_recategorize")
-        .in_spec("fgnd:listing-id.v1")
-        .out_spec("fgnd:task-id.v1")
+        .in_spec(MEDIA_LISTING_ID)
+        .out_spec(MEDIA_TASK_ID)
         .build()
         .expect("Failed to build recategorize tool cap URN")
 }

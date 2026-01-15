@@ -11,7 +11,7 @@
 //!
 //! ```json
 //! {
-//!   "urn": { "tags": { "op": "conversation", "in": "std:str.v1", "out": "my:output.v1" } },
+//!   "urn": { "tags": { "op": "conversation", "in": "media:type=string;v=1", "out": "my:output.v1" } },
 //!   "media_specs": {
 //!     "my:output.v1": {
 //!       "media_type": "application/json",
@@ -20,14 +20,14 @@
 //!     }
 //!   },
 //!   "arguments": {
-//!     "required": [{ "name": "input", "media_spec": "std:str.v1", ... }]
+//!     "required": [{ "name": "input", "media_spec": "media:type=string;v=1", ... }]
 //!   },
 //!   "output": { "media_spec": "my:output.v1", ... }
 //! }
 //! ```
 
 use crate::cap_urn::CapUrn;
-use crate::media_spec::{resolve_spec_id, MediaSpecDef, MediaSpecError, ResolvedMediaSpec};
+use crate::media_spec::{resolve_media_urn, MediaSpecDef, MediaSpecError, ResolvedMediaSpec};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
@@ -55,15 +55,15 @@ pub struct ArgumentValidation {
 
 /// Cap argument definition
 ///
-/// The `media_spec` field contains a spec ID (e.g., "std:str.v1") that
+/// The `media_urn` field contains a media URN (e.g., "media:type=string;v=1") that
 /// references a definition in the cap's `media_specs` table or a built-in primitive.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapArgument {
     pub name: String,
 
-    /// Spec ID referencing a media spec definition
-    /// e.g., "std:str.v1", "std:int.v1", or a custom spec ID
-    pub media_spec: String,
+    /// Media URN referencing a media spec definition
+    /// e.g., "media:type=string;v=1", "media:type=integer;v=1", or a custom media URN
+    pub media_urn: String,
 
     pub arg_description: String,
 
@@ -108,14 +108,14 @@ pub struct CapArguments {
 
 /// Output definition
 ///
-/// The `media_spec` field contains a spec ID (e.g., "std:obj.v1") that
+/// The `media_urn` field contains a media URN (e.g., "media:type=object;v=1") that
 /// references a definition in the cap's `media_specs` table or a built-in primitive.
 /// Any output schema should be defined in the media_specs entry, not inline here.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
-    /// Spec ID referencing a media spec definition
-    /// e.g., "std:obj.v1" or a custom spec ID like "my:output-spec.v1"
-    pub media_spec: String,
+    /// Media URN referencing a media spec definition
+    /// e.g., "media:type=object;v=1" or a custom media URN like "media:type=my-output;v=1"
+    pub media_urn: String,
 
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
     pub validation: ArgumentValidation,
@@ -128,14 +128,14 @@ pub struct CapOutput {
 }
 
 impl CapOutput {
-    /// Create a new output definition with spec ID
+    /// Create a new output definition with media URN
     ///
     /// # Arguments
-    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "std:obj.v1")
+    /// * `media_urn` - Media URN referencing a media_specs entry (e.g., "media:type=object;v=1")
     /// * `description` - Human-readable description of the output
-    pub fn new(media_spec: impl Into<String>, description: impl Into<String>) -> Self {
+    pub fn new(media_urn: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             output_description: description.into(),
             validation: ArgumentValidation::default(),
             metadata: None,
@@ -143,9 +143,9 @@ impl CapOutput {
     }
 
     /// Create output with validation
-    pub fn with_validation(media_spec: impl Into<String>, description: impl Into<String>, validation: ArgumentValidation) -> Self {
+    pub fn with_validation(media_urn: impl Into<String>, description: impl Into<String>, validation: ArgumentValidation) -> Self {
         Self {
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             output_description: description.into(),
             validation,
             metadata: None,
@@ -154,22 +154,22 @@ impl CapOutput {
 
     /// Create a fully specified output
     pub fn with_full_definition(
-        media_spec: impl Into<String>,
+        media_urn: impl Into<String>,
         description: impl Into<String>,
         validation: ArgumentValidation,
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             output_description: description.into(),
             validation,
             metadata,
         }
     }
 
-    /// Get the spec ID
-    pub fn spec_id(&self) -> &str {
-        &self.media_spec
+    /// Get the media URN
+    pub fn get_media_urn(&self) -> &str {
+        &self.media_urn
     }
 
     /// Resolve this output's media spec using the provided media_specs table
@@ -178,9 +178,9 @@ impl CapOutput {
     /// * `media_specs` - The media_specs map from the cap definition
     ///
     /// # Errors
-    /// Returns `MediaSpecError::UnresolvableSpecId` if the spec ID cannot be resolved.
+    /// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
     pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_spec_id(&self.media_spec, media_specs)
+        resolve_media_urn(&self.media_urn, media_specs)
     }
 
     /// Check if output is binary based on resolved media spec
@@ -333,8 +333,8 @@ impl Serialize for Cap {
 
         // Serialize urn as tags object (including in/out direction specs)
         let mut all_tags = serde_json::Map::new();
-        all_tags.insert("in".to_string(), serde_json::Value::String(self.urn.in_spec.clone()));
-        all_tags.insert("out".to_string(), serde_json::Value::String(self.urn.out_spec.clone()));
+        all_tags.insert("in".to_string(), serde_json::Value::String(self.urn.in_spec().to_string()));
+        all_tags.insert("out".to_string(), serde_json::Value::String(self.urn.out_spec().to_string()));
         for (k, v) in &self.urn.tags {
             all_tags.insert(k.clone(), serde_json::Value::String(v.clone()));
         }
@@ -419,7 +419,7 @@ impl<'de> Deserialize<'de> for Cap {
                     // Extract required in/out specs first
                     let in_spec = tags.get("in")
                         .and_then(|v| v.as_str())
-                        .ok_or_else(|| serde::de::Error::custom("Missing required 'in' tag in urn - caps must declare their input type (use std:void.v1 for no input)"))?
+                        .ok_or_else(|| serde::de::Error::custom("Missing required 'in' tag in urn - caps must declare their input type (use media:type=void;v=1 for no input)"))?
                         .to_string();
                     let out_spec = tags.get("out")
                         .and_then(|v| v.as_str())
@@ -464,17 +464,17 @@ impl<'de> Deserialize<'de> for Cap {
 }
 
 impl CapArgument {
-    /// Create a new cap argument with spec ID
+    /// Create a new cap argument with media URN
     ///
     /// # Arguments
     /// * `name` - Argument name
-    /// * `media_spec` - Spec ID referencing a media_specs entry (e.g., "std:str.v1")
+    /// * `media_urn` - Media URN referencing a media_specs entry (e.g., "media:type=string;v=1")
     /// * `description` - Human-readable description
     /// * `cli_flag` - CLI flag for this argument (e.g., "--input")
-    pub fn new(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             arg_description: description.into(),
             cli_flag: cli_flag.into(),
             position: None,
@@ -485,10 +485,10 @@ impl CapArgument {
     }
 
     /// Create argument with position
-    pub fn with_position(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, position: usize) -> Self {
+    pub fn with_position(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, position: usize) -> Self {
         Self {
             name: name.into(),
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             arg_description: description.into(),
             cli_flag: cli_flag.into(),
             position: Some(position),
@@ -499,10 +499,10 @@ impl CapArgument {
     }
 
     /// Create argument with validation
-    pub fn with_validation(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, validation: ArgumentValidation) -> Self {
+    pub fn with_validation(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, validation: ArgumentValidation) -> Self {
         Self {
             name: name.into(),
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             arg_description: description.into(),
             cli_flag: cli_flag.into(),
             position: None,
@@ -513,10 +513,10 @@ impl CapArgument {
     }
 
     /// Create argument with default value
-    pub fn with_default(name: impl Into<String>, media_spec: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, default: serde_json::Value) -> Self {
+    pub fn with_default(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, default: serde_json::Value) -> Self {
         Self {
             name: name.into(),
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             arg_description: description.into(),
             cli_flag: cli_flag.into(),
             position: None,
@@ -529,7 +529,7 @@ impl CapArgument {
     /// Create a fully specified argument
     pub fn with_full_definition(
         name: impl Into<String>,
-        media_spec: impl Into<String>,
+        media_urn: impl Into<String>,
         description: impl Into<String>,
         cli_flag: impl Into<String>,
         position: Option<usize>,
@@ -539,7 +539,7 @@ impl CapArgument {
     ) -> Self {
         Self {
             name: name.into(),
-            media_spec: media_spec.into(),
+            media_urn: media_urn.into(),
             arg_description: description.into(),
             cli_flag: cli_flag.into(),
             position,
@@ -549,9 +549,9 @@ impl CapArgument {
         }
     }
 
-    /// Get the spec ID
-    pub fn spec_id(&self) -> &str {
-        &self.media_spec
+    /// Get the media URN
+    pub fn get_media_urn(&self) -> &str {
+        &self.media_urn
     }
 
     /// Resolve this argument's media spec using the provided media_specs table
@@ -560,9 +560,9 @@ impl CapArgument {
     /// * `media_specs` - The media_specs map from the cap definition
     ///
     /// # Errors
-    /// Returns `MediaSpecError::UnresolvableSpecId` if the spec ID cannot be resolved.
+    /// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
     pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_spec_id(&self.media_spec, media_specs)
+        resolve_media_urn(&self.media_urn, media_specs)
     }
 
     /// Check if argument is binary based on resolved media spec
@@ -868,8 +868,8 @@ impl Cap {
     }
 
     /// Resolve a spec ID using this cap's media_specs
-    pub fn resolve_spec_id(&self, spec_id: &str) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_spec_id(spec_id, &self.media_specs)
+    pub fn resolve_media_urn(&self, spec_id: &str) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_media_urn(spec_id, &self.media_specs)
     }
     
     /// Check if this cap matches a request string
@@ -1033,7 +1033,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
     }
 
     #[test]
@@ -1043,8 +1043,9 @@ mod tests {
 
         // Alphabetical order: format < in < op < out < type
         assert!(cap.urn_string().contains("op=transform"));
-        assert!(cap.urn_string().contains("in=std:void.v1"));
-        assert!(cap.urn_string().contains("out=std:obj.v1"));
+        // in and out are now quoted media URNs
+        assert!(cap.urn_string().contains("in=\"media:type=void;v=1\""));
+        assert!(cap.urn_string().contains("out=\"media:type=object;v=1\""));
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
