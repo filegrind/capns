@@ -4,8 +4,8 @@
       "op": "multiplechoice",
       "language": "en",
       "type": "constrained",
-      "in": "std:str.v1",
-      "out": "capns:llm_inference-output.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=llm_inference-output;v=1"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Logical reasoning and binary decision tasks in English",
   "metadata": {},
   "media_specs": {
-    "capns:llm_inference-output.v1": {
+    "media:type=llm_inference-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -74,7 +74,7 @@
     "required": [
       {
         "name": "query",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Logical query or decision problem",
         "cli_flag": "--query",
         "position": 0,
@@ -87,7 +87,7 @@
     "optional": [
       {
         "name": "context",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Context and facts for logical reasoning",
         "cli_flag": "--context",
         "validation": {
@@ -96,7 +96,7 @@
       },
       {
         "name": "decision_type",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Type of logical decision required",
         "cli_flag": "--decision-type",
         "default_value": "binary",
@@ -112,7 +112,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Maximum tokens for reasoning output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -123,14 +123,14 @@
       },
       {
         "name": "require_explanation",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Whether to include reasoning explanation",
         "cli_flag": "--require-explanation",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -143,7 +143,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:llm_inference-output.v1",
+    "media_urn": "media:type=llm_inference-output;v=1",
     "output_description": "Logical decision with reasoning explanation and confidence"
   }
 }

@@ -4,8 +4,8 @@
       "op": "choose_bits",
       "language": "en",
       "type": "constrained",
-      "in": "std:str.v1",
-      "out": "std:bool-array.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=boolean-array;v=1"
     }
   },
   "command": "bit_choices",
@@ -13,7 +13,7 @@
   "cap_description": "Make multiple binary (yes/no, true/false) decisions based on content and multiple questions",
   "metadata": {},
   "media_specs": {
-    "capns:questions-array.v1": {
+    "media:type=questions-array;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/questions-array",
       "schema": {
@@ -34,7 +34,7 @@
     "required": [
       {
         "name": "content",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Content to analyze for the binary decisions",
         "cli_flag": "--content",
         "position": 0,
@@ -45,7 +45,7 @@
       },
       {
         "name": "questions",
-        "media_spec": "capns:questions-array.v1",
+        "media_urn": "media:type=questions-array;v=1",
         "arg_description": "Array of binary questions to answer about the content",
         "cli_flag": "--questions",
         "position": 1
@@ -54,7 +54,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Language code for processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -75,7 +75,7 @@
       },
       {
         "name": "max_content_length",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Maximum content length to consider (for context window management)",
         "cli_flag": "--max-content-length",
         "default_value": 2048,
@@ -86,7 +86,7 @@
       },
       {
         "name": "confidence_threshold",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Minimum confidence threshold for decisions",
         "cli_flag": "--confidence-threshold",
         "default_value": 0.7,
@@ -97,7 +97,7 @@
       },
       {
         "name": "model_spec",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -110,7 +110,7 @@
     ]
   },
   "output": {
-    "media_spec": "std:bool-array.v1",
+    "media_urn": "media:type=boolean-array;v=1",
     "output_description": "Array of boolean decision results corresponding to each question"
   }
 }

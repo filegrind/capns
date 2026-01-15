@@ -5,6 +5,7 @@
 //! identifiers with flat tag-based naming, wildcard support, and specificity comparison.
 
 pub mod cap_urn;
+pub mod media_urn;
 pub mod cap;
 pub mod manifest;
 pub mod validation;
@@ -18,6 +19,7 @@ pub mod media_spec;
 pub mod profile_schema_registry;
 
 pub use cap_urn::*;
+pub use media_urn::*;
 pub use cap::*;
 pub use manifest::*;
 pub use validation::*;

@@ -3,8 +3,8 @@
     "tags": {
       "op": "status",
       "type": "model",
-      "in": "std:void.v1",
-      "out": "capns:status-output.v1"
+      "in": "media:type=void;v=1",
+      "out": "media:type=status-output;v=1"
     }
   },
   "command": "status",
@@ -12,7 +12,7 @@
   "cap_description": "Check the status and health of a specific model",
   "metadata": {},
   "media_specs": {
-    "capns:status-output.v1": {
+    "media:type=status-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/status-output",
       "schema": {
@@ -98,7 +98,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model identifier to check status for",
         "cli_flag": "--model",
         "position": 0,
@@ -111,14 +111,14 @@
     "optional": [
       {
         "name": "detailed",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Include detailed diagnostics and metrics",
         "cli_flag": "--detailed",
         "default_value": false
       },
       {
         "name": "format",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",
@@ -132,7 +132,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:status-output.v1",
+    "media_urn": "media:type=status-output;v=1",
     "output_description": "Model status including health, performance metrics and configuration"
   }
 }

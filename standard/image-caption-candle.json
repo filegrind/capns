@@ -3,8 +3,8 @@
     "tags": {
       "op": "generate_caption",
       "model_type": "candle",
-      "in": "std:binary.v1",
-      "out": "capns:caption-output.v1"
+      "in": "media:type=binary;v=1",
+      "out": "media:type=caption-output;v=1"
     }
   },
   "command": "caption",
@@ -12,7 +12,7 @@
   "cap_description": "Generate image captions using BLIP models with Candle ML framework",
   "metadata": {},
   "media_specs": {
-    "capns:caption-output.v1": {
+    "media:type=caption-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/caption-output",
       "schema": {
@@ -51,7 +51,7 @@
     "required": [
       {
         "name": "image",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to the image file to caption",
         "cli_flag": "--image",
         "position": 0,
@@ -64,7 +64,7 @@
     "optional": [
       {
         "name": "prompt",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Optional prompt to guide the captioning",
         "cli_flag": "--prompt",
         "validation": {
@@ -74,7 +74,7 @@
       },
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "BLIP model name from HuggingFace",
         "cli_flag": "--model",
         "default_value": "Salesforce/blip-image-captioning-large",
@@ -85,7 +85,7 @@
       },
       {
         "name": "output",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Output JSON file path",
         "cli_flag": "--output",
         "validation": {
@@ -95,7 +95,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:caption-output.v1",
+    "media_urn": "media:type=caption-output;v=1",
     "output_description": "Generated caption with model metadata"
   }
 }

@@ -5,7 +5,7 @@
 //! not in inline fields on arguments/outputs.
 
 use crate::{Cap, CapArgument, CapOutput};
-use crate::media_spec::resolve_spec_id;
+use crate::media_spec::resolve_media_urn;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -23,8 +23,8 @@ pub enum SchemaValidationError {
     #[error("Validation failed for output: {details}")]
     OutputValidation { details: String },
 
-    #[error("Spec ID '{spec_id}' could not be resolved: {error}")]
-    SpecIdNotResolved { spec_id: String, error: String },
+    #[error("Media URN '{media_urn}' could not be resolved: {error}")]
+    MediaUrnNotResolved { media_urn: String, error: String },
 
     #[error("Invalid JSON value for validation")]
     InvalidJson,
@@ -83,9 +83,9 @@ impl SchemaValidator {
         let media_specs = cap.get_media_specs();
 
         // Resolve the spec ID to get the schema
-        let resolved = resolve_spec_id(&arg_def.media_spec, media_specs)
-            .map_err(|e| SchemaValidationError::SpecIdNotResolved {
-                spec_id: arg_def.media_spec.clone(),
+        let resolved = resolve_media_urn(&arg_def.media_urn, media_specs)
+            .map_err(|e| SchemaValidationError::MediaUrnNotResolved {
+                media_urn: arg_def.media_urn.clone(),
                 error: e.to_string(),
             })?;
 
@@ -108,9 +108,9 @@ impl SchemaValidator {
         let media_specs = cap.get_media_specs();
 
         // Resolve the spec ID to get the schema
-        let resolved = resolve_spec_id(&output_def.media_spec, media_specs)
-            .map_err(|e| SchemaValidationError::SpecIdNotResolved {
-                spec_id: output_def.media_spec.clone(),
+        let resolved = resolve_media_urn(&output_def.media_urn, media_specs)
+            .map_err(|e| SchemaValidationError::MediaUrnNotResolved {
+                media_urn: output_def.media_urn.clone(),
                 error: e.to_string(),
             })?;
 
@@ -188,14 +188,14 @@ impl SchemaResolver for FileSchemaResolver {
     fn resolve_schema(&self, schema_ref: &str) -> Result<JsonValue, SchemaValidationError> {
         let schema_path = self.base_path.join(schema_ref);
         let schema_content = std::fs::read_to_string(&schema_path)
-            .map_err(|_| SchemaValidationError::SpecIdNotResolved {
-                spec_id: schema_ref.to_string(),
+            .map_err(|_| SchemaValidationError::MediaUrnNotResolved {
+                media_urn: schema_ref.to_string(),
                 error: "File not found".to_string(),
             })?;
 
         serde_json::from_str(&schema_content)
-            .map_err(|_| SchemaValidationError::SpecIdNotResolved {
-                spec_id: schema_ref.to_string(),
+            .map_err(|_| SchemaValidationError::MediaUrnNotResolved {
+                media_urn: schema_ref.to_string(),
                 error: "Invalid JSON".to_string(),
             })
     }
@@ -204,14 +204,14 @@ impl SchemaResolver for FileSchemaResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::standard::media::SPEC_ID_STR;
+    use crate::standard::media::MEDIA_STRING;
     use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
     use crate::CapUrn;
     use serde_json::json;
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=std:void.v1;out=std:obj.v1;{}", tags)
+        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
     }
 
     #[test]
@@ -327,7 +327,7 @@ mod tests {
         // Argument using built-in spec ID (no local schema)
         let arg = CapArgument::new(
             "simple_string",
-            SPEC_ID_STR,
+            MEDIA_STRING,
             "Simple string",
             "--string",
         );
@@ -338,16 +338,16 @@ mod tests {
     }
 
     #[test]
-    fn test_unresolvable_spec_id_fails_hard() {
+    fn test_unresolvable_media_urn_fails_hard() {
         let mut validator = SchemaValidator::new();
 
         let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
-        // Argument with unknown spec ID
+        // Argument with unknown media URN
         let arg = CapArgument::new(
             "unknown",
-            "unknown:spec.v1", // Not in media_specs and not a built-in
+            "media:type=unknown;v=1", // Not in media_specs and not a built-in
             "Unknown",
             "--unknown",
         );
@@ -356,10 +356,10 @@ mod tests {
         let result = validator.validate_argument_with_cap(&cap, &arg, &value);
         assert!(result.is_err());
 
-        if let Err(SchemaValidationError::SpecIdNotResolved { spec_id, .. }) = result {
-            assert_eq!(spec_id, "unknown:spec.v1");
+        if let Err(SchemaValidationError::MediaUrnNotResolved { media_urn, .. }) = result {
+            assert_eq!(media_urn, "media:type=unknown;v=1");
         } else {
-            panic!("Expected SpecIdNotResolved error");
+            panic!("Expected MediaUrnNotResolved error");
         }
     }
 }

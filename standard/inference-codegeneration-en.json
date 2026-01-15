@@ -4,8 +4,8 @@
       "op": "codegeneration",
       "language": "en",
       "type": "constrained",
-      "in": "std:str.v1",
-      "out": "capns:llm_inference-output.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=llm_inference-output;v=1"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Code generation and programming tasks in English",
   "metadata": {},
   "media_specs": {
-    "capns:llm_inference-output.v1": {
+    "media:type=llm_inference-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -100,7 +100,7 @@
     "required": [
       {
         "name": "prompt",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Code generation prompt or specification",
         "cli_flag": "--prompt",
         "position": 0,
@@ -113,7 +113,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Programming language for code generation",
         "cli_flag": "--language",
         "default_value": "rust",
@@ -141,7 +141,7 @@
       },
       {
         "name": "context",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Existing code context or codebase information",
         "cli_flag": "--context",
         "validation": {
@@ -150,7 +150,7 @@
       },
       {
         "name": "style",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Coding style or framework preferences",
         "cli_flag": "--style",
         "validation": {
@@ -159,7 +159,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Maximum tokens for generated code",
         "cli_flag": "--max-tokens",
         "default_value": 4096,
@@ -170,21 +170,21 @@
       },
       {
         "name": "include_tests",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Whether to include unit tests",
         "cli_flag": "--include-tests",
         "default_value": false
       },
       {
         "name": "include_comments",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Whether to include code comments",
         "cli_flag": "--include-comments",
         "default_value": true
       },
       {
         "name": "model_spec",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model spec to use for code generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -197,7 +197,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:llm_inference-output.v1",
+    "media_urn": "media:type=llm_inference-output;v=1",
     "output_description": "Generated code with optional tests and documentation"
   }
 }

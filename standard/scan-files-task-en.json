@@ -3,8 +3,8 @@
     "tags": {
       "op": "scan_files",
       "type": "task_creation",
-      "in": "fgnd:file-path-array.v1",
-      "out": "fgnd:task-id.v1"
+      "in": "media:type=file-path-array;v=1",
+      "out": "media:type=task-id;v=1"
     }
   },
   "command": "scan_files_task",
@@ -12,7 +12,7 @@
   "cap_description": "Create a task to scan a specific list of files",
   "metadata": {},
   "media_specs": {
-    "fgnd:file-path-array.v1": {
+    "media:type=file-path-array;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://filegrind.com/schema/file-path-array",
       "schema": {
@@ -26,7 +26,7 @@
         "description": "Array of file paths to scan"
       }
     },
-    "fgnd:task-id.v1": {
+    "media:type=task-id;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/scan_files_task-output",
       "schema": {
@@ -54,14 +54,14 @@
     "required": [
       {
         "name": "file_paths",
-        "media_spec": "fgnd:file-path-array.v1",
+        "media_urn": "media:type=file-path-array;v=1",
         "arg_description": "Array of file paths to scan",
         "cli_flag": "--file-paths"
       }
     ]
   },
   "output": {
-    "media_spec": "fgnd:task-id.v1",
+    "media_urn": "media:type=task-id;v=1",
     "output_description": "Created task information"
   }
 }

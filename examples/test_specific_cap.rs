@@ -22,19 +22,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !cap.arguments.required.is_empty() {
                 println!("  Required args: {}", cap.arguments.required.len());
                 for arg in &cap.arguments.required {
-                    println!("    - {}: {}", arg.name, arg.media_spec);
+                    println!("    - {}: {}", arg.name, arg.media_urn);
                 }
             }
 
             if !cap.arguments.optional.is_empty() {
                 println!("  Optional args: {}", cap.arguments.optional.len());
                 for arg in &cap.arguments.optional {
-                    println!("    - {}: {}", arg.name, arg.media_spec);
+                    println!("    - {}: {}", arg.name, arg.media_urn);
                 }
             }
 
             if let Some(output) = &cap.output {
-                println!("  Output: {} - {}", output.media_spec, output.output_description);
+                println!("  Output: {} - {}", output.media_urn, output.output_description);
             }
         },
         Err(e) => {

@@ -3,8 +3,8 @@
     "tags": {
       "op": "management",
       "type": "model",
-      "in": "std:void.v1",
-      "out": "capns:manage-output.v1"
+      "in": "media:type=void;v=1",
+      "out": "media:type=manage-output;v=1"
     }
   },
   "command": "manage",
@@ -12,7 +12,7 @@
   "cap_description": "General model management operations including installation, configuration and lifecycle",
   "metadata": {},
   "media_specs": {
-    "capns:manage-output.v1": {
+    "media:type=manage-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/manage-output",
       "schema": {
@@ -80,7 +80,7 @@
     "required": [
       {
         "name": "operation",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Management operation to perform",
         "cli_flag": "--operation",
         "position": 0,
@@ -98,7 +98,7 @@
     "optional": [
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model identifier or path",
         "cli_flag": "--model",
         "validation": {
@@ -107,7 +107,7 @@
       },
       {
         "name": "format",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Output format for information display",
         "cli_flag": "--format",
         "default_value": "json",
@@ -122,7 +122,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:manage-output.v1",
+    "media_urn": "media:type=manage-output;v=1",
     "output_description": "Management operation result with status and details"
   }
 }

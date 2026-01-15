@@ -3,8 +3,8 @@
     "tags": {
       "op": "download",
       "type": "model",
-      "in": "std:void.v1",
-      "out": "capns:download-output.v1"
+      "in": "media:type=void;v=1",
+      "out": "media:type=download-output;v=1"
     }
   },
   "command": "download",
@@ -12,7 +12,7 @@
   "cap_description": "Download machine learning models from various repositories",
   "metadata": {},
   "media_specs": {
-    "capns:download-output.v1": {
+    "media:type=download-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/download-output",
       "schema": {
@@ -68,7 +68,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model identifier to download",
         "cli_flag": "--model",
         "position": 0,
@@ -81,7 +81,7 @@
     "optional": [
       {
         "name": "repository",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Repository to download from",
         "cli_flag": "--repository",
         "default_value": "huggingface",
@@ -95,14 +95,14 @@
       },
       {
         "name": "force",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Force download even if model exists",
         "cli_flag": "--force",
         "default_value": false
       },
       {
         "name": "cache_dir",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Custom cache directory for model storage",
         "cli_flag": "--cache-dir",
         "validation": {
@@ -112,7 +112,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:download-output.v1",
+    "media_urn": "media:type=download-output;v=1",
     "output_description": "Download result with model path and metadata"
   }
 }

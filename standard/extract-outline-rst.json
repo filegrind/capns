@@ -3,8 +3,8 @@
     "tags": {
       "op": "extract_outline",
       "ext": "rst",
-      "in": "std:str.v1",
-      "out": "std:obj.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=object;v=1"
     }
   },
   "command": "extract-outline",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to the RST file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "max_depth",
-        "media_spec": "std:int.v1",
+        "media_urn": "media:type=integer;v=1",
         "arg_description": "Maximum outline depth to extract (1-10)",
         "cli_flag": "--max-depth",
         "validation": {
@@ -39,14 +39,14 @@
       },
       {
         "name": "include_order_indexes",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Include page numbers in the outline",
         "cli_flag": "--include-order-indexes",
         "default_value": true
       },
       {
         "name": "output",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -56,7 +56,7 @@
     ]
   },
   "output": {
-    "media_spec": "std:obj.v1",
+    "media_urn": "media:type=object;v=1",
     "output_description": "Structured document outline with hierarchical entries"
   }
 }

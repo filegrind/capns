@@ -3,8 +3,8 @@
     "tags": {
       "op": "grind",
       "ext": "md",
-      "in": "std:str.v1",
-      "out": "std:obj.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=object;v=1"
     }
   },
   "command": "grind",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to the markdown file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "index_range",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
         "cli_flag": "--index-range",
         "validation": {
@@ -38,7 +38,7 @@
       },
       {
         "name": "output",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -48,7 +48,7 @@
     ]
   },
   "output": {
-    "media_spec": "std:obj.v1",
+    "media_urn": "media:type=object;v=1",
     "output_description": "Structured file chips with text content"
   }
 }

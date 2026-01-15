@@ -4,8 +4,8 @@
       "op": "generate_frontmatter_summary",
       "language": "en",
       "type": "constrained",
-      "in": "std:str.v1",
-      "out": "std:str.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=string;v=1"
     }
   },
   "command": "generate_text",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "frontmatter_text",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Frontmatter text to process and summarize",
         "cli_flag": "--frontmatter-text",
         "position": 0,
@@ -30,7 +30,7 @@
     "optional": [
       {
         "name": "format",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Output format for the summary",
         "cli_flag": "--format",
         "default_value": "organized",
@@ -45,21 +45,21 @@
       },
       {
         "name": "preserve_all_data",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Whether to preserve all factual information",
         "cli_flag": "--preserve-all-data",
         "default_value": true
       },
       {
         "name": "remove_boilerplate",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Whether to remove legal boilerplate and formatting chips",
         "cli_flag": "--remove-boilerplate",
         "default_value": true
       },
       {
         "name": "language",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Language of the frontmatter text",
         "cli_flag": "--language",
         "default_value": "en",
@@ -80,7 +80,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Maximum tokens for summary output",
         "cli_flag": "--max-tokens",
         "default_value": 2000,
@@ -91,7 +91,7 @@
       },
       {
         "name": "model_spec",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model spec to use for summary generation",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -104,7 +104,7 @@
     ]
   },
   "output": {
-    "media_spec": "std:str.v1",
+    "media_urn": "media:type=string;v=1",
     "output_description": "Organized bibliographic summary with extracted metadata",
     "validation": {
       "min_length": 1,

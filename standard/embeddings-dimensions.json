@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "embeddings_dimensions",
-      "in": "std:void.v1",
-      "out": "std:int.v1"
+      "in": "media:type=void;v=1",
+      "out": "media:type=integer;v=1"
     }
   },
   "command": "dimensions",
@@ -15,7 +15,7 @@
     "optional": [
       {
         "name": "model_spec",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model spec to use for retrieving embeddings dimensions",
         "cli_flag": "--model-spec",
         "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
@@ -28,7 +28,7 @@
     ]
   },
   "output": {
-    "media_spec": "std:int.v1",
+    "media_urn": "media:type=integer;v=1",
     "output_description": "Dimensionality of the embeddings (positive integer)",
     "validation": {
       "min": 1,

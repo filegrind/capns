@@ -3,8 +3,8 @@
     "tags": {
       "op": "generate_embeddings",
       "model_type": "mlx",
-      "in": "std:str.v1",
-      "out": "capns:embeddings-output.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=embeddings-output;v=1"
     }
   },
   "command": "embeddings",
@@ -12,7 +12,7 @@
   "cap_description": "Generate vector embeddings from text using MLX-based models on Apple Silicon",
   "metadata": {},
   "media_specs": {
-    "capns:embeddings-output.v1": {
+    "media:type=embeddings-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/embeddings-output",
       "schema": {
@@ -106,7 +106,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to MLX embedding model directory",
         "cli_flag": "--model",
         "position": 0,
@@ -118,7 +118,7 @@
     "optional": [
       {
         "name": "text",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Input text to generate embeddings for",
         "cli_flag": "--text",
         "validation": {
@@ -128,7 +128,7 @@
       },
       {
         "name": "file",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to input file to generate embeddings from",
         "cli_flag": "--file",
         "validation": {
@@ -138,7 +138,7 @@
       },
       {
         "name": "chunk_size",
-        "media_spec": "std:int.v1",
+        "media_urn": "media:type=integer;v=1",
         "arg_description": "Chunk size in words for splitting input text",
         "cli_flag": "--chunk-size",
         "default_value": 400,
@@ -149,7 +149,7 @@
       },
       {
         "name": "chunk_overlap",
-        "media_spec": "std:int.v1",
+        "media_urn": "media:type=integer;v=1",
         "arg_description": "Chunk overlap in words when splitting input text",
         "cli_flag": "--chunk-overlap",
         "default_value": 50,
@@ -161,7 +161,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:embeddings-output.v1",
+    "media_urn": "media:type=embeddings-output;v=1",
     "output_description": "JSON containing embeddings, chunk metadata and model information"
   }
 }

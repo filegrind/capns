@@ -18,33 +18,13 @@ static STANDARD_CAPS: Dir = include_dir!("$CARGO_MANIFEST_DIR/standard");
 /// This ensures that URNs with different tag ordering or trailing semicolons
 /// are treated as the same capability
 fn normalize_cap_urn(urn: &str) -> String {
-    // Remove cap: prefix
-    let tags_string = urn.strip_prefix("cap:").unwrap_or(urn);
-    
-    // Remove trailing semicolon if present
-    let clean_tags_string = tags_string.trim_end_matches(';');
-    
-    // Split into tag pairs and filter out empty ones
-    let tag_pairs: Vec<&str> = clean_tags_string.split(';')
-        .filter(|pair| !pair.trim().is_empty())
-        .collect();
-    
-    // Parse into key-value pairs
-    let mut tags = std::collections::BTreeMap::new(); // BTreeMap for sorted keys
-    for pair in tag_pairs {
-        if let Some((key, value)) = pair.split_once('=') {
-            tags.insert(key.trim(), value.trim());
+    // Use the proper CapUrn parser which handles quoted values correctly
+    match crate::CapUrn::from_string(urn) {
+        Ok(parsed) => parsed.to_string(),
+        Err(_) => {
+            // If parsing fails, return original URN (will likely fail later with better error)
+            urn.to_string()
         }
-    }
-    
-    // Rebuild normalized CAPURN with sorted tags
-    if tags.is_empty() {
-        "cap:".to_string()
-    } else {
-        let sorted_tags: Vec<String> = tags.iter()
-            .map(|(key, value)| format!("{}={}", key, value))
-            .collect();
-        format!("cap:{}", sorted_tags.join(";"))
     }
 }
 
@@ -312,7 +292,11 @@ impl CapRegistry {
 
     async fn fetch_from_registry(&self, urn: &str) -> Result<Cap, RegistryError> {
         let normalized_urn = normalize_cap_urn(urn);
-        let url = format!("{}/{}", REGISTRY_BASE_URL, normalized_urn);
+        // URL-encode only the tags part (after "cap:") since the path prefix must be literal
+        // The path is /cap:... where "cap:" is literal and the rest is URL-encoded
+        let tags_part = normalized_urn.strip_prefix("cap:").unwrap_or(&normalized_urn);
+        let encoded_tags = urlencoding::encode(tags_part);
+        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
         let response = self.client.get(&url).send().await.map_err(|e| {
             RegistryError::HttpError(format!("Failed to fetch from registry: {}", e))
         })?;
@@ -434,12 +418,82 @@ mod tests {
     #[tokio::test]
     async fn test_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
-        // Use URNs with required in/out
-        let key1 = registry.cache_key("cap:in=std:void.v1;op=extract;out=std:obj.v1;target=metadata");
-        let key2 = registry.cache_key("cap:in=std:void.v1;op=extract;out=std:obj.v1;target=metadata");
-        let key3 = registry.cache_key("cap:in=std:void.v1;op=different;out=std:obj.v1");
+        // Use URNs with required in/out (new media URN format)
+        let key1 = registry.cache_key("cap:in=\"media:type=void;v=1\";op=extract;out=\"media:type=object;v=1\";target=metadata");
+        let key2 = registry.cache_key("cap:in=\"media:type=void;v=1\";op=extract;out=\"media:type=object;v=1\";target=metadata");
+        let key3 = registry.cache_key("cap:in=\"media:type=void;v=1\";op=different;out=\"media:type=object;v=1\"");
 
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);
+    }
+}
+
+#[cfg(test)]
+mod json_parse_tests {
+    use crate::Cap;
+    
+    #[test]
+    fn test_parse_registry_json() {
+        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:type=listing-id;v=1","out":"media:type=task-id;v=1"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:type=listing-id;v=1":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:type=task-id;v=1":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"accepts_stdin":false,"arguments":{"required":[{"name":"listing_id","media_urn":"media:type=listing-id;v=1","arg_description":"ID of the listing to analyze","cli_flag":"--listing-id"}]},"output":{"media_urn":"media:type=task-id;v=1","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
+        
+        let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
+        assert_eq!(cap.title, "Create Grinder Tool Task");
+        assert_eq!(cap.command, "grinder_task");
+    }
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+    
+    #[test]
+    fn test_url_construction() {
+        let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
+        let normalized = normalize_cap_urn(urn);
+
+        // Only encode the tags part after "cap:"
+        let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
+        let encoded_tags = urlencoding::encode(tags_part);
+        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
+
+        // The URL should have literal "cap:" prefix and encoded tags
+        let expected_url = "https://capns.org/cap:in%3D%22media%3Atype%3Dlisting-id%3Bv%3D1%22%3Bop%3Duse_grinder%3Bout%3D%22media%3Atype%3Dtask-id%3Bv%3D1%22";
+        assert_eq!(url, expected_url);
+    }
+}
+
+#[cfg(test)]
+mod http_tests {
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_fetch_from_registry() {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap();
+
+        let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
+        let normalized_urn = normalize_cap_urn(urn);
+        // Only encode the tags part after "cap:"
+        let tags_part = normalized_urn.strip_prefix("cap:").unwrap_or(&normalized_urn);
+        let encoded_tags = urlencoding::encode(tags_part);
+        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
+
+        println!("Fetching URL: {}", url);
+
+        let response = client.get(&url).send().await.expect("Request failed");
+
+        println!("Status: {}", response.status());
+
+        let body = response.text().await.expect("Failed to get body");
+        println!("Body length: {}", body.len());
+        println!("Body (first 500 chars): {}", &body[..body.len().min(500)]);
+
+        // Try to parse as Cap
+        match serde_json::from_str::<crate::Cap>(&body) {
+            Ok(cap) => println!("Successfully parsed cap: {}", cap.title),
+            Err(e) => println!("Parse error: {}", e),
+        }
     }
 }

@@ -89,8 +89,8 @@ Test 6: Value mismatch
   Result:  NO MATCH
 
 Test 7: Fallback pattern
-  Cap:     cap:op=generate_thumbnail;out=std:binary.v1
-  Request: cap:op=generate_thumbnail;out=std:binary.v1;ext=wav
+  Cap:     cap:op=generate_thumbnail;out=media:type=binary;v=1
+  Request: cap:op=generate_thumbnail;out=media:type=binary;v=1;ext=wav
   Result:  MATCH (cap has implicit ext=*)
 
 Test 8: Empty cap matches anything

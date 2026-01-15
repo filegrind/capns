@@ -3,8 +3,8 @@
     "tags": {
       "op": "load",
       "type": "model",
-      "in": "std:void.v1",
-      "out": "capns:load-output.v1"
+      "in": "media:type=void;v=1",
+      "out": "media:type=load-output;v=1"
     }
   },
   "command": "load",
@@ -12,7 +12,7 @@
   "cap_description": "Load a model into memory for inference operations",
   "metadata": {},
   "media_specs": {
-    "capns:load-output.v1": {
+    "media:type=load-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/load-output",
       "schema": {
@@ -79,7 +79,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model identifier or path to load",
         "cli_flag": "--model",
         "position": 0,
@@ -92,7 +92,7 @@
     "optional": [
       {
         "name": "device",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Device to load model on",
         "cli_flag": "--device",
         "default_value": "cpu",
@@ -107,7 +107,7 @@
       },
       {
         "name": "precision",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model precision/quantization level",
         "cli_flag": "--precision",
         "default_value": "float32",
@@ -123,7 +123,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:load-output.v1",
+    "media_urn": "media:type=load-output;v=1",
     "output_description": "Load result with model handle and configuration"
   }
 }

@@ -4,8 +4,8 @@
       "op": "analyze_image",
       "type": "vision",
       "model_type": "mlx",
-      "in": "std:binary.v1",
-      "out": "capns:vision_inference-output.v1"
+      "in": "media:type=binary;v=1",
+      "out": "media:type=vision_inference-output;v=1"
     }
   },
   "command": "vision",
@@ -13,7 +13,7 @@
   "cap_description": "Analyze images using MLX-based vision-language models on Apple Silicon",
   "metadata": {},
   "media_specs": {
-    "capns:vision_inference-output.v1": {
+    "media:type=vision_inference-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/vision_inference-output",
       "schema": {
@@ -62,7 +62,7 @@
     "required": [
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to MLX vision model directory",
         "cli_flag": "--model",
         "position": 0,
@@ -72,7 +72,7 @@
       },
       {
         "name": "image",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to the image file to analyze (local path or HTTP(S) URL)",
         "cli_flag": "--image",
         "position": 1,
@@ -84,7 +84,7 @@
     "optional": [
       {
         "name": "prompt",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Text prompt for the image analysis",
         "cli_flag": "--prompt",
         "default_value": "Describe this image in detail.",
@@ -95,7 +95,7 @@
       },
       {
         "name": "max_tokens",
-        "media_spec": "std:int.v1",
+        "media_urn": "media:type=integer;v=1",
         "arg_description": "Maximum number of tokens to generate",
         "cli_flag": "--max-tokens",
         "default_value": 256,
@@ -107,7 +107,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:vision_inference-output.v1",
+    "media_urn": "media:type=vision_inference-output;v=1",
     "output_description": "Image analysis with description and metadata"
   }
 }

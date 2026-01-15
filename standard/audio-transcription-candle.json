@@ -3,8 +3,8 @@
     "tags": {
       "op": "transcribe",
       "model_type": "candle",
-      "in": "std:binary.v1",
-      "out": "capns:transcription-output.v1"
+      "in": "media:type=binary;v=1",
+      "out": "media:type=transcription-output;v=1"
     }
   },
   "command": "transcribe",
@@ -12,7 +12,7 @@
   "cap_description": "Transcribe audio files to text using Whisper models with Candle ML framework",
   "metadata": {},
   "media_specs": {
-    "capns:transcription-output.v1": {
+    "media:type=transcription-output;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/transcription-output",
       "schema": {
@@ -96,7 +96,7 @@
     "required": [
       {
         "name": "audio",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Path to the audio file (WAV format)",
         "cli_flag": "--audio",
         "position": 0,
@@ -109,7 +109,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Language code for transcription",
         "cli_flag": "--language",
         "default_value": "en",
@@ -119,14 +119,14 @@
       },
       {
         "name": "timestamps",
-        "media_spec": "std:bool.v1",
+        "media_urn": "media:type=boolean;v=1",
         "arg_description": "Include timestamps in output",
         "cli_flag": "--timestamps",
         "default_value": false
       },
       {
         "name": "model",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Whisper model name from HuggingFace",
         "cli_flag": "--model",
         "default_value": "openai/whisper-base",
@@ -137,7 +137,7 @@
       },
       {
         "name": "output",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Output JSON file path",
         "cli_flag": "--output",
         "validation": {
@@ -147,7 +147,7 @@
     ]
   },
   "output": {
-    "media_spec": "capns:transcription-output.v1",
+    "media_urn": "media:type=transcription-output;v=1",
     "output_description": "Transcribed text with optional timestamps and metadata"
   }
 }

@@ -4,8 +4,8 @@
       "op": "choose_bit",
       "language": "en",
       "type": "constrained",
-      "in": "std:str.v1",
-      "out": "std:bool.v1"
+      "in": "media:type=string;v=1",
+      "out": "media:type=boolean;v=1"
     }
   },
   "command": "bit_choice",
@@ -17,7 +17,7 @@
     "required": [
       {
         "name": "content",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Content to analyze for the binary decision",
         "cli_flag": "--content",
         "position": 0,
@@ -28,7 +28,7 @@
       },
       {
         "name": "question",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "The binary question to answer about the content",
         "cli_flag": "--question",
         "position": 1,
@@ -41,7 +41,7 @@
     "optional": [
       {
         "name": "language",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Language code for processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -62,7 +62,7 @@
       },
       {
         "name": "max_content_length",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Maximum content length to consider (for context window management)",
         "cli_flag": "--max-content-length",
         "default_value": 2048,
@@ -73,7 +73,7 @@
       },
       {
         "name": "confidence_threshold",
-        "media_spec": "std:num.v1",
+        "media_urn": "media:type=number;v=1",
         "arg_description": "Minimum confidence threshold for decisions",
         "cli_flag": "--confidence-threshold",
         "default_value": 0.7,
@@ -84,7 +84,7 @@
       },
       {
         "name": "model_spec",
-        "media_spec": "std:str.v1",
+        "media_urn": "media:type=string;v=1",
         "arg_description": "Model spec to use for decision making",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -97,7 +97,7 @@
     ]
   },
   "output": {
-    "media_spec": "std:bool.v1",
+    "media_urn": "media:type=boolean;v=1",
     "output_description": "Binary decision result (true/false)"
   }
 }

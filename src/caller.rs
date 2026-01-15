@@ -3,7 +3,7 @@
 use anyhow::{Result, anyhow};
 use serde_json::Value as JsonValue;
 use crate::{CapUrn, ResponseWrapper, Cap};
-use crate::media_spec::{resolve_spec_id, ResolvedMediaSpec};
+use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec};
 
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
@@ -98,13 +98,13 @@ impl CapCaller {
         let response = if let Some(binary_data) = binary_output {
             if !output_spec.is_binary() {
                 return Err(anyhow!("Cap {} returned binary data but output spec '{}' is not binary",
-                    self.cap, output_spec.spec_id));
+                    self.cap, output_spec.media_urn));
             }
             ResponseWrapper::from_binary(binary_data)
         } else if let Some(text_data) = text_output {
             if output_spec.is_binary() {
                 return Err(anyhow!("Cap {} returned text data but output spec '{}' expects binary",
-                    self.cap, output_spec.spec_id));
+                    self.cap, output_spec.media_urn));
             }
             if output_spec.is_json() {
                 ResponseWrapper::from_json(text_data.into_bytes())
@@ -146,7 +146,7 @@ impl CapCaller {
         // Direction specs are now required first-class fields
         let spec_id = cap_urn.out_spec();
 
-        resolve_spec_id(spec_id, self.cap_definition.get_media_specs())
+        resolve_media_urn(spec_id, self.cap_definition.get_media_specs())
             .map_err(|e| anyhow!(
                 "Failed to resolve output spec ID '{}' for cap '{}': {} - check that media_specs contains this spec ID or it is a built-in",
                 spec_id, self.cap, e

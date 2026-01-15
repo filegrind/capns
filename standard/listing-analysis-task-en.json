@@ -4,8 +4,8 @@
       "op": "request_listing_analysis",
       "language": "en",
       "type": "task_creation",
-      "in": "fgnd:listing-id.v1",
-      "out": "fgnd:task-id.v1"
+      "in": "media:type=listing-id;v=1",
+      "out": "media:type=task-id;v=1"
     }
   },
   "command": "listing_analysis_task",
@@ -13,7 +13,7 @@
   "cap_description": "Create a complete analysis task chain for a listing (first glance → annotation pass → close read → deep dive)",
   "metadata": {},
   "media_specs": {
-    "fgnd:listing-id.v1": {
+    "media:type=listing-id;v=1": {
       "media_type": "text/plain",
       "profile_uri": "https://filegrind.com/schema/listing-id",
       "schema": {
@@ -22,7 +22,7 @@
         "description": "FileGrind listing UUID"
       }
     },
-    "fgnd:task-id.v1": {
+    "media:type=task-id;v=1": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/listing_analysis_task-output",
       "schema": {
@@ -50,14 +50,14 @@
     "required": [
       {
         "name": "listing_id",
-        "media_spec": "fgnd:listing-id.v1",
+        "media_urn": "media:type=listing-id;v=1",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id"
       }
     ]
   },
   "output": {
-    "media_spec": "fgnd:task-id.v1",
+    "media_urn": "media:type=task-id;v=1",
     "output_description": "Information about the created task chain"
   }
 }
