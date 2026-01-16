@@ -176,11 +176,11 @@ When adding a new media URN type:
 
 ---
 
-## Capability Tags (v2 Format)
+## Coercion Tags (v2 Format)
 
-The new media URN format includes capability tags that enable type coercion and matching. Tags declare what representations a type can be reduced to.
+The new media URN format includes coercion tags that enable type coercion and matching. Tags declare what representations a type can be reduced to.
 
-### Standard Capability Tags
+### Standard Coercion Tags
 
 | Tag | Meaning |
 |-----|---------|
@@ -193,7 +193,7 @@ The new media URN format includes capability tags that enable type coercion and 
 | `structured` | Has internal structure |
 | `visual` | Has visual representation |
 
-### Matching with Capability Tags
+### Matching with Coercion Tags
 
 A cap requiring text input can specify `media:text` and match ANY type reducible to text:
 
@@ -209,7 +209,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Core Primitive Types
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=void;v=1` | `media:type=void;v=1` |
 | `media:type=string;v=1` | `media:type=string;v=1;text;json;scalar` |
@@ -221,7 +221,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Array Types
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=string-array;v=1` | `media:type=string-array;v=1;text;json;collection` |
 | `media:type=integer-array;v=1` | `media:type=integer-array;v=1;text;json;numeric;collection` |
@@ -231,7 +231,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Image Types
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=image;subtype=png` | `media:type=image;subtype=png;binary;visual` |
 | `media:type=image;subtype=jpeg` | `media:type=image;subtype=jpeg;binary;visual` |
@@ -240,7 +240,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Application Types
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=application;subtype=pdf` | `media:type=application;subtype=pdf;binary` |
 | `media:type=application;subtype=json` | `media:type=application;subtype=json;text;json;structured` |
@@ -249,7 +249,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Text Types
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=text;subtype=plain` | `media:type=text;subtype=plain;text;scalar` |
 | `media:type=text;subtype=html` | `media:type=text;subtype=html;text;structured` |
@@ -259,7 +259,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Domain-Specific Types
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=listing-id;v=1` | `media:type=listing-id;v=1;text;scalar` |
 | `media:type=task-id;v=1` | `media:type=task-id;v=1;text;scalar` |
@@ -267,7 +267,7 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 
 ### Output Types (Structured JSON)
 
-| Old Format | New Format with Capability Tags |
+| Old Format | New Format with Coercion Tags |
 |------------|--------------------------------|
 | `media:type=llm-inference-output;v=1` | `media:type=llm-inference-output;v=1;text;json;structured` |
 | `media:type=vision-inference-output;v=1` | `media:type=vision-inference-output;v=1;text;json;structured` |
