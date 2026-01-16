@@ -184,24 +184,24 @@ The new media URN format includes capability tags that enable type coercion and 
 
 | Tag | Meaning |
 |-----|---------|
-| `text=true` | Reducible to UTF-8 string |
-| `json=true` | Serializable as JSON |
-| `binary=true` | Raw bytes representation |
-| `numeric=true` | Numeric value |
-| `scalar=true` | Single value (not a collection) |
-| `collection=true` | Contains multiple items |
-| `structured=true` | Has internal structure |
-| `visual=true` | Has visual representation |
+| `text` | Reducible to UTF-8 string |
+| `json` | Serializable as JSON |
+| `binary` | Raw bytes representation |
+| `numeric` | Numeric value |
+| `scalar` | Single value (not a collection) |
+| `collection` | Contains multiple items |
+| `structured` | Has internal structure |
+| `visual` | Has visual representation |
 
 ### Matching with Capability Tags
 
-A cap requiring text input can specify `media:text=true` and match ANY type reducible to text:
+A cap requiring text input can specify `media:text` and match ANY type reducible to text:
 
 ```
-cap:in=media:text=true;op=prompt;out=media:type=object;v=1
+cap:in=media:text;op=prompt;out=media:type=object;v=1
 ```
 
-This matches: string, integer, number, boolean, object, arrays - anything with `text=true`.
+This matches: string, integer, number, boolean, object, arrays - anything with `text`.
 
 ---
 
@@ -212,84 +212,84 @@ This matches: string, integer, number, boolean, object, arrays - anything with `
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
 | `media:type=void;v=1` | `media:type=void;v=1` |
-| `media:type=string;v=1` | `media:type=string;v=1;text=true;json=true;scalar=true` |
-| `media:type=integer;v=1` | `media:type=integer;v=1;text=true;json=true;numeric=true;scalar=true` |
-| `media:type=number;v=1` | `media:type=number;v=1;text=true;json=true;numeric=true;scalar=true` |
-| `media:type=boolean;v=1` | `media:type=boolean;v=1;text=true;json=true;scalar=true` |
-| `media:type=object;v=1` | `media:type=object;v=1;text=true;json=true;structured=true` |
-| `media:type=binary;v=1` | `media:type=binary;v=1;binary=true` |
+| `media:type=string;v=1` | `media:type=string;v=1;text;json;scalar` |
+| `media:type=integer;v=1` | `media:type=integer;v=1;text;json;numeric;scalar` |
+| `media:type=number;v=1` | `media:type=number;v=1;text;json;numeric;scalar` |
+| `media:type=boolean;v=1` | `media:type=boolean;v=1;text;json;scalar` |
+| `media:type=object;v=1` | `media:type=object;v=1;text;json;structured` |
+| `media:type=binary;v=1` | `media:type=binary;v=1;binary` |
 
 ### Array Types
 
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
-| `media:type=string-array;v=1` | `media:type=string-array;v=1;text=true;json=true;collection=true` |
-| `media:type=integer-array;v=1` | `media:type=integer-array;v=1;text=true;json=true;numeric=true;collection=true` |
-| `media:type=number-array;v=1` | `media:type=number-array;v=1;text=true;json=true;numeric=true;collection=true` |
-| `media:type=boolean-array;v=1` | `media:type=boolean-array;v=1;text=true;json=true;collection=true` |
-| `media:type=object-array;v=1` | `media:type=object-array;v=1;text=true;json=true;structured=true;collection=true` |
+| `media:type=string-array;v=1` | `media:type=string-array;v=1;text;json;collection` |
+| `media:type=integer-array;v=1` | `media:type=integer-array;v=1;text;json;numeric;collection` |
+| `media:type=number-array;v=1` | `media:type=number-array;v=1;text;json;numeric;collection` |
+| `media:type=boolean-array;v=1` | `media:type=boolean-array;v=1;text;json;collection` |
+| `media:type=object-array;v=1` | `media:type=object-array;v=1;text;json;structured;collection` |
 
 ### Image Types
 
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
-| `media:type=image;subtype=png` | `media:type=image;subtype=png;binary=true;visual=true` |
-| `media:type=image;subtype=jpeg` | `media:type=image;subtype=jpeg;binary=true;visual=true` |
-| `media:type=image;subtype=gif` | `media:type=image;subtype=gif;binary=true;visual=true` |
-| `media:type=image;subtype=webp` | `media:type=image;subtype=webp;binary=true;visual=true` |
+| `media:type=image;subtype=png` | `media:type=image;subtype=png;binary;visual` |
+| `media:type=image;subtype=jpeg` | `media:type=image;subtype=jpeg;binary;visual` |
+| `media:type=image;subtype=gif` | `media:type=image;subtype=gif;binary;visual` |
+| `media:type=image;subtype=webp` | `media:type=image;subtype=webp;binary;visual` |
 
 ### Application Types
 
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
-| `media:type=application;subtype=pdf` | `media:type=application;subtype=pdf;binary=true` |
-| `media:type=application;subtype=json` | `media:type=application;subtype=json;text=true;json=true;structured=true` |
-| `media:type=application;subtype=xml` | `media:type=application;subtype=xml;text=true;structured=true` |
-| `media:type=application;subtype=epub+zip` | `media:type=application;subtype=epub+zip;binary=true` |
+| `media:type=application;subtype=pdf` | `media:type=application;subtype=pdf;binary` |
+| `media:type=application;subtype=json` | `media:type=application;subtype=json;text;json;structured` |
+| `media:type=application;subtype=xml` | `media:type=application;subtype=xml;text;structured` |
+| `media:type=application;subtype=epub+zip` | `media:type=application;subtype=epub+zip;binary` |
 
 ### Text Types
 
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
-| `media:type=text;subtype=plain` | `media:type=text;subtype=plain;text=true;scalar=true` |
-| `media:type=text;subtype=html` | `media:type=text;subtype=html;text=true;structured=true` |
-| `media:type=text;subtype=markdown` | `media:type=text;subtype=markdown;text=true` |
-| `media:type=text;subtype=x-rust` | `media:type=text;subtype=x-rust;text=true` |
-| `media:type=text;subtype=x-rst` | `media:type=text;subtype=x-rst;text=true` |
+| `media:type=text;subtype=plain` | `media:type=text;subtype=plain;text;scalar` |
+| `media:type=text;subtype=html` | `media:type=text;subtype=html;text;structured` |
+| `media:type=text;subtype=markdown` | `media:type=text;subtype=markdown;text` |
+| `media:type=text;subtype=x-rust` | `media:type=text;subtype=x-rust;text` |
+| `media:type=text;subtype=x-rst` | `media:type=text;subtype=x-rst;text` |
 
 ### Domain-Specific Types
 
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
-| `media:type=listing-id;v=1` | `media:type=listing-id;v=1;text=true;scalar=true` |
-| `media:type=task-id;v=1` | `media:type=task-id;v=1;text=true;scalar=true` |
-| `media:type=file-path-array;v=1` | `media:type=file-path-array;v=1;text=true;json=true;collection=true` |
+| `media:type=listing-id;v=1` | `media:type=listing-id;v=1;text;scalar` |
+| `media:type=task-id;v=1` | `media:type=task-id;v=1;text;scalar` |
+| `media:type=file-path-array;v=1` | `media:type=file-path-array;v=1;text;json;collection` |
 
 ### Output Types (Structured JSON)
 
 | Old Format | New Format with Capability Tags |
 |------------|--------------------------------|
-| `media:type=llm-inference-output;v=1` | `media:type=llm-inference-output;v=1;text=true;json=true;structured=true` |
-| `media:type=vision-inference-output;v=1` | `media:type=vision-inference-output;v=1;text=true;json=true;structured=true` |
-| `media:type=embeddings-output;v=1` | `media:type=embeddings-output;v=1;text=true;json=true;structured=true` |
-| `media:type=extract-metadata-output;v=1` | `media:type=extract-metadata-output;v=1;text=true;json=true;structured=true` |
-| `media:type=extract-outline-output;v=1` | `media:type=extract-outline-output;v=1;text=true;json=true;structured=true` |
-| `media:type=grind-output;v=1` | `media:type=grind-output;v=1;text=true;json=true;structured=true;collection=true` |
-| `media:type=download-output;v=1` | `media:type=download-output;v=1;text=true;json=true;structured=true` |
-| `media:type=load-output;v=1` | `media:type=load-output;v=1;text=true;json=true;structured=true` |
-| `media:type=unload-output;v=1` | `media:type=unload-output;v=1;text=true;json=true;structured=true` |
-| `media:type=list-output;v=1` | `media:type=list-output;v=1;text=true;json=true;structured=true;collection=true` |
-| `media:type=status-output;v=1` | `media:type=status-output;v=1;text=true;json=true;structured=true` |
-| `media:type=contents-output;v=1` | `media:type=contents-output;v=1;text=true;json=true;structured=true;collection=true` |
-| `media:type=generate-output;v=1` | `media:type=generate-output;v=1;text=true;json=true;structured=true` |
-| `media:type=structured-query-output;v=1` | `media:type=structured-query-output;v=1;text=true;json=true;structured=true` |
-| `media:type=questions-array;v=1` | `media:type=questions-array;v=1;text=true;json=true;collection=true` |
+| `media:type=llm-inference-output;v=1` | `media:type=llm-inference-output;v=1;text;json;structured` |
+| `media:type=vision-inference-output;v=1` | `media:type=vision-inference-output;v=1;text;json;structured` |
+| `media:type=embeddings-output;v=1` | `media:type=embeddings-output;v=1;text;json;structured` |
+| `media:type=extract-metadata-output;v=1` | `media:type=extract-metadata-output;v=1;text;json;structured` |
+| `media:type=extract-outline-output;v=1` | `media:type=extract-outline-output;v=1;text;json;structured` |
+| `media:type=grind-output;v=1` | `media:type=grind-output;v=1;text;json;structured;collection` |
+| `media:type=download-output;v=1` | `media:type=download-output;v=1;text;json;structured` |
+| `media:type=load-output;v=1` | `media:type=load-output;v=1;text;json;structured` |
+| `media:type=unload-output;v=1` | `media:type=unload-output;v=1;text;json;structured` |
+| `media:type=list-output;v=1` | `media:type=list-output;v=1;text;json;structured;collection` |
+| `media:type=status-output;v=1` | `media:type=status-output;v=1;text;json;structured` |
+| `media:type=contents-output;v=1` | `media:type=contents-output;v=1;text;json;structured;collection` |
+| `media:type=generate-output;v=1` | `media:type=generate-output;v=1;text;json;structured` |
+| `media:type=structured-query-output;v=1` | `media:type=structured-query-output;v=1;text;json;structured` |
+| `media:type=questions-array;v=1` | `media:type=questions-array;v=1;text;json;collection` |
 
 ---
 
 ## Type Coercion Rules
 
-When a cap requires `media:text=true`, the system can automatically coerce:
+When a cap requires `media:text`, the system can automatically coerce:
 
 | Source Type | Coercion Method |
 |-------------|-----------------|
@@ -300,4 +300,4 @@ When a cap requires `media:text=true`, the system can automatically coerce:
 | `text/*` | Direct (already text) |
 | `string` | Direct (already text) |
 
-Types with only `binary=true` (images, PDF, etc.) cannot be coerced to text without an explicit conversion cap.
+Types with only `binary` (images, PDF, etc.) cannot be coerced to text without an explicit conversion cap.
