@@ -5,7 +5,7 @@ This document catalogs all distinct Media URNs used across the codebase.
 ## Format
 
 ```
-media:type=<type>[;subtype=<subtype>][;v=<version>]
+media:type=<type>[;subtype=<subtype>][;v=<version>][;<coercion-tag>]...
 ```
 
 ---
@@ -17,12 +17,12 @@ These are the fundamental data types with defined constants in `capns::media_urn
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
 | `media:type=void;v=1` | `MEDIA_VOID` | No data / empty |
-| `media:type=string;v=1` | `MEDIA_STRING` | UTF-8 text string |
-| `media:type=integer;v=1` | `MEDIA_INTEGER` | Integer value |
-| `media:type=number;v=1` | `MEDIA_NUMBER` | Floating-point number |
-| `media:type=boolean;v=1` | `MEDIA_BOOLEAN` | Boolean value (true/false) |
-| `media:type=object;v=1` | `MEDIA_OBJECT` | JSON object |
-| `media:type=binary;v=1` | `MEDIA_BINARY` | Raw binary data |
+| `media:type=string;v=1;textable;scalar` | `MEDIA_STRING` | UTF-8 text string |
+| `media:type=integer;v=1;textable;numeric;scalar` | `MEDIA_INTEGER` | Integer value |
+| `media:type=number;v=1;textable;numeric;scalar` | `MEDIA_NUMBER` | Floating-point number |
+| `media:type=boolean;v=1;textable;scalar` | `MEDIA_BOOLEAN` | Boolean value (true/false) |
+| `media:type=object;v=1;textable;keyed` | `MEDIA_OBJECT` | JSON object |
+| `media:type=binary;v=1;binary` | `MEDIA_BINARY` | Raw binary data |
 
 ---
 
@@ -32,11 +32,11 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=string-array;v=1` | `MEDIA_STRING_ARRAY` | Array of strings |
-| `media:type=integer-array;v=1` | `MEDIA_INTEGER_ARRAY` | Array of integers |
-| `media:type=number-array;v=1` | `MEDIA_NUMBER_ARRAY` | Array of numbers |
-| `media:type=boolean-array;v=1` | `MEDIA_BOOLEAN_ARRAY` | Array of booleans |
-| `media:type=object-array;v=1` | `MEDIA_OBJECT_ARRAY` | Array of objects |
+| `media:type=string-array;v=1;textable;sequence` | `MEDIA_STRING_ARRAY` | Array of strings |
+| `media:type=integer-array;v=1;textable;numeric;sequence` | `MEDIA_INTEGER_ARRAY` | Array of integers |
+| `media:type=number-array;v=1;textable;numeric;sequence` | `MEDIA_NUMBER_ARRAY` | Array of numbers |
+| `media:type=boolean-array;v=1;textable;sequence` | `MEDIA_BOOLEAN_ARRAY` | Array of booleans |
+| `media:type=object-array;v=1;textable;keyed;sequence` | `MEDIA_OBJECT_ARRAY` | Array of objects |
 
 ---
 
@@ -46,39 +46,56 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=listing-id;v=1` | `MEDIA_LISTING_ID` | Reference to a listing UUID |
-| `media:type=task-id;v=1` | `MEDIA_TASK_ID` | Reference to a task UUID |
-| `media:type=file-path-array;v=1` | `MEDIA_FILE_PATH_ARRAY` | Array of file paths |
+| `media:type=listing-id;v=1;textable;scalar` | `MEDIA_LISTING_ID` | Reference to a listing UUID |
+| `media:type=task-id;v=1;textable;scalar` | `MEDIA_TASK_ID` | Reference to a task UUID |
+| `media:type=file-path-array;v=1;textable;sequence` | `MEDIA_FILE_PATH_ARRAY` | Array of file paths |
 
 ### Model Management Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=download-output;v=1` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
-| `media:type=load-output;v=1` | `MEDIA_LOAD_OUTPUT` | Model load result |
-| `media:type=unload-output;v=1` | `MEDIA_UNLOAD_OUTPUT` | Model unload result |
-| `media:type=list-output;v=1` | `MEDIA_LIST_OUTPUT` | Model listing result |
-| `media:type=status-output;v=1` | `MEDIA_STATUS_OUTPUT` | Status query result |
-| `media:type=contents-output;v=1` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
-| `media:type=generate-output;v=1` | `MEDIA_GENERATE_OUTPUT` | Generation result |
+| `media:type=download-output;v=1;textable;keyed` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
+| `media:type=load-output;v=1;textable;keyed` | `MEDIA_LOAD_OUTPUT` | Model load result |
+| `media:type=unload-output;v=1;textable;keyed` | `MEDIA_UNLOAD_OUTPUT` | Model unload result |
+| `media:type=list-output;v=1;textable;keyed` | `MEDIA_LIST_OUTPUT` | Model listing result |
+| `media:type=status-output;v=1;textable;keyed` | `MEDIA_STATUS_OUTPUT` | Status query result |
+| `media:type=contents-output;v=1;textable;keyed` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
+| `media:type=generate-output;v=1;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
+| `media:type=manage-output;v=1;textable;keyed` | `MEDIA_MANAGE_OUTPUT` | Model management result |
 
 ### LLM & Inference Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=llm-inference-output;v=1` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
-| `media:type=vision-inference-output;v=1` | - | Vision model analysis result |
-| `media:type=embeddings-output;v=1` | - | Embedding generation result |
-| `media:type=structured-query-output;v=1` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
-| `media:type=questions-array;v=1` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
+| `media:type=llm-inference-output;v=1;textable;keyed` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
+| `media:type=vision-inference-output;v=1;textable;keyed` | - | Vision model analysis result |
+| `media:type=embeddings-output;v=1;textable;keyed` | - | Embedding generation result |
+| `media:type=structured-query-output;v=1;textable;keyed` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
+| `media:type=questions-array;v=1;textable;sequence` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
 
 ### Document Processing Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=extract-metadata-output;v=1` | - | Document metadata extraction result |
-| `media:type=extract-outline-output;v=1` | - | Document outline extraction result |
-| `media:type=grind-output;v=1` | - | Document grinding/chunking result |
+| `media:type=extract-metadata-output;v=1;textable;keyed` | - | Document metadata extraction result |
+| `media:type=extract-outline-output;v=1;textable;keyed` | - | Document outline extraction result |
+| `media:type=grind-output;v=1;textable;keyed;sequence` | - | Document grinding/chunking result |
+| `media:type=frontmatter-summary-output;v=1;textable;keyed` | - | Frontmatter summary result |
+| `media:type=thumbnail-output;v=1;binary;visual` | - | Thumbnail image output |
+
+### Audio/Video Processing Outputs
+
+| Media URN | Constant | Description |
+|-----------|----------|-------------|
+| `media:type=transcription-output;v=1;textable;keyed` | - | Audio transcription result |
+| `media:type=caption-output;v=1;textable;keyed` | - | Image caption result |
+
+### Image Processing Outputs
+
+| Media URN | Constant | Description |
+|-----------|----------|-------------|
+| `media:type=image-embeddings-output;v=1;textable;keyed` | - | Image embedding result |
+| `media:type=image-embeddings-batch-output;v=1;textable;keyed;sequence` | - | Batch image embedding result |
 
 ---
 
@@ -88,10 +105,10 @@ Image types use subtype to specify format.
 
 | Media URN | Description |
 |-----------|-------------|
-| `media:type=image;subtype=png` | PNG image |
-| `media:type=image;subtype=jpeg` | JPEG image |
-| `media:type=image;subtype=gif` | GIF image |
-| `media:type=image;subtype=webp` | WebP image |
+| `media:type=image;subtype=png;binary;visual` | PNG image |
+| `media:type=image;subtype=jpeg;binary;visual` | JPEG image |
+| `media:type=image;subtype=gif;binary;visual` | GIF image |
+| `media:type=image;subtype=webp;binary;visual` | WebP image |
 
 ---
 
@@ -101,10 +118,10 @@ Application-specific formats using subtype.
 
 | Media URN | Description |
 |-----------|-------------|
-| `media:type=application;subtype=pdf` | PDF document |
-| `media:type=application;subtype=json` | JSON data |
-| `media:type=application;subtype=xml` | XML data |
-| `media:type=application;subtype=epub+zip` | EPUB e-book |
+| `media:type=application;subtype=pdf;binary;visual` | PDF document |
+| `media:type=application;subtype=json;textable;keyed` | JSON data |
+| `media:type=application;subtype=xml;textable;keyed` | XML data |
+| `media:type=application;subtype=epub+zip;binary` | EPUB e-book |
 
 ---
 
@@ -114,11 +131,11 @@ Text formats with subtype for specific languages/formats.
 
 | Media URN | Description |
 |-----------|-------------|
-| `media:type=text;subtype=plain` | Plain text |
-| `media:type=text;subtype=html` | HTML markup |
-| `media:type=text;subtype=markdown` | Markdown |
-| `media:type=text;subtype=x-rust` | Rust source code |
-| `media:type=text;subtype=x-rst` | reStructuredText |
+| `media:type=text;subtype=plain;textable;scalar` | Plain text |
+| `media:type=text;subtype=html;textable;keyed` | HTML markup |
+| `media:type=text;subtype=markdown;textable` | Markdown |
+| `media:type=text;subtype=x-rust;textable` | Rust source code |
+| `media:type=text;subtype=x-rst;textable` | reStructuredText |
 
 ---
 
@@ -127,7 +144,7 @@ Text formats with subtype for specific languages/formats.
 | Media URN | Description |
 |-----------|-------------|
 | `media:type=unknown;v=1` | Unknown/unrecognized type |
-| `media:type=result;v=1` | Generic result wrapper |
+| `media:type=result;v=1;textable;keyed` | Generic result wrapper |
 
 ---
 
@@ -139,7 +156,7 @@ Text formats with subtype for specific languages/formats.
    - Text content: `MEDIA_STRING`
    - JSON/structured data: `MEDIA_OBJECT`
    - Binary/embeddings: `MEDIA_BINARY`
-   - Images: `media:type=image;subtype=<format>`
+   - Images: `media:type=image;subtype=<format>;binary;visual`
 
 2. **For cap arguments:**
    - Use primitive types (`string`, `integer`, `number`, `boolean`)
@@ -156,7 +173,7 @@ Text formats with subtype for specific languages/formats.
 The `MediaUrn` struct provides these detection methods:
 
 ```rust
-let urn = MediaUrn::from_string("media:type=string;v=1")?;
+let urn = MediaUrn::from_string("media:type=string;v=1;textable;scalar")?;
 
 urn.is_text()    // true for string, text/*
 urn.is_json()    // true for object, object-array, *-array
@@ -176,120 +193,49 @@ When adding a new media URN type:
 
 ---
 
-## Coercion Tags (v2 Format)
+## Coercion Tags
 
-The new media URN format includes coercion tags that enable type coercion and matching. Tags declare what representations a type can be reduced to.
+Media URNs include coercion tags that enable type coercion and matching. Tags declare what representations a type can be reduced to.
 
 ### Standard Coercion Tags
 
-| Tag | Meaning |
-|-----|---------|
-| `text` | Reducible to UTF-8 string |
-| `json` | Serializable as JSON |
-| `binary` | Raw bytes representation |
-| `numeric` | Numeric value |
-| `scalar` | Single value (not a collection) |
-| `collection` | Contains multiple items |
-| `structured` | Has internal structure |
-| `visual` | Has visual representation |
+| Tag | Meaning | When to Use |
+|-----|---------|-------------|
+| `textable` | Can be coerced to plain UTF-8 text | strings, numbers, booleans, IDs (via .toString()) |
+| `binary` | Raw bytes representation | images, PDFs, audio, video |
+| `numeric` | Numeric operations valid | integers, numbers (NOT numeric strings) |
+| `scalar` | Single atomic value | primitives, IDs (NOT arrays, NOT objects) |
+| `sequence` | Ordered collection of items | arrays of any type |
+| `keyed` | Key-value structure | objects, maps |
+| `visual` | Has visual rendering | images, PDFs (renderable) |
 
 ### Matching with Coercion Tags
 
-A cap requiring text input can specify `media:text` and match ANY type reducible to text:
+A cap requiring textable input can specify `media:textable` and match ANY type reducible to text:
 
 ```
-cap:in=media:text;op=prompt;out=media:type=object;v=1
+cap:in=media:textable;op=prompt;out=media:type=object;v=1;textable;keyed
 ```
 
-This matches: string, integer, number, boolean, object, arrays - anything with `text`.
+This matches: string, integer, number, boolean, object, arrays - anything with `textable`.
 
----
+**A cap requiring numeric input:**
+```
+cap:in=media:numeric;op=calculate;out=media:type=number;v=1;textable;numeric;scalar
+```
+Matches: integer, number, integer-array, number-array
 
-## Conversion Table: Old → New Format
-
-### Core Primitive Types
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=void;v=1` | `media:type=void;v=1` |
-| `media:type=string;v=1` | `media:type=string;v=1;text;json;scalar` |
-| `media:type=integer;v=1` | `media:type=integer;v=1;text;json;numeric;scalar` |
-| `media:type=number;v=1` | `media:type=number;v=1;text;json;numeric;scalar` |
-| `media:type=boolean;v=1` | `media:type=boolean;v=1;text;json;scalar` |
-| `media:type=object;v=1` | `media:type=object;v=1;text;json;structured` |
-| `media:type=binary;v=1` | `media:type=binary;v=1;binary` |
-
-### Array Types
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=string-array;v=1` | `media:type=string-array;v=1;text;json;collection` |
-| `media:type=integer-array;v=1` | `media:type=integer-array;v=1;text;json;numeric;collection` |
-| `media:type=number-array;v=1` | `media:type=number-array;v=1;text;json;numeric;collection` |
-| `media:type=boolean-array;v=1` | `media:type=boolean-array;v=1;text;json;collection` |
-| `media:type=object-array;v=1` | `media:type=object-array;v=1;text;json;structured;collection` |
-
-### Image Types
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=image;subtype=png` | `media:type=image;subtype=png;binary;visual` |
-| `media:type=image;subtype=jpeg` | `media:type=image;subtype=jpeg;binary;visual` |
-| `media:type=image;subtype=gif` | `media:type=image;subtype=gif;binary;visual` |
-| `media:type=image;subtype=webp` | `media:type=image;subtype=webp;binary;visual` |
-
-### Application Types
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=application;subtype=pdf` | `media:type=application;subtype=pdf;binary` |
-| `media:type=application;subtype=json` | `media:type=application;subtype=json;text;json;structured` |
-| `media:type=application;subtype=xml` | `media:type=application;subtype=xml;text;structured` |
-| `media:type=application;subtype=epub+zip` | `media:type=application;subtype=epub+zip;binary` |
-
-### Text Types
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=text;subtype=plain` | `media:type=text;subtype=plain;text;scalar` |
-| `media:type=text;subtype=html` | `media:type=text;subtype=html;text;structured` |
-| `media:type=text;subtype=markdown` | `media:type=text;subtype=markdown;text` |
-| `media:type=text;subtype=x-rust` | `media:type=text;subtype=x-rust;text` |
-| `media:type=text;subtype=x-rst` | `media:type=text;subtype=x-rst;text` |
-
-### Domain-Specific Types
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=listing-id;v=1` | `media:type=listing-id;v=1;text;scalar` |
-| `media:type=task-id;v=1` | `media:type=task-id;v=1;text;scalar` |
-| `media:type=file-path-array;v=1` | `media:type=file-path-array;v=1;text;json;collection` |
-
-### Output Types (Structured JSON)
-
-| Old Format | New Format with Coercion Tags |
-|------------|--------------------------------|
-| `media:type=llm-inference-output;v=1` | `media:type=llm-inference-output;v=1;text;json;structured` |
-| `media:type=vision-inference-output;v=1` | `media:type=vision-inference-output;v=1;text;json;structured` |
-| `media:type=embeddings-output;v=1` | `media:type=embeddings-output;v=1;text;json;structured` |
-| `media:type=extract-metadata-output;v=1` | `media:type=extract-metadata-output;v=1;text;json;structured` |
-| `media:type=extract-outline-output;v=1` | `media:type=extract-outline-output;v=1;text;json;structured` |
-| `media:type=grind-output;v=1` | `media:type=grind-output;v=1;text;json;structured;collection` |
-| `media:type=download-output;v=1` | `media:type=download-output;v=1;text;json;structured` |
-| `media:type=load-output;v=1` | `media:type=load-output;v=1;text;json;structured` |
-| `media:type=unload-output;v=1` | `media:type=unload-output;v=1;text;json;structured` |
-| `media:type=list-output;v=1` | `media:type=list-output;v=1;text;json;structured;collection` |
-| `media:type=status-output;v=1` | `media:type=status-output;v=1;text;json;structured` |
-| `media:type=contents-output;v=1` | `media:type=contents-output;v=1;text;json;structured;collection` |
-| `media:type=generate-output;v=1` | `media:type=generate-output;v=1;text;json;structured` |
-| `media:type=structured-query-output;v=1` | `media:type=structured-query-output;v=1;text;json;structured` |
-| `media:type=questions-array;v=1` | `media:type=questions-array;v=1;text;json;collection` |
+**A cap requiring keyed structure:**
+```
+cap:in=media:keyed;op=transform;out=media:type=object;v=1;textable;keyed
+```
+Matches: object, text/html (has DOM structure)
 
 ---
 
 ## Type Coercion Rules
 
-When a cap requires `media:text`, the system can automatically coerce:
+When a cap requires `media:textable`, the system can automatically coerce:
 
 | Source Type | Coercion Method |
 |-------------|-----------------|
