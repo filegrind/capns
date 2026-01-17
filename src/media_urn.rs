@@ -80,6 +80,24 @@ pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=structured-query-out
 pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=questions-array;v=1;textable;sequence";
 /// Media URN for LLM inference output - textable, keyed
 pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:type=llm-inference-output;v=1;textable;keyed";
+/// Media URN for extract-metadata output (PDF) - textable, keyed
+pub const MEDIA_EXTRACT_METADATA_OUTPUT: &str = "media:type=extract-metadata-output;v=1;textable;keyed";
+/// Media URN for extract-outline output (PDF) - textable, keyed
+pub const MEDIA_EXTRACT_OUTLINE_OUTPUT: &str = "media:type=extract-outline-output;v=1;textable;keyed";
+/// Media URN for grind output (PDF) - textable, keyed, sequence (array of chunks)
+pub const MEDIA_GRIND_OUTPUT: &str = "media:type=grind-output;v=1;textable;keyed;sequence";
+/// Media URN for embeddings output - textable, keyed
+pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embeddings-output;v=1;textable;keyed";
+/// Media URN for image embeddings output - textable, keyed
+pub const MEDIA_IMAGE_EMBEDDINGS_OUTPUT: &str = "media:type=image-embeddings-output;v=1;textable;keyed";
+/// Media URN for caption output - textable, keyed
+pub const MEDIA_CAPTION_OUTPUT: &str = "media:type=caption-output;v=1;textable;keyed";
+/// Media URN for transcription output - textable, keyed
+pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:type=transcription-output;v=1;textable;keyed";
+/// Media URN for vision inference output - textable, keyed
+pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:type=vision-inference-output;v=1;textable;keyed";
+/// Media URN for model management output - textable, keyed
+pub const MEDIA_MANAGE_OUTPUT: &str = "media:type=manage-output;v=1;textable;keyed";
 
 // =============================================================================
 // MEDIA URN TYPE

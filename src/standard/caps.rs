@@ -14,6 +14,7 @@ use crate::media_urn::{
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
     MEDIA_GENERATE_OUTPUT, MEDIA_STRUCTURED_QUERY_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT,
+    MEDIA_EXTRACT_METADATA_OUTPUT, MEDIA_EXTRACT_OUTLINE_OUTPUT, MEDIA_GRIND_OUTPUT,
 };
 use std::sync::Arc;
 
@@ -35,33 +36,33 @@ pub fn input_media_urn_for_ext(ext: &str) -> &'static str {
 
 /// Get the output media URN for extract-metadata operation by extension
 ///
-/// - PDF files: media:type=extract-metadata-output;v=1 (has full schema)
-/// - Text files: media:type=object;v=1 (generic JSON object)
+/// - PDF files: MEDIA_EXTRACT_METADATA_OUTPUT (has full schema)
+/// - Text files: MEDIA_OBJECT (generic JSON object)
 pub fn extract_metadata_output_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "media:type=extract-metadata-output;v=1",
+        "pdf" => MEDIA_EXTRACT_METADATA_OUTPUT,
         "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
     }
 }
 
 /// Get the output media URN for extract-outline operation by extension
 ///
-/// - PDF files: media:type=extract-outline-output;v=1 (has full schema)
-/// - Text files: media:type=object;v=1 (generic JSON object)
+/// - PDF files: MEDIA_EXTRACT_OUTLINE_OUTPUT (has full schema)
+/// - Text files: MEDIA_OBJECT (generic JSON object)
 pub fn extract_outline_output_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "media:type=extract-outline-output;v=1",
+        "pdf" => MEDIA_EXTRACT_OUTLINE_OUTPUT,
         "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
     }
 }
 
 /// Get the output media URN for grind operation by extension
 ///
-/// - PDF files: media:type=grind-output;v=1 (has full schema)
-/// - Text files: media:type=object;v=1 (generic JSON object)
+/// - PDF files: MEDIA_GRIND_OUTPUT (has full schema, array of chunks)
+/// - Text files: MEDIA_OBJECT (generic JSON object)
 pub fn grind_output_media_urn_for_ext(ext: &str) -> &'static str {
     match ext {
-        "pdf" => "media:type=grind-output;v=1",
+        "pdf" => MEDIA_GRIND_OUTPUT,
         "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
     }
 }
