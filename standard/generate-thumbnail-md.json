@@ -4,7 +4,7 @@
       "op": "generate_thumbnail",
       "ext": "md",
       "in": "media:type=void;v=1",
-      "out": "media:type=binary;v=1"
+      "out": "media:type=binary;v=1;binary"
     }
   },
   "command": "generate-thumbnail",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the markdown file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "width",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Width of the thumbnail in pixels",
         "cli_flag": "--width",
         "default_value": 200,
@@ -40,7 +40,7 @@
       },
       {
         "name": "height",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Height of the thumbnail in pixels",
         "cli_flag": "--height",
         "default_value": 300,
@@ -51,7 +51,7 @@
       },
       {
         "name": "output_file",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write thumbnail to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -61,7 +61,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=binary;v=1",
+    "media_urn": "media:type=binary;v=1;binary",
     "output_description": "PNG image data representing a thumbnail of the markdown document"
   }
 }

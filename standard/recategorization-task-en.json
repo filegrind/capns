@@ -4,8 +4,8 @@
       "op": "recategorize_listing",
       "language": "en",
       "type": "task_creation",
-      "in": "media:type=listing-id;v=1",
-      "out": "media:type=task-id;v=1"
+      "in": "media:type=listing-id;v=1;textable;scalar",
+      "out": "media:type=task-id;v=1;textable;scalar"
     }
   },
   "command": "recategorization_task",
@@ -13,7 +13,7 @@
   "cap_description": "Create a task to recategorize a listing based on updated analysis",
   "metadata": {},
   "media_specs": {
-    "media:type=listing-id;v=1": {
+    "media:type=listing-id;v=1;textable;scalar": {
       "media_type": "text/plain",
       "profile_uri": "https://filegrind.com/schema/listing-id",
       "schema": {
@@ -22,7 +22,7 @@
         "description": "FileGrind listing UUID"
       }
     },
-    "media:type=task-id;v=1": {
+    "media:type=task-id;v=1;textable;scalar": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/recategorization_task-output",
       "schema": {
@@ -50,14 +50,14 @@
     "required": [
       {
         "name": "listing_id",
-        "media_urn": "media:type=listing-id;v=1",
+        "media_urn": "media:type=listing-id;v=1;textable;scalar",
         "arg_description": "ID of the listing to analyze",
         "cli_flag": "--listing-id"
       }
     ]
   },
   "output": {
-    "media_urn": "media:type=task-id;v=1",
+    "media_urn": "media:type=task-id;v=1;textable;scalar",
     "output_description": "Created task information"
   }
 }

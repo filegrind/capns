@@ -4,7 +4,7 @@
       "op": "list",
       "type": "model",
       "in": "media:type=void;v=1",
-      "out": "media:type=list-output;v=1"
+      "out": "media:type=list-output;v=1;textable;keyed"
     }
   },
   "command": "list",
@@ -12,7 +12,7 @@
   "cap_description": "List available models and their status",
   "metadata": {},
   "media_specs": {
-    "media:type=list-output;v=1": {
+    "media:type=list-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/list-output",
       "schema": {
@@ -92,7 +92,7 @@
     "optional": [
       {
         "name": "filter",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Filter models by pattern",
         "cli_flag": "--filter",
         "validation": {
@@ -101,7 +101,7 @@
       },
       {
         "name": "status",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Filter by model status",
         "cli_flag": "--status",
         "validation": {
@@ -116,7 +116,7 @@
       },
       {
         "name": "format",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Output format",
         "cli_flag": "--format",
         "default_value": "json",
@@ -131,7 +131,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=list-output;v=1",
+    "media_urn": "media:type=list-output;v=1;textable;keyed",
     "output_description": "List of models with their metadata and status"
   }
 }

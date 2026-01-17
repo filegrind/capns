@@ -24,62 +24,62 @@ use tagged_urn::{TaggedUrn, TaggedUrnBuilder, TaggedUrnError};
 // =============================================================================
 
 // Primitive types
-/// Media URN for void (no input/output)
+/// Media URN for void (no input/output) - no coercion tags
 pub const MEDIA_VOID: &str = "media:type=void;v=1";
-/// Media URN for string type
-pub const MEDIA_STRING: &str = "media:type=string;v=1";
-/// Media URN for integer type
-pub const MEDIA_INTEGER: &str = "media:type=integer;v=1";
-/// Media URN for number type
-pub const MEDIA_NUMBER: &str = "media:type=number;v=1";
-/// Media URN for boolean type
-pub const MEDIA_BOOLEAN: &str = "media:type=boolean;v=1";
-/// Media URN for JSON object type
-pub const MEDIA_OBJECT: &str = "media:type=object;v=1";
-/// Media URN for binary data
-pub const MEDIA_BINARY: &str = "media:type=binary;v=1";
+/// Media URN for string type - textable (can become text), scalar (single value)
+pub const MEDIA_STRING: &str = "media:type=string;v=1;textable;scalar";
+/// Media URN for integer type - textable, numeric (math ops valid), scalar
+pub const MEDIA_INTEGER: &str = "media:type=integer;v=1;textable;numeric;scalar";
+/// Media URN for number type - textable, numeric, scalar
+pub const MEDIA_NUMBER: &str = "media:type=number;v=1;textable;numeric;scalar";
+/// Media URN for boolean type - textable, scalar
+pub const MEDIA_BOOLEAN: &str = "media:type=boolean;v=1;textable;scalar";
+/// Media URN for JSON object type - textable (via JSON.stringify), keyed (key-value structure)
+pub const MEDIA_OBJECT: &str = "media:type=object;v=1;textable;keyed";
+/// Media URN for binary data - binary (raw bytes)
+pub const MEDIA_BINARY: &str = "media:type=binary;v=1;binary";
 
 // Array types
-/// Media URN for string array type
-pub const MEDIA_STRING_ARRAY: &str = "media:type=string-array;v=1";
-/// Media URN for integer array type
-pub const MEDIA_INTEGER_ARRAY: &str = "media:type=integer-array;v=1";
-/// Media URN for number array type
-pub const MEDIA_NUMBER_ARRAY: &str = "media:type=number-array;v=1";
-/// Media URN for boolean array type
-pub const MEDIA_BOOLEAN_ARRAY: &str = "media:type=boolean-array;v=1";
-/// Media URN for object array type
-pub const MEDIA_OBJECT_ARRAY: &str = "media:type=object-array;v=1";
+/// Media URN for string array type - textable, sequence (ordered collection)
+pub const MEDIA_STRING_ARRAY: &str = "media:type=string-array;v=1;textable;sequence";
+/// Media URN for integer array type - textable, numeric, sequence
+pub const MEDIA_INTEGER_ARRAY: &str = "media:type=integer-array;v=1;textable;numeric;sequence";
+/// Media URN for number array type - textable, numeric, sequence
+pub const MEDIA_NUMBER_ARRAY: &str = "media:type=number-array;v=1;textable;numeric;sequence";
+/// Media URN for boolean array type - textable, sequence
+pub const MEDIA_BOOLEAN_ARRAY: &str = "media:type=boolean-array;v=1;textable;sequence";
+/// Media URN for object array type - textable, keyed, sequence
+pub const MEDIA_OBJECT_ARRAY: &str = "media:type=object-array;v=1;textable;keyed;sequence";
 
 // FGND-specific types
-/// Media URN for listing ID (UUID)
-pub const MEDIA_LISTING_ID: &str = "media:type=listing-id;v=1";
-/// Media URN for file path array
-pub const MEDIA_FILE_PATH_ARRAY: &str = "media:type=file-path-array;v=1";
-/// Media URN for task ID (UUID)
-pub const MEDIA_TASK_ID: &str = "media:type=task-id;v=1";
+/// Media URN for listing ID (UUID) - textable, scalar
+pub const MEDIA_LISTING_ID: &str = "media:type=listing-id;v=1;textable;scalar";
+/// Media URN for file path array - textable, sequence
+pub const MEDIA_FILE_PATH_ARRAY: &str = "media:type=file-path-array;v=1;textable;sequence";
+/// Media URN for task ID (UUID) - textable, scalar
+pub const MEDIA_TASK_ID: &str = "media:type=task-id;v=1;textable;scalar";
 
-// CAPNS output types
-/// Media URN for model download output
-pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:type=download-output;v=1";
-/// Media URN for model load output
-pub const MEDIA_LOAD_OUTPUT: &str = "media:type=load-output;v=1";
-/// Media URN for model unload output
-pub const MEDIA_UNLOAD_OUTPUT: &str = "media:type=unload-output;v=1";
-/// Media URN for model list output
-pub const MEDIA_LIST_OUTPUT: &str = "media:type=list-output;v=1";
-/// Media URN for model status output
-pub const MEDIA_STATUS_OUTPUT: &str = "media:type=status-output;v=1";
-/// Media URN for model contents output
-pub const MEDIA_CONTENTS_OUTPUT: &str = "media:type=contents-output;v=1";
-/// Media URN for embeddings generate output
-pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=generate-output;v=1";
-/// Media URN for structured query output
-pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=structured-query-output;v=1";
-/// Media URN for questions array
-pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=questions-array;v=1";
-/// Media URN for LLM inference output
-pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:type=llm-inference-output;v=1";
+// CAPNS output types - all keyed structures (JSON objects)
+/// Media URN for model download output - textable, keyed
+pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:type=download-output;v=1;textable;keyed";
+/// Media URN for model load output - textable, keyed
+pub const MEDIA_LOAD_OUTPUT: &str = "media:type=load-output;v=1;textable;keyed";
+/// Media URN for model unload output - textable, keyed
+pub const MEDIA_UNLOAD_OUTPUT: &str = "media:type=unload-output;v=1;textable;keyed";
+/// Media URN for model list output - textable, keyed
+pub const MEDIA_LIST_OUTPUT: &str = "media:type=list-output;v=1;textable;keyed";
+/// Media URN for model status output - textable, keyed
+pub const MEDIA_STATUS_OUTPUT: &str = "media:type=status-output;v=1;textable;keyed";
+/// Media URN for model contents output - textable, keyed
+pub const MEDIA_CONTENTS_OUTPUT: &str = "media:type=contents-output;v=1;textable;keyed";
+/// Media URN for embeddings generate output - textable, keyed
+pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=generate-output;v=1;textable;keyed";
+/// Media URN for structured query output - textable, keyed
+pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=structured-query-output;v=1;textable;keyed";
+/// Media URN for questions array - textable, sequence
+pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=questions-array;v=1;textable;sequence";
+/// Media URN for LLM inference output - textable, keyed
+pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:type=llm-inference-output;v=1;textable;keyed";
 
 // =============================================================================
 // MEDIA URN TYPE

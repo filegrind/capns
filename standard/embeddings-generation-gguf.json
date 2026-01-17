@@ -4,8 +4,8 @@
       "op": "generate_embeddings",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=string;v=1",
-      "out": "media:type=embeddings-output;v=1"
+      "in": "media:type=string;v=1;textable;scalar",
+      "out": "media:type=embeddings-output;v=1;textable;keyed"
     }
   },
   "command": "embeddings",
@@ -13,7 +13,7 @@
   "cap_description": "Generate vector embeddings from text using GGUF models with llama.cpp backend",
   "metadata": {},
   "media_specs": {
-    "media:type=embeddings-output;v=1": {
+    "media:type=embeddings-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/embeddings-output",
       "schema": {
@@ -107,7 +107,7 @@
     "optional": [
       {
         "name": "text",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Input text to generate embeddings for",
         "cli_flag": "--text",
         "validation": {
@@ -117,7 +117,7 @@
       },
       {
         "name": "file",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to input file to generate embeddings from",
         "cli_flag": "--file",
         "validation": {
@@ -127,7 +127,7 @@
       },
       {
         "name": "model_spec",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "GGUF model specification (HuggingFace repo or local path)",
         "cli_flag": "--model-spec",
         "default_value": "hf:nomic-ai/nomic-embed-text-v1.5-GGUF",
@@ -138,7 +138,7 @@
       },
       {
         "name": "chunk_size",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Chunk size in words for splitting input text",
         "cli_flag": "--chunk-size",
         "default_value": 400,
@@ -149,7 +149,7 @@
       },
       {
         "name": "chunk_overlap",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Chunk overlap in words when splitting input text",
         "cli_flag": "--chunk-overlap",
         "default_value": 50,
@@ -160,7 +160,7 @@
       },
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Output JSON file path to write embeddings",
         "cli_flag": "--output",
         "validation": {
@@ -170,7 +170,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=embeddings-output;v=1",
+    "media_urn": "media:type=embeddings-output;v=1;textable;keyed",
     "output_description": "JSON containing L2-normalized embeddings, chunk metadata and model information"
   }
 }

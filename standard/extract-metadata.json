@@ -3,8 +3,8 @@
     "tags": {
       "op": "extract_metadata",
       "ext": "pdf",
-      "in": "media:type=binary;v=1",
-      "out": "media:type=extract-metadata-output;v=1"
+      "in": "media:type=binary;v=1;binary",
+      "out": "media:type=extract-metadata-output;v=1;textable;keyed"
     }
   },
   "command": "extract-metadata",
@@ -12,7 +12,7 @@
   "cap_description": "Extract document metadata including title, author, creation date, file size, and other properties",
   "metadata": {},
   "media_specs": {
-    "media:type=extract-metadata-output;v=1": {
+    "media:type=extract-metadata-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/extract-metadata-output",
       "schema": {
@@ -260,7 +260,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the document file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -273,7 +273,7 @@
     "optional": [
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -283,7 +283,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=extract-metadata-output;v=1",
+    "media_urn": "media:type=extract-metadata-output;v=1;textable;keyed",
     "output_description": "Structured metadata including file properties, document properties, and format-specific metadata"
   }
 }

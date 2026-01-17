@@ -3,8 +3,8 @@
     "tags": {
       "op": "grind",
       "ext": "pdf",
-      "in": "media:type=binary;v=1",
-      "out": "media:type=grind-output;v=1"
+      "in": "media:type=binary;v=1;binary",
+      "out": "media:type=grind-output;v=1;textable;keyed;sequence"
     }
   },
   "command": "grind",
@@ -12,7 +12,7 @@
   "cap_description": "Extract structured page content from the document",
   "metadata": {},
   "media_specs": {
-    "media:type=grind-output;v=1": {
+    "media:type=grind-output;v=1;textable;keyed;sequence": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/grind-output",
       "schema": {
@@ -136,7 +136,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the document file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -149,7 +149,7 @@
     "optional": [
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -158,7 +158,7 @@
       },
       {
         "name": "index_range",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
         "cli_flag": "--index-range",
         "validation": {
@@ -168,7 +168,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=grind-output;v=1",
+    "media_urn": "media:type=grind-output;v=1;textable;keyed;sequence",
     "output_description": "Structured page content extracted from the document"
   }
 }

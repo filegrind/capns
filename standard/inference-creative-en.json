@@ -4,8 +4,8 @@
       "op": "creative",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=string;v=1",
-      "out": "media:type=llm_inference-output;v=1"
+      "in": "media:type=string;v=1;textable;scalar",
+      "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Creative writing and content generation in English",
   "metadata": {},
   "media_specs": {
-    "media:type=llm_inference-output;v=1": {
+    "media:type=llm-inference-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -82,7 +82,7 @@
     "required": [
       {
         "name": "prompt",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Creative writing prompt or brief",
         "cli_flag": "--prompt",
         "position": 0,
@@ -95,7 +95,7 @@
     "optional": [
       {
         "name": "genre",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Genre or style of creative content",
         "cli_flag": "--genre",
         "default_value": "fiction",
@@ -117,7 +117,7 @@
       },
       {
         "name": "tone",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Tone or mood for the creative content",
         "cli_flag": "--tone",
         "default_value": "conversational",
@@ -137,7 +137,7 @@
       },
       {
         "name": "length",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Desired length of creative output",
         "cli_flag": "--length",
         "default_value": "medium",
@@ -152,7 +152,7 @@
       },
       {
         "name": "context",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Background context or inspiration",
         "cli_flag": "--context",
         "validation": {
@@ -161,7 +161,7 @@
       },
       {
         "name": "max_tokens",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Maximum tokens for creative output",
         "cli_flag": "--max-tokens",
         "default_value": 3000,
@@ -172,7 +172,7 @@
       },
       {
         "name": "creativity_level",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
         "cli_flag": "--creativity-level",
         "default_value": 0.8,
@@ -183,7 +183,7 @@
       },
       {
         "name": "model_spec",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Model spec to use for creative writing",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -196,7 +196,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=llm_inference-output;v=1",
+    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
     "output_description": "Creative written content with metadata"
   }
 }

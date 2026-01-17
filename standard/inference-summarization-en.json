@@ -4,8 +4,8 @@
       "op": "summarization",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=string;v=1",
-      "out": "media:type=llm_inference-output;v=1"
+      "in": "media:type=string;v=1;textable;scalar",
+      "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Document and text summarization in English",
   "metadata": {},
   "media_specs": {
-    "media:type=llm_inference-output;v=1": {
+    "media:type=llm-inference-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -92,7 +92,7 @@
     "required": [
       {
         "name": "text",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Text content to summarize",
         "cli_flag": "--text",
         "position": 0,
@@ -105,7 +105,7 @@
     "optional": [
       {
         "name": "summary_type",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Type of summary to generate",
         "cli_flag": "--summary-type",
         "default_value": "abstractive",
@@ -122,7 +122,7 @@
       },
       {
         "name": "length",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Desired summary length",
         "cli_flag": "--length",
         "default_value": "medium",
@@ -137,7 +137,7 @@
       },
       {
         "name": "focus",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Summary focus area",
         "cli_flag": "--focus",
         "default_value": "main_points",
@@ -155,7 +155,7 @@
       },
       {
         "name": "context",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Additional context for summarization",
         "cli_flag": "--context",
         "validation": {
@@ -164,7 +164,7 @@
       },
       {
         "name": "max_tokens",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Maximum tokens for summary output",
         "cli_flag": "--max-tokens",
         "default_value": 1000,
@@ -175,14 +175,14 @@
       },
       {
         "name": "preserve_structure",
-        "media_urn": "media:type=boolean;v=1",
+        "media_urn": "media:type=boolean;v=1;textable;scalar",
         "arg_description": "Whether to preserve document structure",
         "cli_flag": "--preserve-structure",
         "default_value": false
       },
       {
         "name": "model_spec",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Model spec to use for summarization",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -195,7 +195,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=llm_inference-output;v=1",
+    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
     "output_description": "Summary with metadata including compression metrics"
   }
 }

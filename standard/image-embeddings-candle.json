@@ -3,8 +3,8 @@
     "tags": {
       "op": "generate_image_embeddings",
       "model_type": "candle",
-      "in": "media:type=binary;v=1",
-      "out": "media:type=image-embeddings-output;v=1"
+      "in": "media:type=binary;v=1;binary",
+      "out": "media:type=image-embeddings-output;v=1;textable;keyed"
     }
   },
   "command": "image-embed",
@@ -12,7 +12,7 @@
   "cap_description": "Generate image embeddings using CLIP models with Candle ML framework",
   "metadata": {},
   "media_specs": {
-    "media:type=image-embeddings-output;v=1": {
+    "media:type=image-embeddings-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/image-embeddings-output",
       "schema": {
@@ -54,7 +54,7 @@
         }
       }
     },
-    "media:type=image-embeddings-batch-output;v=1": {
+    "media:type=image-embeddings-batch-output;v=1;textable;keyed;sequence": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/image-embeddings-batch-output",
       "schema": {
@@ -116,7 +116,7 @@
     "required": [
       {
         "name": "image",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the image file to embed",
         "cli_flag": "--image",
         "position": 0,
@@ -129,7 +129,7 @@
     "optional": [
       {
         "name": "model",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "CLIP model name from HuggingFace",
         "cli_flag": "--model",
         "default_value": "openai/clip-vit-base-patch32",
@@ -140,7 +140,7 @@
       },
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Output JSON file path",
         "cli_flag": "--output",
         "validation": {
@@ -150,7 +150,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=image-embeddings-output;v=1",
+    "media_urn": "media:type=image-embeddings-output;v=1;textable;keyed",
     "output_description": "Image embedding vector with model metadata"
   }
 }

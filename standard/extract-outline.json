@@ -3,8 +3,8 @@
     "tags": {
       "op": "extract_outline",
       "ext": "pdf",
-      "in": "media:type=binary;v=1",
-      "out": "media:type=extract-outline-output;v=1"
+      "in": "media:type=binary;v=1;binary",
+      "out": "media:type=extract-outline-output;v=1;textable;keyed"
     }
   },
   "command": "extract-outline",
@@ -12,7 +12,7 @@
   "cap_description": "Extract document outline/table of contents with hierarchical structure",
   "metadata": {},
   "media_specs": {
-    "media:type=extract-outline-output;v=1": {
+    "media:type=extract-outline-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/extract-outline-output",
       "schema": {
@@ -139,7 +139,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the document file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -152,7 +152,7 @@
     "optional": [
       {
         "name": "max_depth",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Maximum outline depth to extract (1-10)",
         "cli_flag": "--max-depth",
         "validation": {
@@ -162,14 +162,14 @@
       },
       {
         "name": "include_order_indexes",
-        "media_urn": "media:type=boolean;v=1",
+        "media_urn": "media:type=boolean;v=1;textable;scalar",
         "arg_description": "Include page numbers in the outline (default: true)",
         "cli_flag": "--include-order-indexes",
         "default_value": true
       },
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -179,7 +179,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=extract-outline-output;v=1",
+    "media_urn": "media:type=extract-outline-output;v=1;textable;keyed",
     "output_description": "Hierarchical document outline with section titles and optional page numbers"
   }
 }

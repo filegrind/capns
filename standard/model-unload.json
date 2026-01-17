@@ -4,7 +4,7 @@
       "op": "unload",
       "type": "model",
       "in": "media:type=void;v=1",
-      "out": "media:type=unload-output;v=1"
+      "out": "media:type=unload-output;v=1;textable;keyed"
     }
   },
   "command": "unload",
@@ -12,7 +12,7 @@
   "cap_description": "Unload a model from memory to free resources",
   "metadata": {},
   "media_specs": {
-    "media:type=unload-output;v=1": {
+    "media:type=unload-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/unload-output",
       "schema": {
@@ -59,7 +59,7 @@
     "required": [
       {
         "name": "model",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Model identifier or handle to unload",
         "cli_flag": "--model",
         "position": 0,
@@ -72,7 +72,7 @@
     "optional": [
       {
         "name": "force",
-        "media_urn": "media:type=boolean;v=1",
+        "media_urn": "media:type=boolean;v=1;textable;scalar",
         "arg_description": "Force unload even if model is in use",
         "cli_flag": "--force",
         "default_value": false
@@ -80,7 +80,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=unload-output;v=1",
+    "media_urn": "media:type=unload-output;v=1;textable;keyed",
     "output_description": "Unload result with status and freed resources"
   }
 }

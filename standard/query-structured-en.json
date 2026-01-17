@@ -4,8 +4,8 @@
       "op": "query_structured",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=object;v=1",
-      "out": "media:type=structured-query-output;v=1"
+      "in": "media:type=object;v=1;textable;keyed",
+      "out": "media:type=structured-query-output;v=1;textable;keyed"
     }
   },
   "command": "structured_query",
@@ -13,7 +13,7 @@
   "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
   "metadata": {},
   "media_specs": {
-    "media:type=structured-query-output;v=1": {
+    "media:type=structured-query-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/structured-query-output",
       "schema": {
@@ -34,7 +34,7 @@
     "required": [
       {
         "name": "query_name",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Name of the structured query to execute",
         "cli_flag": "--query-name",
         "position": 0,
@@ -46,7 +46,7 @@
       },
       {
         "name": "substitutions",
-        "media_urn": "media:type=object;v=1",
+        "media_urn": "media:type=object;v=1;textable;keyed",
         "arg_description": "Template substitutions for the query prompt",
         "cli_flag": "--substitutions",
         "position": 1
@@ -55,7 +55,7 @@
     "optional": [
       {
         "name": "language",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Language code for the query processing",
         "cli_flag": "--language",
         "default_value": "en",
@@ -76,21 +76,21 @@
       },
       {
         "name": "schema_variables",
-        "media_urn": "media:type=object;v=1",
+        "media_urn": "media:type=object;v=1;textable;keyed",
         "arg_description": "Variables for dynamic schema generation",
         "cli_flag": "--schema-variables",
         "default_value": {}
       },
       {
         "name": "callback_enabled",
-        "media_urn": "media:type=boolean;v=1",
+        "media_urn": "media:type=boolean;v=1;textable;scalar",
         "arg_description": "Whether to enable streaming callback updates",
         "cli_flag": "--callback",
         "default_value": false
       },
       {
         "name": "model_spec",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Model spec to use for structured query execution",
         "cli_flag": "--model-spec",
         "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
@@ -103,7 +103,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=structured-query-output;v=1",
+    "media_urn": "media:type=structured-query-output;v=1;textable;keyed",
     "output_description": "Structured JSON response conforming to the query's schema"
   }
 }

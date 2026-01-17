@@ -5,8 +5,8 @@
       "type": "llm",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=string;v=1",
-      "out": "media:type=llm_inference-output;v=1"
+      "in": "media:type=string;v=1;textable;scalar",
+      "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
   "command": "generate",
@@ -14,7 +14,7 @@
   "cap_description": "Generate text using GGUF models with llama.cpp backend",
   "metadata": {},
   "media_specs": {
-    "media:type=llm_inference-output;v=1": {
+    "media:type=llm-inference-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -68,7 +68,7 @@
     "optional": [
       {
         "name": "prompt",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Input text prompt for generation",
         "cli_flag": "--prompt",
         "validation": {
@@ -78,7 +78,7 @@
       },
       {
         "name": "file",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to input file containing prompt",
         "cli_flag": "--file",
         "validation": {
@@ -88,7 +88,7 @@
       },
       {
         "name": "model_spec",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "GGUF model specification (HuggingFace repo or local path)",
         "cli_flag": "--model-spec",
         "validation": {
@@ -98,7 +98,7 @@
       },
       {
         "name": "max_tokens",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Maximum number of tokens to generate",
         "cli_flag": "--max-tokens",
         "default_value": 512,
@@ -109,7 +109,7 @@
       },
       {
         "name": "temperature",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Sampling temperature (0.0-2.0)",
         "cli_flag": "--temperature",
         "default_value": 0.7,
@@ -120,7 +120,7 @@
       },
       {
         "name": "top_k",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Top-k sampling parameter",
         "cli_flag": "--top-k",
         "default_value": 40,
@@ -131,7 +131,7 @@
       },
       {
         "name": "top_p",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Top-p (nucleus) sampling parameter",
         "cli_flag": "--top-p",
         "default_value": 0.9,
@@ -142,7 +142,7 @@
       },
       {
         "name": "min_p",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Min-p sampling parameter",
         "cli_flag": "--min-p",
         "default_value": 0.05,
@@ -153,7 +153,7 @@
       },
       {
         "name": "seed",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Random seed for reproducibility",
         "cli_flag": "--seed",
         "default_value": 42,
@@ -164,7 +164,7 @@
       },
       {
         "name": "max_context_length",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Maximum context length",
         "cli_flag": "--max-context-length",
         "default_value": 4096,
@@ -175,7 +175,7 @@
       },
       {
         "name": "batch_size",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Batch size for processing",
         "cli_flag": "--batch-size",
         "default_value": 2048,
@@ -186,14 +186,14 @@
       },
       {
         "name": "stream",
-        "media_urn": "media:type=boolean;v=1",
+        "media_urn": "media:type=boolean;v=1;textable;scalar",
         "arg_description": "Enable streaming output",
         "cli_flag": "--stream",
         "default_value": false
       },
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Output JSON file path",
         "cli_flag": "--output",
         "validation": {
@@ -203,7 +203,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=llm_inference-output;v=1",
+    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
     "output_description": "Generated text with metadata including tokens and timing"
   }
 }

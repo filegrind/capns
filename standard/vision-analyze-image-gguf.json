@@ -5,8 +5,8 @@
       "type": "vision",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=binary;v=1",
-      "out": "media:type=vision_inference-output;v=1"
+      "in": "media:type=binary;v=1;binary",
+      "out": "media:type=vision-inference-output;v=1;textable;keyed"
     }
   },
   "command": "vision",
@@ -14,7 +14,7 @@
   "cap_description": "Analyze images using GGUF multimodal models (LLaVA, BakLLaVA) with llama.cpp backend",
   "metadata": {},
   "media_specs": {
-    "media:type=vision_inference-output;v=1": {
+    "media:type=vision-inference-output;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/vision_inference-output",
       "schema": {
@@ -72,7 +72,7 @@
     "required": [
       {
         "name": "image",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the image file to analyze",
         "cli_flag": "--image",
         "position": 0,
@@ -85,7 +85,7 @@
     "optional": [
       {
         "name": "prompt",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Text prompt for the image analysis",
         "cli_flag": "--prompt",
         "default_value": "Describe this image in detail.",
@@ -96,7 +96,7 @@
       },
       {
         "name": "model_spec",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "GGUF vision model specification",
         "cli_flag": "--model-spec",
         "validation": {
@@ -106,7 +106,7 @@
       },
       {
         "name": "max_tokens",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Maximum number of tokens to generate",
         "cli_flag": "--max-tokens",
         "default_value": 512,
@@ -117,7 +117,7 @@
       },
       {
         "name": "temperature",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Sampling temperature (0.0-2.0)",
         "cli_flag": "--temperature",
         "default_value": 0.7,
@@ -128,7 +128,7 @@
       },
       {
         "name": "top_k",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Top-k sampling parameter",
         "cli_flag": "--top-k",
         "default_value": 40,
@@ -139,7 +139,7 @@
       },
       {
         "name": "top_p",
-        "media_urn": "media:type=number;v=1",
+        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
         "arg_description": "Top-p (nucleus) sampling parameter",
         "cli_flag": "--top-p",
         "default_value": 0.9,
@@ -150,7 +150,7 @@
       },
       {
         "name": "seed",
-        "media_urn": "media:type=integer;v=1",
+        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
         "arg_description": "Random seed for reproducibility",
         "cli_flag": "--seed",
         "default_value": 42,
@@ -161,14 +161,14 @@
       },
       {
         "name": "stream",
-        "media_urn": "media:type=boolean;v=1",
+        "media_urn": "media:type=boolean;v=1;textable;scalar",
         "arg_description": "Enable streaming output",
         "cli_flag": "--stream",
         "default_value": false
       },
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Output JSON file path",
         "cli_flag": "--output",
         "validation": {
@@ -178,7 +178,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=vision_inference-output;v=1",
+    "media_urn": "media:type=vision-inference-output;v=1;textable;keyed",
     "output_description": "Image analysis with description and metadata"
   }
 }

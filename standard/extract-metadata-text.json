@@ -3,8 +3,8 @@
     "tags": {
       "op": "extract_metadata",
       "ext": "text",
-      "in": "media:type=string;v=1",
-      "out": "media:type=object;v=1"
+      "in": "media:type=string;v=1;textable;scalar",
+      "out": "media:type=object;v=1;textable;keyed"
     }
   },
   "command": "extract-metadata",
@@ -16,7 +16,7 @@
     "required": [
       {
         "name": "file_path",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Path to the text file to process",
         "cli_flag": "file_path",
         "position": 0,
@@ -29,7 +29,7 @@
     "optional": [
       {
         "name": "output",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write output to specified file instead of stdout",
         "cli_flag": "--output",
         "validation": {
@@ -39,7 +39,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=object;v=1",
+    "media_urn": "media:type=object;v=1;textable;keyed",
     "output_description": "Structured metadata including file properties and text-specific metadata"
   }
 }

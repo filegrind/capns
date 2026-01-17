@@ -4,7 +4,7 @@
       "op": "embeddings_dimensions",
       "model_type": "candle",
       "in": "media:type=void;v=1",
-      "out": "media:type=integer;v=1"
+      "out": "media:type=integer;v=1;textable;numeric;scalar"
     }
   },
   "command": "dimensions",
@@ -16,7 +16,7 @@
     "optional": [
       {
         "name": "model",
-        "media_urn": "media:type=string;v=1",
+        "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "HuggingFace model name to query dimensions for",
         "cli_flag": "--model",
         "default_value": "sentence-transformers/all-MiniLM-L6-v2",
@@ -28,7 +28,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=integer;v=1",
+    "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
     "output_description": "Dimensionality of the embeddings (positive integer)",
     "validation": {
       "min": 1,
