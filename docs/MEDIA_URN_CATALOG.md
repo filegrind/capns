@@ -60,7 +60,7 @@ Array variants of primitive types.
 | `media:type=list-output;v=1;textable;keyed` | `MEDIA_LIST_OUTPUT` | Model listing result |
 | `media:type=status-output;v=1;textable;keyed` | `MEDIA_STATUS_OUTPUT` | Status query result |
 | `media:type=contents-output;v=1;textable;keyed` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
-| `media:type=generate-output;v=1;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
+| `media:type=embeddings;v=1;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
 | `media:type=manage-output;v=1;textable;keyed` | `MEDIA_MANAGE_OUTPUT` | Model management result |
 
 ### LLM & Inference Outputs
@@ -69,7 +69,7 @@ Array variants of primitive types.
 |-----------|----------|-------------|
 | `media:type=llm-inference-output;v=1;textable;keyed` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
 | `media:type=vision-inference-output;v=1;textable;keyed` | - | Vision model analysis result |
-| `media:type=embeddings-output;v=1;textable;keyed` | - | Embedding generation result |
+| `media:type=embeddings;v=1;textable;keyed` | - | Embedding generation result |
 | `media:type=structured-query-output;v=1;textable;keyed` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
 | `media:type=questions-array;v=1;textable;sequence` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
 
@@ -79,7 +79,7 @@ Array variants of primitive types.
 |-----------|----------|-------------|
 | `media:type=extract-metadata-output;v=1;textable;keyed` | - | Document metadata extraction result |
 | `media:type=extract-outline-output;v=1;textable;keyed` | - | Document outline extraction result |
-| `media:type=grind-output;v=1;textable;keyed;sequence` | - | Document grinding/chunking result |
+| `media:type=disbound-pages;v=1;textable;keyed;sequence` | - | Document grinding/chunking result |
 | `media:type=frontmatter-summary-output;v=1;textable;keyed` | - | Frontmatter summary result |
 | `media:type=thumbnail-output;v=1;binary;visual` | - | Thumbnail image output |
 
@@ -94,7 +94,7 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=image-embeddings-output;v=1;textable;keyed` | - | Image embedding result |
+| `media:type=image-embeddings;v=1;textable;keyed` | - | Image embedding result |
 | `media:type=image-embeddings-batch-output;v=1;textable;keyed;sequence` | - | Batch image embedding result |
 
 ---

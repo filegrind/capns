@@ -5,11 +5,11 @@
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{
-    Cap, CapUrn, CapUrnBuilder, CapRegistry, RegistryError
+    Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGES, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, MediaUrn, RegistryError
 };
 use crate::media_urn::{
     MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
-    MEDIA_BOOLEAN_ARRAY, MEDIA_STRING_ARRAY,
+    MEDIA_BOOLEAN_ARRAY,
     MEDIA_IMAGE, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
     // Document types (PRIMARY naming)
     MEDIA_PDF, MEDIA_EPUB,
@@ -19,7 +19,6 @@ use crate::media_urn::{
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
     MEDIA_GENERATE_OUTPUT, MEDIA_STRUCTURED_QUERY_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT,
-    MEDIA_EXTRACT_METADATA_OUTPUT, MEDIA_EXTRACT_OUTLINE_OUTPUT, MEDIA_GRIND_OUTPUT,
 };
 use std::sync::Arc;
 
@@ -27,66 +26,14 @@ use std::sync::Arc;
 // HELPER FUNCTIONS
 // =============================================================================
 
-/// Get the input media URN for a given file extension
-///
-/// Returns media URNs using PRIMARY type naming (type IS the format):
-/// - pdf: media:type=pdf;v=1;binary
-/// - md: media:type=md;v=1;textable
-/// - txt/text: media:type=txt;v=1;textable
-/// - rst: media:type=rst;v=1;textable
-/// - log: media:type=log;v=1;textable
-pub fn input_media_urn_for_ext(ext: &str) -> &'static str {
-    match ext {
-        "pdf" => MEDIA_PDF,
-        "epub" => MEDIA_EPUB,
-        "md" => MEDIA_MD,
-        "txt" | "text" => MEDIA_TXT,
-        "rst" => MEDIA_RST,
-        "log" => MEDIA_LOG,
-        _ => MEDIA_STRING,
-    }
-}
 
-/// Get the output media URN for extract-metadata operation by extension
-///
-/// - PDF files: MEDIA_EXTRACT_METADATA_OUTPUT (has full schema)
-/// - Text files: MEDIA_OBJECT (generic JSON object)
-pub fn extract_metadata_output_media_urn_for_ext(ext: &str) -> &'static str {
-    match ext {
-        "pdf" => MEDIA_EXTRACT_METADATA_OUTPUT,
-        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
-    }
-}
-
-/// Get the output media URN for extract-outline operation by extension
-///
-/// - PDF files: MEDIA_EXTRACT_OUTLINE_OUTPUT (has full schema)
-/// - Text files: MEDIA_OBJECT (generic JSON object)
-pub fn extract_outline_output_media_urn_for_ext(ext: &str) -> &'static str {
-    match ext {
-        "pdf" => MEDIA_EXTRACT_OUTLINE_OUTPUT,
-        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
-    }
-}
-
-/// Get the output media URN for grind operation by extension
-///
-/// - PDF files: MEDIA_GRIND_OUTPUT (has full schema, array of chunks)
-/// - Text files: MEDIA_OBJECT (generic JSON object)
-pub fn grind_output_media_urn_for_ext(ext: &str) -> &'static str {
-    match ext {
-        "pdf" => MEDIA_GRIND_OUTPUT,
-        "md" | "rst" | "log" | "txt" | "text" | _ => MEDIA_OBJECT,
-    }
-}
-
-/// Get the input media URN for thumbnail generation by extension
+/// Get the input media URN for a file extension
 ///
 /// Uses PRIMARY type naming where the type IS the format.
 /// - Document files (pdf, epub): type=pdf, type=epub
 /// - Text format files (md, txt, rst, log): type=md, type=txt, etc.
 /// - Generic/unknown: type=binary (fallback)
-pub fn thumbnail_input_media_urn_for_ext(ext: Option<&str>) -> &'static str {
+pub fn input_media_urn_for_ext(ext: Option<&str>) -> &'static str {
     match ext {
         // Document types (PRIMARY naming)
         Some("pdf") => MEDIA_PDF,
@@ -288,7 +235,7 @@ pub fn model_contents_urn() -> CapUrn {
 /// - text: media:type=text;v=1;textable
 /// - None/other: media:type=binary;v=1;binary
 pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
-    let input_spec = thumbnail_input_media_urn_for_ext(ext);
+    let input_spec = input_media_urn_for_ext(ext);
 
     CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
@@ -298,32 +245,32 @@ pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
         .expect("Failed to build generate-thumbnail cap URN")
 }
 
-/// Build URN for grind capability
-pub fn grind_urn(ext: &str) -> CapUrn {
+/// Build URN for disbind capability
+pub fn disbind_urn(ext: Option<&str>) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "grind")
+        .tag("op", "disbind")
         .in_spec(input_media_urn_for_ext(ext))
-        .out_spec(grind_output_media_urn_for_ext(ext))
+        .out_spec(MEDIA_DISBOUND_PAGES)
         .build()
-        .expect("Failed to build grind cap URN")
+        .expect("Failed to build disbind cap URN")
 }
 
 /// Build URN for extract-metadata capability
-pub fn extract_metadata_urn(ext: &str) -> CapUrn {
+pub fn extract_metadata_urn(ext: Option<&str>) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_metadata")
         .in_spec(input_media_urn_for_ext(ext))
-        .out_spec(extract_metadata_output_media_urn_for_ext(ext))
+        .out_spec(MEDIA_FILE_METADATA)
         .build()
         .expect("Failed to build extract-metadata cap URN")
 }
 
 /// Build URN for extract-outline capability
-pub fn extract_outline_urn(ext: &str) -> CapUrn {
+pub fn extract_outline_urn(ext: Option<&str>) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_outline")
         .in_spec(input_media_urn_for_ext(ext))
-        .out_spec(extract_outline_output_media_urn_for_ext(ext))
+        .out_spec(MEDIA_DOCUMENT_OUTLINE)
         .build()
         .expect("Failed to build extract-outline cap URN")
 }
@@ -383,21 +330,8 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
 // -----------------------------------------------------------------------------
 // FGND-SPECIFIC TASK URN BUILDERS
 // -----------------------------------------------------------------------------
-// Note: These caps now use proper media types instead of entity IDs.
-// Tasks are implicit - every cap application produces a task.
-// The output describes what the COMPLETED task produces, not the task itself.
-
-/// Build URN for scan-files-task capability
-/// Input: array of file paths to scan
-/// Output: result object with scan summary
-pub fn scan_files_task_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "scan_files")
-        .in_spec(MEDIA_STRING_ARRAY) // Array of file paths
-        .out_spec(MEDIA_OBJECT) // Scan results
-        .build()
-        .expect("Failed to build scan-files-task cap URN")
-}
+// Note: These are legitimate task capabilities for document analysis workflows.
+// They represent phases of document processing, NOT tool wrappers.
 
 /// Build URN for recategorization-task capability
 /// Input: binary document data
@@ -423,84 +357,6 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
         .out_spec(MEDIA_OBJECT) // Analysis results
         .build()
         .expect("Failed to build listing-analysis-task cap URN")
-}
-
-// -----------------------------------------------------------------------------
-// FGND TOOL URN BUILDERS
-// -----------------------------------------------------------------------------
-// These caps describe what data they need, not entity IDs.
-// The delivery mechanism (file paths) is an implementation detail.
-
-/// Build URN for grinder tool capability
-/// Input: binary document data
-/// Output: grind results (chunks)
-pub fn grinder_tool_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "use_grinder")
-        .in_spec(MEDIA_BINARY) // Binary document
-        .out_spec(MEDIA_OBJECT) // Grind results
-        .build()
-        .expect("Failed to build grinder tool cap URN")
-}
-
-/// Build URN for quick-summary tool capability
-/// Input: binary document data
-/// Output: summary result object
-pub fn quick_summary_tool_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "use_quick_summary")
-        .in_spec(MEDIA_BINARY) // Binary document
-        .out_spec(MEDIA_OBJECT) // Summary results
-        .build()
-        .expect("Failed to build quick-summary tool cap URN")
-}
-
-/// Build URN for detailed-analysis tool capability
-/// Input: binary document data
-/// Output: detailed analysis result object
-pub fn detailed_analysis_tool_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "use_detailed_analysis")
-        .in_spec(MEDIA_BINARY) // Binary document
-        .out_spec(MEDIA_OBJECT) // Analysis results
-        .build()
-        .expect("Failed to build detailed-analysis tool cap URN")
-}
-
-/// Build URN for outline-extraction tool capability
-/// Input: binary document data
-/// Output: outline result object
-pub fn outline_extraction_tool_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "use_outline_extraction")
-        .in_spec(MEDIA_BINARY) // Binary document
-        .out_spec(MEDIA_OBJECT) // Outline results
-        .build()
-        .expect("Failed to build outline-extraction tool cap URN")
-}
-
-/// Build URN for embedding-generation tool capability
-/// Input: binary document data
-/// Output: embeddings result object
-pub fn embedding_generation_tool_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "use_embedding_generation")
-        .in_spec(MEDIA_BINARY) // Binary document
-        .out_spec(MEDIA_OBJECT) // Embeddings results
-        .build()
-        .expect("Failed to build embedding-generation tool cap URN")
-}
-
-/// Build URN for recategorize tool capability
-/// Input: binary document data
-/// Output: categorization result object
-pub fn recategorize_tool_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "use_recategorize")
-        .in_spec(MEDIA_BINARY) // Binary document
-        .out_spec(MEDIA_OBJECT) // Categorization results
-        .build()
-        .expect("Failed to build recategorize tool cap URN")
 }
 
 // -----------------------------------------------------------------------------
@@ -717,7 +573,7 @@ pub async fn model_contents_cap(registry: Arc<CapRegistry>) -> Result<Cap, Regis
 // -----------------------------------------------------------------------------
 
 /// Get extract-metadata cap from registry
-pub async fn extract_metadata_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<Cap, RegistryError> {
+pub async fn extract_metadata_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
     let urn = extract_metadata_urn(ext);
     registry.get_cap(&urn.to_string()).await
 }
@@ -729,14 +585,14 @@ pub async fn generate_thumbnail_cap(registry: Arc<CapRegistry>, ext: Option<&str
 }
 
 /// Get extract-outline cap from registry
-pub async fn extract_outline_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<Cap, RegistryError> {
+pub async fn extract_outline_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
     let urn = extract_outline_urn(ext);
     registry.get_cap(&urn.to_string()).await
 }
 
-/// Get grind cap from registry
-pub async fn grind_cap(registry: Arc<CapRegistry>, ext: &str) -> Result<Cap, RegistryError> {
-    let urn = grind_urn(ext);
+/// Get disbind cap from registry
+pub async fn disbind_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
+    let urn = disbind_urn(ext);
     registry.get_cap(&urn.to_string()).await
 }
 
@@ -766,4 +622,26 @@ pub async fn bit_choice_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Resu
 pub async fn bit_choices_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
     let urn = bit_choices_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
+}
+
+// -----------------------------------------------------------------------------
+// COERCION CAPABILITIES
+// -----------------------------------------------------------------------------
+
+/// Get a single coercion cap from registry
+pub async fn coercion_cap(registry: Arc<CapRegistry>, source_type: &str, target_type: &str) -> Result<Cap, RegistryError> {
+    let urn = coercion_urn(source_type, target_type);
+    registry.get_cap(&urn.to_string()).await
+}
+
+/// Get all coercion caps from registry
+/// Returns a vector of (source_type, target_type, Cap) tuples
+/// Fails if any coercion cap is missing from the registry
+pub async fn all_coercion_caps(registry: Arc<CapRegistry>) -> Result<Vec<(&'static str, &'static str, Cap)>, RegistryError> {
+    let mut caps = Vec::new();
+    for (source_type, target_type) in all_coercion_paths() {
+        let cap = coercion_cap(registry.clone(), source_type, target_type).await?;
+        caps.push((source_type, target_type, cap));
+    }
+    Ok(caps)
 }
