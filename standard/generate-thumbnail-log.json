@@ -2,9 +2,8 @@
   "urn": {
     "tags": {
       "op": "generate_thumbnail",
-      "ext": "log",
-      "in": "media:type=void;v=1",
-      "out": "media:type=binary;v=1;binary"
+      "in": "media:type=log;v=1;textable",
+      "out": "media:type=image;v=1;binary"
     }
   },
   "command": "generate-thumbnail",
@@ -61,7 +60,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=binary;v=1;binary",
+    "media_urn": "media:type=image;v=1;binary",
     "output_description": "PNG image data representing a thumbnail of the log document"
   }
 }

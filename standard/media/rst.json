@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=rst;v=1;textable",
+  "media_type": "text/x-rst",
+  "title": "reStructuredText",
+  "profile_uri": "https://capns.org/schema/rst",
+  "description": "reStructuredText formatted document"
+}

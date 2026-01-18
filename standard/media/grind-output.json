@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=grind-output;v=1;textable;keyed;sequence",
+  "media_type": "application/json",
+  "title": "Grind Output",
+  "profile_uri": "https://capns.org/schema/grind-output",
+  "description": "Grind operation result - structured page content"
+}

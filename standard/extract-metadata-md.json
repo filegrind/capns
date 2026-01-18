@@ -2,8 +2,7 @@
   "urn": {
     "tags": {
       "op": "extract_metadata",
-      "ext": "md",
-      "in": "media:type=string;v=1;textable;scalar",
+      "in": "media:type=md;v=1;textable",
       "out": "media:type=object;v=1;textable;keyed"
     }
   },

@@ -2,8 +2,7 @@
   "urn": {
     "tags": {
       "op": "grind",
-      "ext": "pdf",
-      "in": "media:type=binary;v=1;binary",
+      "in": "media:type=pdf;v=1;binary",
       "out": "media:type=grind-output;v=1;textable;keyed;sequence"
     }
   },

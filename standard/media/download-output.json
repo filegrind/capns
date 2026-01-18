@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=download-output;v=1;textable;keyed",
+  "media_type": "application/json",
+  "title": "Download Output",
+  "profile_uri": "https://capns.org/schema/download-output",
+  "description": "Download operation result"
+}

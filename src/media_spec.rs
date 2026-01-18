@@ -17,8 +17,12 @@ use crate::media_urn::{
     MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_NUMBER, MEDIA_BOOLEAN, MEDIA_OBJECT,
     MEDIA_STRING_ARRAY, MEDIA_INTEGER_ARRAY, MEDIA_NUMBER_ARRAY, MEDIA_BOOLEAN_ARRAY, MEDIA_OBJECT_ARRAY,
     MEDIA_BINARY,
-    // FGND types
-    MEDIA_LISTING_ID, MEDIA_FILE_PATH_ARRAY, MEDIA_TASK_ID,
+    // Document types (PRIMARY naming)
+    MEDIA_PDF, MEDIA_EPUB,
+    // Text format types (PRIMARY naming)
+    MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG, MEDIA_HTML, MEDIA_XML, MEDIA_JSON, MEDIA_YAML,
+    // Semantic media types for specialized content
+    MEDIA_IMAGE, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
     // CAPNS output types
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
@@ -59,15 +63,47 @@ pub const PROFILE_OBJ_ARRAY: &str = "https://capns.org/schema/obj-array";
 pub const PROFILE_VOID: &str = "https://capns.org/schema/void";
 
 // =============================================================================
-// FGND-SPECIFIC PROFILE URLS
+// SEMANTIC CONTENT TYPE PROFILE URLS
 // =============================================================================
 
-/// Profile URL for listing ID
-pub const PROFILE_FGND_LISTING_ID: &str = "https://filegrind.com/schema/listing-id";
-/// Profile URL for file path array
-pub const PROFILE_FGND_FILE_PATH_ARRAY: &str = "https://filegrind.com/schema/file-path-array";
-/// Profile URL for task ID
-pub const PROFILE_FGND_TASK_ID: &str = "https://filegrind.com/schema/task-id";
+/// Profile URL for image data (png, jpg, gif, etc.)
+pub const PROFILE_IMAGE: &str = "https://capns.org/schema/image";
+/// Profile URL for audio data (wav, mp3, flac, etc.)
+pub const PROFILE_AUDIO: &str = "https://capns.org/schema/audio";
+/// Profile URL for video data (mp4, webm, mov, etc.)
+pub const PROFILE_VIDEO: &str = "https://capns.org/schema/video";
+/// Profile URL for generic text
+pub const PROFILE_TEXT: &str = "https://capns.org/schema/text";
+
+// =============================================================================
+// DOCUMENT TYPE PROFILE URLS (PRIMARY naming)
+// =============================================================================
+
+/// Profile URL for PDF documents
+pub const PROFILE_PDF: &str = "https://capns.org/schema/pdf";
+/// Profile URL for EPUB documents
+pub const PROFILE_EPUB: &str = "https://capns.org/schema/epub";
+
+// =============================================================================
+// TEXT FORMAT TYPE PROFILE URLS (PRIMARY naming)
+// =============================================================================
+
+/// Profile URL for Markdown text
+pub const PROFILE_MD: &str = "https://capns.org/schema/md";
+/// Profile URL for plain text
+pub const PROFILE_TXT: &str = "https://capns.org/schema/txt";
+/// Profile URL for reStructuredText
+pub const PROFILE_RST: &str = "https://capns.org/schema/rst";
+/// Profile URL for log files
+pub const PROFILE_LOG: &str = "https://capns.org/schema/log";
+/// Profile URL for HTML documents
+pub const PROFILE_HTML: &str = "https://capns.org/schema/html";
+/// Profile URL for XML documents
+pub const PROFILE_XML: &str = "https://capns.org/schema/xml";
+/// Profile URL for JSON data
+pub const PROFILE_JSON: &str = "https://capns.org/schema/json";
+/// Profile URL for YAML data
+pub const PROFILE_YAML: &str = "https://capns.org/schema/yaml";
 
 // =============================================================================
 // CAPNS OUTPUT PROFILE URLS
@@ -132,6 +168,12 @@ pub struct MediaSpecDefObject {
     /// Optional local JSON Schema for validation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
+    /// Display-friendly title for the media type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Optional description of the media type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl MediaSpecDef {
@@ -146,6 +188,8 @@ impl MediaSpecDef {
             media_type: media_type.into(),
             profile_uri: profile_uri.into(),
             schema: None,
+            title: None,
+            description: None,
         })
     }
 
@@ -159,6 +203,40 @@ impl MediaSpecDef {
             media_type: media_type.into(),
             profile_uri: profile_uri.into(),
             schema: Some(schema),
+            title: None,
+            description: None,
+        })
+    }
+
+    /// Create a rich object form definition with title
+    pub fn object_with_title(
+        media_type: impl Into<String>,
+        profile_uri: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Self {
+        MediaSpecDef::Object(MediaSpecDefObject {
+            media_type: media_type.into(),
+            profile_uri: profile_uri.into(),
+            schema: None,
+            title: Some(title.into()),
+            description: None,
+        })
+    }
+
+    /// Create a rich object form definition with all fields
+    pub fn object_full(
+        media_type: impl Into<String>,
+        profile_uri: impl Into<String>,
+        schema: Option<serde_json::Value>,
+        title: Option<String>,
+        description: Option<String>,
+    ) -> Self {
+        MediaSpecDef::Object(MediaSpecDefObject {
+            media_type: media_type.into(),
+            profile_uri: profile_uri.into(),
+            schema,
+            title,
+            description,
         })
     }
 }
@@ -181,6 +259,10 @@ pub struct ResolvedMediaSpec {
     pub profile_uri: Option<String>,
     /// Optional local JSON Schema for validation
     pub schema: Option<serde_json::Value>,
+    /// Display-friendly title for the media type
+    pub title: Option<String>,
+    /// Optional description of the media type
+    pub description: Option<String>,
 }
 
 impl ResolvedMediaSpec {
@@ -214,12 +296,14 @@ impl ResolvedMediaSpec {
 // MEDIA URN RESOLUTION
 // =============================================================================
 
-/// Resolve a media URN to a full media spec definition
+/// Resolve a media URN to a full media spec definition (sync version)
 ///
 /// Resolution order:
-/// 1. Look up in provided media_specs map
+/// 1. Look up in provided media_specs map (HIGHEST - overrides everything)
 /// 2. If not found, check if it's a built-in primitive
 /// 3. If neither, fail hard with an error
+///
+/// For async resolution with registry support, use `resolve_media_urn_with_registry`.
 ///
 /// # Arguments
 /// * `media_urn` - The media URN to resolve (e.g., "media:type=string;v=1")
@@ -245,6 +329,62 @@ pub fn resolve_media_urn(
     Err(MediaSpecError::UnresolvableMediaUrn(media_urn.to_string()))
 }
 
+/// Resolve a media URN with registry support (async version)
+///
+/// Resolution order:
+/// 1. Check cap's local `media_specs` table (HIGHEST - overrides everything)
+/// 2. Check built-in constants
+/// 3. Check registry cache (in-memory → disk)
+/// 4. Fetch from remote registry
+/// 5. If none resolve → Error
+///
+/// # Arguments
+/// * `media_urn` - The media URN to resolve (e.g., "media:type=string;v=1")
+/// * `media_specs` - Optional media_specs map from the cap definition
+/// * `registry` - Optional MediaUrnRegistry for remote lookups
+///
+/// # Errors
+/// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
+pub async fn resolve_media_urn_with_registry(
+    media_urn: &str,
+    media_specs: Option<&HashMap<String, MediaSpecDef>>,
+    registry: Option<&crate::media_registry::MediaUrnRegistry>,
+) -> Result<ResolvedMediaSpec, MediaSpecError> {
+    // First, try to look up in the provided media_specs (if any)
+    if let Some(specs) = media_specs {
+        if let Some(def) = specs.get(media_urn) {
+            return resolve_def(media_urn, def);
+        }
+    }
+
+    // Second, check if it's a built-in primitive
+    if let Some(resolved) = resolve_builtin(media_urn) {
+        return Ok(resolved);
+    }
+
+    // Third, try the registry if available
+    if let Some(registry) = registry {
+        match registry.get_media_spec(media_urn).await {
+            Ok(stored_spec) => {
+                return Ok(ResolvedMediaSpec {
+                    media_urn: media_urn.to_string(),
+                    media_type: stored_spec.media_type,
+                    profile_uri: stored_spec.profile_uri,
+                    schema: stored_spec.schema,
+                    title: Some(stored_spec.title),
+                    description: stored_spec.description,
+                });
+            }
+            Err(_) => {
+                // Registry lookup failed, continue to error
+            }
+        }
+    }
+
+    // Fail hard - no fallbacks
+    Err(MediaSpecError::UnresolvableMediaUrn(media_urn.to_string()))
+}
+
 /// Resolve a MediaSpecDef to a ResolvedMediaSpec
 fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, MediaSpecError> {
     match def {
@@ -255,6 +395,8 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
                 media_type: parsed.media_type,
                 profile_uri: parsed.profile,
                 schema: None,
+                title: None,
+                description: None,
             })
         }
         MediaSpecDef::Object(obj) => Ok(ResolvedMediaSpec {
@@ -262,6 +404,8 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
             media_type: obj.media_type.clone(),
             profile_uri: Some(obj.profile_uri.clone()),
             schema: obj.schema.clone(),
+            title: obj.title.clone(),
+            description: obj.description.clone(),
         }),
     }
 }
@@ -282,10 +426,23 @@ fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
         MEDIA_OBJECT_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
         MEDIA_BINARY => ("application/octet-stream", None),
         MEDIA_VOID => ("application/x-void", Some(PROFILE_VOID)),
-        // FGND-specific well-known types
-        MEDIA_LISTING_ID => ("text/plain", Some(PROFILE_FGND_LISTING_ID)),
-        MEDIA_FILE_PATH_ARRAY => ("application/json", Some(PROFILE_FGND_FILE_PATH_ARRAY)),
-        MEDIA_TASK_ID => ("text/plain", Some(PROFILE_FGND_TASK_ID)),
+        // Semantic content types
+        MEDIA_IMAGE => ("image/png", Some(PROFILE_IMAGE)),
+        MEDIA_AUDIO => ("audio/wav", Some(PROFILE_AUDIO)),
+        MEDIA_VIDEO => ("video/mp4", Some(PROFILE_VIDEO)),
+        MEDIA_TEXT => ("text/plain", Some(PROFILE_TEXT)),
+        // Document types (PRIMARY naming)
+        MEDIA_PDF => ("application/pdf", Some(PROFILE_PDF)),
+        MEDIA_EPUB => ("application/epub+zip", Some(PROFILE_EPUB)),
+        // Text format types (PRIMARY naming)
+        MEDIA_MD => ("text/markdown", Some(PROFILE_MD)),
+        MEDIA_TXT => ("text/plain", Some(PROFILE_TXT)),
+        MEDIA_RST => ("text/x-rst", Some(PROFILE_RST)),
+        MEDIA_LOG => ("text/plain", Some(PROFILE_LOG)),
+        MEDIA_HTML => ("text/html", Some(PROFILE_HTML)),
+        MEDIA_XML => ("application/xml", Some(PROFILE_XML)),
+        MEDIA_JSON => ("application/json", Some(PROFILE_JSON)),
+        MEDIA_YAML => ("application/x-yaml", Some(PROFILE_YAML)),
         // CAPNS output types
         MEDIA_DOWNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_DOWNLOAD_OUTPUT)),
         MEDIA_LOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LOAD_OUTPUT)),
@@ -304,6 +461,8 @@ fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
         media_type: media_type.to_string(),
         profile_uri: profile_uri.map(String::from),
         schema: None, // Built-ins don't have local schemas
+        title: None,  // Will be populated from registry
+        description: None,
     })
 }
 
@@ -323,9 +482,24 @@ pub fn is_builtin_media_urn(media_urn: &str) -> bool {
             | MEDIA_OBJECT_ARRAY
             | MEDIA_BINARY
             | MEDIA_VOID
-            | MEDIA_LISTING_ID
-            | MEDIA_FILE_PATH_ARRAY
-            | MEDIA_TASK_ID
+            // Semantic content types
+            | MEDIA_IMAGE
+            | MEDIA_AUDIO
+            | MEDIA_VIDEO
+            | MEDIA_TEXT
+            // Document types (PRIMARY naming)
+            | MEDIA_PDF
+            | MEDIA_EPUB
+            // Text format types (PRIMARY naming)
+            | MEDIA_MD
+            | MEDIA_TXT
+            | MEDIA_RST
+            | MEDIA_LOG
+            | MEDIA_HTML
+            | MEDIA_XML
+            | MEDIA_JSON
+            | MEDIA_YAML
+            // CAPNS output types
             | MEDIA_DOWNLOAD_OUTPUT
             | MEDIA_LOAD_OUTPUT
             | MEDIA_UNLOAD_OUTPUT
@@ -701,6 +875,8 @@ mod tests {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/output".to_string(),
                 schema: Some(schema.clone()),
+                title: None,
+                description: None,
             }),
         );
 
@@ -770,12 +946,17 @@ mod tests {
             media_type: "application/json".to_string(),
             profile_uri: "https://example.com/profile".to_string(),
             schema: None,
+            title: None,
+            description: None,
         });
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"media_type\":\"application/json\""));
         assert!(json.contains("\"profile_uri\":\"https://example.com/profile\""));
         // None schema is skipped - check it's not serialized as "schema":null or "schema":...
         assert!(!json.contains("\"schema\":"));
+        // None title/description are also skipped
+        assert!(!json.contains("\"title\":"));
+        assert!(!json.contains("\"description\":"));
     }
 
     #[test]
@@ -803,6 +984,8 @@ mod tests {
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
             schema: None,
+            title: None,
+            description: None,
         };
         assert!(resolved.is_binary());
         assert!(!resolved.is_json());
@@ -815,6 +998,8 @@ mod tests {
             media_type: "application/json".to_string(),
             profile_uri: None,
             schema: None,
+            title: None,
+            description: None,
         };
         assert!(resolved.is_json());
         assert!(!resolved.is_binary());
@@ -827,6 +1012,8 @@ mod tests {
             media_type: "text/plain".to_string(),
             profile_uri: None,
             schema: None,
+            title: None,
+            description: None,
         };
         assert!(resolved.is_text());
         assert!(!resolved.is_binary());

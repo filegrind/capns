@@ -85,6 +85,12 @@ pub enum ValidationError {
         field_name: String,
         error: String,
     },
+    /// Unresolvable Media URN reference
+    UnresolvableMediaUrn {
+        cap_urn: String,
+        media_urn: String,
+        location: String,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -130,6 +136,9 @@ impl fmt::Display for ValidationError {
             }
             ValidationError::InvalidMediaSpec { cap_urn, field_name, error } => {
                 write!(f, "Cap '{}' has invalid media_spec for '{}': {}", cap_urn, field_name, error)
+            }
+            ValidationError::UnresolvableMediaUrn { cap_urn, media_urn, location } => {
+                write!(f, "Cap '{}' references unresolvable media URN '{}' in {}", cap_urn, media_urn, location)
             }
         }
     }
@@ -941,4 +950,124 @@ pub async fn validate_cap_canonical(registry: &crate::registry::CapRegistry, cap
             cap_urn: cap.urn_string(),
             issue: e.to_string(),
         })
+}
+
+/// Validate that all media URN references in a cap definition are resolvable
+///
+/// This function checks:
+/// - The 'in' tag media URN (unless '*')
+/// - The 'out' tag media URN (unless '*')
+/// - Every argument's media_urn
+/// - Every output's media_urn
+///
+/// Resolution sources (in order):
+/// 1. Cap's local media_specs table
+/// 2. Built-in media URN constants
+/// 3. Registry cache (if registry provided)
+/// 4. Remote registry (if registry provided)
+pub async fn validate_media_urn_references(
+    cap: &Cap,
+    registry: Option<&crate::media_registry::MediaUrnRegistry>,
+) -> Result<(), ValidationError> {
+    let cap_urn = cap.urn_string();
+    let media_specs = cap.get_media_specs();
+
+    // Collect all media URNs to validate
+    let mut urns_to_check: Vec<(String, String)> = Vec::new();
+
+    // Check in/out tags from the cap URN
+    let in_spec = cap.urn.in_spec();
+    if in_spec != "*" {
+        urns_to_check.push(("in tag".to_string(), in_spec.to_string()));
+    }
+
+    let out_spec = cap.urn.out_spec();
+    if out_spec != "*" {
+        urns_to_check.push(("out tag".to_string(), out_spec.to_string()));
+    }
+
+    // Check all argument media URNs
+    for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
+        urns_to_check.push((format!("argument '{}'", arg.name), arg.media_urn.clone()));
+    }
+
+    // Check output media URN
+    if let Some(output) = cap.get_output() {
+        urns_to_check.push(("output".to_string(), output.media_urn.clone()));
+    }
+
+    // Validate each media URN
+    for (location, media_urn) in urns_to_check {
+        // First try local media_specs and built-in resolution
+        if crate::media_spec::resolve_media_urn(&media_urn, media_specs).is_ok() {
+            continue;
+        }
+
+        // If registry is available, try that
+        if let Some(registry) = registry {
+            if registry.get_media_spec(&media_urn).await.is_ok() {
+                continue;
+            }
+        }
+
+        // Media URN is unresolvable
+        return Err(ValidationError::UnresolvableMediaUrn {
+            cap_urn: cap_urn.clone(),
+            media_urn,
+            location: location.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Validate media URN references synchronously (without registry)
+///
+/// Use this for validation when registry is not available.
+pub fn validate_media_urn_references_sync(cap: &Cap) -> Result<(), ValidationError> {
+    let cap_urn = cap.urn_string();
+    let media_specs = cap.get_media_specs();
+
+    // Check in/out tags from the cap URN
+    let in_spec = cap.urn.in_spec();
+    if in_spec != "*" {
+        crate::media_spec::resolve_media_urn(in_spec, media_specs)
+            .map_err(|_| ValidationError::UnresolvableMediaUrn {
+                cap_urn: cap_urn.clone(),
+                media_urn: in_spec.to_string(),
+                location: "in tag".to_string(),
+            })?;
+    }
+
+    let out_spec = cap.urn.out_spec();
+    if out_spec != "*" {
+        crate::media_spec::resolve_media_urn(out_spec, media_specs)
+            .map_err(|_| ValidationError::UnresolvableMediaUrn {
+                cap_urn: cap_urn.clone(),
+                media_urn: out_spec.to_string(),
+                location: "out tag".to_string(),
+            })?;
+    }
+
+    // Check all argument media URNs
+    for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
+        crate::media_spec::resolve_media_urn(&arg.media_urn, media_specs)
+            .map_err(|_| ValidationError::UnresolvableMediaUrn {
+                cap_urn: cap_urn.clone(),
+                media_urn: arg.media_urn.clone(),
+                location: format!("argument '{}'", arg.name),
+            })?;
+    }
+
+    // Check output media URN
+    if let Some(output) = cap.get_output() {
+        crate::media_spec::resolve_media_urn(&output.media_urn, media_specs)
+            .map_err(|_| ValidationError::UnresolvableMediaUrn {
+                cap_urn: cap_urn.clone(),
+                media_urn: output.media_urn.clone(),
+                location: "output".to_string(),
+            })?;
+    }
+
+    Ok(())
 }

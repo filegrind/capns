@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=integer-array;v=1;textable;numeric;sequence",
+  "media_type": "application/json",
+  "title": "Integer Array",
+  "profile_uri": "https://capns.org/schema/int-array",
+  "description": "Array of integer values"
+}

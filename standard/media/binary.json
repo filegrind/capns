@@ -1,0 +1,6 @@
+{
+  "urn": "media:type=binary;v=1;binary",
+  "media_type": "application/octet-stream",
+  "title": "Binary",
+  "description": "Raw binary data"
+}

@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=json;v=1;textable;keyed",
+  "media_type": "application/json",
+  "title": "JSON Document",
+  "profile_uri": "https://capns.org/schema/json",
+  "description": "JSON formatted document"
+}

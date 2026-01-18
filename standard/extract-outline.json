@@ -2,8 +2,7 @@
   "urn": {
     "tags": {
       "op": "extract_outline",
-      "ext": "pdf",
-      "in": "media:type=binary;v=1;binary",
+      "in": "media:type=pdf;v=1;binary",
       "out": "media:type=extract-outline-output;v=1;textable;keyed"
     }
   },

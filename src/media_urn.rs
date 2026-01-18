@@ -51,13 +51,59 @@ pub const MEDIA_BOOLEAN_ARRAY: &str = "media:type=boolean-array;v=1;textable;seq
 /// Media URN for object array type - textable, keyed, sequence
 pub const MEDIA_OBJECT_ARRAY: &str = "media:type=object-array;v=1;textable;keyed;sequence";
 
-// FGND-specific types
-/// Media URN for listing ID (UUID) - textable, scalar
-pub const MEDIA_LISTING_ID: &str = "media:type=listing-id;v=1;textable;scalar";
-/// Media URN for file path array - textable, sequence
-pub const MEDIA_FILE_PATH_ARRAY: &str = "media:type=file-path-array;v=1;textable;sequence";
-/// Media URN for task ID (UUID) - textable, scalar
-pub const MEDIA_TASK_ID: &str = "media:type=task-id;v=1;textable;scalar";
+// Semantic media types for specialized content
+/// Media URN for image data (png, jpg, gif, webp, etc.)
+pub const MEDIA_IMAGE: &str = "media:type=image;v=1;binary";
+/// Media URN for audio data (wav, mp3, flac, etc.)
+pub const MEDIA_AUDIO: &str = "media:type=audio;v=1;binary";
+/// Media URN for video data (mp4, webm, mov, etc.)
+pub const MEDIA_VIDEO: &str = "media:type=video;v=1;binary";
+/// Media URN for generic text (semantic type)
+pub const MEDIA_TEXT: &str = "media:type=text;v=1;textable";
+
+// Document types (PRIMARY naming - type IS the format)
+/// Media URN for PDF documents
+pub const MEDIA_PDF: &str = "media:type=pdf;v=1;binary";
+/// Media URN for EPUB documents
+pub const MEDIA_EPUB: &str = "media:type=epub;v=1;binary";
+
+// Text format types (PRIMARY naming - type IS the format)
+/// Media URN for Markdown text
+pub const MEDIA_MD: &str = "media:type=md;v=1;textable";
+/// Media URN for plain text
+pub const MEDIA_TXT: &str = "media:type=txt;v=1;textable";
+/// Media URN for reStructuredText
+pub const MEDIA_RST: &str = "media:type=rst;v=1;textable";
+/// Media URN for log files
+pub const MEDIA_LOG: &str = "media:type=log;v=1;textable";
+/// Media URN for HTML documents
+pub const MEDIA_HTML: &str = "media:type=html;v=1;textable";
+/// Media URN for XML documents
+pub const MEDIA_XML: &str = "media:type=xml;v=1;textable";
+/// Media URN for JSON data
+pub const MEDIA_JSON: &str = "media:type=json;v=1;textable;keyed";
+/// Media URN for YAML data
+pub const MEDIA_YAML: &str = "media:type=yaml;v=1;textable;keyed";
+
+/// Helper to build binary media URN with extension
+pub fn binary_media_urn_for_ext(ext: &str) -> String {
+    format!("media:type=binary;ext={};v=1;binary", ext)
+}
+
+/// Helper to build text media URN with extension
+pub fn text_media_urn_for_ext(ext: &str) -> String {
+    format!("media:type=text;ext={};v=1;textable", ext)
+}
+
+/// Helper to build image media URN with extension
+pub fn image_media_urn_for_ext(ext: &str) -> String {
+    format!("media:type=image;ext={};v=1;binary", ext)
+}
+
+/// Helper to build audio media URN with extension
+pub fn audio_media_urn_for_ext(ext: &str) -> String {
+    format!("media:type=audio;ext={};v=1;binary", ext)
+}
 
 // CAPNS output types - all keyed structures (JSON objects)
 /// Media URN for model download output - textable, keyed
@@ -225,6 +271,48 @@ impl MediaUrn {
     /// Specificity is the count of non-wildcard tags.
     pub fn specificity(&self) -> usize {
         self.0.specificity()
+    }
+
+    /// Check if this media URN satisfies a cap's input requirement
+    ///
+    /// Returns true if all required tags in `requirement` are present in `self`
+    /// with matching values. This is used to determine if an item (listing, chip, block)
+    /// with this media URN can provide input to a cap.
+    ///
+    /// # Matching rules:
+    /// - Type must match exactly
+    /// - Extension must match if specified in requirement
+    /// - Version must match if specified in requirement
+    pub fn satisfies(&self, requirement: &MediaUrn) -> bool {
+        // Type must match
+        match (self.type_name(), requirement.type_name()) {
+            (Some(self_type), Some(req_type)) if self_type != req_type => return false,
+            (None, Some(_)) => return false,
+            _ => {}
+        }
+
+        // Extension must match if specified in requirement
+        if let Some(req_ext) = requirement.get_tag("ext") {
+            match self.get_tag("ext") {
+                Some(self_ext) if self_ext != req_ext => return false,
+                None => return false,
+                _ => {}
+            }
+        }
+
+        // Version must match if specified in requirement
+        match (self.version(), requirement.version()) {
+            (Some(self_v), Some(req_v)) if self_v != req_v => return false,
+            (None, Some(_)) => return false,
+            _ => {}
+        }
+
+        true
+    }
+
+    /// Get the extension tag value (e.g., "pdf", "epub", "md")
+    pub fn extension(&self) -> Option<&str> {
+        self.get_tag("ext")
     }
 
     // =========================================================================
@@ -514,9 +602,69 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_NUMBER_ARRAY).is_ok());
         assert!(MediaUrn::from_string(MEDIA_BOOLEAN_ARRAY).is_ok());
         assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_LISTING_ID).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_TASK_ID).is_ok());
+        // Semantic types
+        assert!(MediaUrn::from_string(MEDIA_IMAGE).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_AUDIO).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_VIDEO).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_TEXT).is_ok());
+        // Document types (PRIMARY naming)
+        assert!(MediaUrn::from_string(MEDIA_PDF).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_EPUB).is_ok());
+        // Text format types (PRIMARY naming)
+        assert!(MediaUrn::from_string(MEDIA_MD).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_TXT).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_RST).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_LOG).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_HTML).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_XML).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_JSON).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_YAML).is_ok());
+    }
+
+    #[test]
+    fn test_extension_helpers() {
+        // Test binary_media_urn_for_ext
+        let pdf_urn = binary_media_urn_for_ext("pdf");
+        assert_eq!(pdf_urn, "media:type=binary;ext=pdf;v=1;binary");
+        let parsed = MediaUrn::from_string(&pdf_urn).unwrap();
+        assert_eq!(parsed.type_name(), Some("binary"));
+        assert_eq!(parsed.extension(), Some("pdf"));
+
+        // Test text_media_urn_for_ext
+        let md_urn = text_media_urn_for_ext("md");
+        assert_eq!(md_urn, "media:type=text;ext=md;v=1;textable");
+        let parsed = MediaUrn::from_string(&md_urn).unwrap();
+        assert_eq!(parsed.type_name(), Some("text"));
+        assert_eq!(parsed.extension(), Some("md"));
+    }
+
+    #[test]
+    fn test_satisfies() {
+        // PDF listing satisfies PDF requirement (PRIMARY type naming)
+        let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap();
+        let pdf_requirement = MediaUrn::from_string("media:type=pdf;v=1").unwrap();
+        assert!(pdf_listing.satisfies(&pdf_requirement));
+
+        // PDF listing does NOT satisfy binary requirement (different type)
+        let binary_requirement = MediaUrn::from_string("media:type=binary;v=1").unwrap();
+        assert!(!pdf_listing.satisfies(&binary_requirement));
+
+        // PDF listing does NOT satisfy EPUB requirement
+        let epub_requirement = MediaUrn::from_string("media:type=epub;v=1").unwrap();
+        assert!(!pdf_listing.satisfies(&epub_requirement));
+
+        // PDF listing does NOT satisfy text requirement
+        let text_requirement = MediaUrn::from_string("media:type=text;v=1").unwrap();
+        assert!(!pdf_listing.satisfies(&text_requirement));
+
+        // Markdown listing satisfies md requirement (PRIMARY type naming)
+        let md_listing = MediaUrn::from_string(MEDIA_MD).unwrap();
+        let md_requirement = MediaUrn::from_string("media:type=md;v=1").unwrap();
+        assert!(md_listing.satisfies(&md_requirement));
+
+        // Markdown listing does NOT satisfy txt requirement (different type)
+        let txt_requirement = MediaUrn::from_string("media:type=txt;v=1").unwrap();
+        assert!(!md_listing.satisfies(&txt_requirement));
     }
 
     #[test]

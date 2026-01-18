@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=log;v=1;textable",
+  "media_type": "text/plain",
+  "title": "Log File",
+  "profile_uri": "https://capns.org/schema/log",
+  "description": "Log file text content"
+}
