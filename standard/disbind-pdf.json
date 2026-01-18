@@ -1,19 +1,19 @@
 {
   "urn": {
     "tags": {
-      "op": "extract_outline",
+      "op": "disbind",
       "in": "media:type=pdf;v=1;binary",
-      "out": "media:type=document-outline;v=1;textable;keyed"
+      "out": "media:type=disbound-pages;v=1;textable;keyed;sequence"
     }
   },
-  "command": "extract-outline",
-  "title": "Extract Document Outline",
-  "cap_description": "Extract document outline/table of contents with hierarchical structure",
+  "command": "grind",
+  "title": "Extract File Chips",
+  "cap_description": "Extract structured page content from the document",
   "metadata": {},
   "media_specs": {
-    "media:type=document-outline;v=1;textable;keyed": {
+    "media:type=disbound-pages;v=1;textable;keyed;sequence": {
       "media_type": "application/json",
-      "profile_uri": "https://capns.org/schema/document-outline",
+      "profile_uri": "https://capns.org/schema/disbound-pages",
       "schema": {
         "type": "object",
         "additionalProperties": false,
@@ -21,8 +21,7 @@
           "source_file",
           "document_type",
           "total_pages",
-          "entries",
-          "has_outline",
+          "pages",
           "extraction_info"
         ],
         "properties": {
@@ -38,55 +37,53 @@
           "total_pages": {
             "type": "integer",
             "minimum": 0,
-            "description": "Total number of pages/sections in document"
+            "description": "Total number of pages in document"
           },
-          "entries": {
+          "pages": {
             "type": "array",
-            "description": "Root-level outline entries",
+            "description": "All pages in the document",
             "items": {
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "title",
-                "level",
-                "children"
+                "order_index",
+                "text_content"
               ],
               "properties": {
-                "title": {
-                  "type": "string",
-                  "minLength": 1,
-                  "description": "The title/label of this outline entry"
-                },
-                "level": {
+                "order_index": {
                   "type": "integer",
-                  "minimum": 0,
-                  "description": "Hierarchical level (0 = top level, 1 = first sublevel, etc.)"
-                },
-                "page": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ],
                   "minimum": 1,
-                  "description": "Page/section number this entry points to (1-indexed)"
+                  "description": "Page number (1-indexed)"
+                },
+                "text_content": {
+                  "type": "string",
+                  "description": "Text content of this page as a single string"
                 },
                 "source_ref": {
                   "type": [
                     "string",
                     "null"
                   ],
-                  "description": "Optional source reference (filename, anchor, etc.)"
+                  "description": "Optional source reference (filename, section, etc.)"
                 },
-                "children": {
-                  "type": "array",
-                  "description": "Child entries under this one"
+                "word_count": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Word count for this page"
+                },
+                "character_count": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Character count for this page"
                 }
               }
             }
-          },
-          "has_outline": {
-            "type": "boolean",
-            "description": "Whether this document has any outline/bookmarks"
           },
           "extraction_info": {
             "type": "object",
@@ -150,23 +147,6 @@
     ],
     "optional": [
       {
-        "name": "max_depth",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum outline depth to extract (1-10)",
-        "cli_flag": "--max-depth",
-        "validation": {
-          "min": 1,
-          "max": 10
-        }
-      },
-      {
-        "name": "include_order_indexes",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Include page numbers in the outline (default: true)",
-        "cli_flag": "--include-order-indexes",
-        "default_value": true
-      },
-      {
         "name": "output",
         "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write output to specified file instead of stdout",
@@ -174,11 +154,20 @@
         "validation": {
           "pattern": "^[^\\0]+$"
         }
+      },
+      {
+        "name": "index_range",
+        "media_urn": "media:type=string;v=1;textable;scalar",
+        "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
+        "cli_flag": "--index-range",
+        "validation": {
+          "pattern": "^\\d+(-\\d*)?$"
+        }
       }
     ]
   },
   "output": {
-    "media_urn": "media:type=document-outline;v=1;textable;keyed",
-    "output_description": "Hierarchical document outline with section titles and optional page numbers"
+    "media_urn": "media:type=disbound-pages;v=1;textable;keyed;sequence",
+    "output_description": "Structured page content extracted from the document"
   }
 }

@@ -3,7 +3,7 @@
     "tags": {
       "op": "extract_outline",
       "in": "media:type=rst;v=1;textable",
-      "out": "media:type=object;v=1;textable;keyed"
+      "out": "media:type=document-outline;v=1;textable;keyed"
     }
   },
   "command": "extract-outline",

@@ -4,7 +4,7 @@
       "op": "generate_embeddings",
       "model_type": "mlx",
       "in": "media:type=string;v=1;textable;scalar",
-      "out": "media:type=embeddings-output;v=1;textable;keyed"
+      "out": "media:type=embeddings;v=1;textable;keyed"
     }
   },
   "command": "embeddings",
@@ -12,9 +12,9 @@
   "cap_description": "Generate vector embeddings from text using MLX-based models on Apple Silicon",
   "metadata": {},
   "media_specs": {
-    "media:type=embeddings-output;v=1;textable;keyed": {
+    "media:type=embeddings;v=1;textable;keyed": {
       "media_type": "application/json",
-      "profile_uri": "https://capns.org/schema/embeddings-output",
+      "profile_uri": "https://capns.org/schema/embeddings",
       "schema": {
         "type": "object",
         "additionalProperties": false,
@@ -161,7 +161,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=embeddings-output;v=1;textable;keyed",
+    "media_urn": "media:type=embeddings;v=1;textable;keyed",
     "output_description": "JSON containing embeddings, chunk metadata and model information"
   }
 }

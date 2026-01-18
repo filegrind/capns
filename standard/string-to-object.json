@@ -1,0 +1,30 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "object",
+      "in": "media:type=string;v=1",
+      "out": "media:type=object;v=1;textable;keyed"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce String to Object",
+  "cap_description": "Wrap a string value in a JSON object with value and source_type keys",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "source_media_urn",
+        "media_urn": "media:type=string;v=1;textable;scalar",
+        "arg_description": "Media URN of the source data type",
+        "cli_flag": "--source-media-urn",
+        "position": 0
+      }
+    ]
+  },
+  "output": {
+    "media_urn": "media:type=object;v=1;textable;keyed",
+    "output_description": "JSON object containing the original value"
+  }
+}

@@ -1,14 +1,14 @@
 {
   "urn": {
     "tags": {
-      "op": "extract_outline",
+      "op": "disbind",
       "in": "media:type=txt;v=1;textable",
-      "out": "media:type=document-outline;v=1;textable;keyed"
+      "out": "media:type=disbound-pages;v=1;textable;keyed;sequence"
     }
   },
-  "command": "extract-outline",
-  "title": "Extract Text Document Outline",
-  "cap_description": "Extract document outline/table of contents from text files",
+  "command": "grind",
+  "title": "Extract Text File Chips",
+  "cap_description": "Grind with text content from text files",
   "metadata": {},
   "accepts_stdin": true,
   "arguments": {
@@ -27,21 +27,13 @@
     ],
     "optional": [
       {
-        "name": "max_depth",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum outline depth to extract (1-10)",
-        "cli_flag": "--max-depth",
+        "name": "index_range",
+        "media_urn": "media:type=string;v=1;textable;scalar",
+        "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
+        "cli_flag": "--index-range",
         "validation": {
-          "min": 1,
-          "max": 10
+          "pattern": "^\\d+(-\\d*)?$"
         }
-      },
-      {
-        "name": "include_order_indexes",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Include page numbers in the outline",
-        "cli_flag": "--include-order-indexes",
-        "default_value": true
       },
       {
         "name": "output",
@@ -56,6 +48,6 @@
   },
   "output": {
     "media_urn": "media:type=object;v=1;textable;keyed",
-    "output_description": "Structured document outline with hierarchical entries"
+    "output_description": "Structured file chips with text content"
   }
 }

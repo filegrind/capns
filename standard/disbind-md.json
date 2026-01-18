@@ -1,14 +1,14 @@
 {
   "urn": {
     "tags": {
-      "op": "extract_metadata",
+      "op": "disbind",
       "in": "media:type=md;v=1;textable",
-      "out": "media:type=file-metadata;v=1;textable;keyed"
+      "out": "media:type=disbound-pages;v=1;textable;keyed;sequence"
     }
   },
-  "command": "extract-metadata",
-  "title": "Extract Markdown Document Metadata",
-  "cap_description": "Extract markdown document metadata including title, file size, word count, and other properties",
+  "command": "grind",
+  "title": "Extract Markdown File Chips",
+  "cap_description": "Grind with text content from markdown files",
   "metadata": {},
   "accepts_stdin": true,
   "arguments": {
@@ -27,6 +27,15 @@
     ],
     "optional": [
       {
+        "name": "index_range",
+        "media_urn": "media:type=string;v=1;textable;scalar",
+        "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
+        "cli_flag": "--index-range",
+        "validation": {
+          "pattern": "^\\d+(-\\d*)?$"
+        }
+      },
+      {
         "name": "output",
         "media_urn": "media:type=string;v=1;textable;scalar",
         "arg_description": "Write output to specified file instead of stdout",
@@ -39,6 +48,6 @@
   },
   "output": {
     "media_urn": "media:type=object;v=1;textable;keyed",
-    "output_description": "Structured metadata including file properties and markdown-specific metadata"
+    "output_description": "Structured file chips with text content"
   }
 }

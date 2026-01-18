@@ -3,7 +3,7 @@
     "tags": {
       "op": "generate_embeddings",
       "in": "media:type=string;v=1;textable;scalar",
-      "out": "media:type=generate-output;v=1;textable;keyed"
+      "out": "media:type=embeddings;v=1;textable;keyed"
     }
   },
   "command": "generate",
@@ -11,9 +11,9 @@
   "cap_description": "Generate vector embeddings from text or file input",
   "metadata": {},
   "media_specs": {
-    "media:type=generate-output;v=1;textable;keyed": {
+    "media:type=embeddings;v=1;textable;keyed": {
       "media_type": "application/json",
-      "profile_uri": "https://capns.org/schema/generate-output",
+      "profile_uri": "https://capns.org/schema/embeddings",
       "schema": {
         "type": "object",
         "additionalProperties": false,
@@ -193,7 +193,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=generate-output;v=1;textable;keyed",
+    "media_urn": "media:type=embeddings;v=1;textable;keyed",
     "output_description": "JSON file containing embeddings, chunk metadata and model information"
   }
 }

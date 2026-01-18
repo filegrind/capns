@@ -1,0 +1,30 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "integer",
+      "in": "media:type=boolean;v=1",
+      "out": "media:type=integer;v=1;textable;numeric;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Boolean to Integer",
+  "cap_description": "Convert a boolean value to an integer (true=1, false=0)",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "source_media_urn",
+        "media_urn": "media:type=string;v=1;textable;scalar",
+        "arg_description": "Media URN of the source data type",
+        "cli_flag": "--source-media-urn",
+        "position": 0
+      }
+    ]
+  },
+  "output": {
+    "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
+    "output_description": "Integer value (1 for true, 0 for false)"
+  }
+}

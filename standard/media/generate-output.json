@@ -1,7 +1,7 @@
 {
-  "urn": "media:type=generate-output;v=1;textable;keyed",
+  "urn": "media:type=embeddings;v=1;textable;keyed",
   "media_type": "application/json",
   "title": "Generate Output",
-  "profile_uri": "https://capns.org/schema/generate-output",
+  "profile_uri": "https://capns.org/schema/embeddings",
   "description": "Generate operation result"
 }

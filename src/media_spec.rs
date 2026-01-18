@@ -122,7 +122,7 @@ pub const PROFILE_CAPNS_STATUS_OUTPUT: &str = "https://capns.org/schema/status-o
 /// Profile URL for model contents output
 pub const PROFILE_CAPNS_CONTENTS_OUTPUT: &str = "https://capns.org/schema/contents-output";
 /// Profile URL for embeddings generate output
-pub const PROFILE_CAPNS_GENERATE_OUTPUT: &str = "https://capns.org/schema/generate-output";
+pub const PROFILE_CAPNS_GENERATE_OUTPUT: &str = "https://capns.org/schema/embeddings";
 /// Profile URL for structured query output
 pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schema/structured-query-output";
 /// Profile URL for questions array

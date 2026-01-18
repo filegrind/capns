@@ -1,0 +1,30 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "number",
+      "in": "media:type=boolean;v=1",
+      "out": "media:type=number;v=1;textable;numeric;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Boolean to Number",
+  "cap_description": "Convert a boolean value to a number (true=1.0, false=0.0)",
+  "metadata": {},
+  "accepts_stdin": true,
+  "arguments": {
+    "required": [
+      {
+        "name": "source_media_urn",
+        "media_urn": "media:type=string;v=1;textable;scalar",
+        "arg_description": "Media URN of the source data type",
+        "cli_flag": "--source-media-urn",
+        "position": 0
+      }
+    ]
+  },
+  "output": {
+    "media_urn": "media:type=number;v=1;textable;numeric;scalar",
+    "output_description": "Numeric value (1.0 for true, 0.0 for false)"
+  }
+}

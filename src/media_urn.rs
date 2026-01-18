@@ -119,23 +119,23 @@ pub const MEDIA_STATUS_OUTPUT: &str = "media:type=status-output;v=1;textable;key
 /// Media URN for model contents output - textable, keyed
 pub const MEDIA_CONTENTS_OUTPUT: &str = "media:type=contents-output;v=1;textable;keyed";
 /// Media URN for embeddings generate output - textable, keyed
-pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=generate-output;v=1;textable;keyed";
+pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=embeddings;v=1;textable;keyed";
 /// Media URN for structured query output - textable, keyed
 pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=structured-query-output;v=1;textable;keyed";
 /// Media URN for questions array - textable, sequence
 pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=questions-array;v=1;textable;sequence";
 /// Media URN for LLM inference output - textable, keyed
 pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:type=llm-inference-output;v=1;textable;keyed";
-/// Media URN for extract-metadata output (PDF) - textable, keyed
-pub const MEDIA_EXTRACT_METADATA_OUTPUT: &str = "media:type=extract-metadata-output;v=1;textable;keyed";
-/// Media URN for extract-outline output (PDF) - textable, keyed
-pub const MEDIA_EXTRACT_OUTLINE_OUTPUT: &str = "media:type=extract-outline-output;v=1;textable;keyed";
-/// Media URN for grind output (PDF) - textable, keyed, sequence (array of chunks)
-pub const MEDIA_GRIND_OUTPUT: &str = "media:type=grind-output;v=1;textable;keyed;sequence";
+/// Media URN for extracted metadata - textable, keyed
+pub const MEDIA_FILE_METADATA: &str = "media:type=file-metadata;v=1;textable;keyed";
+/// Media URN for extracted outline - textable, keyed
+pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:type=document-outline;v=1;textable;keyed";
+/// Media URN for disbound pages - textable, keyed, sequence (array of chunks)
+pub const MEDIA_DISBOUND_PAGES: &str = "media:type=disbound-pages;v=1;textable;keyed;sequence";
 /// Media URN for embeddings output - textable, keyed
-pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embeddings-output;v=1;textable;keyed";
+pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embeddings;v=1;textable;keyed";
 /// Media URN for image embeddings output - textable, keyed
-pub const MEDIA_IMAGE_EMBEDDINGS_OUTPUT: &str = "media:type=image-embeddings-output;v=1;textable;keyed";
+pub const MEDIA_IMAGE_EMBEDDINGS_OUTPUT: &str = "media:type=image-embeddings;v=1;textable;keyed";
 /// Media URN for caption output - textable, keyed
 pub const MEDIA_CAPTION_OUTPUT: &str = "media:type=caption-output;v=1;textable;keyed";
 /// Media URN for transcription output - textable, keyed

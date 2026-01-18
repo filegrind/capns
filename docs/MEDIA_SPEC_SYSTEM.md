@@ -46,9 +46,9 @@ Additional well-known spec IDs for specific domains:
 |---------|------------|-------------|
 | `media:type=extract-metadata-output;v=1` | `application/json` | Document metadata extraction output |
 | `media:type=extract-outline-output;v=1` | `application/json` | Document outline extraction output |
-| `media:type=grind-output;v=1` | `application/json` | File chips extraction output |
+| `media:type=disbound-pages;v=1` | `application/json` | File chips extraction output |
 | `media:type=llm-inference-output;v=1` | `application/json` | LLM inference response |
-| `media:type=generate-output;v=1` | `application/json` | Embeddings generation output |
+| `media:type=embeddings;v=1` | `application/json` | Embeddings generation output |
 | `media:type=structured-query-output;v=1` | `application/json` | Structured query output |
 | `media:type=questions-array;v=1` | `application/json` | Questions array for bit choices |
 | `media:type=download-output;v=1` | `application/json` | Model download output |

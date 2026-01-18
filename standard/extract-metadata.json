@@ -3,7 +3,7 @@
     "tags": {
       "op": "extract_metadata",
       "in": "media:type=pdf;v=1;binary",
-      "out": "media:type=extract-metadata-output;v=1;textable;keyed"
+      "out": "media:type=file-metadata;v=1;textable;keyed"
     }
   },
   "command": "extract-metadata",
@@ -11,9 +11,9 @@
   "cap_description": "Extract document metadata including title, author, creation date, file size, and other properties",
   "metadata": {},
   "media_specs": {
-    "media:type=extract-metadata-output;v=1;textable;keyed": {
+    "media:type=file-metadata;v=1;textable;keyed": {
       "media_type": "application/json",
-      "profile_uri": "https://capns.org/schema/extract-metadata-output",
+      "profile_uri": "https://capns.org/schema/document-metadata",
       "schema": {
         "type": "object",
         "additionalProperties": false,
@@ -282,7 +282,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=extract-metadata-output;v=1;textable;keyed",
+    "media_urn": "media:type=file-metadata;v=1;textable;keyed",
     "output_description": "Structured metadata including file properties, document properties, and format-specific metadata"
   }
 }
