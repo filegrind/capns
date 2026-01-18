@@ -8,6 +8,7 @@
 //! from one spec to another.
 
 use crate::{Cap, CapUrn, CapSet};
+use crate::media_urn::MediaUrn;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Registry error types for capability host operations
@@ -137,36 +138,86 @@ impl CapGraph {
     }
 
     /// Get all edges originating from a spec (all caps that take this spec as input).
+    ///
+    /// Uses MediaUrn::satisfies() matching: returns edges where the provided spec
+    /// satisfies the edge's from_spec requirement. This allows a specific media URN
+    /// like "media:type=pdf;v=1;binary" to match caps that accept "media:type=pdf;v=1".
     pub fn get_outgoing(&self, spec: &str) -> Vec<&CapGraphEdge> {
-        self.outgoing
-            .get(spec)
-            .map(|indices| indices.iter().map(|&i| &self.edges[i]).collect())
-            .unwrap_or_default()
+        let provided_urn = match MediaUrn::from_string(spec) {
+            Ok(urn) => urn,
+            Err(_) => return Vec::new(),
+        };
+
+        self.edges
+            .iter()
+            .filter(|edge| {
+                match MediaUrn::from_string(&edge.from_spec) {
+                    Ok(requirement_urn) => provided_urn.satisfies(&requirement_urn),
+                    Err(_) => false,
+                }
+            })
+            .collect()
     }
 
     /// Get all edges targeting a spec (all caps that produce this spec as output).
+    ///
+    /// Uses MediaUrn::satisfies() matching: returns edges where the edge's to_spec
+    /// satisfies the requested spec requirement.
     pub fn get_incoming(&self, spec: &str) -> Vec<&CapGraphEdge> {
-        self.incoming
-            .get(spec)
-            .map(|indices| indices.iter().map(|&i| &self.edges[i]).collect())
-            .unwrap_or_default()
+        let requirement_urn = match MediaUrn::from_string(spec) {
+            Ok(urn) => urn,
+            Err(_) => return Vec::new(),
+        };
+
+        self.edges
+            .iter()
+            .filter(|edge| {
+                match MediaUrn::from_string(&edge.to_spec) {
+                    Ok(produced_urn) => produced_urn.satisfies(&requirement_urn),
+                    Err(_) => false,
+                }
+            })
+            .collect()
     }
 
     /// Check if there's any direct edge from one spec to another.
+    ///
+    /// Uses satisfies matching: from_spec must satisfy edge input, edge output must satisfy to_spec.
     pub fn has_direct_edge(&self, from_spec: &str, to_spec: &str) -> bool {
+        let to_requirement = match MediaUrn::from_string(to_spec) {
+            Ok(urn) => urn,
+            Err(_) => return false,
+        };
+
         self.get_outgoing(from_spec)
             .iter()
-            .any(|edge| edge.to_spec == to_spec)
+            .any(|edge| {
+                match MediaUrn::from_string(&edge.to_spec) {
+                    Ok(produced_urn) => produced_urn.satisfies(&to_requirement),
+                    Err(_) => false,
+                }
+            })
     }
 
     /// Get all direct edges from one spec to another.
     ///
     /// Returns all capabilities that can directly convert from `from_spec` to `to_spec`.
+    /// Uses satisfies matching for both input and output specs.
     /// Sorted by specificity (highest first).
     pub fn get_direct_edges(&self, from_spec: &str, to_spec: &str) -> Vec<&CapGraphEdge> {
+        let to_requirement = match MediaUrn::from_string(to_spec) {
+            Ok(urn) => urn,
+            Err(_) => return Vec::new(),
+        };
+
         let mut edges: Vec<&CapGraphEdge> = self.get_outgoing(from_spec)
             .into_iter()
-            .filter(|edge| edge.to_spec == to_spec)
+            .filter(|edge| {
+                match MediaUrn::from_string(&edge.to_spec) {
+                    Ok(produced_urn) => produced_urn.satisfies(&to_requirement),
+                    Err(_) => false,
+                }
+            })
             .collect();
 
         // Sort by specificity (highest first)
@@ -177,28 +228,50 @@ impl CapGraph {
     /// Check if a conversion path exists from one spec to another.
     ///
     /// Uses BFS to find if there's any path (direct or through intermediates).
+    /// Uses satisfies matching for both input and output specs.
     pub fn can_convert(&self, from_spec: &str, to_spec: &str) -> bool {
         if from_spec == to_spec {
             return true;
         }
 
-        if !self.nodes.contains(from_spec) || !self.nodes.contains(to_spec) {
+        let to_requirement = match MediaUrn::from_string(to_spec) {
+            Ok(urn) => urn,
+            Err(_) => return false,
+        };
+
+        // Check if from_spec can satisfy any edge's input
+        let initial_edges = self.get_outgoing(from_spec);
+        if initial_edges.is_empty() {
             return false;
         }
 
         let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(from_spec);
-        visited.insert(from_spec);
+        let mut queue: VecDeque<String> = VecDeque::new();
 
-        while let Some(current) = queue.pop_front() {
-            for edge in self.get_outgoing(current) {
-                if edge.to_spec == to_spec {
+        // Start by checking edges from the initial spec
+        for edge in &initial_edges {
+            if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
+                if produced_urn.satisfies(&to_requirement) {
                     return true;
                 }
-                if !visited.contains(edge.to_spec.as_str()) {
-                    visited.insert(&edge.to_spec);
-                    queue.push_back(&edge.to_spec);
+            }
+            if !visited.contains(&edge.to_spec) {
+                visited.insert(edge.to_spec.clone());
+                queue.push_back(edge.to_spec.clone());
+            }
+        }
+
+        // BFS through the graph using actual node specs
+        while let Some(current) = queue.pop_front() {
+            for edge in self.get_outgoing(&current) {
+                if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
+                    if produced_urn.satisfies(&to_requirement) {
+                        return true;
+                    }
+                }
+                if !visited.contains(&edge.to_spec) {
+                    visited.insert(edge.to_spec.clone());
+                    queue.push_back(edge.to_spec.clone());
                 }
             }
         }
@@ -209,46 +282,71 @@ impl CapGraph {
     /// Find the shortest conversion path from one spec to another.
     ///
     /// Returns a sequence of edges representing the conversion chain.
+    /// Uses satisfies matching for both input and output specs.
     /// Returns None if no path exists.
     pub fn find_path(&self, from_spec: &str, to_spec: &str) -> Option<Vec<&CapGraphEdge>> {
         if from_spec == to_spec {
             return Some(Vec::new());
         }
 
-        if !self.nodes.contains(from_spec) || !self.nodes.contains(to_spec) {
+        let to_requirement = match MediaUrn::from_string(to_spec) {
+            Ok(urn) => urn,
+            Err(_) => return None,
+        };
+
+        // Track visited nodes and parent edges for path reconstruction
+        // Key: node spec, Value: (parent node spec, edge index in self.edges)
+        let mut visited: HashMap<String, Option<(String, usize)>> = HashMap::new();
+        let mut queue: VecDeque<String> = VecDeque::new();
+
+        // Find edges that the input spec satisfies
+        let initial_edges = self.get_outgoing(from_spec);
+        if initial_edges.is_empty() {
             return None;
         }
 
-        // BFS to find shortest path
-        let mut visited: HashMap<&str, Option<(&str, usize)>> = HashMap::new();
-        let mut queue = VecDeque::new();
+        // Process initial edges
+        for edge in &initial_edges {
+            // Find actual edge index
+            let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, *edge))?;
 
-        queue.push_back(from_spec);
-        visited.insert(from_spec, None);
+            if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
+                if produced_urn.satisfies(&to_requirement) {
+                    // Direct path found
+                    return Some(vec![&self.edges[edge_idx]]);
+                }
+            }
 
+            if !visited.contains_key(&edge.to_spec) {
+                visited.insert(edge.to_spec.clone(), Some((from_spec.to_string(), edge_idx)));
+                queue.push_back(edge.to_spec.clone());
+            }
+        }
+
+        // BFS through the graph
         while let Some(current) = queue.pop_front() {
-            for (edge_idx, edge) in self.get_outgoing(current).iter().enumerate() {
-                let edge_indices = self.outgoing.get(current).unwrap();
-                let actual_edge_idx = edge_indices[edge_idx];
+            for edge in self.get_outgoing(&current) {
+                let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, edge))?;
 
-                if edge.to_spec == to_spec {
-                    // Found the target - reconstruct path
-                    let mut path = Vec::new();
-                    path.push(&self.edges[actual_edge_idx]);
+                if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
+                    if produced_urn.satisfies(&to_requirement) {
+                        // Found target - reconstruct path
+                        let mut path_indices = vec![edge_idx];
+                        let mut backtrack = current.clone();
 
-                    let mut backtrack = current;
-                    while let Some(Some((prev, prev_edge_idx))) = visited.get(backtrack) {
-                        path.push(&self.edges[*prev_edge_idx]);
-                        backtrack = prev;
+                        while let Some(Some((prev, prev_edge_idx))) = visited.get(&backtrack) {
+                            path_indices.push(*prev_edge_idx);
+                            backtrack = prev.clone();
+                        }
+
+                        path_indices.reverse();
+                        return Some(path_indices.iter().map(|&i| &self.edges[i]).collect());
                     }
-
-                    path.reverse();
-                    return Some(path);
                 }
 
-                if !visited.contains_key(edge.to_spec.as_str()) {
-                    visited.insert(&edge.to_spec, Some((current, actual_edge_idx)));
-                    queue.push_back(&edge.to_spec);
+                if !visited.contains_key(&edge.to_spec) {
+                    visited.insert(edge.to_spec.clone(), Some((current.clone(), edge_idx)));
+                    queue.push_back(edge.to_spec.clone());
                 }
             }
         }
@@ -259,6 +357,7 @@ impl CapGraph {
     /// Find all conversion paths from one spec to another (up to a maximum depth).
     ///
     /// Returns all possible paths, sorted by total path length (shortest first).
+    /// Uses satisfies matching for both input and output specs.
     /// Limits search to `max_depth` edges to prevent infinite loops in cyclic graphs.
     pub fn find_all_paths(
         &self,
@@ -266,7 +365,14 @@ impl CapGraph {
         to_spec: &str,
         max_depth: usize,
     ) -> Vec<Vec<&CapGraphEdge>> {
-        if !self.nodes.contains(from_spec) || !self.nodes.contains(to_spec) {
+        let to_requirement = match MediaUrn::from_string(to_spec) {
+            Ok(urn) => urn,
+            Err(_) => return Vec::new(),
+        };
+
+        // Check if from_spec can satisfy any edge's input
+        let initial_edges = self.get_outgoing(from_spec);
+        if initial_edges.is_empty() {
             return Vec::new();
         }
 
@@ -276,7 +382,7 @@ impl CapGraph {
 
         self.dfs_find_paths(
             from_spec,
-            to_spec,
+            &to_requirement,
             max_depth,
             &mut current_path,
             &mut visited,
@@ -294,10 +400,11 @@ impl CapGraph {
     }
 
     /// DFS helper for finding all paths
-    fn dfs_find_paths<'a>(
-        &'a self,
+    /// Uses satisfies matching for output spec comparison
+    fn dfs_find_paths(
+        &self,
         current: &str,
-        target: &str,
+        target: &MediaUrn,
         remaining_depth: usize,
         current_path: &mut Vec<usize>,
         visited: &mut HashSet<String>,
@@ -307,32 +414,39 @@ impl CapGraph {
             return;
         }
 
-        if let Some(edge_indices) = self.outgoing.get(current) {
-            for &edge_idx in edge_indices {
-                let edge = &self.edges[edge_idx];
+        for edge in self.get_outgoing(current) {
+            // Find edge index
+            let edge_idx = match self.edges.iter().position(|e| std::ptr::eq(e, edge)) {
+                Some(idx) => idx,
+                None => continue,
+            };
 
-                if edge.to_spec == target {
-                    // Found a path
-                    let mut path = current_path.clone();
-                    path.push(edge_idx);
-                    all_paths.push(path);
-                } else if !visited.contains(&edge.to_spec) {
-                    // Continue searching
-                    visited.insert(edge.to_spec.clone());
-                    current_path.push(edge_idx);
+            // Check if edge output satisfies target
+            let output_satisfies = MediaUrn::from_string(&edge.to_spec)
+                .map(|produced| produced.satisfies(target))
+                .unwrap_or(false);
 
-                    self.dfs_find_paths(
-                        &edge.to_spec,
-                        target,
-                        remaining_depth - 1,
-                        current_path,
-                        visited,
-                        all_paths,
-                    );
+            if output_satisfies {
+                // Found a path
+                let mut path = current_path.clone();
+                path.push(edge_idx);
+                all_paths.push(path);
+            } else if !visited.contains(&edge.to_spec) {
+                // Continue searching
+                visited.insert(edge.to_spec.clone());
+                current_path.push(edge_idx);
 
-                    current_path.pop();
-                    visited.remove(&edge.to_spec);
-                }
+                self.dfs_find_paths(
+                    &edge.to_spec,
+                    target,
+                    remaining_depth - 1,
+                    current_path,
+                    visited,
+                    all_paths,
+                );
+
+                current_path.pop();
+                visited.remove(&edge.to_spec);
             }
         }
     }

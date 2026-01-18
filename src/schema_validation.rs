@@ -236,6 +236,8 @@ mod tests {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/user-data".to_string(),
                 schema: Some(schema),
+                title: None,
+                description: None,
             }),
         );
 
@@ -271,6 +273,8 @@ mod tests {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/user-data".to_string(),
                 schema: Some(schema),
+                title: None,
+                description: None,
             }),
         );
 
@@ -307,6 +311,8 @@ mod tests {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/query-result".to_string(),
                 schema: Some(schema),
+                title: None,
+                description: None,
             }),
         );
 
