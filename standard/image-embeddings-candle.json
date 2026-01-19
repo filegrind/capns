@@ -3,16 +3,16 @@
     "tags": {
       "op": "generate_image_embeddings",
       "model_type": "candle",
-      "in": "media:type=image;v=1;binary",
-      "out": "media:type=image-embeddings;v=1;textable;keyed"
+      "in": "media:type=png;v=1;binary",
+      "out": "media:type=embedding-vector;v=1;textable;keyed"
     }
   },
-  "command": "image-embed",
+  "command": "generate_image_embeddings",
   "title": "Generate Image Embeddings (Candle)",
   "cap_description": "Generate image embeddings using CLIP models with Candle ML framework",
   "metadata": {},
   "media_specs": {
-    "media:type=image-embeddings;v=1;textable;keyed": {
+    "media:type=embedding-vector;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/image-embeddings",
       "schema": {
@@ -54,7 +54,7 @@
         }
       }
     },
-    "media:type=image-embeddings-batch-output;v=1;textable;keyed;sequence": {
+    "media:type=embedding-vector-batch;v=1;textable;keyed;sequence": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/image-embeddings-batch-output",
       "schema": {
@@ -150,7 +150,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=image-embeddings;v=1;textable;keyed",
+    "media_urn": "media:type=embedding-vector;v=1;textable;keyed",
     "output_description": "Image embedding vector with model metadata"
   }
 }

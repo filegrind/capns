@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=image-embeddings;v=1;textable;keyed",
+  "urn": "media:type=embedding-vector;v=1;textable;keyed",
   "media_type": "application/json",
   "title": "Image Embeddings",
   "profile_uri": "https://capns.org/schema/image-embeddings",

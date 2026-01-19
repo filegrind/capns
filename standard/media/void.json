@@ -1,7 +1,7 @@
 {
   "urn": "media:type=void;v=1",
   "media_type": "application/x-void",
-  "title": "Void",
+  "title": "Void Value",
   "profile_uri": "https://capns.org/schema/void",
   "description": "No value / void return type"
 }

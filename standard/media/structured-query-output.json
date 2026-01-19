@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=structured-query-output;v=1;textable;keyed",
+  "urn": "media:type=json;v=1;textable;keyed",
   "media_type": "application/json",
   "title": "Structured Query Output",
   "profile_uri": "https://capns.org/schema/structured-query-output",

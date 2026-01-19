@@ -5,7 +5,7 @@
       "language": "en",
       "type": "constrained",
       "in": "media:type=object;v=1;textable;keyed",
-      "out": "media:type=structured-query-output;v=1;textable;keyed"
+      "out": "media:type=json;v=1;textable;keyed"
     }
   },
   "command": "structured_query",
@@ -13,7 +13,7 @@
   "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
   "metadata": {},
   "media_specs": {
-    "media:type=structured-query-output;v=1;textable;keyed": {
+    "media:type=json;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/structured-query-output",
       "schema": {
@@ -103,7 +103,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=structured-query-output;v=1;textable;keyed",
+    "media_urn": "media:type=json;v=1;textable;keyed",
     "output_description": "Structured JSON response conforming to the query's schema"
   }
 }

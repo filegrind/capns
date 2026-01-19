@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=embedding-vector-batch;v=1;textable;keyed;sequence",
+  "media_type": "application/json",
+  "title": "Embedding Vector Batch",
+  "profile_uri": "https://capns.org/schema/embedding-vector-batch",
+  "description": "Batch of embedding vectors"
+}

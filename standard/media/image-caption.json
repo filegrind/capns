@@ -1,7 +1,7 @@
 {
   "urn": "media:type=image-caption;v=1;textable;keyed",
   "media_type": "application/json",
-  "title": "Caption Output",
+  "title": "Image Caption Output",
   "profile_uri": "https://capns.org/schema/caption-output",
   "description": "Output from image captioning models"
 }

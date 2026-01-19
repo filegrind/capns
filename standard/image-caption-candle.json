@@ -3,16 +3,16 @@
     "tags": {
       "op": "generate_caption",
       "model_type": "candle",
-      "in": "media:type=image;v=1;binary",
-      "out": "media:type=caption-output;v=1;textable;keyed"
+      "in": "media:type=png;v=1;binary",
+      "out": "media:type=image-caption;v=1;textable;keyed"
     }
   },
-  "command": "caption",
+  "command": "generate_caption",
   "title": "Generate Image Caption (Candle)",
   "cap_description": "Generate image captions using BLIP models with Candle ML framework",
   "metadata": {},
   "media_specs": {
-    "media:type=caption-output;v=1;textable;keyed": {
+    "media:type=image-caption;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/caption-output",
       "schema": {
@@ -95,7 +95,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=caption-output;v=1;textable;keyed",
+    "media_urn": "media:type=image-caption;v=1;textable;keyed",
     "output_description": "Generated caption with model metadata"
   }
 }

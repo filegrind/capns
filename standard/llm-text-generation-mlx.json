@@ -8,7 +8,7 @@
       "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
-  "command": "llm",
+  "command": "run_inference",
   "title": "Generate Text with LLM (MLX)",
   "cap_description": "Generate text using MLX-based LLM models on Apple Silicon",
   "metadata": {},

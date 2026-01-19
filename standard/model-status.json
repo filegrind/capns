@@ -7,7 +7,7 @@
       "out": "media:type=status-output;v=1;textable;keyed"
     }
   },
-  "command": "status",
+  "command": "check_model_status",
   "title": "Check Model Status",
   "cap_description": "Check the status and health of a specific model",
   "metadata": {},

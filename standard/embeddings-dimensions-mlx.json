@@ -7,7 +7,7 @@
       "out": "media:type=integer;v=1;textable;numeric;scalar"
     }
   },
-  "command": "dimensions",
+  "command": "get_embedding_dimensions",
   "title": "Get Embeddings Dimensions (MLX)",
   "cap_description": "Query the dimensionality of embeddings for a given MLX model",
   "metadata": {},

@@ -9,7 +9,7 @@
       "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
-  "command": "generate",
+  "command": "run_inference",
   "title": "Generate Text with LLM (GGUF)",
   "cap_description": "Generate text using GGUF models with llama.cpp backend",
   "metadata": {},

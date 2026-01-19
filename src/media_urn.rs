@@ -37,7 +37,7 @@ pub const MEDIA_BOOLEAN: &str = "media:type=boolean;v=1;textable;scalar";
 /// Media URN for JSON object type - textable (via JSON.stringify), keyed (key-value structure)
 pub const MEDIA_OBJECT: &str = "media:type=object;v=1;textable;keyed";
 /// Media URN for binary data - binary (raw bytes)
-pub const MEDIA_BINARY: &str = "media:type=binary;v=1;binary";
+pub const MEDIA_BINARY: &str = "media:type=raw;v=1;binary";
 
 // Array types
 /// Media URN for string array type - textable, sequence (ordered collection)
@@ -53,9 +53,9 @@ pub const MEDIA_OBJECT_ARRAY: &str = "media:type=object-array;v=1;textable;keyed
 
 // Semantic media types for specialized content
 /// Media URN for image data (png, jpg, gif, webp, etc.)
-pub const MEDIA_IMAGE: &str = "media:type=image;v=1;binary";
+pub const MEDIA_IMAGE: &str = "media:type=png;v=1;binary";
 /// Media URN for audio data (wav, mp3, flac, etc.)
-pub const MEDIA_AUDIO: &str = "media:type=audio;v=1;binary";
+pub const MEDIA_AUDIO: &str = "media:type=wav;audio;binary;v=1;";
 /// Media URN for video data (mp4, webm, mov, etc.)
 pub const MEDIA_VIDEO: &str = "media:type=video;v=1;binary";
 /// Media URN for generic text (semantic type)
@@ -107,7 +107,7 @@ pub fn audio_media_urn_for_ext(ext: &str) -> String {
 
 // CAPNS output types - all keyed structures (JSON objects)
 /// Media URN for model download output - textable, keyed
-pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:type=download-output;v=1;textable;keyed";
+pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:type=download-result;v=1;textable;keyed";
 /// Media URN for model load output - textable, keyed
 pub const MEDIA_LOAD_OUTPUT: &str = "media:type=load-output;v=1;textable;keyed";
 /// Media URN for model unload output - textable, keyed
@@ -117,13 +117,13 @@ pub const MEDIA_LIST_OUTPUT: &str = "media:type=list-output;v=1;textable;keyed";
 /// Media URN for model status output - textable, keyed
 pub const MEDIA_STATUS_OUTPUT: &str = "media:type=status-output;v=1;textable;keyed";
 /// Media URN for model contents output - textable, keyed
-pub const MEDIA_CONTENTS_OUTPUT: &str = "media:type=contents-output;v=1;textable;keyed";
+pub const MEDIA_CONTENTS_OUTPUT: &str = "media:type=model-contents;v=1;textable;keyed";
 /// Media URN for embeddings generate output - textable, keyed
-pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=embeddings;v=1;textable;keyed";
+pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
 /// Media URN for structured query output - textable, keyed
-pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=structured-query-output;v=1;textable;keyed";
+pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=json;v=1;textable;keyed";
 /// Media URN for questions array - textable, sequence
-pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=questions-array;v=1;textable;sequence";
+pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=string-array;v=1;textable;sequence";
 /// Media URN for LLM inference output - textable, keyed
 pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:type=llm-inference-output;v=1;textable;keyed";
 /// Media URN for extracted metadata - textable, keyed
@@ -133,11 +133,11 @@ pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:type=document-outline;v=1;textab
 /// Media URN for disbound pages - textable, keyed, sequence (array of chunks)
 pub const MEDIA_DISBOUND_PAGES: &str = "media:type=disbound-pages;v=1;textable;keyed;sequence";
 /// Media URN for embeddings output - textable, keyed
-pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embeddings;v=1;textable;keyed";
+pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
 /// Media URN for image embeddings output - textable, keyed
-pub const MEDIA_IMAGE_EMBEDDINGS_OUTPUT: &str = "media:type=image-embeddings;v=1;textable;keyed";
+pub const MEDIA_IMAGE_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
 /// Media URN for caption output - textable, keyed
-pub const MEDIA_CAPTION_OUTPUT: &str = "media:type=caption-output;v=1;textable;keyed";
+pub const MEDIA_CAPTION_OUTPUT: &str = "media:type=image-caption;v=1;textable;keyed";
 /// Media URN for transcription output - textable, keyed
 pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:type=transcription-output;v=1;textable;keyed";
 /// Media URN for vision inference output - textable, keyed

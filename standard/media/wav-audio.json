@@ -1,7 +1,7 @@
 {
   "urn": "media:type=wav;audio;binary;v=1;",
   "media_type": "audio/wav",
-  "title": "Audio",
-  "profile_uri": "https://capns.org/schema/audio",
+  "title": "WAV Audio",
+  "profile_uri": "https://capns.org/schema/wav",
   "description": "Audio data (WAV, MP3, etc.)"
 }

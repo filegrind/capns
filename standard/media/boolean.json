@@ -1,7 +1,7 @@
 {
   "urn": "media:type=boolean;v=1;textable;scalar",
   "media_type": "text/plain",
-  "title": "Boolean",
+  "title": "Boolean Value",
   "profile_uri": "https://capns.org/schema/bool",
   "description": "Boolean true/false value"
 }

@@ -4,7 +4,7 @@
       "op": "download",
       "type": "model",
       "in": "media:type=void;v=1",
-      "out": "media:type=download-output;v=1;textable;keyed"
+      "out": "media:type=download-result;v=1;textable;keyed"
     }
   },
   "command": "download",
@@ -12,7 +12,7 @@
   "cap_description": "Download machine learning models from various repositories",
   "metadata": {},
   "media_specs": {
-    "media:type=download-output;v=1;textable;keyed": {
+    "media:type=download-result;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/download-output",
       "schema": {
@@ -112,7 +112,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=download-output;v=1;textable;keyed",
+    "media_urn": "media:type=download-result;v=1;textable;keyed",
     "output_description": "Download result with model path and metadata"
   }
 }

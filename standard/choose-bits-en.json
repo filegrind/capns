@@ -13,7 +13,7 @@
   "cap_description": "Make multiple binary (yes/no, true/false) decisions based on content and multiple questions",
   "metadata": {},
   "media_specs": {
-    "media:type=questions-array;v=1;textable;sequence": {
+    "media:type=string-array;v=1;textable;sequence": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/questions-array",
       "schema": {
@@ -45,7 +45,7 @@
       },
       {
         "name": "questions",
-        "media_urn": "media:type=questions-array;v=1;textable;sequence",
+        "media_urn": "media:type=string-array;v=1;textable;sequence",
         "arg_description": "Array of binary questions to answer about the content",
         "cli_flag": "--questions",
         "position": 1

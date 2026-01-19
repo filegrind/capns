@@ -1,7 +1,7 @@
 {
   "urn": "media:type=load-output;v=1;textable;keyed",
   "media_type": "application/json",
-  "title": "Load Output",
+  "title": "Model Load Output",
   "profile_uri": "https://capns.org/schema/load-output",
   "description": "Load operation result"
 }

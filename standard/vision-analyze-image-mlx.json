@@ -4,11 +4,11 @@
       "op": "analyze_image",
       "type": "vision",
       "model_type": "mlx",
-      "in": "media:type=image;v=1;binary",
+      "in": "media:type=png;v=1;binary",
       "out": "media:type=vision-inference-output;v=1;textable;keyed"
     }
   },
-  "command": "vision",
+  "command": "analyze_image",
   "title": "Analyze Image with Vision Model (MLX)",
   "cap_description": "Analyze images using MLX-based vision-language models on Apple Silicon",
   "metadata": {},

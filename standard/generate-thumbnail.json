@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "generate_thumbnail",
-      "in": "media:type=binary;v=1;binary",
-      "out": "media:type=image;v=1;binary"
+      "in": "media:type=raw;v=1;binary",
+      "out": "media:type=png;v=1;binary"
     }
   },
   "command": "generate-thumbnail",
@@ -70,7 +70,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=image;v=1;binary",
+    "media_urn": "media:type=png;v=1;binary",
     "output_description": "PNG image data representing a thumbnail of the document"
   }
 }

@@ -3,7 +3,7 @@
     "tags": {
       "op": "transcribe",
       "model_type": "candle",
-      "in": "media:type=audio;v=1;binary",
+      "in": "media:type=wav;audio;binary;v=1;",
       "out": "media:type=transcription-output;v=1;textable;keyed"
     }
   },

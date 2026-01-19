@@ -4,15 +4,15 @@
       "op": "contents",
       "type": "model",
       "in": "media:type=void;v=1",
-      "out": "media:type=contents-output;v=1;textable;keyed"
+      "out": "media:type=model-contents;v=1;textable;keyed"
     }
   },
-  "command": "contents",
+  "command": "inspect_contents",
   "title": "Inspect Model Contents",
   "cap_description": "Inspect the contents and structure of a model",
   "metadata": {},
   "media_specs": {
-    "media:type=contents-output;v=1;textable;keyed": {
+    "media:type=model-contents;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/contents-output",
       "schema": {
@@ -200,7 +200,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=contents-output;v=1;textable;keyed",
+    "media_urn": "media:type=model-contents;v=1;textable;keyed",
     "output_description": "Model contents including files, layers, parameters and metadata"
   }
 }

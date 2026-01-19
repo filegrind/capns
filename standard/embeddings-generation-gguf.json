@@ -5,15 +5,15 @@
       "format": "gguf",
       "model_type": "gguf",
       "in": "media:type=string;v=1;textable;scalar",
-      "out": "media:type=embeddings;v=1;textable;keyed"
+      "out": "media:type=embedding-vector;v=1;textable;keyed"
     }
   },
-  "command": "embeddings",
+  "command": "generate_embeddings",
   "title": "Generate Vector Embeddings (GGUF)",
   "cap_description": "Generate vector embeddings from text using GGUF models with llama.cpp backend",
   "metadata": {},
   "media_specs": {
-    "media:type=embeddings;v=1;textable;keyed": {
+    "media:type=embedding-vector;v=1;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/embeddings",
       "schema": {
@@ -170,7 +170,7 @@
     ]
   },
   "output": {
-    "media_urn": "media:type=embeddings;v=1;textable;keyed",
+    "media_urn": "media:type=embedding-vector;v=1;textable;keyed",
     "output_description": "JSON containing L2-normalized embeddings, chunk metadata and model information"
   }
 }
