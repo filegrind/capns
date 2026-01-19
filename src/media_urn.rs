@@ -534,7 +534,7 @@ mod tests {
     #[test]
     fn test_is_binary() {
         assert!(MediaUrn::from_string("media:type=binary;v=1").unwrap().is_binary());
-        assert!(MediaUrn::from_string("media:type=image;subtype=png").unwrap().is_binary());
+        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary());
         assert!(MediaUrn::from_string("media:type=application;subtype=pdf").unwrap().is_binary());
         assert!(!MediaUrn::from_string("media:type=string;v=1").unwrap().is_binary());
         assert!(!MediaUrn::from_string("media:type=object;v=1").unwrap().is_binary());
