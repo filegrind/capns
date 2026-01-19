@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=questions-array;v=1;textable;keyed;sequence",
+  "urn": "media:type=questions-array;v=1;textable;sequence",
   "media_type": "application/json",
   "title": "Questions Array",
   "profile_uri": "https://capns.org/schema/questions-array",

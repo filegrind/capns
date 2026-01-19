@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=image-embeddings-batch-output;v=1;textable;keyed;sequence",
+  "media_type": "application/json",
+  "title": "Image Embeddings Batch Output",
+  "profile_uri": "https://capns.org/schema/image-embeddings-batch-output",
+  "description": "Batch of vector embeddings generated from multiple images"
+}

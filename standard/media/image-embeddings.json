@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=image-embeddings;v=1;textable;keyed",
+  "media_type": "application/json",
+  "title": "Image Embeddings",
+  "profile_uri": "https://capns.org/schema/image-embeddings",
+  "description": "Vector embeddings generated from images"
+}

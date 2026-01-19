@@ -3,7 +3,7 @@
     "tags": {
       "op": "coerce",
       "target": "object",
-      "in": "media:type=boolean;v=1",
+      "in": "media:type=boolean;v=1;textable;scalar",
       "out": "media:type=object;v=1;textable;keyed"
     }
   },

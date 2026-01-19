@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=document-outline;v=1;textable;keyed;sequence",
+  "urn": "media:type=document-outline;v=1;textable;keyed",
   "media_type": "application/json",
   "title": "Document Outline",
   "profile_uri": "https://capns.org/schema/document-outline",
