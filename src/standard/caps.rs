@@ -233,7 +233,7 @@ pub fn model_contents_urn() -> CapUrn {
 /// - rst: media:type=rst;v=1;textable
 /// - log: media:type=log;v=1;textable
 /// - text: media:type=text;v=1;textable
-/// - None/other: media:type=binary;v=1;binary
+/// - None/other: media:type=raw;v=1;binary
 pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     let input_spec = input_media_urn_for_ext(ext);
 

@@ -22,7 +22,7 @@ These are the fundamental data types with defined constants in `capns::media_urn
 | `media:type=number;v=1;textable;numeric;scalar` | `MEDIA_NUMBER` | Floating-point number |
 | `media:type=boolean;v=1;textable;scalar` | `MEDIA_BOOLEAN` | Boolean value (true/false) |
 | `media:type=object;v=1;textable;keyed` | `MEDIA_OBJECT` | JSON object |
-| `media:type=binary;v=1;binary` | `MEDIA_BINARY` | Raw binary data |
+| `media:type=raw;v=1;binary` | `MEDIA_BINARY` | Raw binary data |
 
 ---
 
@@ -54,13 +54,13 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=download-output;v=1;textable;keyed` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
+| `media:type=download-result;v=1;textable;keyed` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
 | `media:type=load-output;v=1;textable;keyed` | `MEDIA_LOAD_OUTPUT` | Model load result |
 | `media:type=unload-output;v=1;textable;keyed` | `MEDIA_UNLOAD_OUTPUT` | Model unload result |
 | `media:type=list-output;v=1;textable;keyed` | `MEDIA_LIST_OUTPUT` | Model listing result |
 | `media:type=status-output;v=1;textable;keyed` | `MEDIA_STATUS_OUTPUT` | Status query result |
-| `media:type=contents-output;v=1;textable;keyed` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
-| `media:type=embeddings;v=1;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
+| `media:type=model-contents;v=1;textable;keyed` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
+| `media:type=embedding-vector;v=1;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
 | `media:type=manage-output;v=1;textable;keyed` | `MEDIA_MANAGE_OUTPUT` | Model management result |
 
 ### LLM & Inference Outputs
@@ -69,9 +69,9 @@ Array variants of primitive types.
 |-----------|----------|-------------|
 | `media:type=llm-inference-output;v=1;textable;keyed` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
 | `media:type=vision-inference-output;v=1;textable;keyed` | - | Vision model analysis result |
-| `media:type=embeddings;v=1;textable;keyed` | - | Embedding generation result |
-| `media:type=structured-query-output;v=1;textable;keyed` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
-| `media:type=questions-array;v=1;textable;sequence` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
+| `media:type=embedding-vector;v=1;textable;keyed` | - | Embedding generation result |
+| `media:type=json;v=1;textable;keyed` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
+| `media:type=string-array;v=1;textable;sequence` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
 
 ### Document Processing Outputs
 
@@ -88,14 +88,14 @@ Array variants of primitive types.
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
 | `media:type=transcription-output;v=1;textable;keyed` | - | Audio transcription result |
-| `media:type=caption-output;v=1;textable;keyed` | - | Image caption result |
+| `media:type=image-caption;v=1;textable;keyed` | - | Image caption result |
 
 ### Image Processing Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:type=image-embeddings;v=1;textable;keyed` | - | Image embedding result |
-| `media:type=image-embeddings-batch-output;v=1;textable;keyed;sequence` | - | Batch image embedding result |
+| `media:type=embedding-vector;v=1;textable;keyed` | - | Image embedding result |
+| `media:type=embedding-vector-batch;v=1;textable;keyed;sequence` | - | Batch image embedding result |
 
 ---
 
