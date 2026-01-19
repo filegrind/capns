@@ -10,7 +10,7 @@ use crate::{
 use crate::media_urn::{
     MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
     MEDIA_BOOLEAN_ARRAY,
-    MEDIA_IMAGE, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
+    MEDIA_PNG, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
     // Document types (PRIMARY naming)
     MEDIA_PDF, MEDIA_EPUB,
     // Text format types (PRIMARY naming)
@@ -240,7 +240,7 @@ pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
         .in_spec(input_spec)
-        .out_spec(MEDIA_IMAGE)
+        .out_spec(MEDIA_PNG)
         .build()
         .expect("Failed to build generate-thumbnail cap URN")
 }
