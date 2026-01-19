@@ -22,7 +22,7 @@ use crate::media_urn::{
     // Text format types (PRIMARY naming)
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG, MEDIA_HTML, MEDIA_XML, MEDIA_JSON, MEDIA_YAML,
     // Semantic media types for specialized content
-    MEDIA_IMAGE, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
+    MEDIA_PNG, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
     // CAPNS output types
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
@@ -427,7 +427,7 @@ fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
         MEDIA_BINARY => ("application/octet-stream", None),
         MEDIA_VOID => ("application/x-void", Some(PROFILE_VOID)),
         // Semantic content types
-        MEDIA_IMAGE => ("image/png", Some(PROFILE_IMAGE)),
+        MEDIA_PNG => ("image/png", Some(PROFILE_IMAGE)),
         MEDIA_AUDIO => ("audio/wav", Some(PROFILE_AUDIO)),
         MEDIA_VIDEO => ("video/mp4", Some(PROFILE_VIDEO)),
         MEDIA_TEXT => ("text/plain", Some(PROFILE_TEXT)),
@@ -483,7 +483,7 @@ pub fn is_builtin_media_urn(media_urn: &str) -> bool {
             | MEDIA_BINARY
             | MEDIA_VOID
             // Semantic content types
-            | MEDIA_IMAGE
+            | MEDIA_PNG
             | MEDIA_AUDIO
             | MEDIA_VIDEO
             | MEDIA_TEXT

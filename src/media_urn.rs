@@ -53,7 +53,7 @@ pub const MEDIA_OBJECT_ARRAY: &str = "media:type=object-array;v=1;textable;keyed
 
 // Semantic media types for specialized content
 /// Media URN for image data (png, jpg, gif, webp, etc.)
-pub const MEDIA_IMAGE: &str = "media:type=png;v=1;binary";
+pub const MEDIA_PNG: &str = "media:type=png;v=1;binary";
 /// Media URN for audio data (wav, mp3, flac, etc.)
 pub const MEDIA_AUDIO: &str = "media:type=wav;audio;binary;v=1;";
 /// Media URN for video data (mp4, webm, mov, etc.)
@@ -135,7 +135,7 @@ pub const MEDIA_DISBOUND_PAGES: &str = "media:type=disbound-pages;v=1;textable;k
 /// Media URN for embeddings output - textable, keyed
 pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
 /// Media URN for image embeddings output - textable, keyed
-pub const MEDIA_IMAGE_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
+pub const MEDIA_PNG_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
 /// Media URN for caption output - textable, keyed
 pub const MEDIA_CAPTION_OUTPUT: &str = "media:type=image-caption;v=1;textable;keyed";
 /// Media URN for transcription output - textable, keyed
@@ -603,7 +603,7 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_BOOLEAN_ARRAY).is_ok());
         assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).is_ok());
         // Semantic types
-        assert!(MediaUrn::from_string(MEDIA_IMAGE).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_PNG).is_ok());
         assert!(MediaUrn::from_string(MEDIA_AUDIO).is_ok());
         assert!(MediaUrn::from_string(MEDIA_VIDEO).is_ok());
         assert!(MediaUrn::from_string(MEDIA_TEXT).is_ok());
