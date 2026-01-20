@@ -11,7 +11,6 @@
   "title": "Get Embeddings Dimensions (Candle)",
   "cap_description": "Query the dimensionality of embeddings for a given Candle model",
   "metadata": {},
-  "accepts_stdin": false,
   "arguments": {
     "optional": [
       {

@@ -29,7 +29,7 @@
       }
     }
   },
-  "accepts_stdin": true,
+  "stdin": "media:type=object;v=1;textable;keyed",
   "arguments": {
     "required": [
       {

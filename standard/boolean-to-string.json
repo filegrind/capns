@@ -11,7 +11,7 @@
   "title": "Coerce Boolean to String",
   "cap_description": "Convert a boolean value to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=boolean;v=1;textable;scalar",
   "arguments": {
     "required": [
       {

@@ -10,7 +10,7 @@
   "title": "Generate Text Thumbnail",
   "cap_description": "Generate a thumbnail image preview of the text document",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=txt;v=1;textable",
   "arguments": {
     "required": [
       {

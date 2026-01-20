@@ -11,7 +11,7 @@
   "title": "Coerce Object to String",
   "cap_description": "Convert a JSON object to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=object;v=1;textable;keyed",
   "arguments": {
     "required": [
       {

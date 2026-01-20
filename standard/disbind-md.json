@@ -10,7 +10,7 @@
   "title": "Extract Markdown File Chips",
   "cap_description": "Grind with text content from markdown files",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=md;v=1;textable",
   "arguments": {
     "required": [
       {

@@ -266,29 +266,28 @@ pub struct ResolvedMediaSpec {
 }
 
 impl ResolvedMediaSpec {
-    /// Check if this represents binary data
+    /// Check if this represents binary data.
+    /// Returns true if the "binary" marker tag is present in the source media URN.
     pub fn is_binary(&self) -> bool {
-        let mt = self.media_type.to_lowercase();
-        mt.starts_with("image/")
-            || mt.starts_with("audio/")
-            || mt.starts_with("video/")
-            || mt == "application/octet-stream"
-            || mt == "application/pdf"
-            || mt.starts_with("application/x-")
-            || mt.contains("+zip")
-            || mt.contains("+gzip")
+        crate::MediaUrn::from_string(&self.media_urn)
+            .map(|urn| urn.is_binary())
+            .unwrap_or(false)
     }
 
-    /// Check if this represents JSON data
+    /// Check if this represents JSON/keyed data.
+    /// Returns true if the "keyed" marker tag is present in the source media URN.
     pub fn is_json(&self) -> bool {
-        let mt = self.media_type.to_lowercase();
-        mt == "application/json" || mt.ends_with("+json")
+        crate::MediaUrn::from_string(&self.media_urn)
+            .map(|urn| urn.is_json())
+            .unwrap_or(false)
     }
 
-    /// Check if this represents text data
+    /// Check if this represents text data.
+    /// Returns true if the "textable" marker tag is present in the source media URN.
     pub fn is_text(&self) -> bool {
-        let mt = self.media_type.to_lowercase();
-        mt.starts_with("text/") || (!self.is_binary() && !self.is_json())
+        crate::MediaUrn::from_string(&self.media_urn)
+            .map(|urn| urn.is_text())
+            .unwrap_or(false)
     }
 }
 
@@ -608,31 +607,6 @@ impl MediaSpec {
         }
     }
 
-    /// Check if this media spec represents binary output
-    pub fn is_binary(&self) -> bool {
-        let mt = self.media_type.to_lowercase();
-        mt.starts_with("image/")
-            || mt.starts_with("audio/")
-            || mt.starts_with("video/")
-            || mt == "application/octet-stream"
-            || mt == "application/pdf"
-            || mt.starts_with("application/x-")
-            || mt.contains("+zip")
-            || mt.contains("+gzip")
-    }
-
-    /// Check if this media spec represents JSON output
-    pub fn is_json(&self) -> bool {
-        let mt = self.media_type.to_lowercase();
-        mt == "application/json" || mt.ends_with("+json")
-    }
-
-    /// Check if this media spec represents text output
-    pub fn is_text(&self) -> bool {
-        let mt = self.media_type.to_lowercase();
-        mt.starts_with("text/") || (!self.is_binary() && !self.is_json())
-    }
-
     /// Get the primary type (e.g., "image" from "image/png")
     pub fn primary_type(&self) -> &str {
         self.media_type
@@ -728,8 +702,6 @@ mod tests {
             spec.profile,
             Some("https://capns.org/schema/obj".to_string())
         );
-        assert!(spec.is_json());
-        assert!(!spec.is_binary());
     }
 
     #[test]
@@ -740,9 +712,6 @@ mod tests {
             spec.profile,
             Some("https://capns.org/schema/str".to_string())
         );
-        assert!(spec.is_text());
-        assert!(!spec.is_binary());
-        assert!(!spec.is_json());
     }
 
     #[test]
@@ -750,16 +719,12 @@ mod tests {
         let spec = MediaSpec::parse("application/octet-stream").unwrap();
         assert_eq!(spec.media_type, "application/octet-stream");
         assert!(spec.profile.is_none());
-        assert!(spec.is_binary());
-        assert!(!spec.is_json());
     }
 
     #[test]
     fn test_parse_image() {
         let spec = MediaSpec::parse("image/png; profile=https://example.com/thumbnail").unwrap();
         assert_eq!(spec.media_type, "image/png");
-        assert!(spec.is_binary());
-        assert!(!spec.is_json());
     }
 
     #[test]
@@ -980,7 +945,7 @@ mod tests {
     #[test]
     fn test_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "test".to_string(),
+            media_urn: "media:type=raw;v=1;binary".to_string(),
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
             schema: None,
@@ -994,7 +959,7 @@ mod tests {
     #[test]
     fn test_resolved_is_json() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "test".to_string(),
+            media_urn: "media:type=object;v=1;textable;keyed".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
             schema: None,
@@ -1008,7 +973,7 @@ mod tests {
     #[test]
     fn test_resolved_is_text() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "test".to_string(),
+            media_urn: "media:type=string;v=1;textable".to_string(),
             media_type: "text/plain".to_string(),
             profile_uri: None,
             schema: None,

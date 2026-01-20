@@ -11,7 +11,7 @@
   "title": "Coerce String Array to String",
   "cap_description": "Convert a string array to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=string-array;v=1;textable;sequence",
   "arguments": {
     "required": [
       {

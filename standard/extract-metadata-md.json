@@ -10,7 +10,7 @@
   "title": "Extract Markdown Document Metadata",
   "cap_description": "Extract markdown document metadata including title, file size, word count, and other properties",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=md;v=1;textable",
   "arguments": {
     "required": [
       {

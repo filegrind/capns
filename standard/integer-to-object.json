@@ -11,7 +11,7 @@
   "title": "Coerce Integer to Object",
   "cap_description": "Wrap an integer value in a JSON object with value and source_type keys",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=integer;v=1;textable;numeric;scalar",
   "arguments": {
     "required": [
       {

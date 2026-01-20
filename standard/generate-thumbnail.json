@@ -10,7 +10,7 @@
   "title": "Generate Thumbnail",
   "cap_description": "Generate a thumbnail image preview of the file",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=raw;v=1;binary",
   "arguments": {
     "required": [
       {

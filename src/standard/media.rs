@@ -158,21 +158,28 @@ mod tests {
 
     #[test]
     fn test_array_specs() {
+        // Primitive arrays are NOT keyed (no keyed tag), but are textable sequences
         let str_array = string_array_spec();
-        assert!(str_array.is_json());
+        assert!(!str_array.is_json()); // No keyed tag
+        assert!(str_array.is_text()); // Has textable tag
         assert_eq!(str_array.profile_uri, Some(PROFILE_STR_ARRAY.to_string()));
 
         let int_array = integer_array_spec();
-        assert!(int_array.is_json());
+        assert!(!int_array.is_json()); // No keyed tag
+        assert!(int_array.is_text()); // Has textable tag
 
         let num_array = number_array_spec();
-        assert!(num_array.is_json());
+        assert!(!num_array.is_json()); // No keyed tag
+        assert!(num_array.is_text()); // Has textable tag
 
         let bool_array = boolean_array_spec();
-        assert!(bool_array.is_json());
+        assert!(!bool_array.is_json()); // No keyed tag
+        assert!(bool_array.is_text()); // Has textable tag
 
+        // Object arrays ARE keyed (have keyed tag)
         let obj_array = json_object_array_spec();
-        assert!(obj_array.is_json());
+        assert!(obj_array.is_json()); // Has keyed tag
+        assert!(obj_array.is_text()); // Also has textable tag
     }
 
     #[test]

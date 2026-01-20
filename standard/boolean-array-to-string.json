@@ -11,7 +11,7 @@
   "title": "Coerce Boolean Array to String",
   "cap_description": "Convert a boolean array to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=boolean-array;v=1;textable;sequence",
   "arguments": {
     "required": [
       {

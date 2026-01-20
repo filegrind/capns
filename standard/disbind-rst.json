@@ -10,7 +10,7 @@
   "title": "Extract RST File Chips",
   "cap_description": "Grind with text content from RST files",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=rst;v=1;textable",
   "arguments": {
     "required": [
       {

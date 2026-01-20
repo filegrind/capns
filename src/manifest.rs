@@ -110,7 +110,7 @@ mod tests {
     fn test_cap_manifest_json_serialization() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let mut cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
-        cap.accepts_stdin = true;
+        cap.stdin = Some("media:type=pdf;v=1;binary".to_string());
 
         let manifest = CapManifest::new(
             "TestComponent".to_string(),
@@ -124,7 +124,7 @@ mod tests {
         assert!(json.contains("\"name\":\"TestComponent\""));
         assert!(json.contains("\"version\":\"0.1.0\""));
         assert!(json.contains("\"author\":\"Test Author\""));
-        assert!(json.contains("\"accepts_stdin\":true"));
+        assert!(json.contains("\"stdin\":\"media:type=pdf;v=1;binary\""));
 
         // Test deserialization
         let deserialized: CapManifest = serde_json::from_str(&json).unwrap();
@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(deserialized.description, manifest.description);
         assert_eq!(deserialized.author, manifest.author);
         assert_eq!(deserialized.caps.len(), manifest.caps.len());
-        assert_eq!(deserialized.caps[0].accepts_stdin, manifest.caps[0].accepts_stdin);
+        assert_eq!(deserialized.caps[0].stdin, manifest.caps[0].stdin);
     }
 
     #[test]

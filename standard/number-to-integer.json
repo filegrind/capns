@@ -11,7 +11,7 @@
   "title": "Coerce Number to Integer",
   "cap_description": "Convert a numeric value to an integer by rounding",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=number;v=1;textable;numeric;scalar",
   "arguments": {
     "required": [
       {

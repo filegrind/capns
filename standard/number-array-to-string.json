@@ -11,7 +11,7 @@
   "title": "Coerce Number Array to String",
   "cap_description": "Convert a number array to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=number-array;v=1;textable;numeric;sequence",
   "arguments": {
     "required": [
       {

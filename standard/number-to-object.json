@@ -11,7 +11,7 @@
   "title": "Coerce Number to Object",
   "cap_description": "Wrap a number value in a JSON object with value and source_type keys",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=number;v=1;textable;numeric;scalar",
   "arguments": {
     "required": [
       {

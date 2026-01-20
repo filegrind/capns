@@ -10,7 +10,7 @@
   "title": "Generate Log Thumbnail",
   "cap_description": "Generate a thumbnail image preview of the log document",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=log;v=1;textable",
   "arguments": {
     "required": [
       {

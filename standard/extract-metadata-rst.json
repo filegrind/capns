@@ -10,7 +10,7 @@
   "title": "Extract RST Document Metadata",
   "cap_description": "Extract RST document metadata including title, file size, word count, and other properties",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=rst;v=1;textable",
   "arguments": {
     "required": [
       {

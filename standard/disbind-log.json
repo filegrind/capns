@@ -10,7 +10,7 @@
   "title": "Extract Log File Chips",
   "cap_description": "Grind with text content from log files",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=log;v=1;textable",
   "arguments": {
     "required": [
       {

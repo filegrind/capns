@@ -11,7 +11,7 @@
   "title": "Coerce Integer Array to String",
   "cap_description": "Convert an integer array to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=integer-array;v=1;textable;numeric;sequence",
   "arguments": {
     "required": [
       {

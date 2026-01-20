@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  URN: {}", cap.urn_string());
             println!("  Command: {}", cap.command);
             println!("  Description: {}", cap.cap_description.as_ref().unwrap_or(&"None".to_string()));
-            println!("  Accepts Stdin: {}", cap.accepts_stdin);
+            println!("  Stdin: {:?}", cap.stdin);
 
             if !cap.arguments.required.is_empty() {
                 println!("  Required args: {}", cap.arguments.required.len());

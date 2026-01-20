@@ -10,7 +10,7 @@
   "title": "Generate RST Thumbnail",
   "cap_description": "Generate a thumbnail image preview of the RST document",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=rst;v=1;textable",
   "arguments": {
     "required": [
       {

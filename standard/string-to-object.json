@@ -11,7 +11,7 @@
   "title": "Coerce String to Object",
   "cap_description": "Wrap a string value in a JSON object with value and source_type keys",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=string;v=1;textable;scalar",
   "arguments": {
     "required": [
       {

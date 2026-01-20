@@ -974,7 +974,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput::new(MEDIA_STRING, "Test output")),
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1010,7 +1010,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput::new(MEDIA_STRING, "General output")),
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1028,7 +1028,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput::new(MEDIA_STRING, "Specific output")),
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1072,7 +1072,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1102,7 +1102,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput::new(MEDIA_STRING, "output")),
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -1334,7 +1334,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput::new(MEDIA_STRING, "output")),
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1366,7 +1366,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1381,7 +1381,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1416,7 +1416,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1431,7 +1431,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1470,7 +1470,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1484,7 +1484,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1527,7 +1527,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1541,7 +1541,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1555,7 +1555,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1587,7 +1587,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1601,7 +1601,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1634,7 +1634,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: Some(CapOutput::new(MEDIA_STRING, "output")),
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1655,7 +1655,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1714,7 +1714,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1728,7 +1728,7 @@ mod tests {
             media_specs: HashMap::new(),
             arguments: CapArguments { required: vec![], optional: vec![] },
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         };

@@ -11,7 +11,6 @@
   "title": "Get Embeddings Dimensions (MLX)",
   "cap_description": "Query the dimensionality of embeddings for a given MLX model",
   "metadata": {},
-  "accepts_stdin": false,
   "arguments": {
     "required": [
       {

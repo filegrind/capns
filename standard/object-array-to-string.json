@@ -11,7 +11,7 @@
   "title": "Coerce Object Array to String",
   "cap_description": "Convert an object array to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=object-array;v=1;textable;keyed;sequence",
   "arguments": {
     "required": [
       {

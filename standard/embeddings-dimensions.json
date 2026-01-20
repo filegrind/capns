@@ -10,7 +10,6 @@
   "title": "Get Embeddings Dimensions",
   "cap_description": "Query the dimensionality of embeddings for a given model",
   "metadata": {},
-  "accepts_stdin": false,
   "arguments": {
     "optional": [
       {

@@ -12,7 +12,6 @@
   "title": "Get Embeddings Dimensions (GGUF)",
   "cap_description": "Query the dimensionality of embeddings for a given GGUF model",
   "metadata": {},
-  "accepts_stdin": false,
   "arguments": {
     "optional": [
       {

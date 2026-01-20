@@ -10,7 +10,7 @@
   "title": "Extract Log Document Metadata",
   "cap_description": "Extract log document metadata including title, file size, word count, and other properties",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=log;v=1;textable",
   "arguments": {
     "required": [
       {

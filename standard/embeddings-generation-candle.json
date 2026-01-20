@@ -96,7 +96,7 @@
       }
     }
   },
-  "accepts_stdin": true,
+  "stdin": "media:type=string;v=1;textable;scalar",
   "arguments": {
     "optional": [
       {

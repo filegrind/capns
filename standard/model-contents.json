@@ -153,7 +153,6 @@
       }
     }
   },
-  "accepts_stdin": false,
   "arguments": {
     "required": [
       {

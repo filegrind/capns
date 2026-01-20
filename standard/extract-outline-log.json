@@ -10,7 +10,7 @@
   "title": "Extract Log Document Outline",
   "cap_description": "Extract document outline/table of contents from log files",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=log;v=1;textable",
   "arguments": {
     "required": [
       {

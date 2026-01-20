@@ -10,7 +10,7 @@
   "title": "Extract Text File Chips",
   "cap_description": "Grind with text content from text files",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=txt;v=1;textable",
   "arguments": {
     "required": [
       {

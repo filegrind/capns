@@ -87,7 +87,6 @@
       }
     }
   },
-  "accepts_stdin": false,
   "arguments": {
     "optional": [
       {

@@ -11,7 +11,7 @@
   "title": "Coerce String to Number",
   "cap_description": "Convert a string value to a number by parsing",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=string;v=1;textable;scalar",
   "arguments": {
     "required": [
       {

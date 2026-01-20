@@ -11,7 +11,7 @@
   "title": "Coerce Integer to String",
   "cap_description": "Convert an integer value to its string representation",
   "metadata": {},
-  "accepts_stdin": true,
+  "stdin": "media:type=integer;v=1;textable;numeric;scalar",
   "arguments": {
     "required": [
       {
