@@ -37,6 +37,28 @@ impl CapCaller {
         }
     }
 
+    /// Get the cap definition
+    pub fn cap_definition(&self) -> &Cap {
+        &self.cap_definition
+    }
+
+    /// Get a map of argument name to position for positional arguments
+    /// Returns only arguments that have a position set
+    pub fn get_positional_arg_positions(&self) -> std::collections::HashMap<String, usize> {
+        let mut positions = std::collections::HashMap::new();
+        for arg in &self.cap_definition.arguments.required {
+            if let Some(pos) = arg.position {
+                positions.insert(arg.name.clone(), pos);
+            }
+        }
+        for arg in &self.cap_definition.arguments.optional {
+            if let Some(pos) = arg.position {
+                positions.insert(arg.name.clone(), pos);
+            }
+        }
+        positions
+    }
+
     /// Call the cap with structured arguments and optional stdin data
     /// Validates inputs against cap definition before execution
     pub async fn call(

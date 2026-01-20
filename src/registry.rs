@@ -330,10 +330,10 @@ impl CapRegistry {
             )));
         }
 
-        if cap.accepts_stdin != canonical_cap.accepts_stdin {
+        if cap.stdin != canonical_cap.stdin {
             return Err(RegistryError::ValidationError(format!(
-                "accepts_stdin mismatch. Local: {}, Canonical: {}",
-                cap.accepts_stdin, canonical_cap.accepts_stdin
+                "stdin mismatch. Local: {:?}, Canonical: {:?}",
+                cap.stdin, canonical_cap.stdin
             )));
         }
 
@@ -431,14 +431,28 @@ mod tests {
 #[cfg(test)]
 mod json_parse_tests {
     use crate::Cap;
-    
+
     #[test]
     fn test_parse_registry_json() {
-        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:type=listing-id;v=1","out":"media:type=task-id;v=1"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:type=listing-id;v=1":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:type=task-id;v=1":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"accepts_stdin":false,"arguments":{"required":[{"name":"listing_id","media_urn":"media:type=listing-id;v=1","arg_description":"ID of the listing to analyze","cli_flag":"--listing-id"}]},"output":{"media_urn":"media:type=task-id;v=1","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
-        
+        // JSON without stdin field - means cap doesn't accept stdin
+        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:type=listing-id;v=1","out":"media:type=task-id;v=1"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:type=listing-id;v=1":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:type=task-id;v=1":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"arguments":{"required":[{"name":"listing_id","media_urn":"media:type=listing-id;v=1","arg_description":"ID of the listing to analyze","cli_flag":"--listing-id"}]},"output":{"media_urn":"media:type=task-id;v=1","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
+
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Create Grinder Tool Task");
         assert_eq!(cap.command, "grinder_task");
+        assert!(cap.stdin.is_none()); // No stdin field means no stdin support
+    }
+
+    #[test]
+    fn test_parse_registry_json_with_stdin() {
+        // JSON with stdin field - means cap accepts stdin of specified media type
+        let json = r#"{"urn":{"tags":{"op":"extract_metadata","in":"media:type=pdf;v=1;binary","out":"media:type=file-metadata;v=1;textable;keyed"}},"command":"extract-metadata","title":"Extract Metadata","stdin":"media:type=pdf;v=1;binary","arguments":{}}"#;
+
+        let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
+        assert_eq!(cap.title, "Extract Metadata");
+        assert_eq!(cap.stdin, Some("media:type=pdf;v=1;binary".to_string()));
+        assert!(cap.stdin.is_some());
+        assert_eq!(cap.stdin_media_type(), Some("media:type=pdf;v=1;binary"));
     }
 }
 

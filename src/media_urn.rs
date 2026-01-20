@@ -319,88 +319,22 @@ impl MediaUrn {
     // Behavior helpers (triggered by tag presence)
     // =========================================================================
 
-    /// Check if this represents binary data based on tags
-    ///
-    /// Returns true if:
-    /// - type=binary
-    /// - type=image, type=audio, type=video
-    /// - type=application with subtype=octet-stream, pdf, etc.
+    /// Check if this represents binary data.
+    /// Returns true if the "binary" marker tag is present.
     pub fn is_binary(&self) -> bool {
-        let type_name = self.type_name().unwrap_or("");
-        let subtype = self.subtype().unwrap_or("");
-
-        // Binary primitive
-        if type_name == "binary" {
-            return true;
-        }
-
-        // Media types that are binary
-        if matches!(type_name, "image" | "audio" | "video") {
-            return true;
-        }
-
-        // Application types that are binary
-        if type_name == "application" {
-            return matches!(
-                subtype,
-                "octet-stream" | "pdf" | "zip" | "gzip" | "tar"
-            ) || subtype.starts_with("x-")
-                || subtype.ends_with("+zip")
-                || subtype.ends_with("+gzip");
-        }
-
-        false
+        self.get_tag("binary").is_some()
     }
 
-    /// Check if this represents JSON data based on tags
-    ///
-    /// Returns true if:
-    /// - type=object or type=object-array
-    /// - type=application with subtype=json
-    /// - Any array type (typically serialized as JSON)
+    /// Check if this represents JSON/keyed data.
+    /// Returns true if the "keyed" marker tag is present.
     pub fn is_json(&self) -> bool {
-        let type_name = self.type_name().unwrap_or("");
-        let subtype = self.subtype().unwrap_or("");
-
-        // Object types
-        if type_name == "object" || type_name == "object-array" {
-            return true;
-        }
-
-        // Array types (serialized as JSON)
-        if type_name.ends_with("-array") {
-            return true;
-        }
-
-        // Application/json
-        if type_name == "application" && (subtype == "json" || subtype.ends_with("+json")) {
-            return true;
-        }
-
-        false
+        self.get_tag("keyed").is_some()
     }
 
-    /// Check if this represents text data based on tags
+    /// Check if this represents text data.
+    /// Returns true if the "textable" marker tag is present.
     pub fn is_text(&self) -> bool {
-        let type_name = self.type_name().unwrap_or("");
-
-        // Text types
-        if type_name == "text" || type_name == "string" {
-            return true;
-        }
-
-        // Primitives that are text
-        if matches!(type_name, "integer" | "number" | "boolean") {
-            return true;
-        }
-
-        // Void is neither text nor binary
-        if type_name == "void" {
-            return false;
-        }
-
-        // If not binary and not JSON, assume text
-        !self.is_binary() && !self.is_json()
+        self.get_tag("textable").is_some()
     }
 
     /// Check if this represents a void (no data) type
@@ -533,28 +467,38 @@ mod tests {
 
     #[test]
     fn test_is_binary() {
-        assert!(MediaUrn::from_string("media:type=binary;v=1").unwrap().is_binary());
-        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary());
-        assert!(MediaUrn::from_string("media:type=application;subtype=pdf").unwrap().is_binary());
-        assert!(!MediaUrn::from_string("media:type=string;v=1").unwrap().is_binary());
-        assert!(!MediaUrn::from_string("media:type=object;v=1").unwrap().is_binary());
+        // is_binary returns true only if "binary" marker tag is present
+        assert!(MediaUrn::from_string("media:type=raw;v=1;binary").unwrap().is_binary());
+        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:type=png;v=1;binary"
+        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:type=pdf;v=1;binary"
+        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:type=raw;v=1;binary"
+        // Without binary tag, is_binary is false
+        assert!(!MediaUrn::from_string("media:type=string;v=1;textable").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:type=object;v=1;textable;keyed").unwrap().is_binary());
     }
 
     #[test]
     fn test_is_json() {
-        assert!(MediaUrn::from_string("media:type=object;v=1").unwrap().is_json());
-        assert!(MediaUrn::from_string("media:type=object-array;v=1").unwrap().is_json());
-        assert!(MediaUrn::from_string("media:type=string-array;v=1").unwrap().is_json());
-        assert!(MediaUrn::from_string("media:type=application;subtype=json").unwrap().is_json());
-        assert!(!MediaUrn::from_string("media:type=string;v=1").unwrap().is_json());
+        // is_json returns true only if "keyed" marker tag is present
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_json()); // "media:type=object;v=1;textable;keyed"
+        assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:type=json;v=1;textable;keyed"
+        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_json()); // "media:type=object-array;v=1;textable;keyed;sequence"
+        assert!(MediaUrn::from_string("media:type=custom;v=1;keyed").unwrap().is_json());
+        // Without keyed tag, is_json is false
+        assert!(!MediaUrn::from_string("media:type=string;v=1;textable").unwrap().is_json());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_json()); // string-array has textable;sequence but not keyed
     }
 
     #[test]
     fn test_is_text() {
-        assert!(MediaUrn::from_string("media:type=string;v=1").unwrap().is_text());
-        assert!(MediaUrn::from_string("media:type=integer;v=1").unwrap().is_text());
-        assert!(!MediaUrn::from_string("media:type=object;v=1").unwrap().is_text());
-        assert!(!MediaUrn::from_string("media:type=binary;v=1").unwrap().is_text());
+        // is_text returns true only if "textable" marker tag is present
+        assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:type=string;v=1;textable;scalar"
+        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:type=integer;v=1;textable;numeric;scalar"
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:type=object;v=1;textable;keyed"
+        assert!(MediaUrn::from_string(MEDIA_TEXT).unwrap().is_text()); // "media:type=text;v=1;textable"
+        // Without textable tag, is_text is false
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:type=raw;v=1;binary"
+        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:type=png;v=1;binary"
     }
 
     #[test]

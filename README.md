@@ -51,7 +51,7 @@ pub struct Cap {
     pub command: String,
     pub arguments: CapArguments,
     pub output: Option<CapOutput>,
-    pub accepts_stdin: bool,
+    pub stdin: Option<String>,
 }
 ```
 
@@ -60,7 +60,7 @@ pub struct Cap {
 - `command` - CLI command or method name for execution
 - `arguments` - Required and optional argument definitions with validation
 - `output` - Output schema and type information
-- `accepts_stdin` - Whether the capability accepts input via stdin
+- `stdin` - If present, the media URN that stdin expects (e.g., "media:type=pdf;v=1;binary"). Absence means cap doesn't accept stdin.
 
 ## Language Implementations
 

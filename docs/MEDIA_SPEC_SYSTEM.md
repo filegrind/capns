@@ -124,7 +124,7 @@ let resolved = resolve_spec_id(spec_id, &cap.media_specs)?;
 title = "Extract Document Metadata"
 cap_description = "Extract metadata from PDF documents"
 command = "extract-metadata"
-accepts_stdin = true
+stdin = "media:type=pdf;v=1;binary"  # Specifies the media type stdin expects
 
 [media_specs."media:type=extract-metadata-output;v=1"]
 media_type = "application/json"

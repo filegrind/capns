@@ -229,7 +229,7 @@ int main() {
 
 ### Validation
 - Validates caps against canonical registry definitions
-- Checks version, command, accepts_stdin, and other properties
+- Checks version, command, stdin, and other properties
 - Future versions will validate arguments and output schemas
 
 ### Error Handling

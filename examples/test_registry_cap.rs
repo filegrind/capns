@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(desc) = &cap.cap_description {
                 println!("  Description: {}", desc);
             }
-            println!("  Accepts Stdin: {}", cap.accepts_stdin);
+            println!("  Stdin: {:?}", cap.stdin);
             println!("  Arguments: {} required, {} optional", 
                      cap.arguments.required.len(), 
                      cap.arguments.optional.len());

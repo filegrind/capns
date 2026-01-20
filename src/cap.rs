@@ -295,8 +295,10 @@ pub struct Cap {
     /// Output definition
     pub output: Option<CapOutput>,
 
-    /// Whether this cap accepts input via stdin
-    pub accepts_stdin: bool,
+    /// If present, cap accepts stdin of this media type.
+    /// Absence means cap does NOT accept stdin.
+    /// Example: "media:type=pdf;v=1;binary"
+    pub stdin: Option<String>,
 
     /// Arbitrary metadata as JSON object
     pub metadata_json: Option<serde_json::Value>,
@@ -316,7 +318,7 @@ impl PartialEq for Cap {
         self.media_specs == other.media_specs &&
         self.arguments == other.arguments &&
         self.output == other.output &&
-        self.accepts_stdin == other.accepts_stdin &&
+        self.stdin == other.stdin &&
         self.metadata_json == other.metadata_json &&
         self.registered_by == other.registered_by
     }
@@ -366,8 +368,8 @@ impl Serialize for Cap {
             state.serialize_field("output", &self.output)?;
         }
 
-        if self.accepts_stdin {
-            state.serialize_field("accepts_stdin", &self.accepts_stdin)?;
+        if self.stdin.is_some() {
+            state.serialize_field("stdin", &self.stdin)?;
         }
 
         if self.metadata_json.is_some() {
@@ -402,7 +404,7 @@ impl<'de> Deserialize<'de> for Cap {
             arguments: CapArguments,
             output: Option<CapOutput>,
             #[serde(default)]
-            accepts_stdin: bool,
+            stdin: Option<String>,
             metadata_json: Option<serde_json::Value>,
             registered_by: Option<RegisteredBy>,
         }
@@ -456,7 +458,7 @@ impl<'de> Deserialize<'de> for Cap {
             media_specs: registry_cap.media_specs,
             arguments: registry_cap.arguments,
             output: registry_cap.output,
-            accepts_stdin: registry_cap.accepts_stdin,
+            stdin: registry_cap.stdin,
             metadata_json: registry_cap.metadata_json,
             registered_by: registry_cap.registered_by,
         })
@@ -725,7 +727,7 @@ impl Cap {
             media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -742,7 +744,7 @@ impl Cap {
             media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -764,7 +766,7 @@ impl Cap {
             media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -787,7 +789,7 @@ impl Cap {
             media_specs: HashMap::new(),
             arguments: CapArguments::new(),
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -809,7 +811,7 @@ impl Cap {
             media_specs: HashMap::new(),
             arguments,
             output: None,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -846,10 +848,17 @@ impl Cap {
             media_specs,
             arguments,
             output,
-            accepts_stdin: false,
+            stdin: None,
             metadata_json,
             registered_by: None,
         }
+    }
+
+    /// Get the media type expected for stdin.
+    /// Returns None if cap doesn't accept stdin.
+    /// If Some, the cap accepts stdin of that media type.
+    pub fn stdin_media_type(&self) -> Option<&str> {
+        self.stdin.as_deref()
     }
 
     /// Get the media_specs table
@@ -1110,21 +1119,25 @@ mod tests {
     }
 
     #[test]
-    fn test_cap_accepts_stdin() {
+    fn test_cap_stdin() {
         let urn = CapUrn::from_string(&test_urn("op=generate;target=embeddings")).unwrap();
         let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
 
         // By default, caps should not accept stdin
-        assert!(!cap.accepts_stdin);
+        assert!(cap.stdin.is_none());
+        assert!(cap.stdin_media_type().is_none());
 
-        // Enable stdin support
-        cap.accepts_stdin = true;
-        assert!(cap.accepts_stdin);
+        // Enable stdin support with a specific media type
+        cap.stdin = Some("media:type=text;v=1;textable".to_string());
+        assert!(cap.stdin.is_some());
+        assert_eq!(cap.stdin_media_type(), Some("media:type=text;v=1;textable"));
 
         // Test serialization/deserialization preserves the field
         let serialized = serde_json::to_string(&cap).unwrap();
+        assert!(serialized.contains("\"stdin\":\"media:type=text;v=1;textable\""));
         let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(cap.accepts_stdin, deserialized.accepts_stdin);
+        assert_eq!(cap.stdin, deserialized.stdin);
+        assert!(deserialized.stdin.is_some());
     }
 
 }
