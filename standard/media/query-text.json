@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=query-text;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Query Text",
+  "profile_uri": "https://capns.org/schema/query_text",
+  "description": "Query Text text input"
+}

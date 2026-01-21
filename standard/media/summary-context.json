@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=summary-context;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Summary Context",
+  "profile_uri": "https://capns.org/schema/summary_context",
+  "description": "Summary Context contextual information"
+}

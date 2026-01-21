@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=schema-variables;v=1;textable;keyed",
+  "media_type": "application/json",
+  "title": "Schema Variables",
+  "profile_uri": "https://capns.org/schema/schema_variables",
+  "description": "Schema Variables object with key-value pairs"
+}

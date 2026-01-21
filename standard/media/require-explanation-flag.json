@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=require-explanation-flag;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Require Explanation Flag",
+  "profile_uri": "https://capns.org/schema/require_explanation_flag",
+  "description": "Require Explanation Flag value"
+}

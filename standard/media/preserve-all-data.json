@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=preserve-all-data;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Preserve All Data",
+  "profile_uri": "https://capns.org/schema/preserve_all_data",
+  "description": "Preserve All Data value"
+}

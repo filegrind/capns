@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=model-status;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Model Status",
+  "profile_uri": "https://capns.org/schema/model_status",
+  "description": "Model Status value"
+}

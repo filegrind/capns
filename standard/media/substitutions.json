@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=substitutions;v=1;textable;keyed",
+  "media_type": "application/json",
+  "title": "Substitutions",
+  "profile_uri": "https://capns.org/schema/substitutions",
+  "description": "Substitutions object with key-value pairs"
+}

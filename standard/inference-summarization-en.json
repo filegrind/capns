@@ -4,7 +4,7 @@
       "op": "summarization",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=string;v=1;textable;scalar",
+      "in": "media:type=input-text;v=1;textable;scalar",
       "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
@@ -93,7 +93,7 @@
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=string;v=1;textable;scalar"
+          "stdin": "media:type=input-text;v=1;textable;scalar"
         },
         {
           "cli_flag": "--text"

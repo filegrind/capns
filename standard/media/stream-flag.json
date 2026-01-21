@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=stream-flag;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Stream Flag",
+  "profile_uri": "https://capns.org/schema/stream_flag",
+  "description": "Stream Flag value"
+}

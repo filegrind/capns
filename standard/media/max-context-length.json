@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=max-context-length;v=1;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Max Context Length",
+  "profile_uri": "https://capns.org/schema/max_context_length",
+  "description": "Max Context Length numeric value"
+}

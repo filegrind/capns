@@ -4,7 +4,7 @@
       "op": "generate_frontmatter_summary",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=string;v=1;textable;scalar",
+      "in": "media:type=frontmatter-text;v=1;textable;scalar",
       "out": "media:type=string;v=1;textable;scalar"
     }
   },
@@ -18,7 +18,7 @@
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=string;v=1;textable;scalar"
+          "stdin": "media:type=frontmatter-text;v=1;textable;scalar"
         },
         {
           "position": 0

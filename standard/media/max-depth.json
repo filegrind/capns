@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=max-depth;v=1;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Max Depth",
+  "profile_uri": "https://capns.org/schema/max_depth",
+  "description": "Max Depth numeric value"
+}

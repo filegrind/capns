@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=timestamps-flag;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Timestamps Flag",
+  "profile_uri": "https://capns.org/schema/timestamps_flag",
+  "description": "Timestamps Flag value"
+}

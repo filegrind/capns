@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=prompt-text;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Prompt Text",
+  "profile_uri": "https://capns.org/schema/prompt_text",
+  "description": "Prompt Text text input"
+}

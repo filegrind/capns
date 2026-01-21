@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=preserve-structure-flag;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Preserve Structure Flag",
+  "profile_uri": "https://capns.org/schema/preserve_structure_flag",
+  "description": "Preserve Structure Flag value"
+}

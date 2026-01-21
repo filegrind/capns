@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=device;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Device",
+  "profile_uri": "https://capns.org/schema/device",
+  "description": "Device value"
+}

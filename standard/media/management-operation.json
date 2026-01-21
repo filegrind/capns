@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=management-operation;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Management Operation",
+  "profile_uri": "https://capns.org/schema/management_operation",
+  "description": "Management Operation value"
+}

@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=output-path;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Output Path",
+  "profile_uri": "https://capns.org/schema/output_path",
+  "description": "Output Path file system path"
+}

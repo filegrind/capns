@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=creativity-level;v=1;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Creativity Level",
+  "profile_uri": "https://capns.org/schema/creativity_level",
+  "description": "Creativity Level numeric value"
+}

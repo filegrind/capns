@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "generate_embeddings",
-      "in": "media:type=string;v=1;textable;scalar",
+      "in": "media:type=input-text;v=1;textable;scalar",
       "out": "media:type=embedding-vector;v=1;textable;keyed"
     }
   },
@@ -117,7 +117,7 @@
       "required": false,
       "sources": [
         {
-          "stdin": "media:type=string;v=1;textable;scalar"
+          "stdin": "media:type=input-text;v=1;textable;scalar"
         },
         {
           "cli_flag": "--text"

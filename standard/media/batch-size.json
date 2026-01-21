@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=batch-size;v=1;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Batch Size",
+  "profile_uri": "https://capns.org/schema/batch_size",
+  "description": "Batch Size numeric value"
+}

@@ -5,7 +5,7 @@
       "type": "llm",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=string;v=1;textable;scalar",
+      "in": "media:type=prompt-text;v=1;textable;scalar",
       "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
@@ -69,7 +69,7 @@
       "required": false,
       "sources": [
         {
-          "stdin": "media:type=string;v=1;textable;scalar"
+          "stdin": "media:type=prompt-text;v=1;textable;scalar"
         },
         {
           "cli_flag": "--prompt"

@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=output-format;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Output Format",
+  "profile_uri": "https://capns.org/schema/output_format",
+  "description": "Output Format value"
+}

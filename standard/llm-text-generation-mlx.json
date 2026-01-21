@@ -4,7 +4,7 @@
       "op": "generate_text",
       "type": "llm",
       "model_type": "mlx",
-      "in": "media:type=string;v=1;textable;scalar",
+      "in": "media:type=mlx-model-path;v=1;textable;scalar",
       "out": "media:type=llm-inference-output;v=1;textable;keyed"
     }
   },
@@ -72,7 +72,7 @@
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=string;v=1;textable;scalar"
+          "stdin": "media:type=mlx-model-path;v=1;textable;scalar"
         },
         {
           "cli_flag": "--model"

@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=image-path;v=1;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Image Path",
+  "profile_uri": "https://capns.org/schema/image_path",
+  "description": "Image Path file system path"
+}

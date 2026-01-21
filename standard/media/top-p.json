@@ -1,0 +1,7 @@
+{
+  "urn": "media:type=top-p;v=1;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Top P",
+  "profile_uri": "https://capns.org/schema/top_p",
+  "description": "Top P numeric value"
+}
