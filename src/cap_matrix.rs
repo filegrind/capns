@@ -7,7 +7,7 @@
 //! where nodes are MediaSpec IDs and edges are capabilities that convert
 //! from one spec to another.
 
-use crate::{Cap, CapUrn, CapSet};
+use crate::{Cap, CapUrn, CapSet, StdinSource};
 use crate::media_urn::MediaUrn;
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -700,7 +700,7 @@ impl CapSet for CompositeCapSet {
         cap_urn: &str,
         positional_args: &[String],
         named_args: &[(String, String)],
-        stdin_data: Option<Vec<u8>>
+        stdin_source: Option<StdinSource>
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
         let cap_urn = cap_urn.to_string();
         let positional_args = positional_args.to_vec();
@@ -761,7 +761,7 @@ impl CapSet for CompositeCapSet {
 
         // Now we have an owned Arc<dyn CapSet> - no locks held
         Box::pin(async move {
-            best_cap_set.execute_cap(&cap_urn, &positional_args, &named_args, stdin_data).await
+            best_cap_set.execute_cap(&cap_urn, &positional_args, &named_args, stdin_source).await
         })
     }
 }
@@ -949,7 +949,7 @@ mod tests {
             _cap_urn: &str,
             _positional_args: &[String],
             _named_args: &[(String, String)],
-            _stdin_data: Option<Vec<u8>>
+            _stdin_source: Option<StdinSource>
         ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
             Box::pin(async move {
                 Ok((None, Some(format!("Mock response from {}", self.name))))
