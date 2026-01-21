@@ -17,19 +17,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  URN: {}", cap.urn_string());
             println!("  Command: {}", cap.command);
             println!("  Description: {}", cap.cap_description.as_ref().unwrap_or(&"None".to_string()));
-            println!("  Stdin: {:?}", cap.stdin);
+            println!("  Accepts stdin: {}", cap.accepts_stdin());
+            if let Some(stdin_urn) = cap.get_stdin_media_urn() {
+                println!("  Stdin media URN: {}", stdin_urn);
+            }
 
-            if !cap.arguments.required.is_empty() {
-                println!("  Required args: {}", cap.arguments.required.len());
-                for arg in &cap.arguments.required {
-                    println!("    - {}: {}", arg.name, arg.media_urn);
+            let args = cap.get_args();
+            let required_args: Vec<_> = args.iter().filter(|a| a.required).collect();
+            let optional_args: Vec<_> = args.iter().filter(|a| !a.required).collect();
+
+            if !required_args.is_empty() {
+                println!("  Required args: {}", required_args.len());
+                for arg in required_args {
+                    println!("    - {}", arg.media_urn);
                 }
             }
 
-            if !cap.arguments.optional.is_empty() {
-                println!("  Optional args: {}", cap.arguments.optional.len());
-                for arg in &cap.arguments.optional {
-                    println!("    - {}: {}", arg.name, arg.media_urn);
+            if !optional_args.is_empty() {
+                println!("  Optional args: {}", optional_args.len());
+                for arg in optional_args {
+                    println!("    - {}", arg.media_urn);
                 }
             }
 

@@ -926,7 +926,7 @@ impl CapCube {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapArguments, CapOutput};
+    use crate::CapOutput;
     use crate::standard::media::MEDIA_STRING;
     use std::pin::Pin;
     use std::future::Future;
@@ -972,9 +972,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "test".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: Some(CapOutput::new(MEDIA_STRING, "Test output")),
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1008,9 +1007,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "generate".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: Some(CapOutput::new(MEDIA_STRING, "General output")),
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1026,9 +1024,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "generate".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: Some(CapOutput::new(MEDIA_STRING, "Specific output")),
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1070,9 +1067,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "test".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1100,9 +1096,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "test".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: Some(CapOutput::new(MEDIA_STRING, "output")),
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -1332,9 +1327,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "extract".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: Some(CapOutput::new(MEDIA_STRING, "output")),
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1364,9 +1358,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "extract".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1379,9 +1372,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "parse".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1414,9 +1406,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "convert".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1429,9 +1420,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "parse".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1468,9 +1458,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "extract".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1482,9 +1471,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "parse".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1525,9 +1513,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "step1".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1539,9 +1526,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "step2".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1553,9 +1539,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "direct".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1585,9 +1570,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "generic".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1599,9 +1583,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "specific".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1632,9 +1615,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "extract".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: Some(CapOutput::new(MEDIA_STRING, "output")),
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1653,9 +1635,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "parse".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1712,9 +1693,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "a".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };
@@ -1726,9 +1706,8 @@ mod tests {
             metadata: HashMap::new(),
             command: "b".to_string(),
             media_specs: HashMap::new(),
-            arguments: CapArguments { required: vec![], optional: vec![] },
+            args: vec![],
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         };

@@ -108,9 +108,18 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_json_serialization() {
+        use crate::{CapArg, ArgSource};
+
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let mut cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
-        cap.stdin = Some("media:type=pdf;v=1;binary".to_string());
+
+        // Add stdin via args architecture
+        let stdin_arg = CapArg::new(
+            "media:type=pdf;v=1;binary",
+            true,
+            vec![ArgSource::Stdin { stdin: "media:type=pdf;v=1;binary".to_string() }],
+        );
+        cap.add_arg(stdin_arg);
 
         let manifest = CapManifest::new(
             "TestComponent".to_string(),
@@ -133,7 +142,7 @@ mod tests {
         assert_eq!(deserialized.description, manifest.description);
         assert_eq!(deserialized.author, manifest.author);
         assert_eq!(deserialized.caps.len(), manifest.caps.len());
-        assert_eq!(deserialized.caps[0].stdin, manifest.caps[0].stdin);
+        assert_eq!(deserialized.caps[0].get_stdin_media_urn(), manifest.caps[0].get_stdin_media_urn());
     }
 
     #[test]
