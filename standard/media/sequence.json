@@ -1,0 +1,7 @@
+{
+  "urn": "media:v=1;sequence",
+  "media_type": "application/json",
+  "title": "Sequence Value",
+  "profile_uri": "https://capns.org/schema/sequence",
+  "description": "Base type for any sequence/array value"
+}

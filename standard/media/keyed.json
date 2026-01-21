@@ -1,0 +1,7 @@
+{
+  "urn": "media:v=1;keyed",
+  "media_type": "application/json",
+  "title": "Keyed Value",
+  "profile_uri": "https://capns.org/schema/keyed",
+  "description": "Base type for any keyed/object value with key-value pairs"
+}

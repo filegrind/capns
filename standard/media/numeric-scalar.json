@@ -1,0 +1,7 @@
+{
+  "urn": "media:v=1;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Numeric Scalar Value",
+  "profile_uri": "https://capns.org/schema/numeric-scalar",
+  "description": "Base type for any numeric scalar value (integer, number, boolean)"
+}
