@@ -91,60 +91,78 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "audio",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the audio file (WAV format)",
-        "cli_flag": "--audio",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=audio-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--audio"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the audio file (WAV format)",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "language",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Language code for transcription",
-        "cli_flag": "--language",
-        "default_value": "en",
-        "validation": {
-          "pattern": "^[a-z]{2}$"
+    },
+    {
+      "media_urn": "media:type=language-code;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--language"
         }
+      ],
+      "arg_description": "Language code for transcription",
+      "validation": {
+        "pattern": "^[a-z]{2}$"
       },
-      {
-        "name": "timestamps",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Include timestamps in output",
-        "cli_flag": "--timestamps",
-        "default_value": false
-      },
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Whisper model name from HuggingFace",
-        "cli_flag": "--model",
-        "default_value": "openai/whisper-base",
-        "validation": {
-          "min_length": 1,
-          "max_length": 256
+      "default_value": "en"
+    },
+    {
+      "media_urn": "media:type=timestamps-flag;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--timestamps"
         }
-      },
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output JSON file path",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "^[^\\0]+$"
+      ],
+      "arg_description": "Include timestamps in output",
+      "default_value": false
+    },
+    {
+      "media_urn": "media:type=hf-model-name;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model"
         }
+      ],
+      "arg_description": "Whisper model name from HuggingFace",
+      "validation": {
+        "min_length": 1,
+        "max_length": 256
+      },
+      "default_value": "openai/whisper-base"
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
+        }
+      ],
+      "arg_description": "Output JSON file path",
+      "validation": {
+        "pattern": "^[^\\0]+$"
       }
-    ]
-  },
+    }
+  ],
   "output": {
     "media_urn": "media:type=transcription-output;v=1;textable;keyed",
     "output_description": "Transcribed text with optional timestamps and metadata"

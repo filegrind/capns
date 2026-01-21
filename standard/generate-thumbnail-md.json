@@ -10,55 +10,68 @@
   "title": "Generate Markdown Thumbnail",
   "cap_description": "Generate a thumbnail image preview of the markdown document",
   "metadata": {},
-  "stdin": "media:type=md;v=1;textable",
-  "arguments": {
-    "required": [
-      {
-        "name": "file_path",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the markdown file to process",
-        "cli_flag": "file_path",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=md;v=1;textable"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the markdown file to process",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "width",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Width of the thumbnail in pixels",
-        "cli_flag": "--width",
-        "default_value": 200,
-        "validation": {
-          "min": 50,
-          "max": 2000
+    },
+    {
+      "media_urn": "media:type=thumbnail-width;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--width"
         }
+      ],
+      "arg_description": "Width of the thumbnail in pixels",
+      "validation": {
+        "min": 50,
+        "max": 2000
       },
-      {
-        "name": "height",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Height of the thumbnail in pixels",
-        "cli_flag": "--height",
-        "default_value": 300,
-        "validation": {
-          "min": 50,
-          "max": 2000
+      "default_value": 200
+    },
+    {
+      "media_urn": "media:type=thumbnail-height;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--height"
         }
+      ],
+      "arg_description": "Height of the thumbnail in pixels",
+      "validation": {
+        "min": 50,
+        "max": 2000
       },
-      {
-        "name": "output_file",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Write thumbnail to specified file instead of stdout",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "\\.(png|jpg|jpeg)$"
+      "default_value": 300
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
         }
+      ],
+      "arg_description": "Write thumbnail to specified file instead of stdout",
+      "validation": {
+        "pattern": "\\.(png|jpg|jpeg)$"
       }
-    ]
-  },
+    }
+  ],
   "output": {
     "media_urn": "media:type=png;v=1;binary",
     "output_description": "PNG image data representing a thumbnail of the markdown document"

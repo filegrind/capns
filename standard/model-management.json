@@ -75,51 +75,61 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "operation",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Management operation to perform",
-        "cli_flag": "--operation",
-        "position": 0,
-        "validation": {
-          "allowed_values": [
-            "init",
-            "config",
-            "validate",
-            "cleanup",
-            "info"
-          ]
+  "args": [
+    {
+      "media_urn": "media:type=management-operation;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--operation"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Management operation to perform",
+      "validation": {
+        "allowed_values": [
+          "init",
+          "config",
+          "validate",
+          "cleanup",
+          "info"
+        ]
       }
-    ],
-    "optional": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model identifier or path",
-        "cli_flag": "--model",
-        "validation": {
-          "pattern": "^[^\\0]+$"
+    },
+    {
+      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model"
         }
+      ],
+      "arg_description": "Model identifier or path",
+      "validation": {
+        "pattern": "^[^\\0]+$"
+      }
+    },
+    {
+      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--format"
+        }
+      ],
+      "arg_description": "Output format for information display",
+      "validation": {
+        "allowed_values": [
+          "json",
+          "text",
+          "yaml"
+        ]
       },
-      {
-        "name": "format",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output format for information display",
-        "cli_flag": "--format",
-        "default_value": "json",
-        "validation": {
-          "allowed_values": [
-            "json",
-            "text",
-            "yaml"
-          ]
-        }
-      }
-    ]
-  },
+      "default_value": "json"
+    }
+  ],
   "output": {
     "media_urn": "media:type=manage-output;v=1;textable;keyed",
     "output_description": "Management operation result with status and details"

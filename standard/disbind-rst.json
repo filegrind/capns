@@ -10,42 +10,51 @@
   "title": "Extract RST File Chips",
   "cap_description": "Grind with text content from RST files",
   "metadata": {},
-  "stdin": "media:type=rst;v=1;textable",
-  "arguments": {
-    "required": [
-      {
-        "name": "file_path",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the RST file to process",
-        "cli_flag": "file_path",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=rst;v=1;textable"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the RST file to process",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "index_range",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
-        "cli_flag": "--index-range",
-        "validation": {
-          "pattern": "^\\d+(-\\d*)?$"
+    },
+    {
+      "media_urn": "media:type=index-range;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--index-range"
         }
-      },
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Write output to specified file instead of stdout",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "^[^\\0]+$"
-        }
+      ],
+      "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
+      "validation": {
+        "pattern": "^\\d+(-\\d*)?$"
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
+        }
+      ],
+      "arg_description": "Write output to specified file instead of stdout",
+      "validation": {
+        "pattern": "^[^\\0]+$"
+      }
+    }
+  ],
   "output": {
     "media_urn": "media:type=object;v=1;textable;keyed",
     "output_description": "Structured file chips with text content"

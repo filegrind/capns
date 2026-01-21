@@ -111,43 +111,53 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "image",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the image file to embed",
-        "cli_flag": "--image",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=image-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--image"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the image file to embed",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "CLIP model name from HuggingFace",
-        "cli_flag": "--model",
-        "default_value": "openai/clip-vit-base-patch32",
-        "validation": {
-          "min_length": 1,
-          "max_length": 256
+    },
+    {
+      "media_urn": "media:type=hf-model-name;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model"
         }
+      ],
+      "arg_description": "CLIP model name from HuggingFace",
+      "validation": {
+        "min_length": 1,
+        "max_length": 256
       },
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output JSON file path",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "^[^\\0]+$"
+      "default_value": "openai/clip-vit-base-patch32"
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
         }
+      ],
+      "arg_description": "Output JSON file path",
+      "validation": {
+        "pattern": "^[^\\0]+$"
       }
-    ]
-  },
+    }
+  ],
   "output": {
     "media_urn": "media:type=embedding-vector;v=1;textable;keyed",
     "output_description": "Image embedding vector with model metadata"

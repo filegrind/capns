@@ -70,76 +70,100 @@
       }
     }
   },
-  "stdin": "media:type=string;v=1;textable;scalar",
-  "arguments": {
-    "required": [
-      {
-        "name": "prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "User's conversational input",
-        "cli_flag": "--prompt",
-        "position": 0,
-        "validation": {
-          "min_length": 1,
-          "max_length": 32768
+  "args": [
+    {
+      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=string;v=1;textable;scalar"
+        },
+        {
+          "cli_flag": "--prompt"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "User's conversational input",
+      "validation": {
+        "min_length": 1,
+        "max_length": 32768
       }
-    ],
-    "optional": [
-      {
-        "name": "context",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Conversation context and history",
-        "cli_flag": "--context",
-        "validation": {
-          "max_length": 65536
+    },
+    {
+      "media_urn": "media:type=conversation-context;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--context"
         }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum tokens to generate",
-        "cli_flag": "--max-tokens",
-        "default_value": 2000,
-        "validation": {
-          "min": 1,
-          "max": 8192
-        }
-      },
-      {
-        "name": "temperature",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Sampling temperature for creativity vs consistency",
-        "cli_flag": "--temperature",
-        "default_value": 0.7,
-        "validation": {
-          "min": 0,
-          "max": 2
-        }
-      },
-      {
-        "name": "system_prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "System instructions for conversation behavior",
-        "cli_flag": "--system-prompt",
-        "validation": {
-          "max_length": 8192
-        }
-      },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec to use for conversation",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
-        }
+      ],
+      "arg_description": "Conversation context and history",
+      "validation": {
+        "max_length": 65536
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximum tokens to generate",
+      "validation": {
+        "min": 1,
+        "max": 8192
+      },
+      "default_value": 2000
+    },
+    {
+      "media_urn": "media:type=temperature;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--temperature"
+        }
+      ],
+      "arg_description": "Sampling temperature for creativity vs consistency",
+      "validation": {
+        "min": 0,
+        "max": 2
+      },
+      "default_value": 0.7
+    },
+    {
+      "media_urn": "media:type=system-prompt;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--system-prompt"
+        }
+      ],
+      "arg_description": "System instructions for conversation behavior",
+      "validation": {
+        "max_length": 8192
+      }
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
+        }
+      ],
+      "arg_description": "Model spec to use for conversation",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*"
+    }
+  ],
   "output": {
     "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
     "output_description": "Generated conversational response with context information"

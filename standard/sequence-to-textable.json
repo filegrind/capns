@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "textable",
+      "in": "media:v=1;sequence",
+      "out": "media:v=1;textable;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Sequence to Textable",
+  "cap_description": "Convert any sequence to its textable representation",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:v=1;sequence",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:v=1;sequence"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "The sequence to convert to textable"
+    }
+  ],
+  "output": {
+    "media_urn": "media:v=1;textable;scalar",
+    "output_description": "Textable representation of the sequence (JSON array)"
+  }
+}

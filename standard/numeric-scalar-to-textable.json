@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "textable",
+      "in": "media:v=1;numeric;scalar",
+      "out": "media:v=1;textable;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Numeric Scalar to Textable",
+  "cap_description": "Convert any numeric scalar value to its textable representation",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:v=1;numeric;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:v=1;numeric;scalar"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "The numeric scalar value to convert"
+    }
+  ],
+  "output": {
+    "media_urn": "media:v=1;textable;scalar",
+    "output_description": "Textable representation of the numeric value"
+  }
+}

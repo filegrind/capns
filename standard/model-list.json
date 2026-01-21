@@ -87,48 +87,58 @@
       }
     }
   },
-  "arguments": {
-    "optional": [
-      {
-        "name": "filter",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Filter models by pattern",
-        "cli_flag": "--filter",
-        "validation": {
-          "pattern": "^[^\\0]*$"
+  "args": [
+    {
+      "media_urn": "media:type=filter-pattern;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--filter"
         }
-      },
-      {
-        "name": "status",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Filter by model status",
-        "cli_flag": "--status",
-        "validation": {
-          "allowed_values": [
-            "loaded",
-            "available",
-            "downloading",
-            "cached",
-            "all"
-          ]
-        }
-      },
-      {
-        "name": "format",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output format",
-        "cli_flag": "--format",
-        "default_value": "json",
-        "validation": {
-          "allowed_values": [
-            "json",
-            "text",
-            "table"
-          ]
-        }
+      ],
+      "arg_description": "Filter models by pattern",
+      "validation": {
+        "pattern": "^[^\\0]*$"
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=model-status;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--status"
+        }
+      ],
+      "arg_description": "Filter by model status",
+      "validation": {
+        "allowed_values": [
+          "loaded",
+          "available",
+          "downloading",
+          "cached",
+          "all"
+        ]
+      }
+    },
+    {
+      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--format"
+        }
+      ],
+      "arg_description": "Output format",
+      "validation": {
+        "allowed_values": [
+          "json",
+          "text",
+          "table"
+        ]
+      },
+      "default_value": "json"
+    }
+  ],
   "output": {
     "media_urn": "media:type=list-output;v=1;textable;keyed",
     "output_description": "List of models with their metadata and status"

@@ -77,124 +77,156 @@
       }
     }
   },
-  "stdin": "media:type=string;v=1;textable;scalar",
-  "arguments": {
-    "required": [
-      {
-        "name": "prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Creative writing prompt or brief",
-        "cli_flag": "--prompt",
-        "position": 0,
-        "validation": {
-          "min_length": 1,
-          "max_length": 8192
+  "args": [
+    {
+      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=string;v=1;textable;scalar"
+        },
+        {
+          "cli_flag": "--prompt"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Creative writing prompt or brief",
+      "validation": {
+        "min_length": 1,
+        "max_length": 8192
       }
-    ],
-    "optional": [
-      {
-        "name": "genre",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Genre or style of creative content",
-        "cli_flag": "--genre",
-        "default_value": "fiction",
-        "validation": {
-          "allowed_values": [
-            "fiction",
-            "poetry",
-            "essay",
-            "story",
-            "dialogue",
-            "script",
-            "article",
-            "blog",
-            "marketing",
-            "technical",
-            "academic"
-          ]
+    },
+    {
+      "media_urn": "media:type=genre;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--genre"
         }
+      ],
+      "arg_description": "Genre or style of creative content",
+      "validation": {
+        "allowed_values": [
+          "fiction",
+          "poetry",
+          "essay",
+          "story",
+          "dialogue",
+          "script",
+          "article",
+          "blog",
+          "marketing",
+          "technical",
+          "academic"
+        ]
       },
-      {
-        "name": "tone",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Tone or mood for the creative content",
-        "cli_flag": "--tone",
-        "default_value": "conversational",
-        "validation": {
-          "allowed_values": [
-            "formal",
-            "casual",
-            "humorous",
-            "serious",
-            "dramatic",
-            "playful",
-            "professional",
-            "academic",
-            "conversational"
-          ]
+      "default_value": "fiction"
+    },
+    {
+      "media_urn": "media:type=tone;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--tone"
         }
+      ],
+      "arg_description": "Tone or mood for the creative content",
+      "validation": {
+        "allowed_values": [
+          "formal",
+          "casual",
+          "humorous",
+          "serious",
+          "dramatic",
+          "playful",
+          "professional",
+          "academic",
+          "conversational"
+        ]
       },
-      {
-        "name": "length",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Desired length of creative output",
-        "cli_flag": "--length",
-        "default_value": "medium",
-        "validation": {
-          "allowed_values": [
-            "short",
-            "medium",
-            "long",
-            "extended"
-          ]
+      "default_value": "conversational"
+    },
+    {
+      "media_urn": "media:type=output-length;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--length"
         }
+      ],
+      "arg_description": "Desired length of creative output",
+      "validation": {
+        "allowed_values": [
+          "short",
+          "medium",
+          "long",
+          "extended"
+        ]
       },
-      {
-        "name": "context",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Background context or inspiration",
-        "cli_flag": "--context",
-        "validation": {
-          "max_length": 16384
+      "default_value": "medium"
+    },
+    {
+      "media_urn": "media:type=creative-context;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--context"
         }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum tokens for creative output",
-        "cli_flag": "--max-tokens",
-        "default_value": 3000,
-        "validation": {
-          "min": 100,
-          "max": 8192
-        }
-      },
-      {
-        "name": "creativity_level",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
-        "cli_flag": "--creativity-level",
-        "default_value": 0.8,
-        "validation": {
-          "min": 0,
-          "max": 1
-        }
-      },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec to use for creative writing",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
-        }
+      ],
+      "arg_description": "Background context or inspiration",
+      "validation": {
+        "max_length": 16384
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximum tokens for creative output",
+      "validation": {
+        "min": 100,
+        "max": 8192
+      },
+      "default_value": 3000
+    },
+    {
+      "media_urn": "media:type=creativity-level;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--creativity-level"
+        }
+      ],
+      "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
+      "validation": {
+        "min": 0,
+        "max": 1
+      },
+      "default_value": 0.8
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
+        }
+      ],
+      "arg_description": "Model spec to use for creative writing",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*"
+    }
+  ],
   "output": {
     "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
     "output_description": "Creative written content with metadata"

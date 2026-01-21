@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "numeric",
+      "in": "media:v=1;textable;scalar",
+      "out": "media:v=1;numeric;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Textable Scalar to Numeric",
+  "cap_description": "Parse a textable scalar to its numeric representation",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:v=1;textable;scalar"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "The textable scalar value to parse as numeric"
+    }
+  ],
+  "output": {
+    "media_urn": "media:v=1;numeric;scalar",
+    "output_description": "Numeric value parsed from the textable input"
+  }
+}

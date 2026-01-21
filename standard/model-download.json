@@ -63,53 +63,67 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model identifier to download",
-        "cli_flag": "--model",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--model"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Model identifier to download",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "repository",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Repository to download from",
-        "cli_flag": "--repository",
-        "default_value": "huggingface",
-        "validation": {
-          "allowed_values": [
-            "huggingface",
-            "local",
-            "custom"
-          ]
+    },
+    {
+      "media_urn": "media:type=repository;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--repository"
         }
+      ],
+      "arg_description": "Repository to download from",
+      "validation": {
+        "allowed_values": [
+          "huggingface",
+          "local",
+          "custom"
+        ]
       },
-      {
-        "name": "force",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Force download even if model exists",
-        "cli_flag": "--force",
-        "default_value": false
-      },
-      {
-        "name": "cache_dir",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Custom cache directory for model storage",
-        "cli_flag": "--cache-dir",
-        "validation": {
-          "pattern": "^[^\\0]+$"
+      "default_value": "huggingface"
+    },
+    {
+      "media_urn": "media:type=force-flag;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--force"
         }
+      ],
+      "arg_description": "Force download even if model exists",
+      "default_value": false
+    },
+    {
+      "media_urn": "media:type=cache-dir;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--cache-dir"
+        }
+      ],
+      "arg_description": "Custom cache directory for model storage",
+      "validation": {
+        "pattern": "^[^\\0]+$"
       }
-    ]
-  },
+    }
+  ],
   "output": {
     "media_urn": "media:type=download-result;v=1;textable;keyed",
     "output_description": "Download result with model path and metadata"

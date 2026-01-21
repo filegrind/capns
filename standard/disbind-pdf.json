@@ -130,42 +130,51 @@
       }
     }
   },
-  "stdin": "media:type=pdf;v=1;binary",
-  "arguments": {
-    "required": [
-      {
-        "name": "file_path",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the document file to process",
-        "cli_flag": "file_path",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=pdf;v=1;binary"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the document file to process",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Write output to specified file instead of stdout",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "^[^\\0]+$"
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
         }
-      },
-      {
-        "name": "index_range",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
-        "cli_flag": "--index-range",
-        "validation": {
-          "pattern": "^\\d+(-\\d*)?$"
-        }
+      ],
+      "arg_description": "Write output to specified file instead of stdout",
+      "validation": {
+        "pattern": "^[^\\0]+$"
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=index-range;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--index-range"
+        }
+      ],
+      "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
+      "validation": {
+        "pattern": "^\\d+(-\\d*)?$"
+      }
+    }
+  ],
   "output": {
     "media_urn": "media:type=disbound-pages;v=1;textable;keyed;sequence",
     "output_description": "Structured page content extracted from the document"

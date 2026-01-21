@@ -10,50 +10,63 @@
   "title": "Extract Text Document Outline",
   "cap_description": "Extract document outline/table of contents from text files",
   "metadata": {},
-  "stdin": "media:type=txt;v=1;textable",
-  "arguments": {
-    "required": [
-      {
-        "name": "file_path",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the text file to process",
-        "cli_flag": "file_path",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=txt;v=1;textable"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the text file to process",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "max_depth",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum outline depth to extract (1-10)",
-        "cli_flag": "--max-depth",
-        "validation": {
-          "min": 1,
-          "max": 10
+    },
+    {
+      "media_urn": "media:type=max-depth;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-depth"
         }
-      },
-      {
-        "name": "include_order_indexes",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Include page numbers in the outline",
-        "cli_flag": "--include-order-indexes",
-        "default_value": true
-      },
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Write output to specified file instead of stdout",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "^[^\\0]+$"
-        }
+      ],
+      "arg_description": "Maximum outline depth to extract (1-10)",
+      "validation": {
+        "min": 1,
+        "max": 10
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=include-order-indexes;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--include-order-indexes"
+        }
+      ],
+      "arg_description": "Include page numbers in the outline",
+      "default_value": true
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
+        }
+      ],
+      "arg_description": "Write output to specified file instead of stdout",
+      "validation": {
+        "pattern": "^[^\\0]+$"
+      }
+    }
+  ],
   "output": {
     "media_urn": "media:type=object;v=1;textable;keyed",
     "output_description": "Structured document outline with hierarchical entries"

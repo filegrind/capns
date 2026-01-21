@@ -12,97 +12,122 @@
   "title": "Summarize Frontmatter",
   "cap_description": "Extract and organize bibliographic information from book frontmatter text",
   "metadata": {},
-  "stdin": "media:type=string;v=1;textable;scalar",
-  "arguments": {
-    "required": [
-      {
-        "name": "frontmatter_text",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Frontmatter text to process and summarize",
-        "cli_flag": "--frontmatter-text",
-        "position": 0,
-        "validation": {
-          "min_length": 50,
-          "max_length": 131072
+  "args": [
+    {
+      "media_urn": "media:type=frontmatter-text;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=string;v=1;textable;scalar"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Frontmatter text to process and summarize",
+      "validation": {
+        "min_length": 50,
+        "max_length": 131072
       }
-    ],
-    "optional": [
-      {
-        "name": "format",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output format for the summary",
-        "cli_flag": "--format",
-        "default_value": "organized",
-        "validation": {
-          "allowed_values": [
-            "organized",
-            "structured",
-            "compact",
-            "detailed"
-          ]
+    },
+    {
+      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--format"
         }
+      ],
+      "arg_description": "Output format for the summary",
+      "validation": {
+        "allowed_values": [
+          "organized",
+          "structured",
+          "compact",
+          "detailed"
+        ]
       },
-      {
-        "name": "preserve_all_data",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Whether to preserve all factual information",
-        "cli_flag": "--preserve-all-data",
-        "default_value": true
-      },
-      {
-        "name": "remove_boilerplate",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Whether to remove legal boilerplate and formatting chips",
-        "cli_flag": "--remove-boilerplate",
-        "default_value": true
-      },
-      {
-        "name": "language",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Language of the frontmatter text",
-        "cli_flag": "--language",
-        "default_value": "en",
-        "validation": {
-          "allowed_values": [
-            "en",
-            "es",
-            "fr",
-            "de",
-            "it",
-            "pt",
-            "ru",
-            "zh",
-            "ja",
-            "ko"
-          ]
+      "default_value": "organized"
+    },
+    {
+      "media_urn": "media:type=preserve-all-data;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--preserve-all-data"
         }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum tokens for summary output",
-        "cli_flag": "--max-tokens",
-        "default_value": 2000,
-        "validation": {
-          "min": 100,
-          "max": 8192
+      ],
+      "arg_description": "Whether to preserve all factual information",
+      "default_value": true
+    },
+    {
+      "media_urn": "media:type=remove-boilerplate;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--remove-boilerplate"
         }
-      },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec to use for summary generation",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
+      ],
+      "arg_description": "Whether to remove legal boilerplate and formatting chips",
+      "default_value": true
+    },
+    {
+      "media_urn": "media:type=language;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--language"
         }
-      }
-    ]
-  },
+      ],
+      "arg_description": "Language of the frontmatter text",
+      "validation": {
+        "allowed_values": [
+          "en",
+          "es",
+          "fr",
+          "de",
+          "it",
+          "pt",
+          "ru",
+          "zh",
+          "ja",
+          "ko"
+        ]
+      },
+      "default_value": "en"
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximum tokens for summary output",
+      "validation": {
+        "min": 100,
+        "max": 8192
+      },
+      "default_value": 2000
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
+        }
+      ],
+      "arg_description": "Model spec to use for summary generation",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*"
+    }
+  ],
   "output": {
     "media_urn": "media:type=string;v=1;textable;scalar",
     "output_description": "Organized bibliographic summary with extracted metadata",

@@ -69,79 +69,103 @@
       }
     }
   },
-  "stdin": "media:type=string;v=1;textable;scalar",
-  "arguments": {
-    "required": [
-      {
-        "name": "query",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Logical query or decision problem",
-        "cli_flag": "--query",
-        "position": 0,
-        "validation": {
-          "min_length": 1,
-          "max_length": 16384
+  "args": [
+    {
+      "media_urn": "media:type=query-text;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=string;v=1;textable;scalar"
+        },
+        {
+          "cli_flag": "--query"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Logical query or decision problem",
+      "validation": {
+        "min_length": 1,
+        "max_length": 16384
       }
-    ],
-    "optional": [
-      {
-        "name": "context",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Context and facts for logical reasoning",
-        "cli_flag": "--context",
-        "validation": {
-          "max_length": 32768
+    },
+    {
+      "media_urn": "media:type=reasoning-context;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--context"
         }
-      },
-      {
-        "name": "decision_type",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Type of logical decision required",
-        "cli_flag": "--decision-type",
-        "default_value": "binary",
-        "validation": {
-          "allowed_values": [
-            "binary",
-            "classification",
-            "reasoning",
-            "verification",
-            "comparison"
-          ]
-        }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum tokens for reasoning output",
-        "cli_flag": "--max-tokens",
-        "default_value": 1000,
-        "validation": {
-          "min": 10,
-          "max": 4096
-        }
-      },
-      {
-        "name": "require_explanation",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Whether to include reasoning explanation",
-        "cli_flag": "--require-explanation",
-        "default_value": true
-      },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec to use for decision making",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
-        }
+      ],
+      "arg_description": "Context and facts for logical reasoning",
+      "validation": {
+        "max_length": 32768
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=decision-type;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--decision-type"
+        }
+      ],
+      "arg_description": "Type of logical decision required",
+      "validation": {
+        "allowed_values": [
+          "binary",
+          "classification",
+          "reasoning",
+          "verification",
+          "comparison"
+        ]
+      },
+      "default_value": "binary"
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximum tokens for reasoning output",
+      "validation": {
+        "min": 10,
+        "max": 4096
+      },
+      "default_value": 1000
+    },
+    {
+      "media_urn": "media:type=require-explanation-flag;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--require-explanation"
+        }
+      ],
+      "arg_description": "Whether to include reasoning explanation",
+      "default_value": true
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
+        }
+      ],
+      "arg_description": "Model spec to use for decision making",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*"
+    }
+  ],
   "output": {
     "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
     "output_description": "Logical decision with reasoning explanation and confidence"

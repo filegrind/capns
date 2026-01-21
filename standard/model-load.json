@@ -74,53 +74,63 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model identifier or path to load",
-        "cli_flag": "--model",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--model"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Model identifier or path to load",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "device",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Device to load model on",
-        "cli_flag": "--device",
-        "default_value": "cpu",
-        "validation": {
-          "allowed_values": [
-            "cpu",
-            "cuda",
-            "mps",
-            "auto"
-          ]
+    },
+    {
+      "media_urn": "media:type=device;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--device"
         }
+      ],
+      "arg_description": "Device to load model on",
+      "validation": {
+        "allowed_values": [
+          "cpu",
+          "cuda",
+          "mps",
+          "auto"
+        ]
       },
-      {
-        "name": "precision",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model precision/quantization level",
-        "cli_flag": "--precision",
-        "default_value": "float32",
-        "validation": {
-          "allowed_values": [
-            "float32",
-            "float16",
-            "int8",
-            "int4"
-          ]
+      "default_value": "cpu"
+    },
+    {
+      "media_urn": "media:type=precision;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--precision"
         }
-      }
-    ]
-  },
+      ],
+      "arg_description": "Model precision/quantization level",
+      "validation": {
+        "allowed_values": [
+          "float32",
+          "float16",
+          "int8",
+          "int4"
+        ]
+      },
+      "default_value": "float32"
+    }
+  ],
   "output": {
     "media_urn": "media:type=load-output;v=1;textable;keyed",
     "output_description": "Load result with model handle and configuration"

@@ -10,7 +10,7 @@
   },
   "command": "llm_inference",
   "title": "Converse in Spanish",
-  "cap_description": "Conversación natural y respuestas de chat en español",
+  "cap_description": "Conversacion natural y respuestas de chat en espanol",
   "metadata": {},
   "media_specs": {
     "media:type=llm-inference-output;v=1;textable;keyed": {
@@ -27,12 +27,12 @@
           },
           "id_conversacion": {
             "type": "string",
-            "description": "Identificador único para esta conversación"
+            "description": "Identificador unico para esta conversacion"
           },
           "tokens_usados": {
             "type": "integer",
             "minimum": 0,
-            "description": "Número de tokens consumidos para la generación"
+            "description": "Numero de tokens consumidos para la generacion"
           },
           "razon_finalizacion": {
             "type": "string",
@@ -41,16 +41,16 @@
               "length",
               "timeout"
             ],
-            "description": "Por qué terminó la generación"
+            "description": "Por que termino la generacion"
           },
           "modelo_usado": {
             "type": "string",
-            "description": "Modelo que generó la respuesta"
+            "description": "Modelo que genero la respuesta"
           },
           "tiempo_generacion_ms": {
             "type": "integer",
             "minimum": 0,
-            "description": "Tiempo de generación en milisegundos"
+            "description": "Tiempo de generacion en milisegundos"
           },
           "longitud_contexto": {
             "type": "integer",
@@ -61,7 +61,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 2,
-            "description": "Configuración de temperatura utilizada"
+            "description": "Configuracion de temperatura utilizada"
           }
         },
         "required": [
@@ -70,78 +70,102 @@
       }
     }
   },
-  "stdin": "media:type=string;v=1;textable;scalar",
-  "arguments": {
-    "required": [
-      {
-        "name": "prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Entrada conversacional del usuario",
-        "cli_flag": "--prompt",
-        "position": 0,
-        "validation": {
-          "min_length": 1,
-          "max_length": 32768
+  "args": [
+    {
+      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:type=string;v=1;textable;scalar"
+        },
+        {
+          "cli_flag": "--prompt"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Entrada conversacional del usuario",
+      "validation": {
+        "min_length": 1,
+        "max_length": 32768
       }
-    ],
-    "optional": [
-      {
-        "name": "context",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Contexto e historial de conversación",
-        "cli_flag": "--context",
-        "validation": {
-          "max_length": 65536
+    },
+    {
+      "media_urn": "media:type=conversation-context;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--context"
         }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Máximo de tokens a generar",
-        "cli_flag": "--max-tokens",
-        "default_value": 2000,
-        "validation": {
-          "min": 1,
-          "max": 8192
-        }
-      },
-      {
-        "name": "temperature",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Temperatura de muestreo para creatividad vs consistencia",
-        "cli_flag": "--temperature",
-        "default_value": 0.7,
-        "validation": {
-          "min": 0,
-          "max": 2
-        }
-      },
-      {
-        "name": "system_prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Instrucciones del sistema para comportamiento conversacional",
-        "cli_flag": "--system-prompt",
-        "validation": {
-          "max_length": 8192
-        }
-      },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec a usar para la conversación",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
-        }
+      ],
+      "arg_description": "Contexto e historial de conversacion",
+      "validation": {
+        "max_length": 65536
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximo de tokens a generar",
+      "validation": {
+        "min": 1,
+        "max": 8192
+      },
+      "default_value": 2000
+    },
+    {
+      "media_urn": "media:type=temperature;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--temperature"
+        }
+      ],
+      "arg_description": "Temperatura de muestreo para creatividad vs consistencia",
+      "validation": {
+        "min": 0,
+        "max": 2
+      },
+      "default_value": 0.7
+    },
+    {
+      "media_urn": "media:type=system-prompt;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--system-prompt"
+        }
+      ],
+      "arg_description": "Instrucciones del sistema para comportamiento conversacional",
+      "validation": {
+        "max_length": 8192
+      }
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
+        }
+      ],
+      "arg_description": "Model spec a usar para la conversacion",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF?include=*Q8_0*,*.json&exclude=*IQ1*,*IQ2*,*IQ3*,*Q2*,*Q3*"
+    }
+  ],
   "output": {
     "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
-    "output_description": "Respuesta conversacional generada con información de contexto"
+    "output_description": "Respuesta conversacional generada con informacion de contexto"
   }
 }

@@ -111,87 +111,119 @@
       }
     }
   },
-  "stdin": "media:type=string;v=1;textable;scalar",
-  "arguments": {
-    "required": [
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output JSON file path to write embeddings",
-        "cli_flag": "--output",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$"
+  "args": [
+    {
+      "media_urn": "media:type=input-text;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "stdin": "media:type=string;v=1;textable;scalar"
+        },
+        {
+          "cli_flag": "--text"
         }
+      ],
+      "arg_description": "Input text to generate embeddings for",
+      "validation": {
+        "min_length": 1,
+        "max_length": 1000000
       }
-    ],
-    "optional": [
-      {
-        "name": "text",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Input text to generate embeddings for",
-        "cli_flag": "--text",
-        "validation": {
-          "min_length": 1,
-          "max_length": 1000000
+    },
+    {
+      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--file-path"
         }
-      },
-      {
-        "name": "file_path",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to input file to generate embeddings from",
-        "cli_flag": "--file-path",
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
-        }
-      },
-      {
-        "name": "chunk_size",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Chunk size in words for splitting input text",
-        "cli_flag": "--chunk-size",
-        "default_value": 400,
-        "validation": {
-          "min": 1
-        }
-      },
-      {
-        "name": "chunk_overlap",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Chunk overlap in words when splitting input text",
-        "cli_flag": "--chunk-overlap",
-        "default_value": 50,
-        "validation": {
-          "min": 0
-        }
-      },
-      {
-        "name": "include",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "File include pattern (can be provided multiple times)",
-        "cli_flag": "--include"
-      },
-      {
-        "name": "exclude",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "File exclude pattern (can be provided multiple times)",
-        "cli_flag": "--exclude"
-      },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec to use for embeddings generation",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
-        }
+      ],
+      "arg_description": "Path to input file to generate embeddings from",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--output"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "Output JSON file path to write embeddings",
+      "validation": {
+        "pattern": "^[^\\0]+$"
+      }
+    },
+    {
+      "media_urn": "media:type=chunk-size;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--chunk-size"
+        }
+      ],
+      "arg_description": "Chunk size in words for splitting input text",
+      "validation": {
+        "min": 1
+      },
+      "default_value": 400
+    },
+    {
+      "media_urn": "media:type=chunk-overlap;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--chunk-overlap"
+        }
+      ],
+      "arg_description": "Chunk overlap in words when splitting input text",
+      "validation": {
+        "min": 0
+      },
+      "default_value": 50
+    },
+    {
+      "media_urn": "media:type=include-pattern;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--include"
+        }
+      ],
+      "arg_description": "File include pattern (can be provided multiple times)"
+    },
+    {
+      "media_urn": "media:type=exclude-pattern;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--exclude"
+        }
+      ],
+      "arg_description": "File exclude pattern (can be provided multiple times)"
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
+        }
+      ],
+      "arg_description": "Model spec to use for embeddings generation",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2"
+    }
+  ],
   "output": {
     "media_urn": "media:type=embedding-vector;v=1;textable;keyed",
     "output_description": "JSON file containing embeddings, chunk metadata and model information"

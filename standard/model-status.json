@@ -93,43 +93,53 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model identifier to check status for",
-        "cli_flag": "--model",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--model"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Model identifier to check status for",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "detailed",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Include detailed diagnostics and metrics",
-        "cli_flag": "--detailed",
-        "default_value": false
+    },
+    {
+      "media_urn": "media:type=detailed-flag;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--detailed"
+        }
+      ],
+      "arg_description": "Include detailed diagnostics and metrics",
+      "default_value": false
+    },
+    {
+      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--format"
+        }
+      ],
+      "arg_description": "Output format",
+      "validation": {
+        "allowed_values": [
+          "json",
+          "text"
+        ]
       },
-      {
-        "name": "format",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output format",
-        "cli_flag": "--format",
-        "default_value": "json",
-        "validation": {
-          "allowed_values": [
-            "json",
-            "text"
-          ]
-        }
-      }
-    ]
-  },
+      "default_value": "json"
+    }
+  ],
   "output": {
     "media_urn": "media:type=status-output;v=1;textable;keyed",
     "output_description": "Model status including health, performance metrics and configuration"

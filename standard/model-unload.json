@@ -54,30 +54,36 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model identifier or handle to unload",
-        "cli_flag": "--model",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--model"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Model identifier or handle to unload",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "force",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Force unload even if model is in use",
-        "cli_flag": "--force",
-        "default_value": false
-      }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=force-flag;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--force"
+        }
+      ],
+      "arg_description": "Force unload even if model is in use",
+      "default_value": false
+    }
+  ],
   "output": {
     "media_urn": "media:type=unload-output;v=1;textable;keyed",
     "output_description": "Unload result with status and freed resources"

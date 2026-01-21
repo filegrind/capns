@@ -57,54 +57,70 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "model",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to MLX vision model directory",
-        "cli_flag": "--model",
-        "position": 0,
-        "validation": {
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=mlx-model-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--model"
+        },
+        {
+          "position": 0
         }
-      },
-      {
-        "name": "image",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the image file to analyze (local path or HTTP(S) URL)",
-        "cli_flag": "--image",
-        "position": 1,
-        "validation": {
-          "min_length": 1
-        }
+      ],
+      "arg_description": "Path to MLX vision model directory",
+      "validation": {
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Text prompt for the image analysis",
-        "cli_flag": "--prompt",
-        "default_value": "Describe this image in detail.",
-        "validation": {
-          "min_length": 1,
-          "max_length": 4096
+    },
+    {
+      "media_urn": "media:type=image-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--image"
+        },
+        {
+          "position": 1
         }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum number of tokens to generate",
-        "cli_flag": "--max-tokens",
-        "default_value": 256,
-        "validation": {
-          "min": 1,
-          "max": 4096
-        }
+      ],
+      "arg_description": "Path to the image file to analyze (local path or HTTP(S) URL)",
+      "validation": {
+        "min_length": 1
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--prompt"
+        }
+      ],
+      "arg_description": "Text prompt for the image analysis",
+      "validation": {
+        "min_length": 1,
+        "max_length": 4096
+      },
+      "default_value": "Describe this image in detail."
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximum number of tokens to generate",
+      "validation": {
+        "min": 1,
+        "max": 4096
+      },
+      "default_value": 256
+    }
+  ],
   "output": {
     "media_urn": "media:type=vision-inference-output;v=1;textable;keyed",
     "output_description": "Image analysis with description and metadata"

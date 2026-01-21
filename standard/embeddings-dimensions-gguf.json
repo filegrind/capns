@@ -12,21 +12,23 @@
   "title": "Get Embeddings Dimensions (GGUF)",
   "cap_description": "Query the dimensionality of embeddings for a given GGUF model",
   "metadata": {},
-  "arguments": {
-    "optional": [
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "GGUF model specification to query dimensions for",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:nomic-ai/nomic-embed-text-v1.5-GGUF",
-        "validation": {
-          "min_length": 1,
-          "max_length": 512
+  "args": [
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
         }
-      }
-    ]
-  },
+      ],
+      "arg_description": "GGUF model specification to query dimensions for",
+      "validation": {
+        "min_length": 1,
+        "max_length": 512
+      },
+      "default_value": "hf:nomic-ai/nomic-embed-text-v1.5-GGUF"
+    }
+  ],
   "output": {
     "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
     "output_description": "Dimensionality of the embeddings (n_embd from model metadata)",

@@ -67,115 +67,153 @@
       }
     }
   },
-  "arguments": {
-    "required": [
-      {
-        "name": "image",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Path to the image file to analyze",
-        "cli_flag": "--image",
-        "position": 0,
-        "validation": {
-          "pattern": "^[^\\0]+$",
-          "min_length": 1
+  "args": [
+    {
+      "media_urn": "media:type=image-path;v=1;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "cli_flag": "--image"
+        },
+        {
+          "position": 0
         }
+      ],
+      "arg_description": "Path to the image file to analyze",
+      "validation": {
+        "pattern": "^[^\\0]+$",
+        "min_length": 1
       }
-    ],
-    "optional": [
-      {
-        "name": "prompt",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Text prompt for the image analysis",
-        "cli_flag": "--prompt",
-        "default_value": "Describe this image in detail.",
-        "validation": {
-          "min_length": 1,
-          "max_length": 4096
+    },
+    {
+      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--prompt"
         }
+      ],
+      "arg_description": "Text prompt for the image analysis",
+      "validation": {
+        "min_length": 1,
+        "max_length": 4096
       },
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "GGUF vision model specification",
-        "cli_flag": "--model-spec",
-        "validation": {
-          "min_length": 1,
-          "max_length": 512
+      "default_value": "Describe this image in detail."
+    },
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
         }
-      },
-      {
-        "name": "max_tokens",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Maximum number of tokens to generate",
-        "cli_flag": "--max-tokens",
-        "default_value": 512,
-        "validation": {
-          "min": 1,
-          "max": 4096
-        }
-      },
-      {
-        "name": "temperature",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Sampling temperature (0.0-2.0)",
-        "cli_flag": "--temperature",
-        "default_value": 0.7,
-        "validation": {
-          "min": 0,
-          "max": 2
-        }
-      },
-      {
-        "name": "top_k",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Top-k sampling parameter",
-        "cli_flag": "--top-k",
-        "default_value": 40,
-        "validation": {
-          "min": 1,
-          "max": 1000
-        }
-      },
-      {
-        "name": "top_p",
-        "media_urn": "media:type=number;v=1;textable;numeric;scalar",
-        "arg_description": "Top-p (nucleus) sampling parameter",
-        "cli_flag": "--top-p",
-        "default_value": 0.9,
-        "validation": {
-          "min": 0,
-          "max": 1
-        }
-      },
-      {
-        "name": "seed",
-        "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
-        "arg_description": "Random seed for reproducibility",
-        "cli_flag": "--seed",
-        "default_value": 42,
-        "validation": {
-          "min": 0,
-          "max": 4294967295
-        }
-      },
-      {
-        "name": "stream",
-        "media_urn": "media:type=boolean;v=1;textable;scalar",
-        "arg_description": "Enable streaming output",
-        "cli_flag": "--stream",
-        "default_value": false
-      },
-      {
-        "name": "output",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Output JSON file path",
-        "cli_flag": "--output",
-        "validation": {
-          "pattern": "^[^\\0]+$"
-        }
+      ],
+      "arg_description": "GGUF vision model specification",
+      "validation": {
+        "min_length": 1,
+        "max_length": 512
       }
-    ]
-  },
+    },
+    {
+      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--max-tokens"
+        }
+      ],
+      "arg_description": "Maximum number of tokens to generate",
+      "validation": {
+        "min": 1,
+        "max": 4096
+      },
+      "default_value": 512
+    },
+    {
+      "media_urn": "media:type=temperature;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--temperature"
+        }
+      ],
+      "arg_description": "Sampling temperature (0.0-2.0)",
+      "validation": {
+        "min": 0,
+        "max": 2
+      },
+      "default_value": 0.7
+    },
+    {
+      "media_urn": "media:type=top-k;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--top-k"
+        }
+      ],
+      "arg_description": "Top-k sampling parameter",
+      "validation": {
+        "min": 1,
+        "max": 1000
+      },
+      "default_value": 40
+    },
+    {
+      "media_urn": "media:type=top-p;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--top-p"
+        }
+      ],
+      "arg_description": "Top-p (nucleus) sampling parameter",
+      "validation": {
+        "min": 0,
+        "max": 1
+      },
+      "default_value": 0.9
+    },
+    {
+      "media_urn": "media:type=seed;v=1;textable;numeric;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--seed"
+        }
+      ],
+      "arg_description": "Random seed for reproducibility",
+      "validation": {
+        "min": 0,
+        "max": 4294967295
+      },
+      "default_value": 42
+    },
+    {
+      "media_urn": "media:type=stream-flag;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--stream"
+        }
+      ],
+      "arg_description": "Enable streaming output",
+      "default_value": false
+    },
+    {
+      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--output"
+        }
+      ],
+      "arg_description": "Output JSON file path",
+      "validation": {
+        "pattern": "^[^\\0]+$"
+      }
+    }
+  ],
   "output": {
     "media_urn": "media:type=vision-inference-output;v=1;textable;keyed",
     "output_description": "Image analysis with description and metadata"

@@ -10,22 +10,24 @@
   "title": "Get Embeddings Dimensions",
   "cap_description": "Query the dimensionality of embeddings for a given model",
   "metadata": {},
-  "arguments": {
-    "optional": [
-      {
-        "name": "model_spec",
-        "media_urn": "media:type=string;v=1;textable;scalar",
-        "arg_description": "Model spec to use for retrieving embeddings dimensions",
-        "cli_flag": "--model-spec",
-        "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2",
-        "validation": {
-          "pattern": ".*:.*",
-          "min_length": 4,
-          "max_length": 512
+  "args": [
+    {
+      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "required": false,
+      "sources": [
+        {
+          "cli_flag": "--model-spec"
         }
-      }
-    ]
-  },
+      ],
+      "arg_description": "Model spec to use for retrieving embeddings dimensions",
+      "validation": {
+        "pattern": ".*:.*",
+        "min_length": 4,
+        "max_length": 512
+      },
+      "default_value": "hf:sentence-transformers/all-MiniLM-L6-v2"
+    }
+  ],
   "output": {
     "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
     "output_description": "Dimensionality of the embeddings (positive integer)",
