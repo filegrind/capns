@@ -6,7 +6,7 @@
 //!
 //! ## Cap Definition Format
 //!
-//! Caps now use spec IDs in `media_spec` fields that reference definitions
+//! Caps use spec IDs in `media_spec` fields that reference definitions
 //! in the `media_specs` table. Example:
 //!
 //! ```json
@@ -19,10 +19,10 @@
 //!       "schema": { "type": "object", ... }
 //!     }
 //!   },
-//!   "arguments": {
-//!     "required": [{ "name": "input", "media_spec": "media:type=string;v=1", ... }]
-//!   },
-//!   "output": { "media_spec": "my:output.v1", ... }
+//!   "args": [
+//!     { "media_urn": "media:type=string;v=1", "required": true, "sources": [{"cli_flag": "--input"}] }
+//!   ],
+//!   "output": { "media_urn": "my:output.v1", ... }
 //! }
 //! ```
 
@@ -36,52 +36,21 @@ use std::collections::HashMap;
 pub struct ArgumentValidation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min: Option<f64>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_length: Option<usize>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_length: Option<usize>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_values: Option<Vec<String>>,
-}
-
-/// Cap argument definition
-///
-/// The `media_urn` field contains a media URN (e.g., "media:type=string;v=1") that
-/// references a definition in the cap's `media_specs` table or a built-in primitive.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CapArgument {
-    pub name: String,
-
-    /// Media URN referencing a media spec definition
-    /// e.g., "media:type=string;v=1", "media:type=integer;v=1", or a custom media URN
-    pub media_urn: String,
-
-    pub arg_description: String,
-
-    #[serde(rename = "cli_flag")]
-    pub cli_flag: String,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<usize>,
-
-    #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
-    pub validation: ArgumentValidation,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_value: Option<serde_json::Value>,
-
-    /// Arbitrary metadata as JSON object
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
 }
 
 impl ArgumentValidation {
@@ -93,18 +62,251 @@ impl ArgumentValidation {
         self.pattern.is_none() &&
         self.allowed_values.is_none()
     }
+
+    /// Create validation with min/max numeric constraints
+    pub fn numeric_range(min: Option<f64>, max: Option<f64>) -> Self {
+        Self {
+            min,
+            max,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            allowed_values: None,
+        }
+    }
+
+    /// Create validation with string length constraints
+    pub fn string_length(min_length: Option<usize>, max_length: Option<usize>) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length,
+            max_length,
+            pattern: None,
+            allowed_values: None,
+        }
+    }
+
+    /// Create validation with pattern
+    pub fn pattern(pattern: String) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            pattern: Some(pattern),
+            allowed_values: None,
+        }
+    }
+
+    /// Create validation with allowed values
+    pub fn allowed_values(values: Vec<String>) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            allowed_values: Some(values),
+        }
+    }
 }
 
-/// Cap arguments collection
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-pub struct CapArguments {
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub required: Vec<CapArgument>,
-    
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub optional: Vec<CapArgument>,
+/// Source specification for argument input
+///
+/// Each variant serializes to a distinct JSON object with a unique key:
+/// - `{"stdin": "media:type=..."}`
+/// - `{"position": 0}`
+/// - `{"cli_flag": "--flag-name"}`
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum ArgSource {
+    /// Argument can be provided via stdin
+    Stdin {
+        /// Media URN for stdin input
+        stdin: String,
+    },
+    /// Argument is positional
+    Position {
+        /// 0-based position in argument list
+        position: usize,
+    },
+    /// Argument uses a CLI flag
+    CliFlag {
+        /// CLI flag (e.g., "--input" or "-i")
+        cli_flag: String,
+    },
 }
 
+impl ArgSource {
+    pub fn get_type(&self) -> &'static str {
+        match self {
+            ArgSource::Stdin { .. } => "stdin",
+            ArgSource::Position { .. } => "position",
+            ArgSource::CliFlag { .. } => "cli_flag",
+        }
+    }
+
+    pub fn stdin_media_urn(&self) -> Option<&str> {
+        match self {
+            ArgSource::Stdin { stdin } => Some(stdin),
+            _ => None,
+        }
+    }
+
+    pub fn position(&self) -> Option<usize> {
+        match self {
+            ArgSource::Position { position } => Some(*position),
+            _ => None,
+        }
+    }
+
+    pub fn cli_flag(&self) -> Option<&str> {
+        match self {
+            ArgSource::CliFlag { cli_flag } => Some(cli_flag),
+            _ => None,
+        }
+    }
+}
+
+/// Cap argument definition - media_urn is the unique identifier
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CapArg {
+    /// Unique media URN for this argument
+    pub media_urn: String,
+
+    /// Whether this argument is required
+    pub required: bool,
+
+    /// How this argument can be provided
+    pub sources: Vec<ArgSource>,
+
+    /// Human-readable description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_description: Option<String>,
+
+    /// Validation rules
+    #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
+    pub validation: ArgumentValidation,
+
+    /// Default value for optional arguments
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<serde_json::Value>,
+
+    /// Arbitrary metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl CapArg {
+    /// Create a new cap argument
+    pub fn new(media_urn: impl Into<String>, required: bool, sources: Vec<ArgSource>) -> Self {
+        Self {
+            media_urn: media_urn.into(),
+            required,
+            sources,
+            arg_description: None,
+            validation: ArgumentValidation::default(),
+            default_value: None,
+            metadata: None,
+        }
+    }
+
+    /// Create a new cap argument with description
+    pub fn with_description(
+        media_urn: impl Into<String>,
+        required: bool,
+        sources: Vec<ArgSource>,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            media_urn: media_urn.into(),
+            required,
+            sources,
+            arg_description: Some(description.into()),
+            validation: ArgumentValidation::default(),
+            default_value: None,
+            metadata: None,
+        }
+    }
+
+    /// Create a fully specified argument
+    pub fn with_full_definition(
+        media_urn: impl Into<String>,
+        required: bool,
+        sources: Vec<ArgSource>,
+        description: Option<String>,
+        validation: ArgumentValidation,
+        default: Option<serde_json::Value>,
+        metadata: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            media_urn: media_urn.into(),
+            required,
+            sources,
+            arg_description: description,
+            validation,
+            default_value: default,
+            metadata,
+        }
+    }
+
+    /// Get the media URN
+    pub fn get_media_urn(&self) -> &str {
+        &self.media_urn
+    }
+
+    /// Resolve this argument's media spec using the provided media_specs table
+    ///
+    /// # Arguments
+    /// * `media_specs` - The media_specs map from the cap definition
+    ///
+    /// # Errors
+    /// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
+    pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_media_urn(&self.media_urn, media_specs)
+    }
+
+    /// Check if argument is binary based on resolved media spec
+    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.is_binary())
+    }
+
+    /// Check if argument is JSON based on resolved media spec
+    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.is_json())
+    }
+
+    /// Get the media type from resolved spec
+    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.media_type)
+    }
+
+    /// Get the profile URI from resolved spec
+    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.profile_uri)
+    }
+
+    /// Get the schema from resolved spec (if any)
+    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
+        self.resolve(media_specs).map(|ms| ms.schema)
+    }
+
+    /// Get metadata JSON
+    pub fn get_metadata(&self) -> Option<&serde_json::Value> {
+        self.metadata.as_ref()
+    }
+
+    /// Set metadata JSON
+    pub fn set_metadata(&mut self, metadata: serde_json::Value) {
+        self.metadata = Some(metadata);
+    }
+
+    /// Clear metadata JSON
+    pub fn clear_metadata(&mut self) {
+        self.metadata = None;
+    }
+}
 
 /// Output definition
 ///
@@ -184,58 +386,43 @@ impl CapOutput {
     }
 
     /// Check if output is binary based on resolved media spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
     pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs).map(|ms| ms.is_binary())
     }
 
     /// Check if output is JSON based on resolved media spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
     pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs).map(|ms| ms.is_json())
     }
 
     /// Get the media type from resolved spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
     pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
         self.resolve(media_specs).map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
     pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
         self.resolve(media_specs).map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
     pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
         self.resolve(media_specs).map(|ms| ms.schema)
+    }
+
+    /// Get metadata JSON
+    pub fn get_metadata(&self) -> Option<&serde_json::Value> {
+        self.metadata.as_ref()
+    }
+
+    /// Set metadata JSON
+    pub fn set_metadata(&mut self, metadata: serde_json::Value) {
+        self.metadata = Some(metadata);
+    }
+
+    /// Clear metadata JSON
+    pub fn clear_metadata(&mut self) {
+        self.metadata = None;
     }
 }
 
@@ -266,7 +453,7 @@ impl RegisteredBy {
 /// - `media_specs` table mapping spec IDs to definitions
 /// - Arguments with spec ID references
 /// - Output with spec ID reference
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cap {
     /// Formal cap URN with hierarchical naming
     /// Tags can include `op`, `in`, `out` (which should be spec IDs)
@@ -290,15 +477,10 @@ pub struct Cap {
     pub media_specs: HashMap<String, MediaSpecDef>,
 
     /// Cap arguments
-    pub arguments: CapArguments,
+    pub args: Vec<CapArg>,
 
     /// Output definition
     pub output: Option<CapOutput>,
-
-    /// If present, cap accepts stdin of this media type.
-    /// Absence means cap does NOT accept stdin.
-    /// Example: "media:type=pdf;v=1;binary"
-    pub stdin: Option<String>,
 
     /// Arbitrary metadata as JSON object
     pub metadata_json: Option<serde_json::Value>,
@@ -307,31 +489,13 @@ pub struct Cap {
     pub registered_by: Option<RegisteredBy>,
 }
 
-// Custom PartialEq implementation that includes all fields
-impl PartialEq for Cap {
-    fn eq(&self, other: &Self) -> bool {
-        self.urn == other.urn &&
-        self.title == other.title &&
-        self.cap_description == other.cap_description &&
-        self.metadata == other.metadata &&
-        self.command == other.command &&
-        self.media_specs == other.media_specs &&
-        self.arguments == other.arguments &&
-        self.output == other.output &&
-        self.stdin == other.stdin &&
-        self.metadata_json == other.metadata_json &&
-        self.registered_by == other.registered_by
-    }
-}
-
-// Custom serializer for Cap that serializes urn as tags object (not canonical string)
 impl Serialize for Cap {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Cap", 11)?;
+        let mut state = serializer.serialize_struct("Cap", 10)?;
 
         // Serialize urn as tags object (including in/out direction specs)
         let mut all_tags = serde_json::Map::new();
@@ -355,21 +519,16 @@ impl Serialize for Cap {
             state.serialize_field("metadata", &self.metadata)?;
         }
 
-        // Always serialize media_specs (can be empty)
         if !self.media_specs.is_empty() {
             state.serialize_field("media_specs", &self.media_specs)?;
         }
 
-        if !self.arguments.is_empty() {
-            state.serialize_field("arguments", &self.arguments)?;
+        if !self.args.is_empty() {
+            state.serialize_field("args", &self.args)?;
         }
 
         if self.output.is_some() {
             state.serialize_field("output", &self.output)?;
-        }
-
-        if self.stdin.is_some() {
-            state.serialize_field("stdin", &self.stdin)?;
         }
 
         if self.metadata_json.is_some() {
@@ -384,7 +543,6 @@ impl Serialize for Cap {
     }
 }
 
-// Custom deserializer to handle registry format where urn is an object
 impl<'de> Deserialize<'de> for Cap {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -392,7 +550,7 @@ impl<'de> Deserialize<'de> for Cap {
     {
         #[derive(Deserialize)]
         struct CapRegistry {
-            urn: serde_json::Value,  // Can be either string or object
+            urn: serde_json::Value,
             title: String,
             cap_description: Option<String>,
             #[serde(default)]
@@ -401,10 +559,8 @@ impl<'de> Deserialize<'de> for Cap {
             #[serde(default)]
             media_specs: HashMap<String, MediaSpecDef>,
             #[serde(default)]
-            arguments: CapArguments,
+            args: Vec<CapArg>,
             output: Option<CapOutput>,
-            #[serde(default)]
-            stdin: Option<String>,
             metadata_json: Option<serde_json::Value>,
             registered_by: Option<RegisteredBy>,
         }
@@ -456,262 +612,11 @@ impl<'de> Deserialize<'de> for Cap {
             metadata: registry_cap.metadata,
             command: registry_cap.command,
             media_specs: registry_cap.media_specs,
-            arguments: registry_cap.arguments,
+            args: registry_cap.args,
             output: registry_cap.output,
-            stdin: registry_cap.stdin,
             metadata_json: registry_cap.metadata_json,
             registered_by: registry_cap.registered_by,
         })
-    }
-}
-
-impl CapArgument {
-    /// Create a new cap argument with media URN
-    ///
-    /// # Arguments
-    /// * `name` - Argument name
-    /// * `media_urn` - Media URN referencing a media_specs entry (e.g., "media:type=string;v=1")
-    /// * `description` - Human-readable description
-    /// * `cli_flag` - CLI flag for this argument (e.g., "--input")
-    pub fn new(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            media_urn: media_urn.into(),
-            arg_description: description.into(),
-            cli_flag: cli_flag.into(),
-            position: None,
-            validation: ArgumentValidation::default(),
-            default_value: None,
-            metadata: None,
-        }
-    }
-
-    /// Create argument with position
-    pub fn with_position(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, position: usize) -> Self {
-        Self {
-            name: name.into(),
-            media_urn: media_urn.into(),
-            arg_description: description.into(),
-            cli_flag: cli_flag.into(),
-            position: Some(position),
-            validation: ArgumentValidation::default(),
-            default_value: None,
-            metadata: None,
-        }
-    }
-
-    /// Create argument with validation
-    pub fn with_validation(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, validation: ArgumentValidation) -> Self {
-        Self {
-            name: name.into(),
-            media_urn: media_urn.into(),
-            arg_description: description.into(),
-            cli_flag: cli_flag.into(),
-            position: None,
-            validation,
-            default_value: None,
-            metadata: None,
-        }
-    }
-
-    /// Create argument with default value
-    pub fn with_default(name: impl Into<String>, media_urn: impl Into<String>, description: impl Into<String>, cli_flag: impl Into<String>, default: serde_json::Value) -> Self {
-        Self {
-            name: name.into(),
-            media_urn: media_urn.into(),
-            arg_description: description.into(),
-            cli_flag: cli_flag.into(),
-            position: None,
-            validation: ArgumentValidation::default(),
-            default_value: Some(default),
-            metadata: None,
-        }
-    }
-
-    /// Create a fully specified argument
-    pub fn with_full_definition(
-        name: impl Into<String>,
-        media_urn: impl Into<String>,
-        description: impl Into<String>,
-        cli_flag: impl Into<String>,
-        position: Option<usize>,
-        validation: ArgumentValidation,
-        default: Option<serde_json::Value>,
-        metadata: Option<serde_json::Value>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            media_urn: media_urn.into(),
-            arg_description: description.into(),
-            cli_flag: cli_flag.into(),
-            position,
-            validation,
-            default_value: default,
-            metadata,
-        }
-    }
-
-    /// Get the media URN
-    pub fn get_media_urn(&self) -> &str {
-        &self.media_urn
-    }
-
-    /// Resolve this argument's media spec using the provided media_specs table
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
-    pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_media_urn(&self.media_urn, media_specs)
-    }
-
-    /// Check if argument is binary based on resolved media spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
-    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.is_binary())
-    }
-
-    /// Check if argument is JSON based on resolved media spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
-    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.is_json())
-    }
-
-    /// Get the media type from resolved spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
-    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.media_type)
-    }
-
-    /// Get the profile URI from resolved spec
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
-    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.profile_uri)
-    }
-
-    /// Get the schema from resolved spec (if any)
-    ///
-    /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
-    ///
-    /// # Errors
-    /// Returns error if the spec ID cannot be resolved
-    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.schema)
-    }
-}
-
-impl ArgumentValidation {
-    /// Create validation with min/max numeric constraints
-    pub fn numeric_range(min: Option<f64>, max: Option<f64>) -> Self {
-        Self {
-            min,
-            max,
-            min_length: None,
-            max_length: None,
-            pattern: None,
-            allowed_values: None,
-        }
-    }
-    
-    /// Create validation with string length constraints
-    pub fn string_length(min_length: Option<usize>, max_length: Option<usize>) -> Self {
-        Self {
-            min: None,
-            max: None,
-            min_length,
-            max_length,
-            pattern: None,
-            allowed_values: None,
-        }
-    }
-    
-    /// Create validation with pattern
-    pub fn pattern(pattern: String) -> Self {
-        Self {
-            min: None,
-            max: None,
-            min_length: None,
-            max_length: None,
-            pattern: Some(pattern),
-            allowed_values: None,
-        }
-    }
-    
-    /// Create validation with allowed values
-    pub fn allowed_values(values: Vec<String>) -> Self {
-        Self {
-            min: None,
-            max: None,
-            min_length: None,
-            max_length: None,
-            pattern: None,
-            allowed_values: Some(values),
-        }
-    }
-}
-
-impl CapArguments {
-    pub fn new() -> Self {
-        Self {
-            required: Vec::new(),
-            optional: Vec::new(),
-        }
-    }
-    
-    pub fn is_empty(&self) -> bool {
-        self.required.is_empty() && self.optional.is_empty()
-    }
-    
-    pub fn add_required(&mut self, arg: CapArgument) {
-        self.required.push(arg);
-    }
-    
-    pub fn add_optional(&mut self, arg: CapArgument) {
-        self.optional.push(arg);
-    }
-    
-    pub fn find_argument(&self, name: &str) -> Option<&CapArgument> {
-        self.required.iter().find(|arg| arg.name == name)
-            .or_else(|| self.optional.iter().find(|arg| arg.name == name))
-    }
-    
-    pub fn get_positional_args(&self) -> Vec<&CapArgument> {
-        let mut args: Vec<&CapArgument> = self.required.iter()
-            .chain(self.optional.iter())
-            .filter(|arg| arg.position.is_some())
-            .collect();
-        args.sort_by_key(|arg| arg.position.unwrap());
-        args
-    }
-    
-    pub fn get_flag_args(&self) -> Vec<&CapArgument> {
-        self.required.iter()
-            .chain(self.optional.iter())
-            .filter(|arg| !arg.cli_flag.is_empty())
-            .collect()
     }
 }
 
@@ -725,9 +630,8 @@ impl Cap {
             metadata: HashMap::new(),
             command,
             media_specs: HashMap::new(),
-            arguments: CapArguments::new(),
+            args: Vec::new(),
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -742,9 +646,8 @@ impl Cap {
             metadata: HashMap::new(),
             command,
             media_specs: HashMap::new(),
-            arguments: CapArguments::new(),
+            args: Vec::new(),
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -764,9 +667,8 @@ impl Cap {
             metadata,
             command,
             media_specs: HashMap::new(),
-            arguments: CapArguments::new(),
+            args: Vec::new(),
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
@@ -787,20 +689,19 @@ impl Cap {
             metadata,
             command,
             media_specs: HashMap::new(),
-            arguments: CapArguments::new(),
+            args: Vec::new(),
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
     }
 
-    /// Create a new cap with arguments
-    pub fn with_arguments(
+    /// Create a new cap with args
+    pub fn with_args(
         urn: CapUrn,
         title: String,
         command: String,
-        arguments: CapArguments,
+        args: Vec<CapArg>,
     ) -> Self {
         Self {
             urn,
@@ -809,22 +710,11 @@ impl Cap {
             metadata: HashMap::new(),
             command,
             media_specs: HashMap::new(),
-            arguments,
+            args,
             output: None,
-            stdin: None,
             metadata_json: None,
             registered_by: None,
         }
-    }
-
-    /// Create a new cap with command (deprecated - use new() instead)
-    #[deprecated(note = "use new() instead")]
-    pub fn with_command(
-        urn: CapUrn,
-        title: String,
-        command: String,
-    ) -> Self {
-        Self::new(urn, title, command)
     }
 
     /// Create a fully specified cap
@@ -835,7 +725,7 @@ impl Cap {
         metadata: HashMap<String, String>,
         command: String,
         media_specs: HashMap<String, MediaSpecDef>,
-        arguments: CapArguments,
+        args: Vec<CapArg>,
         output: Option<CapOutput>,
         metadata_json: Option<serde_json::Value>,
     ) -> Self {
@@ -846,19 +736,28 @@ impl Cap {
             metadata,
             command,
             media_specs,
-            arguments,
+            args,
             output,
-            stdin: None,
             metadata_json,
             registered_by: None,
         }
     }
 
-    /// Get the media type expected for stdin.
-    /// Returns None if cap doesn't accept stdin.
-    /// If Some, the cap accepts stdin of that media type.
-    pub fn stdin_media_type(&self) -> Option<&str> {
-        self.stdin.as_deref()
+    /// Get the stdin media URN from args (first stdin source found)
+    pub fn get_stdin_media_urn(&self) -> Option<&str> {
+        for arg in &self.args {
+            for source in &arg.sources {
+                if let ArgSource::Stdin { stdin } = source {
+                    return Some(stdin);
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if this cap accepts stdin
+    pub fn accepts_stdin(&self) -> bool {
+        self.get_stdin_media_urn().is_some()
     }
 
     /// Get the media_specs table
@@ -880,7 +779,7 @@ impl Cap {
     pub fn resolve_media_urn(&self, spec_id: &str) -> Result<ResolvedMediaSpec, MediaSpecError> {
         resolve_media_urn(spec_id, &self.media_specs)
     }
-    
+
     /// Check if this cap matches a request string
     pub fn matches_request(&self, request: &str) -> bool {
         let request_urn = CapUrn::from_string(request).expect("Invalid cap URN in request");
@@ -939,99 +838,60 @@ impl Cap {
     pub fn get_command(&self) -> &String {
         &self.command
     }
-    
+
     /// Set the command
     pub fn set_command(&mut self, command: String) {
         self.command = command;
     }
-    
+
     /// Get the title
     pub fn get_title(&self) -> &String {
         &self.title
     }
-    
+
     /// Set the title
     pub fn set_title(&mut self, title: String) {
         self.title = title;
     }
-    
-    /// Get the arguments
-    pub fn get_arguments(&self) -> &CapArguments {
-        &self.arguments
+
+    /// Get the args
+    pub fn get_args(&self) -> &Vec<CapArg> {
+        &self.args
     }
-    
-    /// Set the arguments
-    pub fn set_arguments(&mut self, arguments: CapArguments) {
-        self.arguments = arguments;
+
+    /// Set the args
+    pub fn set_args(&mut self, args: Vec<CapArg>) {
+        self.args = args;
     }
-    
-    /// Add a required argument
-    pub fn add_required_argument(&mut self, arg: CapArgument) {
-        self.arguments.add_required(arg);
+
+    /// Add an argument
+    pub fn add_arg(&mut self, arg: CapArg) {
+        self.args.push(arg);
     }
-    
-    /// Add an optional argument
-    pub fn add_optional_argument(&mut self, arg: CapArgument) {
-        self.arguments.add_optional(arg);
-    }
-    
+
     /// Get the output definition if defined
     pub fn get_output(&self) -> Option<&CapOutput> {
         self.output.as_ref()
     }
-    
+
     /// Set the output definition
     pub fn set_output(&mut self, output: CapOutput) {
         self.output = Some(output);
     }
-    
+
     /// Get metadata JSON
     pub fn get_metadata_json(&self) -> Option<&serde_json::Value> {
         self.metadata_json.as_ref()
     }
-    
+
     /// Set metadata JSON
     pub fn set_metadata_json(&mut self, metadata: serde_json::Value) {
         self.metadata_json = Some(metadata);
     }
-    
+
     /// Clear metadata JSON
     pub fn clear_metadata_json(&mut self) {
         self.metadata_json = None;
-    }
-}
-
-impl CapArgument {
-    /// Get metadata JSON
-    pub fn get_metadata(&self) -> Option<&serde_json::Value> {
-        self.metadata.as_ref()
-    }
-    
-    /// Set metadata JSON
-    pub fn set_metadata(&mut self, metadata: serde_json::Value) {
-        self.metadata = Some(metadata);
-    }
-    
-    /// Clear metadata JSON
-    pub fn clear_metadata(&mut self) {
-        self.metadata = None;
-    }
-}
-
-impl CapOutput {
-    /// Get metadata JSON
-    pub fn get_metadata(&self) -> Option<&serde_json::Value> {
-        self.metadata.as_ref()
-    }
-    
-    /// Set metadata JSON
-    pub fn set_metadata(&mut self, metadata: serde_json::Value) {
-        self.metadata = Some(metadata);
-    }
-    
-    /// Clear metadata JSON
-    pub fn clear_metadata(&mut self) {
-        self.metadata = None;
     }
 }
 
@@ -1050,9 +910,7 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
-        // Alphabetical order: format < in < op < out < type
         assert!(cap.urn_string().contains("op=transform"));
-        // in and out are now quoted media URNs
         assert!(cap.urn_string().contains("in=\"media:type=void;v=1\""));
         assert!(cap.urn_string().contains("out=\"media:type=object;v=1\""));
         assert_eq!(cap.title, "Transform JSON Data");
@@ -1081,8 +939,8 @@ mod tests {
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
         assert!(cap.matches_request(&test_urn("op=transform;format=json;type=data_processing")));
-        assert!(cap.matches_request(&test_urn("op=transform;format=*;type=data_processing"))); // Request wants any format, cap handles json specifically
-        assert!(cap.matches_request(&test_urn("type=data_processing"))); // Request is subset, cap has all required tags
+        assert!(cap.matches_request(&test_urn("op=transform;format=*;type=data_processing")));
+        assert!(cap.matches_request(&test_urn("type=data_processing")));
         assert!(!cap.matches_request(&test_urn("type=compute")));
     }
 
@@ -1091,11 +949,9 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let mut cap = Cap::new(urn, "Extract Document Metadata".to_string(), "extract-metadata".to_string());
 
-        // Test title getter
         assert_eq!(cap.get_title(), &"Extract Document Metadata".to_string());
         assert_eq!(cap.title, "Extract Document Metadata");
 
-        // Test title setter
         cap.set_title("Extract File Metadata".to_string());
         assert_eq!(cap.get_title(), &"Extract File Metadata".to_string());
         assert_eq!(cap.title, "Extract File Metadata");
@@ -1110,10 +966,7 @@ mod tests {
         let cap2 = Cap::new(urn2.clone(), "Transform JSON Data".to_string(), "transform".to_string());
         let cap3 = Cap::new(urn2, "Convert JSON Format".to_string(), "transform".to_string());
 
-        // Same cap definition (all fields identical) should be equal
         assert_eq!(cap1, cap2);
-
-        // Cap definitions with different titles should not be equal (like any JSON object comparison)
         assert_ne!(cap1, cap3);
         assert_ne!(cap2, cap3);
     }
@@ -1124,20 +977,104 @@ mod tests {
         let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
 
         // By default, caps should not accept stdin
-        assert!(cap.stdin.is_none());
-        assert!(cap.stdin_media_type().is_none());
+        assert!(!cap.accepts_stdin());
+        assert!(cap.get_stdin_media_urn().is_none());
 
-        // Enable stdin support with a specific media type
-        cap.stdin = Some("media:type=text;v=1;textable".to_string());
-        assert!(cap.stdin.is_some());
-        assert_eq!(cap.stdin_media_type(), Some("media:type=text;v=1;textable"));
+        // Enable stdin support by adding an arg with a stdin source
+        let stdin_arg = CapArg {
+            media_urn: "media:type=text;v=1;textable".to_string(),
+            required: true,
+            sources: vec![ArgSource::Stdin { stdin: "media:type=text;v=1;textable".to_string() }],
+            arg_description: Some("Input text".to_string()),
+            validation: ArgumentValidation::default(),
+            default_value: None,
+            metadata: None,
+        };
+        cap.add_arg(stdin_arg);
 
-        // Test serialization/deserialization preserves the field
+        assert!(cap.accepts_stdin());
+        assert_eq!(cap.get_stdin_media_urn(), Some("media:type=text;v=1;textable"));
+
+        // Test serialization/deserialization preserves the args
         let serialized = serde_json::to_string(&cap).unwrap();
-        assert!(serialized.contains("\"stdin\":\"media:type=text;v=1;textable\""));
+        assert!(serialized.contains("\"args\""));
+        assert!(serialized.contains("\"stdin\""));
         let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(cap.stdin, deserialized.stdin);
-        assert!(deserialized.stdin.is_some());
+        assert!(deserialized.accepts_stdin());
+        assert_eq!(deserialized.get_stdin_media_urn(), Some("media:type=text;v=1;textable"));
     }
 
+    #[test]
+    fn test_arg_source_types() {
+        // Test stdin source
+        let stdin_source = ArgSource::Stdin { stdin: "media:type=text;v=1".to_string() };
+        assert_eq!(stdin_source.get_type(), "stdin");
+        assert_eq!(stdin_source.stdin_media_urn(), Some("media:type=text;v=1"));
+        assert_eq!(stdin_source.position(), None);
+        assert_eq!(stdin_source.cli_flag(), None);
+
+        // Test position source
+        let position_source = ArgSource::Position { position: 0 };
+        assert_eq!(position_source.get_type(), "position");
+        assert_eq!(position_source.stdin_media_urn(), None);
+        assert_eq!(position_source.position(), Some(0));
+        assert_eq!(position_source.cli_flag(), None);
+
+        // Test cli_flag source
+        let cli_flag_source = ArgSource::CliFlag { cli_flag: "--input".to_string() };
+        assert_eq!(cli_flag_source.get_type(), "cli_flag");
+        assert_eq!(cli_flag_source.stdin_media_urn(), None);
+        assert_eq!(cli_flag_source.position(), None);
+        assert_eq!(cli_flag_source.cli_flag(), Some("--input"));
+    }
+
+    #[test]
+    fn test_cap_arg_serialization() {
+        let arg = CapArg {
+            media_urn: "media:type=string;v=1".to_string(),
+            required: true,
+            sources: vec![
+                ArgSource::CliFlag { cli_flag: "--name".to_string() },
+                ArgSource::Position { position: 0 },
+            ],
+            arg_description: Some("The name argument".to_string()),
+            validation: ArgumentValidation::default(),
+            default_value: None,
+            metadata: None,
+        };
+
+        let serialized = serde_json::to_string(&arg).unwrap();
+        assert!(serialized.contains("\"media_urn\":\"media:type=string;v=1\""));
+        assert!(serialized.contains("\"required\":true"));
+        assert!(serialized.contains("\"cli_flag\":\"--name\""));
+        assert!(serialized.contains("\"position\":0"));
+
+        let deserialized: CapArg = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(arg, deserialized);
+    }
+
+    #[test]
+    fn test_cap_arg_constructors() {
+        // Test basic constructor
+        let arg = CapArg::new(
+            "media:type=string;v=1",
+            true,
+            vec![ArgSource::CliFlag { cli_flag: "--name".to_string() }],
+        );
+        assert_eq!(arg.media_urn, "media:type=string;v=1");
+        assert!(arg.required);
+        assert_eq!(arg.sources.len(), 1);
+        assert!(arg.arg_description.is_none());
+
+        // Test with description
+        let arg = CapArg::with_description(
+            "media:type=integer;v=1",
+            false,
+            vec![ArgSource::Position { position: 0 }],
+            "The count argument",
+        );
+        assert_eq!(arg.media_urn, "media:type=integer;v=1");
+        assert!(!arg.required);
+        assert_eq!(arg.arg_description, Some("The count argument".to_string()));
+    }
 }

@@ -10,10 +10,10 @@
 //! ## Example
 //!
 //! ```rust
-//! use capns::{CapArgument, CapOutput};
+//! use capns::{CapArg, ArgSource, CapOutput};
 //! use capns::standard::media::{MEDIA_STRING, MEDIA_OBJECT};
 //!
-//! let arg = CapArgument::new("input", MEDIA_STRING, "Input text", "--input");
+//! let arg = CapArg::new(MEDIA_STRING, true, vec![ArgSource::CliFlag { cli_flag: "--input".to_string() }]);
 //! let output = CapOutput::new(MEDIA_OBJECT, "JSON output");
 //! ```
 

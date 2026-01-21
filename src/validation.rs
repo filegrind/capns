@@ -5,8 +5,9 @@
 //! Uses spec ID resolution to get media types and schemas from the media_specs table.
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
-use crate::{Cap, CapArgument, CapOutput};
+use crate::{Cap, CapOutput, CapArg, ArgSource};
 use crate::media_spec::resolve_media_urn;
+use std::collections::HashSet;
 use crate::profile_schema_registry::ProfileSchemaRegistry;
 use serde_json::Value;
 use std::fmt;
@@ -164,37 +165,45 @@ impl InputValidator {
         arguments: &[Value],
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
-        let args = &cap.arguments;
+        let args = cap.get_args();
+
+        // Get positional args sorted by position
+        let positional_args: Vec<&CapArg> = args.iter()
+            .filter(|arg| arg.sources.iter().any(|s| matches!(s, ArgSource::Position { .. })))
+            .collect();
+
+        // Sort by position
+        let mut sorted_positional: Vec<(&CapArg, usize)> = positional_args.iter()
+            .filter_map(|arg| {
+                arg.sources.iter()
+                    .find_map(|s| if let ArgSource::Position { position } = s { Some((*arg, *position)) } else { None })
+            })
+            .collect();
+        sorted_positional.sort_by_key(|(_, pos)| *pos);
 
         // Check if too many arguments provided
-        let max_args = args.required.len() + args.optional.len();
-        if arguments.len() > max_args {
+        if arguments.len() > sorted_positional.len() {
             return Err(ValidationError::TooManyArguments {
                 cap_urn,
-                max_expected: max_args,
+                max_expected: sorted_positional.len(),
                 actual_count: arguments.len(),
             });
         }
 
-        // Validate required arguments
-        for (index, req_arg) in args.required.iter().enumerate() {
+        // Validate each positional argument
+        for (index, (arg_def, _pos)) in sorted_positional.iter().enumerate() {
             if index >= arguments.len() {
-                return Err(ValidationError::MissingRequiredArgument {
-                    cap_urn: cap_urn.clone(),
-                    argument_name: req_arg.name.clone(),
-                });
+                // Missing argument - check if required
+                if arg_def.required {
+                    return Err(ValidationError::MissingRequiredArgument {
+                        cap_urn: cap_urn.clone(),
+                        argument_name: arg_def.media_urn.clone(),
+                    });
+                }
+                continue;
             }
 
-            self.validate_single_argument(cap, req_arg, &arguments[index]).await?;
-        }
-
-        // Validate optional arguments if provided
-        let required_count = args.required.len();
-        for (index, opt_arg) in args.optional.iter().enumerate() {
-            let arg_index = required_count + index;
-            if arg_index < arguments.len() {
-                self.validate_single_argument(cap, opt_arg, &arguments[arg_index]).await?;
-            }
+            self.validate_single_argument(cap, arg_def, &arguments[index]).await?;
         }
 
         Ok(())
@@ -207,9 +216,9 @@ impl InputValidator {
         named_args: &[Value],
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
-        let args = &cap.arguments;
+        let args = cap.get_args();
 
-        // Extract named argument values into a map
+        // Extract named argument values into a map (keyed by cli_flag)
         let mut provided_args = std::collections::HashMap::new();
         for arg in named_args {
             if let Value::Object(map) = arg {
@@ -219,35 +228,32 @@ impl InputValidator {
             }
         }
 
-        // Check that all required arguments are provided as named arguments
-        for req_arg in &args.required {
-            if !provided_args.contains_key(&req_arg.name) {
-                return Err(ValidationError::MissingRequiredArgument {
-                    cap_urn: cap_urn.clone(),
-                    argument_name: format!("{} (expected as named argument)", req_arg.name),
-                });
-            }
+        // Check all cap args
+        for arg_def in args {
+            // Find cli_flag for this arg
+            let cli_flag = arg_def.sources.iter()
+                .find_map(|s| if let ArgSource::CliFlag { cli_flag } = s { Some(cli_flag.as_str()) } else { None });
 
-            // Validate the provided argument value
-            let provided_value = &provided_args[&req_arg.name];
-            self.validate_single_argument(cap, req_arg, provided_value).await?;
-        }
-
-        // Validate optional arguments if provided
-        for opt_arg in &args.optional {
-            if let Some(provided_value) = provided_args.get(&opt_arg.name) {
-                self.validate_single_argument(cap, opt_arg, provided_value).await?;
+            if let Some(flag) = cli_flag {
+                if let Some(provided_value) = provided_args.get(flag) {
+                    self.validate_single_argument(cap, arg_def, provided_value).await?;
+                } else if arg_def.required {
+                    return Err(ValidationError::MissingRequiredArgument {
+                        cap_urn: cap_urn.clone(),
+                        argument_name: format!("{} (expected as named argument with flag {})", arg_def.media_urn, flag),
+                    });
+                }
             }
         }
 
         // Check for unknown arguments
-        let known_arg_names: std::collections::HashSet<String> = args.required.iter()
-            .chain(args.optional.iter())
-            .map(|arg| arg.name.clone())
+        let known_flags: HashSet<String> = args.iter()
+            .flat_map(|arg| arg.sources.iter())
+            .filter_map(|s| if let ArgSource::CliFlag { cli_flag } = s { Some(cli_flag.clone()) } else { None })
             .collect();
 
         for provided_name in provided_args.keys() {
-            if !known_arg_names.contains(provided_name) {
+            if !known_flags.contains(provided_name) {
                 return Err(ValidationError::UnknownArgument {
                     cap_urn: cap_urn.clone(),
                     argument_name: provided_name.clone(),
@@ -261,7 +267,7 @@ impl InputValidator {
     async fn validate_single_argument(
         &self,
         cap: &Cap,
-        arg_def: &CapArgument,
+        arg_def: &CapArg,
         value: &Value,
     ) -> Result<(), ValidationError> {
         // Type validation via resolved spec (includes local schema validation if present)
@@ -276,7 +282,7 @@ impl InputValidator {
     async fn validate_argument_type(
         &self,
         cap: &Cap,
-        arg_def: &CapArgument,
+        arg_def: &CapArg,
         value: &Value,
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
@@ -286,7 +292,7 @@ impl InputValidator {
         let resolved = resolve_media_urn(&arg_def.media_urn, media_specs)
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
-                field_name: arg_def.name.clone(),
+                field_name: arg_def.media_urn.clone(),
                 error: e.to_string(),
             })?;
 
@@ -295,7 +301,7 @@ impl InputValidator {
             if !matches!(value, Value::String(_)) {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
-                    argument_name: arg_def.name.clone(),
+                    argument_name: arg_def.media_urn.clone(),
                     expected_media_spec: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: vec!["Expected base64-encoded string for binary type".to_string()],
@@ -310,7 +316,7 @@ impl InputValidator {
             if let Err(errors) = self.validate_with_local_schema(schema, value) {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
-                    argument_name: arg_def.name.clone(),
+                    argument_name: arg_def.media_urn.clone(),
                     expected_media_spec: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
@@ -324,7 +330,7 @@ impl InputValidator {
             if let Err(errors) = self.schema_registry.validate(profile, value).await {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
-                    argument_name: arg_def.name.clone(),
+                    argument_name: arg_def.media_urn.clone(),
                     expected_media_spec: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
@@ -359,7 +365,7 @@ impl InputValidator {
     fn validate_argument_rules(
         &self,
         cap: &Cap,
-        arg_def: &CapArgument,
+        arg_def: &CapArg,
         value: &Value,
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
@@ -371,7 +377,7 @@ impl InputValidator {
                 if num < min {
                     return Err(ValidationError::ArgumentValidationFailed {
                         cap_urn,
-                        argument_name: arg_def.name.clone(),
+                        argument_name: arg_def.media_urn.clone(),
                         validation_rule: format!("minimum value {}", min),
                         actual_value: value.clone(),
                     });
@@ -384,7 +390,7 @@ impl InputValidator {
                 if num > max {
                     return Err(ValidationError::ArgumentValidationFailed {
                         cap_urn,
-                        argument_name: arg_def.name.clone(),
+                        argument_name: arg_def.media_urn.clone(),
                         validation_rule: format!("maximum value {}", max),
                         actual_value: value.clone(),
                     });
@@ -399,7 +405,7 @@ impl InputValidator {
                     if s.len() < min_length {
                         return Err(ValidationError::ArgumentValidationFailed {
                             cap_urn,
-                            argument_name: arg_def.name.clone(),
+                            argument_name: arg_def.media_urn.clone(),
                             validation_rule: format!("minimum length {}", min_length),
                             actual_value: value.clone(),
                         });
@@ -409,7 +415,7 @@ impl InputValidator {
                     if arr.len() < min_length {
                         return Err(ValidationError::ArgumentValidationFailed {
                             cap_urn,
-                            argument_name: arg_def.name.clone(),
+                            argument_name: arg_def.media_urn.clone(),
                             validation_rule: format!("minimum array length {}", min_length),
                             actual_value: value.clone(),
                         });
@@ -425,7 +431,7 @@ impl InputValidator {
                     if s.len() > max_length {
                         return Err(ValidationError::ArgumentValidationFailed {
                             cap_urn,
-                            argument_name: arg_def.name.clone(),
+                            argument_name: arg_def.media_urn.clone(),
                             validation_rule: format!("maximum length {}", max_length),
                             actual_value: value.clone(),
                         });
@@ -435,7 +441,7 @@ impl InputValidator {
                     if arr.len() > max_length {
                         return Err(ValidationError::ArgumentValidationFailed {
                             cap_urn,
-                            argument_name: arg_def.name.clone(),
+                            argument_name: arg_def.media_urn.clone(),
                             validation_rule: format!("maximum array length {}", max_length),
                             actual_value: value.clone(),
                         });
@@ -452,7 +458,7 @@ impl InputValidator {
                     if !regex.is_match(s) {
                         return Err(ValidationError::ArgumentValidationFailed {
                             cap_urn,
-                            argument_name: arg_def.name.clone(),
+                            argument_name: arg_def.media_urn.clone(),
                             validation_rule: format!("pattern '{}'", pattern),
                             actual_value: value.clone(),
                         });
@@ -467,7 +473,7 @@ impl InputValidator {
                 if !allowed_values.contains(&s.to_string()) {
                     return Err(ValidationError::ArgumentValidationFailed {
                         cap_urn,
-                        argument_name: arg_def.name.clone(),
+                        argument_name: arg_def.media_urn.clone(),
                         validation_rule: format!("allowed values: {:?}", allowed_values),
                         actual_value: value.clone(),
                     });
@@ -689,50 +695,56 @@ impl CapValidator {
     pub fn validate_cap(cap: &Cap) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
         let media_specs = cap.get_media_specs();
+        let args = cap.get_args();
 
         // Validate that required arguments don't have default values
-        for arg in &cap.arguments.required {
-            if arg.default_value.is_some() {
+        for arg in args {
+            if arg.required && arg.default_value.is_some() {
                 return Err(ValidationError::InvalidCapSchema {
                     cap_urn: cap_urn.clone(),
-                    issue: format!("Required argument '{}' cannot have a default value", arg.name),
+                    issue: format!("Required argument '{}' cannot have a default value", arg.media_urn),
                 });
             }
         }
 
         // Validate argument position uniqueness
         let mut positions = std::collections::HashSet::new();
-        for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
-            if let Some(pos) = arg.position {
-                if !positions.insert(pos) {
-                    return Err(ValidationError::InvalidCapSchema {
-                        cap_urn: cap_urn.clone(),
-                        issue: format!("Duplicate argument position {} for argument '{}'", pos, arg.name),
-                    });
+        for arg in args {
+            for source in &arg.sources {
+                if let ArgSource::Position { position } = source {
+                    if !positions.insert(*position) {
+                        return Err(ValidationError::InvalidCapSchema {
+                            cap_urn: cap_urn.clone(),
+                            issue: format!("Duplicate argument position {} for argument '{}'", position, arg.media_urn),
+                        });
+                    }
                 }
             }
         }
 
         // Validate CLI flag uniqueness
         let mut cli_flags = std::collections::HashSet::new();
-        for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
-            let flag = &arg.cli_flag;
-            if !flag.is_empty() {
-                if !cli_flags.insert(flag) {
-                    return Err(ValidationError::InvalidCapSchema {
-                        cap_urn: cap_urn.clone(),
-                        issue: format!("Duplicate CLI flag '{}' for argument '{}'", flag, arg.name),
-                    });
+        for arg in args {
+            for source in &arg.sources {
+                if let ArgSource::CliFlag { cli_flag } = source {
+                    if !cli_flag.is_empty() {
+                        if !cli_flags.insert(cli_flag) {
+                            return Err(ValidationError::InvalidCapSchema {
+                                cap_urn: cap_urn.clone(),
+                                issue: format!("Duplicate CLI flag '{}' for argument '{}'", cli_flag, arg.media_urn),
+                            });
+                        }
+                    }
                 }
             }
         }
 
         // Validate that all media_spec IDs can be resolved
-        for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
+        for arg in args {
             resolve_media_urn(&arg.media_urn, media_specs)
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
-                    field_name: arg.name.clone(),
+                    field_name: arg.media_urn.clone(),
                     error: e.to_string(),
                 })?;
         }
@@ -748,6 +760,158 @@ impl CapValidator {
 
         Ok(())
     }
+}
+
+/// Reserved CLI flags that cannot be used
+pub const RESERVED_CLI_FLAGS: &[&str] = &["manifest", "--help", "--version", "-v", "-h"];
+
+/// Validate cap args against the 12 validation rules for the new args format
+///
+/// # Validation Rules
+/// - RULE1: No duplicate media_urns
+/// - RULE2: sources must not be null or empty
+/// - RULE3: If multiple args have stdin source, stdin media_urns must be identical
+/// - RULE4: No arg may specify same source type more than once
+/// - RULE5: No two args may have same position
+/// - RULE6: Positions must be sequential (0-based, no gaps when aggregated)
+/// - RULE7: No arg may have both position and cli_flag
+/// - RULE8: No unknown keys in source objects (enforced by serde)
+/// - RULE9: No two args may have same cli_flag
+/// - RULE10: Reserved cli_flags cannot be used
+/// - RULE11: cli_flag used verbatim as specified (enforced by design)
+/// - RULE12: media_urn is the key, no name field (enforced by CapArg structure)
+pub fn validate_cap_args(cap: &Cap) -> Result<(), ValidationError> {
+    let cap_urn = cap.urn_string();
+    let args = cap.get_args();
+
+    // RULE1: No duplicate media_urns
+    let mut media_urns = HashSet::new();
+    for arg in args {
+        if !media_urns.insert(&arg.media_urn) {
+            return Err(ValidationError::InvalidCapSchema {
+                cap_urn,
+                issue: format!("RULE1: Duplicate media_urn '{}'", arg.media_urn),
+            });
+        }
+    }
+
+    // RULE2: sources must not be null or empty
+    for arg in args {
+        if arg.sources.is_empty() {
+            return Err(ValidationError::InvalidCapSchema {
+                cap_urn,
+                issue: format!("RULE2: Argument '{}' has empty sources", arg.media_urn),
+            });
+        }
+    }
+
+    // Collect stdin URNs, positions, and cli_flags for cross-arg validation
+    let mut stdin_urns: Vec<String> = Vec::new();
+    let mut positions: Vec<(usize, String)> = Vec::new();
+    let mut cli_flags: Vec<(String, String)> = Vec::new();
+
+    for arg in args {
+        let mut source_types = HashSet::new();
+        let mut has_position = false;
+        let mut has_cli_flag = false;
+
+        for source in &arg.sources {
+            let source_type = source.get_type();
+
+            // RULE4: No arg may specify same source type more than once
+            if !source_types.insert(source_type) {
+                return Err(ValidationError::InvalidCapSchema {
+                    cap_urn,
+                    issue: format!("RULE4: Argument '{}' has duplicate source type '{}'", arg.media_urn, source_type),
+                });
+            }
+
+            match source {
+                ArgSource::Stdin { stdin } => {
+                    stdin_urns.push(stdin.clone());
+                }
+                ArgSource::Position { position } => {
+                    has_position = true;
+                    positions.push((*position, arg.media_urn.clone()));
+                }
+                ArgSource::CliFlag { cli_flag } => {
+                    has_cli_flag = true;
+                    cli_flags.push((cli_flag.clone(), arg.media_urn.clone()));
+
+                    // RULE10: Reserved cli_flags
+                    if RESERVED_CLI_FLAGS.contains(&cli_flag.as_str()) {
+                        return Err(ValidationError::InvalidCapSchema {
+                            cap_urn,
+                            issue: format!("RULE10: Argument '{}' uses reserved cli_flag '{}'", arg.media_urn, cli_flag),
+                        });
+                    }
+                }
+            }
+        }
+
+        // RULE7: No arg may have both position and cli_flag
+        if has_position && has_cli_flag {
+            return Err(ValidationError::InvalidCapSchema {
+                cap_urn,
+                issue: format!("RULE7: Argument '{}' has both position and cli_flag sources", arg.media_urn),
+            });
+        }
+    }
+
+    // RULE3: If multiple args have stdin source, stdin media_urns must be identical
+    if stdin_urns.len() > 1 {
+        let first_stdin = &stdin_urns[0];
+        for stdin in &stdin_urns[1..] {
+            if stdin != first_stdin {
+                return Err(ValidationError::InvalidCapSchema {
+                    cap_urn,
+                    issue: format!("RULE3: Multiple args have different stdin media_urns: '{}' vs '{}'", first_stdin, stdin),
+                });
+            }
+        }
+    }
+
+    // RULE5: No two args may have same position
+    let mut position_set = HashSet::new();
+    for (position, media_urn) in &positions {
+        if !position_set.insert(*position) {
+            return Err(ValidationError::InvalidCapSchema {
+                cap_urn,
+                issue: format!("RULE5: Duplicate position {} in argument '{}'", position, media_urn),
+            });
+        }
+    }
+
+    // RULE6: Positions must be sequential (0-based, no gaps when aggregated)
+    if !positions.is_empty() {
+        let mut sorted_positions = positions.clone();
+        sorted_positions.sort_by_key(|(pos, _)| *pos);
+        for (i, (position, _)) in sorted_positions.iter().enumerate() {
+            if *position != i {
+                return Err(ValidationError::InvalidCapSchema {
+                    cap_urn,
+                    issue: format!("RULE6: Position gap - expected {} but found {}", i, position),
+                });
+            }
+        }
+    }
+
+    // RULE9: No two args may have same cli_flag
+    let mut flag_set = HashSet::new();
+    for (flag, media_urn) in &cli_flags {
+        if !flag_set.insert(flag) {
+            return Err(ValidationError::InvalidCapSchema {
+                cap_urn,
+                issue: format!("RULE9: Duplicate cli_flag '{}' in argument '{}'", flag, media_urn),
+            });
+        }
+    }
+
+    // RULE8: No unknown keys in source objects - enforced by serde(deny_unknown_fields)
+    // RULE11: cli_flag used verbatim as specified - enforced by design
+    // RULE12: media_urn is the key, no name field - enforced by CapArg structure
+
+    Ok(())
 }
 
 /// Main validation coordinator that orchestrates input and output validation
@@ -824,7 +988,7 @@ impl Default for SchemaValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapUrn, CapArguments};
+    use crate::CapUrn;
     use crate::standard::media::{MEDIA_STRING, MEDIA_INTEGER};
     use serde_json::json;
 
@@ -841,15 +1005,12 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
-        let mut args = CapArguments::new();
-        args.add_required(CapArgument::new(
-            "file_path",
+        let arg = CapArg::new(
             MEDIA_STRING,
-            "Path to file",
-            "--file",
-        ));
-
-        cap.set_arguments(args);
+            true,
+            vec![ArgSource::Position { position: 0 }],
+        );
+        cap.add_arg(arg);
 
         let input_args = vec![json!("/path/to/file.txt")];
 
@@ -864,15 +1025,12 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
-        let mut args = CapArguments::new();
-        args.add_required(CapArgument::new(
-            "file_path",
+        let arg = CapArg::new(
             MEDIA_STRING,
-            "Path to file",
-            "--file",
-        ));
-
-        cap.set_arguments(args);
+            true,
+            vec![ArgSource::Position { position: 0 }],
+        );
+        cap.add_arg(arg);
 
         let input_args = vec![]; // Missing required argument
 
@@ -880,7 +1038,7 @@ mod tests {
         assert!(result.is_err());
 
         if let Err(ValidationError::MissingRequiredArgument { argument_name, .. }) = result {
-            assert_eq!(argument_name, "file_path");
+            assert_eq!(argument_name, MEDIA_STRING);
         } else {
             panic!("Expected MissingRequiredArgument error");
         }
@@ -894,15 +1052,12 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
-        let mut args = CapArguments::new();
-        args.add_required(CapArgument::new(
-            "width",
+        let arg = CapArg::new(
             MEDIA_INTEGER,
-            "Width value",
-            "--width",
-        ));
-
-        cap.set_arguments(args);
+            true,
+            vec![ArgSource::Position { position: 0 }],
+        );
+        cap.add_arg(arg);
 
         let input_args = vec![json!("not_a_number")]; // Wrong type
 
@@ -987,8 +1142,8 @@ pub async fn validate_media_urn_references(
     }
 
     // Check all argument media URNs
-    for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
-        urns_to_check.push((format!("argument '{}'", arg.name), arg.media_urn.clone()));
+    for arg in cap.get_args() {
+        urns_to_check.push((format!("argument '{}'", arg.media_urn), arg.media_urn.clone()));
     }
 
     // Check output media URN
@@ -1050,12 +1205,12 @@ pub fn validate_media_urn_references_sync(cap: &Cap) -> Result<(), ValidationErr
     }
 
     // Check all argument media URNs
-    for arg in cap.arguments.required.iter().chain(cap.arguments.optional.iter()) {
+    for arg in cap.get_args() {
         crate::media_spec::resolve_media_urn(&arg.media_urn, media_specs)
             .map_err(|_| ValidationError::UnresolvableMediaUrn {
                 cap_urn: cap_urn.clone(),
                 media_urn: arg.media_urn.clone(),
-                location: format!("argument '{}'", arg.name),
+                location: format!("argument '{}'", arg.media_urn),
             })?;
     }
 

@@ -60,18 +60,17 @@ impl CapCaller {
         &self.cap_definition
     }
 
-    /// Get a map of argument name to position for positional arguments
-    /// Returns only arguments that have a position set
+    /// Get a map of argument media_urn to position for positional arguments
+    /// Returns only arguments that have a position source set
     pub fn get_positional_arg_positions(&self) -> std::collections::HashMap<String, usize> {
+        use crate::ArgSource;
         let mut positions = std::collections::HashMap::new();
-        for arg in &self.cap_definition.arguments.required {
-            if let Some(pos) = arg.position {
-                positions.insert(arg.name.clone(), pos);
-            }
-        }
-        for arg in &self.cap_definition.arguments.optional {
-            if let Some(pos) = arg.position {
-                positions.insert(arg.name.clone(), pos);
+        for arg in self.cap_definition.get_args() {
+            for source in &arg.sources {
+                if let ArgSource::Position { position } = source {
+                    positions.insert(arg.media_urn.clone(), *position);
+                    break;
+                }
             }
         }
         positions
@@ -200,15 +199,28 @@ impl CapCaller {
         positional_args: &[JsonValue],
         named_args: &[JsonValue],
     ) -> Result<()> {
-        let args = &self.cap_definition.arguments;
+        use crate::ArgSource;
+        let args = self.cap_definition.get_args();
+
+        // Get positional args sorted by position
+        let mut positional_arg_defs: Vec<_> = args.iter()
+            .filter_map(|arg| {
+                arg.sources.iter()
+                    .find_map(|s| if let ArgSource::Position { position } = s {
+                        Some((arg, *position))
+                    } else {
+                        None
+                    })
+            })
+            .collect();
+        positional_arg_defs.sort_by_key(|(_, pos)| *pos);
 
         // Check if positional arguments are being used
-        let using_positional = !positional_args.is_empty() ||
-            args.required.iter().any(|arg| arg.position.is_some());
+        let using_positional = !positional_args.is_empty() || !positional_arg_defs.is_empty();
 
         if using_positional {
             // Validate positional arguments
-            let max_args = args.required.len() + args.optional.len();
+            let max_args = positional_arg_defs.len();
             if positional_args.len() > max_args {
                 return Err(anyhow::anyhow!(
                     "Too many arguments: expected at most {}, got {}",
@@ -217,12 +229,16 @@ impl CapCaller {
             }
 
             // Check required arguments are present
-            if positional_args.len() < args.required.len() {
-                let missing = &args.required[positional_args.len()];
-                return Err(anyhow::anyhow!(
-                    "Missing required argument: {}",
-                    missing.name
-                ));
+            let required_count = positional_arg_defs.iter()
+                .filter(|(arg, _)| arg.required)
+                .count();
+            if positional_args.len() < required_count {
+                if let Some((missing_arg, _)) = positional_arg_defs.get(positional_args.len()) {
+                    return Err(anyhow::anyhow!(
+                        "Missing required argument: {}",
+                        missing_arg.media_urn
+                    ));
+                }
             }
         } else {
             // Validate named arguments
@@ -236,12 +252,24 @@ impl CapCaller {
             }
 
             // Check all required arguments are provided
-            for req_arg in &args.required {
-                if !provided_names.contains(&req_arg.name) {
-                    return Err(anyhow::anyhow!(
-                        "Missing required argument: {}",
-                        req_arg.name
-                    ));
+            for arg in args {
+                if arg.required {
+                    // Find cli_flag for this arg
+                    let cli_flag = arg.sources.iter()
+                        .find_map(|s| if let ArgSource::CliFlag { cli_flag } = s {
+                            Some(cli_flag.as_str())
+                        } else {
+                            None
+                        });
+
+                    if let Some(flag) = cli_flag {
+                        if !provided_names.contains(flag) {
+                            return Err(anyhow::anyhow!(
+                                "Missing required argument: {}",
+                                arg.media_urn
+                            ));
+                        }
+                    }
                 }
             }
         }

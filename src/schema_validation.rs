@@ -4,7 +4,7 @@
 //! Schemas are now located in the `media_specs` table of the cap definition,
 //! not in inline fields on arguments/outputs.
 
-use crate::{Cap, CapArgument, CapOutput};
+use crate::{Cap, CapOutput, CapArg};
 use crate::media_spec::resolve_media_urn;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
@@ -56,17 +56,25 @@ impl SchemaValidator {
         cap: &Cap,
         arguments: &[JsonValue],
     ) -> Result<(), SchemaValidationError> {
-        let cap_args = &cap.arguments;
-        let media_specs = cap.get_media_specs();
+        let args = cap.get_args();
 
-        // Validate required arguments
-        for (index, arg_def) in cap_args.required.iter().enumerate() {
-            if let Some(position) = arg_def.position {
-                if let Some(arg_value) = arguments.get(position) {
-                    self.validate_argument_with_cap(cap, arg_def, arg_value)?;
-                }
-            } else if index < arguments.len() {
-                self.validate_argument_with_cap(cap, arg_def, &arguments[index])?;
+        // Get positional args sorted by position
+        let mut positional_args: Vec<(&CapArg, usize)> = args.iter()
+            .filter_map(|arg| {
+                arg.sources.iter()
+                    .find_map(|s| if let crate::ArgSource::Position { position } = s {
+                        Some((arg, *position))
+                    } else {
+                        None
+                    })
+            })
+            .collect();
+        positional_args.sort_by_key(|(_, pos)| *pos);
+
+        // Validate positional arguments
+        for (arg_def, position) in positional_args {
+            if let Some(arg_value) = arguments.get(position) {
+                self.validate_argument_with_cap(cap, arg_def, arg_value)?;
             }
         }
 
@@ -77,7 +85,7 @@ impl SchemaValidator {
     pub fn validate_argument_with_cap(
         &mut self,
         cap: &Cap,
-        arg_def: &CapArgument,
+        arg_def: &CapArg,
         value: &JsonValue,
     ) -> Result<(), SchemaValidationError> {
         let media_specs = cap.get_media_specs();
@@ -95,7 +103,7 @@ impl SchemaValidator {
             None => return Ok(()),
         };
 
-        self.validate_value_against_schema(&arg_def.name, value, &schema)
+        self.validate_value_against_schema(&arg_def.media_urn, value, &schema)
     }
 
     /// Validate output against its schema from media_specs
@@ -206,7 +214,7 @@ mod tests {
     use super::*;
     use crate::standard::media::MEDIA_STRING;
     use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
-    use crate::CapUrn;
+    use crate::{CapUrn, CapArg, ArgSource};
     use serde_json::json;
 
     // Helper to create test URN with required in/out specs
@@ -241,11 +249,10 @@ mod tests {
             }),
         );
 
-        let arg = CapArgument::new(
-            "user_data",
+        let arg = CapArg::new(
             "my:user-data.v1",
-            "User data",
-            "--user-data",
+            true,
+            vec![ArgSource::Position { position: 0 }],
         );
 
         let valid_value = json!({"name": "John", "age": 30});
@@ -278,11 +285,10 @@ mod tests {
             }),
         );
 
-        let arg = CapArgument::new(
-            "user_data",
+        let arg = CapArg::new(
             "my:user-data.v1",
-            "User data",
-            "--user-data",
+            true,
+            vec![ArgSource::Position { position: 0 }],
         );
 
         let invalid_value = json!({"age": 30}); // Missing required "name"
@@ -331,11 +337,10 @@ mod tests {
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
         // Argument using built-in spec ID (no local schema)
-        let arg = CapArgument::new(
-            "simple_string",
+        let arg = CapArg::new(
             MEDIA_STRING,
-            "Simple string",
-            "--string",
+            true,
+            vec![ArgSource::Position { position: 0 }],
         );
 
         let value = json!("any string value");
@@ -351,11 +356,10 @@ mod tests {
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
         // Argument with unknown media URN
-        let arg = CapArgument::new(
-            "unknown",
+        let arg = CapArg::new(
             "media:type=unknown;v=1", // Not in media_specs and not a built-in
-            "Unknown",
-            "--unknown",
+            true,
+            vec![ArgSource::Position { position: 0 }],
         );
 
         let value = json!("test");
