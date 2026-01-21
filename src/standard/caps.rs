@@ -369,74 +369,56 @@ pub fn listing_analysis_task_urn(lang_code: &str) -> CapUrn {
 /// Input: source data (any textable type)
 /// Output: string representation
 pub fn coerce_to_string_urn(source_type: &str) -> CapUrn {
-    let in_spec = format!("media:type={};v=1", source_type);
-    CapUrnBuilder::new()
-        .tag("op", "coerce")
-        .tag("target", "string")
-        .in_spec(&in_spec)
-        .out_spec(MEDIA_STRING)
-        .build()
-        .expect("Failed to build coerce-to-string cap URN")
+    coercion_urn(source_type, "string")
 }
 
 /// Build URN for coercing to integer
 /// Input: source data (numeric or parseable string)
 /// Output: integer
 pub fn coerce_to_integer_urn(source_type: &str) -> CapUrn {
-    let in_spec = format!("media:type={};v=1", source_type);
-    CapUrnBuilder::new()
-        .tag("op", "coerce")
-        .tag("target", "integer")
-        .in_spec(&in_spec)
-        .out_spec(MEDIA_INTEGER)
-        .build()
-        .expect("Failed to build coerce-to-integer cap URN")
+    coercion_urn(source_type, "integer")
 }
 
 /// Build URN for coercing to number
 /// Input: source data (numeric or parseable string)
 /// Output: number
 pub fn coerce_to_number_urn(source_type: &str) -> CapUrn {
-    let in_spec = format!("media:type={};v=1", source_type);
-    CapUrnBuilder::new()
-        .tag("op", "coerce")
-        .tag("target", "number")
-        .in_spec(&in_spec)
-        .out_spec(crate::media_urn::MEDIA_NUMBER)
-        .build()
-        .expect("Failed to build coerce-to-number cap URN")
+    coercion_urn(source_type, "number")
 }
 
 /// Build URN for coercing to object
 /// Input: any data type
 /// Output: JSON object (possibly wrapped)
 pub fn coerce_to_object_urn(source_type: &str) -> CapUrn {
-    let in_spec = format!("media:type={};v=1", source_type);
-    CapUrnBuilder::new()
-        .tag("op", "coerce")
-        .tag("target", "object")
-        .in_spec(&in_spec)
-        .out_spec(MEDIA_OBJECT)
-        .build()
-        .expect("Failed to build coerce-to-object cap URN")
+    coercion_urn(source_type, "object")
 }
 
-/// Build a generic coercion URN given source and target types
-/// Panics if target_type is not a known media type
-pub fn coercion_urn(source_type: &str, target_type: &str) -> CapUrn {
-    let in_spec = format!("media:type={};v=1", source_type);
-    let out_spec = match target_type {
+/// Map a type name to its full media URN constant
+fn media_urn_for_type(type_name: &str) -> &'static str {
+    match type_name {
         "string" => MEDIA_STRING,
         "integer" => MEDIA_INTEGER,
         "number" => crate::media_urn::MEDIA_NUMBER,
         "boolean" => MEDIA_BOOLEAN,
         "object" => MEDIA_OBJECT,
-        other => panic!("Unknown coercion target type: {}. Valid types are: string, integer, number, boolean, object", other),
-    };
+        "string-array" => crate::media_urn::MEDIA_STRING_ARRAY,
+        "integer-array" => crate::media_urn::MEDIA_INTEGER_ARRAY,
+        "number-array" => crate::media_urn::MEDIA_NUMBER_ARRAY,
+        "boolean-array" => crate::media_urn::MEDIA_BOOLEAN_ARRAY,
+        "object-array" => crate::media_urn::MEDIA_OBJECT_ARRAY,
+        other => panic!("Unknown media type: {}. Valid types are: string, integer, number, boolean, object, string-array, integer-array, number-array, boolean-array, object-array", other),
+    }
+}
+
+/// Build a generic coercion URN given source and target types
+/// Panics if source_type or target_type is not a known media type
+pub fn coercion_urn(source_type: &str, target_type: &str) -> CapUrn {
+    let in_spec = media_urn_for_type(source_type);
+    let out_spec = media_urn_for_type(target_type);
     CapUrnBuilder::new()
         .tag("op", "coerce")
         .tag("target", target_type)
-        .in_spec(&in_spec)
+        .in_spec(in_spec)
         .out_spec(out_spec)
         .build()
         .expect("Failed to build coercion cap URN")
