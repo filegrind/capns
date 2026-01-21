@@ -85,6 +85,12 @@ pub const MEDIA_JSON: &str = "media:type=json;v=1;textable;keyed";
 /// Media URN for YAML data
 pub const MEDIA_YAML: &str = "media:type=yaml;v=1;textable;keyed";
 
+// File path types - for arguments that represent filesystem paths
+/// Media URN for a single file path - textable, scalar, and marked as a file-path for special handling
+pub const MEDIA_FILE_PATH: &str = "media:type=file-path;v=1;textable;scalar";
+/// Media URN for an array of file paths - textable, sequence, marked as file-path for special handling
+pub const MEDIA_FILE_PATH_ARRAY: &str = "media:type=file-path-array;v=1;textable;sequence";
+
 /// Helper to build binary media URN with extension
 pub fn binary_media_urn_for_ext(ext: &str) -> String {
     format!("media:type=binary;ext={};v=1;binary", ext)
@@ -340,6 +346,24 @@ impl MediaUrn {
     /// Check if this represents a void (no data) type
     pub fn is_void(&self) -> bool {
         self.type_name() == Some("void")
+    }
+
+    /// Check if this represents a file path type.
+    /// Returns true if the type is "file-path".
+    pub fn is_file_path(&self) -> bool {
+        self.type_name() == Some("file-path")
+    }
+
+    /// Check if this represents a file path array type.
+    /// Returns true if the type is "file-path-array".
+    pub fn is_file_path_array(&self) -> bool {
+        self.type_name() == Some("file-path-array")
+    }
+
+    /// Check if this represents any file path type (single or array).
+    /// Returns true if the type is "file-path" or "file-path-array".
+    pub fn is_any_file_path(&self) -> bool {
+        self.is_file_path() || self.is_file_path_array()
     }
 }
 
