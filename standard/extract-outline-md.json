@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "extract_outline",
-      "in": "media:type=md;v=1;textable",
-      "out": "media:type=document-outline;v=1;textable;keyed"
+      "in": "media:md;textable",
+      "out": "media:document-outline;textable;keyed"
     }
   },
   "command": "extract-outline",
@@ -12,11 +12,11 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "media_urn": "media:file-path;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=md;v=1;textable"
+          "stdin": "media:md;textable"
         },
         {
           "position": 0
@@ -29,7 +29,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-depth;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-depth;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -43,7 +43,7 @@
       }
     },
     {
-      "media_urn": "media:type=include-order-indexes;v=1;textable;scalar",
+      "media_urn": "media:include-order-indexes;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -54,7 +54,7 @@
       "default_value": true
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -68,7 +68,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=object;v=1;textable;keyed",
+    "media_urn": "media:object;textable;keyed",
     "output_description": "Structured document outline with hierarchical entries"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=max-content-length;v=1;textable;numeric;scalar",
+  "urn": "media:max-content-length;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Max Content Length",
   "profile_uri": "https://capns.org/schema/max_content_length",

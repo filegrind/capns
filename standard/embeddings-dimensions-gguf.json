@@ -4,8 +4,8 @@
       "op": "embeddings_dimensions",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=void;v=1",
-      "out": "media:type=integer;v=1;textable;numeric;scalar"
+      "in": "media:void",
+      "out": "media:integer;textable;numeric;scalar"
     }
   },
   "command": "get_embedding_dimensions",
@@ -14,7 +14,7 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -30,7 +30,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
+    "media_urn": "media:integer;textable;numeric;scalar",
     "output_description": "Dimensionality of the embeddings (n_embd from model metadata)",
     "validation": {
       "min": 1,

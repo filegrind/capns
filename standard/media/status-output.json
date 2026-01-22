@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=status-output;v=1;textable;keyed",
+  "urn": "media:status-output;textable;keyed",
   "media_type": "application/json",
   "title": "Model Status Output",
   "profile_uri": "https://capns.org/schema/status-output",

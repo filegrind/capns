@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=include-comments-flag;v=1;textable;scalar",
+  "urn": "media:include-comments-flag;textable;scalar",
   "media_type": "text/plain",
   "title": "Include Comments Flag",
   "profile_uri": "https://capns.org/schema/include_comments_flag",

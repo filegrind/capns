@@ -4,8 +4,8 @@
       "op": "generate_frontmatter_summary",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=frontmatter-text;v=1;textable;scalar",
-      "out": "media:type=string;v=1;textable;scalar"
+      "in": "media:frontmatter-text;textable;scalar",
+      "out": "media:string;textable;scalar"
     }
   },
   "command": "generate_text",
@@ -14,11 +14,11 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=frontmatter-text;v=1;textable;scalar",
+      "media_urn": "media:frontmatter-text;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=frontmatter-text;v=1;textable;scalar"
+          "stdin": "media:frontmatter-text;textable;scalar"
         },
         {
           "position": 0
@@ -31,7 +31,7 @@
       }
     },
     {
-      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "media_urn": "media:output-format;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -50,7 +50,7 @@
       "default_value": "organized"
     },
     {
-      "media_urn": "media:type=preserve-all-data;v=1;textable;scalar",
+      "media_urn": "media:preserve-all-data;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -61,7 +61,7 @@
       "default_value": true
     },
     {
-      "media_urn": "media:type=remove-boilerplate;v=1;textable;scalar",
+      "media_urn": "media:remove-boilerplate;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -72,7 +72,7 @@
       "default_value": true
     },
     {
-      "media_urn": "media:type=language;v=1;textable;scalar",
+      "media_urn": "media:language;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -97,7 +97,7 @@
       "default_value": "en"
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -112,7 +112,7 @@
       "default_value": 2000
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -129,7 +129,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=string;v=1;textable;scalar",
+    "media_urn": "media:string;textable;scalar",
     "output_description": "Organized bibliographic summary with extracted metadata",
     "validation": {
       "min_length": 1,

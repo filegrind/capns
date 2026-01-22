@@ -1,15 +1,15 @@
 //! Media URN - Data type specification using tagged URN format
 //!
 //! Media URNs use the tagged URN format with "media" prefix to describe
-//! data types. They replace the old spec ID system (e.g., `media:type=string;v=1`).
+//! data types. They replace the old spec ID system (e.g., `media:string`).
 //!
-//! Format: `media:type=<type>[;subtype=<subtype>][;v=<version>][;profile=<url>][;...]`
+//! Format: `media:<type>[;subtype=<subtype>][;v=<version>][;profile=<url>][;...]`
 //!
 //! Examples:
-//! - `media:type=string;v=1`
-//! - `media:type=object;v=1`
-//! - `media:type=application;subtype=json;profile="https://example.com/schema"`
-//! - `media:type=image;subtype=png`
+//! - `media:string`
+//! - `media:object`
+//! - `media:application;subtype=json;profile="https://example.com/schema"`
+//! - `media:image;subtype=png`
 //!
 //! Media URNs are just tagged URNs with the "media" prefix. Comparison and
 //! matching use standard tagged URN semantics. Specific behaviors (like
@@ -25,131 +25,131 @@ use tagged_urn::{TaggedUrn, TaggedUrnBuilder, TaggedUrnError};
 
 // Primitive types
 /// Media URN for void (no input/output) - no coercion tags
-pub const MEDIA_VOID: &str = "media:type=void;v=1";
+pub const MEDIA_VOID: &str = "media:void";
 /// Media URN for string type - textable (can become text), scalar (single value)
-pub const MEDIA_STRING: &str = "media:type=string;v=1;textable;scalar";
+pub const MEDIA_STRING: &str = "media:string;textable;scalar";
 /// Media URN for integer type - textable, numeric (math ops valid), scalar
-pub const MEDIA_INTEGER: &str = "media:type=integer;v=1;textable;numeric;scalar";
+pub const MEDIA_INTEGER: &str = "media:integer;textable;numeric;scalar";
 /// Media URN for number type - textable, numeric, scalar
-pub const MEDIA_NUMBER: &str = "media:type=number;v=1;textable;numeric;scalar";
+pub const MEDIA_NUMBER: &str = "media:number;textable;numeric;scalar";
 /// Media URN for boolean type - textable, scalar
-pub const MEDIA_BOOLEAN: &str = "media:type=boolean;v=1;textable;scalar";
+pub const MEDIA_BOOLEAN: &str = "media:boolean;textable;scalar";
 /// Media URN for JSON object type - textable (via JSON.stringify), keyed (key-value structure)
-pub const MEDIA_OBJECT: &str = "media:type=object;v=1;textable;keyed";
+pub const MEDIA_OBJECT: &str = "media:object;textable;keyed";
 /// Media URN for binary data - binary (raw bytes)
-pub const MEDIA_BINARY: &str = "media:type=raw;v=1;binary";
+pub const MEDIA_BINARY: &str = "media:raw;binary";
 
 // Array types
 /// Media URN for string array type - textable, sequence (ordered collection)
-pub const MEDIA_STRING_ARRAY: &str = "media:type=string-array;v=1;textable;sequence";
+pub const MEDIA_STRING_ARRAY: &str = "media:string-array;textable;sequence";
 /// Media URN for integer array type - textable, numeric, sequence
-pub const MEDIA_INTEGER_ARRAY: &str = "media:type=integer-array;v=1;textable;numeric;sequence";
+pub const MEDIA_INTEGER_ARRAY: &str = "media:integer-array;textable;numeric;sequence";
 /// Media URN for number array type - textable, numeric, sequence
-pub const MEDIA_NUMBER_ARRAY: &str = "media:type=number-array;v=1;textable;numeric;sequence";
+pub const MEDIA_NUMBER_ARRAY: &str = "media:number-array;textable;numeric;sequence";
 /// Media URN for boolean array type - textable, sequence
-pub const MEDIA_BOOLEAN_ARRAY: &str = "media:type=boolean-array;v=1;textable;sequence";
+pub const MEDIA_BOOLEAN_ARRAY: &str = "media:boolean-array;textable;sequence";
 /// Media URN for object array type - textable, keyed, sequence
-pub const MEDIA_OBJECT_ARRAY: &str = "media:type=object-array;v=1;textable;keyed;sequence";
+pub const MEDIA_OBJECT_ARRAY: &str = "media:object-array;textable;keyed;sequence";
 
 // Semantic media types for specialized content
 /// Media URN for image data (png, jpg, gif, webp, etc.)
-pub const MEDIA_PNG: &str = "media:type=png;v=1;binary";
+pub const MEDIA_PNG: &str = "media:png;binary";
 /// Media URN for audio data (wav, mp3, flac, etc.)
-pub const MEDIA_AUDIO: &str = "media:type=wav;audio;binary;v=1;";
+pub const MEDIA_AUDIO: &str = "media:wav;audio;binary;";
 /// Media URN for video data (mp4, webm, mov, etc.)
-pub const MEDIA_VIDEO: &str = "media:type=video;v=1;binary";
+pub const MEDIA_VIDEO: &str = "media:video;binary";
 /// Media URN for generic text (semantic type)
-pub const MEDIA_TEXT: &str = "media:type=text;v=1;textable";
+pub const MEDIA_TEXT: &str = "media:text;textable";
 
 // Document types (PRIMARY naming - type IS the format)
 /// Media URN for PDF documents
-pub const MEDIA_PDF: &str = "media:type=pdf;v=1;binary";
+pub const MEDIA_PDF: &str = "media:pdf;binary";
 /// Media URN for EPUB documents
-pub const MEDIA_EPUB: &str = "media:type=epub;v=1;binary";
+pub const MEDIA_EPUB: &str = "media:epub;binary";
 
 // Text format types (PRIMARY naming - type IS the format)
 /// Media URN for Markdown text
-pub const MEDIA_MD: &str = "media:type=md;v=1;textable";
+pub const MEDIA_MD: &str = "media:md;textable";
 /// Media URN for plain text
-pub const MEDIA_TXT: &str = "media:type=txt;v=1;textable";
+pub const MEDIA_TXT: &str = "media:txt;textable";
 /// Media URN for reStructuredText
-pub const MEDIA_RST: &str = "media:type=rst;v=1;textable";
+pub const MEDIA_RST: &str = "media:rst;textable";
 /// Media URN for log files
-pub const MEDIA_LOG: &str = "media:type=log;v=1;textable";
+pub const MEDIA_LOG: &str = "media:log;textable";
 /// Media URN for HTML documents
-pub const MEDIA_HTML: &str = "media:type=html;v=1;textable";
+pub const MEDIA_HTML: &str = "media:html;textable";
 /// Media URN for XML documents
-pub const MEDIA_XML: &str = "media:type=xml;v=1;textable";
+pub const MEDIA_XML: &str = "media:xml;textable";
 /// Media URN for JSON data
-pub const MEDIA_JSON: &str = "media:type=json;v=1;textable;keyed";
+pub const MEDIA_JSON: &str = "media:json;textable;keyed";
 /// Media URN for YAML data
-pub const MEDIA_YAML: &str = "media:type=yaml;v=1;textable;keyed";
+pub const MEDIA_YAML: &str = "media:yaml;textable;keyed";
 
 // File path types - for arguments that represent filesystem paths
 /// Media URN for a single file path - textable, scalar, and marked as a file-path for special handling
-pub const MEDIA_FILE_PATH: &str = "media:type=file-path;v=1;textable;scalar";
+pub const MEDIA_FILE_PATH: &str = "media:file-path;textable;scalar";
 /// Media URN for an array of file paths - textable, sequence, marked as file-path for special handling
-pub const MEDIA_FILE_PATH_ARRAY: &str = "media:type=file-path-array;v=1;textable;sequence";
+pub const MEDIA_FILE_PATH_ARRAY: &str = "media:file-path-array;textable;sequence";
 
 /// Helper to build binary media URN with extension
 pub fn binary_media_urn_for_ext(ext: &str) -> String {
-    format!("media:type=binary;ext={};v=1;binary", ext)
+    format!("media:binary;ext={};binary", ext)
 }
 
 /// Helper to build text media URN with extension
 pub fn text_media_urn_for_ext(ext: &str) -> String {
-    format!("media:type=text;ext={};v=1;textable", ext)
+    format!("media:text;ext={};textable", ext)
 }
 
 /// Helper to build image media URN with extension
 pub fn image_media_urn_for_ext(ext: &str) -> String {
-    format!("media:type=image;ext={};v=1;binary", ext)
+    format!("media:image;ext={};binary", ext)
 }
 
 /// Helper to build audio media URN with extension
 pub fn audio_media_urn_for_ext(ext: &str) -> String {
-    format!("media:type=audio;ext={};v=1;binary", ext)
+    format!("media:audio;ext={};binary", ext)
 }
 
 // CAPNS output types - all keyed structures (JSON objects)
 /// Media URN for model download output - textable, keyed
-pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:type=download-result;v=1;textable;keyed";
+pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:download-result;textable;keyed";
 /// Media URN for model load output - textable, keyed
-pub const MEDIA_LOAD_OUTPUT: &str = "media:type=load-output;v=1;textable;keyed";
+pub const MEDIA_LOAD_OUTPUT: &str = "media:load-output;textable;keyed";
 /// Media URN for model unload output - textable, keyed
-pub const MEDIA_UNLOAD_OUTPUT: &str = "media:type=unload-output;v=1;textable;keyed";
+pub const MEDIA_UNLOAD_OUTPUT: &str = "media:unload-output;textable;keyed";
 /// Media URN for model list output - textable, keyed
-pub const MEDIA_LIST_OUTPUT: &str = "media:type=list-output;v=1;textable;keyed";
+pub const MEDIA_LIST_OUTPUT: &str = "media:list-output;textable;keyed";
 /// Media URN for model status output - textable, keyed
-pub const MEDIA_STATUS_OUTPUT: &str = "media:type=status-output;v=1;textable;keyed";
+pub const MEDIA_STATUS_OUTPUT: &str = "media:status-output;textable;keyed";
 /// Media URN for model contents output - textable, keyed
-pub const MEDIA_CONTENTS_OUTPUT: &str = "media:type=model-contents;v=1;textable;keyed";
+pub const MEDIA_CONTENTS_OUTPUT: &str = "media:model-contents;textable;keyed";
 /// Media URN for embeddings generate output - textable, keyed
-pub const MEDIA_GENERATE_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
+pub const MEDIA_GENERATE_OUTPUT: &str = "media:embedding-vector;textable;keyed";
 /// Media URN for structured query output - textable, keyed
-pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:type=json;v=1;textable;keyed";
+pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:json;textable;keyed";
 /// Media URN for questions array - textable, sequence
-pub const MEDIA_QUESTIONS_ARRAY: &str = "media:type=string-array;v=1;textable;sequence";
+pub const MEDIA_QUESTIONS_ARRAY: &str = "media:string-array;textable;sequence";
 /// Media URN for LLM inference output - textable, keyed
-pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:type=llm-inference-output;v=1;textable;keyed";
+pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:llm-inference-output;textable;keyed";
 /// Media URN for extracted metadata - textable, keyed
-pub const MEDIA_FILE_METADATA: &str = "media:type=file-metadata;v=1;textable;keyed";
+pub const MEDIA_FILE_METADATA: &str = "media:file-metadata;textable;keyed";
 /// Media URN for extracted outline - textable, keyed
-pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:type=document-outline;v=1;textable;keyed";
+pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:document-outline;textable;keyed";
 /// Media URN for disbound pages - textable, keyed, sequence (array of chunks)
-pub const MEDIA_DISBOUND_PAGES: &str = "media:type=disbound-pages;v=1;textable;keyed;sequence";
+pub const MEDIA_DISBOUND_PAGES: &str = "media:disbound-pages;textable;keyed;sequence";
 /// Media URN for embeddings output - textable, keyed
-pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
+pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:embedding-vector;textable;keyed";
 /// Media URN for image embeddings output - textable, keyed
-pub const MEDIA_PNG_EMBEDDINGS_OUTPUT: &str = "media:type=embedding-vector;v=1;textable;keyed";
+pub const MEDIA_PNG_EMBEDDINGS_OUTPUT: &str = "media:embedding-vector;textable;keyed";
 /// Media URN for caption output - textable, keyed
-pub const MEDIA_CAPTION_OUTPUT: &str = "media:type=image-caption;v=1;textable;keyed";
+pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;keyed";
 /// Media URN for transcription output - textable, keyed
-pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:type=transcription-output;v=1;textable;keyed";
+pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:transcription-output;textable;keyed";
 /// Media URN for vision inference output - textable, keyed
-pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:type=vision-inference-output;v=1;textable;keyed";
+pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:vision-inference-output;textable;keyed";
 /// Media URN for model management output - textable, keyed
-pub const MEDIA_MANAGE_OUTPUT: &str = "media:type=manage-output;v=1;textable;keyed";
+pub const MEDIA_MANAGE_OUTPUT: &str = "media:manage-output;textable;keyed";
 
 // =============================================================================
 // MEDIA URN TYPE
@@ -193,7 +193,7 @@ impl MediaUrn {
     /// Create a simple MediaUrn with just type and version
     pub fn simple(type_name: &str, version: u32) -> Self {
         let urn = TaggedUrnBuilder::new(Self::PREFIX)
-            .tag("type", type_name)
+            .tag(type_name)
             .tag("v", &version.to_string())
             .build()
             .expect("valid media URN");
@@ -203,7 +203,7 @@ impl MediaUrn {
     /// Create a MediaUrn with type, subtype, and optional version
     pub fn with_subtype(type_name: &str, subtype: &str, version: Option<u32>) -> Self {
         let mut builder = TaggedUrnBuilder::new(Self::PREFIX)
-            .tag("type", type_name)
+            .tag(type_name)
             .tag("subtype", subtype);
         if let Some(v) = version {
             builder = builder.tag("v", &v.to_string());
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_parse_simple() {
-        let urn = MediaUrn::from_string("media:type=string;v=1").unwrap();
+        let urn = MediaUrn::from_string("media:string").unwrap();
         assert_eq!(urn.type_name(), Some("string"));
         assert_eq!(urn.version(), Some(1));
         assert!(urn.subtype().is_none());
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_subtype() {
-        let urn = MediaUrn::from_string("media:subtype=json;type=application").unwrap();
+        let urn = MediaUrn::from_string("media:subtype=json;application").unwrap();
         assert_eq!(urn.type_name(), Some("application"));
         assert_eq!(urn.subtype(), Some("json"));
     }
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn test_parse_with_profile() {
         let urn = MediaUrn::from_string(
-            r#"media:profile="https://example.com/schema.json";type=object;v=1"#,
+            r#"media:profile="https://example.com/schema.json";object"#,
         )
         .unwrap();
         assert_eq!(urn.type_name(), Some("object"));
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_wrong_prefix_fails() {
-        let result = MediaUrn::from_string("cap:type=string;v=1");
+        let result = MediaUrn::from_string("cap:string");
         assert!(result.is_err());
         if let Err(MediaUrnError::InvalidPrefix { expected, actual }) = result {
             assert_eq!(expected, "media");
@@ -492,43 +492,43 @@ mod tests {
     #[test]
     fn test_is_binary() {
         // is_binary returns true only if "binary" marker tag is present
-        assert!(MediaUrn::from_string("media:type=raw;v=1;binary").unwrap().is_binary());
-        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:type=png;v=1;binary"
-        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:type=pdf;v=1;binary"
-        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:type=raw;v=1;binary"
+        assert!(MediaUrn::from_string("media:raw;binary").unwrap().is_binary());
+        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:png;binary"
+        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:pdf;binary"
+        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:raw;binary"
         // Without binary tag, is_binary is false
-        assert!(!MediaUrn::from_string("media:type=string;v=1;textable").unwrap().is_binary());
-        assert!(!MediaUrn::from_string("media:type=object;v=1;textable;keyed").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:string;textable").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:object;textable;keyed").unwrap().is_binary());
     }
 
     #[test]
     fn test_is_json() {
         // is_json returns true only if "keyed" marker tag is present
-        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_json()); // "media:type=object;v=1;textable;keyed"
-        assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:type=json;v=1;textable;keyed"
-        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_json()); // "media:type=object-array;v=1;textable;keyed;sequence"
-        assert!(MediaUrn::from_string("media:type=custom;v=1;keyed").unwrap().is_json());
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_json()); // "media:object;textable;keyed"
+        assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:json;textable;keyed"
+        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_json()); // "media:object-array;textable;keyed;sequence"
+        assert!(MediaUrn::from_string("media:custom;keyed").unwrap().is_json());
         // Without keyed tag, is_json is false
-        assert!(!MediaUrn::from_string("media:type=string;v=1;textable").unwrap().is_json());
+        assert!(!MediaUrn::from_string("media:string;textable").unwrap().is_json());
         assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_json()); // string-array has textable;sequence but not keyed
     }
 
     #[test]
     fn test_is_text() {
         // is_text returns true only if "textable" marker tag is present
-        assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:type=string;v=1;textable;scalar"
-        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:type=integer;v=1;textable;numeric;scalar"
-        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:type=object;v=1;textable;keyed"
-        assert!(MediaUrn::from_string(MEDIA_TEXT).unwrap().is_text()); // "media:type=text;v=1;textable"
+        assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:string;textable;scalar"
+        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:integer;textable;numeric;scalar"
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:object;textable;keyed"
+        assert!(MediaUrn::from_string(MEDIA_TEXT).unwrap().is_text()); // "media:text;textable"
         // Without textable tag, is_text is false
-        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:type=raw;v=1;binary"
-        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:type=png;v=1;binary"
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:raw;binary"
+        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:png;binary"
     }
 
     #[test]
     fn test_is_void() {
-        assert!(MediaUrn::from_string("media:type=void;v=1").unwrap().is_void());
-        assert!(!MediaUrn::from_string("media:type=string;v=1").unwrap().is_void());
+        assert!(MediaUrn::from_string("media:void").unwrap().is_void());
+        assert!(!MediaUrn::from_string("media:string").unwrap().is_void());
     }
 
     #[test]
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_to_string_roundtrip() {
-        let original = "media:type=string;v=1";
+        let original = "media:string";
         let urn = MediaUrn::from_string(original).unwrap();
         let s = urn.to_string();
         let urn2 = MediaUrn::from_string(&s).unwrap();
@@ -593,14 +593,14 @@ mod tests {
     fn test_extension_helpers() {
         // Test binary_media_urn_for_ext
         let pdf_urn = binary_media_urn_for_ext("pdf");
-        assert_eq!(pdf_urn, "media:type=binary;ext=pdf;v=1;binary");
+        assert_eq!(pdf_urn, "media:binary;ext=pdf;binary");
         let parsed = MediaUrn::from_string(&pdf_urn).unwrap();
         assert_eq!(parsed.type_name(), Some("binary"));
         assert_eq!(parsed.extension(), Some("pdf"));
 
         // Test text_media_urn_for_ext
         let md_urn = text_media_urn_for_ext("md");
-        assert_eq!(md_urn, "media:type=text;ext=md;v=1;textable");
+        assert_eq!(md_urn, "media:text;ext=md;textable");
         let parsed = MediaUrn::from_string(&md_urn).unwrap();
         assert_eq!(parsed.type_name(), Some("text"));
         assert_eq!(parsed.extension(), Some("md"));
@@ -610,51 +610,51 @@ mod tests {
     fn test_satisfies() {
         // PDF listing satisfies PDF requirement (PRIMARY type naming)
         let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap();
-        let pdf_requirement = MediaUrn::from_string("media:type=pdf;v=1").unwrap();
+        let pdf_requirement = MediaUrn::from_string("media:pdf").unwrap();
         assert!(pdf_listing.satisfies(&pdf_requirement));
 
         // PDF listing does NOT satisfy binary requirement (different type)
-        let binary_requirement = MediaUrn::from_string("media:type=binary;v=1").unwrap();
+        let binary_requirement = MediaUrn::from_string("media:binary").unwrap();
         assert!(!pdf_listing.satisfies(&binary_requirement));
 
         // PDF listing does NOT satisfy EPUB requirement
-        let epub_requirement = MediaUrn::from_string("media:type=epub;v=1").unwrap();
+        let epub_requirement = MediaUrn::from_string("media:epub").unwrap();
         assert!(!pdf_listing.satisfies(&epub_requirement));
 
         // PDF listing does NOT satisfy text requirement
-        let text_requirement = MediaUrn::from_string("media:type=text;v=1").unwrap();
+        let text_requirement = MediaUrn::from_string("media:text").unwrap();
         assert!(!pdf_listing.satisfies(&text_requirement));
 
         // Markdown listing satisfies md requirement (PRIMARY type naming)
         let md_listing = MediaUrn::from_string(MEDIA_MD).unwrap();
-        let md_requirement = MediaUrn::from_string("media:type=md;v=1").unwrap();
+        let md_requirement = MediaUrn::from_string("media:md").unwrap();
         assert!(md_listing.satisfies(&md_requirement));
 
         // Markdown listing does NOT satisfy txt requirement (different type)
-        let txt_requirement = MediaUrn::from_string("media:type=txt;v=1").unwrap();
+        let txt_requirement = MediaUrn::from_string("media:txt").unwrap();
         assert!(!md_listing.satisfies(&txt_requirement));
     }
 
     #[test]
     fn test_matching() {
-        let handler = MediaUrn::from_string("media:type=string;v=1").unwrap();
-        let request = MediaUrn::from_string("media:type=string;v=1").unwrap();
+        let handler = MediaUrn::from_string("media:string").unwrap();
+        let request = MediaUrn::from_string("media:string").unwrap();
         assert!(handler.matches(&request).unwrap());
 
         // Handler with fewer tags can handle more requests (implicit wildcards)
-        let general_handler = MediaUrn::from_string("media:type=string").unwrap();
+        let general_handler = MediaUrn::from_string("media:string").unwrap();
         assert!(general_handler.matches(&request).unwrap());
 
         // Mismatch
-        let other = MediaUrn::from_string("media:type=object;v=1").unwrap();
+        let other = MediaUrn::from_string("media:object").unwrap();
         assert!(!handler.matches(&other).unwrap());
     }
 
     #[test]
     fn test_specificity() {
-        let urn1 = MediaUrn::from_string("media:type=string").unwrap();
-        let urn2 = MediaUrn::from_string("media:type=string;v=1").unwrap();
-        let urn3 = MediaUrn::from_string("media:profile=\"https://x.com\";type=string;v=1").unwrap();
+        let urn1 = MediaUrn::from_string("media:string").unwrap();
+        let urn2 = MediaUrn::from_string("media:string").unwrap();
+        let urn3 = MediaUrn::from_string("media:profile=\"https://x.com\";string").unwrap();
 
         assert!(urn1.specificity() < urn2.specificity());
         assert!(urn2.specificity() < urn3.specificity());
@@ -662,9 +662,9 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip() {
-        let urn = MediaUrn::from_string("media:type=string;v=1").unwrap();
+        let urn = MediaUrn::from_string("media:string").unwrap();
         let json = serde_json::to_string(&urn).unwrap();
-        assert_eq!(json, "\"media:type=string;v=1\"");
+        assert_eq!(json, "\"media:string\"");
         let urn2: MediaUrn = serde_json::from_str(&json).unwrap();
         assert_eq!(urn, urn2);
     }

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=number;v=1;textable;numeric;scalar",
+  "urn": "media:number;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Number Value",
   "profile_uri": "https://capns.org/schema/num",

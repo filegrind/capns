@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=output-length;v=1;textable;scalar",
+  "urn": "media:output-length;textable;scalar",
   "media_type": "text/plain",
   "title": "Output Length",
   "profile_uri": "https://capns.org/schema/output_length",

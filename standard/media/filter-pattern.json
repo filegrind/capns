@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=filter-pattern;v=1;textable;scalar",
+  "urn": "media:filter-pattern;textable;scalar",
   "media_type": "text/plain",
   "title": "Filter Pattern",
   "profile_uri": "https://capns.org/schema/filter_pattern",

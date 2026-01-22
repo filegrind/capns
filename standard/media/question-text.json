@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=question-text;v=1;textable;scalar",
+  "urn": "media:question-text;textable;scalar",
   "media_type": "text/plain",
   "title": "Question Text",
   "profile_uri": "https://capns.org/schema/question_text",

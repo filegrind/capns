@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=repository;v=1;textable;scalar",
+  "urn": "media:repository;textable;scalar",
   "media_type": "text/plain",
   "title": "Repository",
   "profile_uri": "https://capns.org/schema/repository",

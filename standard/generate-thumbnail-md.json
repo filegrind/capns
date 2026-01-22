@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "generate_thumbnail",
-      "in": "media:type=md;v=1;textable",
-      "out": "media:type=png;v=1;binary"
+      "in": "media:md;textable",
+      "out": "media:png;binary"
     }
   },
   "command": "generate-thumbnail",
@@ -12,11 +12,11 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "media_urn": "media:file-path;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=md;v=1;textable"
+          "stdin": "media:md;textable"
         },
         {
           "position": 0
@@ -29,7 +29,7 @@
       }
     },
     {
-      "media_urn": "media:type=thumbnail-width;v=1;textable;numeric;scalar",
+      "media_urn": "media:thumbnail-width;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -44,7 +44,7 @@
       "default_value": 200
     },
     {
-      "media_urn": "media:type=thumbnail-height;v=1;textable;numeric;scalar",
+      "media_urn": "media:thumbnail-height;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -59,7 +59,7 @@
       "default_value": 300
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -73,7 +73,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=png;v=1;binary",
+    "media_urn": "media:png;binary",
     "output_description": "PNG image data representing a thumbnail of the markdown document"
   }
 }

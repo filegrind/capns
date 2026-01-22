@@ -1,12 +1,12 @@
 //! MediaSpec parsing and media URN resolution
 //!
 //! This module provides:
-//! - Media URN resolution (e.g., `media:type=string;v=1` → resolved media spec)
+//! - Media URN resolution (e.g., `media:string` → resolved media spec)
 //! - MediaSpec parsing (canonical form: `text/plain; profile=https://...`)
 //! - MediaSpecDef for defining specs in cap definitions
 //!
 //! ## Media URN Format
-//! Media URNs are tagged URNs with "media" prefix, e.g., `media:type=string;v=1`
+//! Media URNs are tagged URNs with "media" prefix, e.g., `media:string`
 //! Built-in primitives are available without explicit declaration.
 //!
 //! ## MediaSpec Format
@@ -138,12 +138,12 @@ pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questi
 ///
 /// ## String Form (compact)
 /// ```json
-/// "media:type=string;v=1": "text/plain; profile=https://capns.org/schema/str"
+/// "media:string": "text/plain; profile=https://capns.org/schema/str"
 /// ```
 ///
 /// ## Object Form (rich, with optional local schema)
 /// ```json
-/// "media:type=my-output;v=1": {
+/// "media:my-output": {
 ///   "media_type": "application/json",
 ///   "profile_uri": "https://example.com/schema/my-output",
 ///   "schema": { "type": "object", ... }
@@ -305,7 +305,7 @@ impl ResolvedMediaSpec {
 /// For async resolution with registry support, use `resolve_media_urn_with_registry`.
 ///
 /// # Arguments
-/// * `media_urn` - The media URN to resolve (e.g., "media:type=string;v=1")
+/// * `media_urn` - The media URN to resolve (e.g., "media:string")
 /// * `media_specs` - The media_specs map from the cap definition
 ///
 /// # Errors
@@ -338,7 +338,7 @@ pub fn resolve_media_urn(
 /// 5. If none resolve → Error
 ///
 /// # Arguments
-/// * `media_urn` - The media URN to resolve (e.g., "media:type=string;v=1")
+/// * `media_urn` - The media URN to resolve (e.g., "media:string")
 /// * `media_specs` - Optional media_specs map from the cap definition
 /// * `registry` - Optional MediaUrnRegistry for remote lookups
 ///
@@ -811,12 +811,12 @@ mod tests {
     fn test_resolve_custom_string_form() {
         let mut media_specs = HashMap::new();
         media_specs.insert(
-            "media:type=custom-spec;v=1".to_string(),
+            "media:custom-spec".to_string(),
             MediaSpecDef::String("application/json; profile=https://example.com/schema".to_string()),
         );
 
-        let resolved = resolve_media_urn("media:type=custom-spec;v=1", &media_specs).unwrap();
-        assert_eq!(resolved.media_urn, "media:type=custom-spec;v=1");
+        let resolved = resolve_media_urn("media:custom-spec", &media_specs).unwrap();
+        assert_eq!(resolved.media_urn, "media:custom-spec");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
@@ -835,7 +835,7 @@ mod tests {
             }
         });
         media_specs.insert(
-            "media:type=output-spec;v=1".to_string(),
+            "media:output-spec".to_string(),
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/output".to_string(),
@@ -845,8 +845,8 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_media_urn("media:type=output-spec;v=1", &media_specs).unwrap();
-        assert_eq!(resolved.media_urn, "media:type=output-spec;v=1");
+        let resolved = resolve_media_urn("media:output-spec", &media_specs).unwrap();
+        assert_eq!(resolved.media_urn, "media:output-spec");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
@@ -858,10 +858,10 @@ mod tests {
     #[test]
     fn test_resolve_unresolvable_fails_hard() {
         let media_specs = HashMap::new();
-        let result = resolve_media_urn("media:type=unknown;v=1", &media_specs);
+        let result = resolve_media_urn("media:unknown", &media_specs);
         assert!(result.is_err());
         if let Err(MediaSpecError::UnresolvableMediaUrn(urn)) = result {
-            assert_eq!(urn, "media:type=unknown;v=1");
+            assert_eq!(urn, "media:unknown");
         } else {
             panic!("Expected UnresolvableMediaUrn error");
         }
@@ -890,7 +890,7 @@ mod tests {
         assert!(is_builtin_media_urn(MEDIA_STRING));
         assert!(is_builtin_media_urn(MEDIA_INTEGER));
         assert!(is_builtin_media_urn(MEDIA_BINARY));
-        assert!(!is_builtin_media_urn("media:type=custom-spec;v=1"));
+        assert!(!is_builtin_media_urn("media:custom-spec"));
         assert!(!is_builtin_media_urn("random-string"));
     }
 
@@ -945,7 +945,7 @@ mod tests {
     #[test]
     fn test_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:type=raw;v=1;binary".to_string(),
+            media_urn: "media:raw;binary".to_string(),
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
             schema: None,
@@ -959,7 +959,7 @@ mod tests {
     #[test]
     fn test_resolved_is_json() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:type=object;v=1;textable;keyed".to_string(),
+            media_urn: "media:object;textable;keyed".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
             schema: None,
@@ -973,7 +973,7 @@ mod tests {
     #[test]
     fn test_resolved_is_text() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:type=string;v=1;textable".to_string(),
+            media_urn: "media:string;textable".to_string(),
             media_type: "text/plain".to_string(),
             profile_uri: None,
             schema: None,

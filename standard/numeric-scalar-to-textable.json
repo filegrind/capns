@@ -3,8 +3,8 @@
     "tags": {
       "op": "coerce",
       "target": "textable",
-      "in": "media:v=1;numeric;scalar",
-      "out": "media:v=1;textable;scalar"
+      "in": "media:numeric;scalar",
+      "out": "media:textable;scalar"
     }
   },
   "command": "coerce",
@@ -13,11 +13,11 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:v=1;numeric;scalar",
+      "media_urn": "media:numeric;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:v=1;numeric;scalar"
+          "stdin": "media:numeric;scalar"
         },
         {
           "position": 0
@@ -27,7 +27,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:v=1;textable;scalar",
+    "media_urn": "media:textable;scalar",
     "output_description": "Textable representation of the numeric value"
   }
 }

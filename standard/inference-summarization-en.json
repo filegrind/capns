@@ -4,8 +4,8 @@
       "op": "summarization",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=input-text;v=1;textable;scalar",
-      "out": "media:type=llm-inference-output;v=1;textable;keyed"
+      "in": "media:input-text;textable;scalar",
+      "out": "media:llm-inference-output;textable;keyed"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Document and text summarization in English",
   "metadata": {},
   "media_specs": {
-    "media:type=llm-inference-output;v=1;textable;keyed": {
+    "media:llm-inference-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -89,11 +89,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=input-text;v=1;textable;scalar",
+      "media_urn": "media:input-text;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=input-text;v=1;textable;scalar"
+          "stdin": "media:input-text;textable;scalar"
         },
         {
           "cli_flag": "--text"
@@ -109,7 +109,7 @@
       }
     },
     {
-      "media_urn": "media:type=summary-type;v=1;textable;scalar",
+      "media_urn": "media:summary-type;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -130,7 +130,7 @@
       "default_value": "abstractive"
     },
     {
-      "media_urn": "media:type=output-length;v=1;textable;scalar",
+      "media_urn": "media:output-length;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -149,7 +149,7 @@
       "default_value": "medium"
     },
     {
-      "media_urn": "media:type=summary-focus;v=1;textable;scalar",
+      "media_urn": "media:summary-focus;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -171,7 +171,7 @@
       "default_value": "main_points"
     },
     {
-      "media_urn": "media:type=summary-context;v=1;textable;scalar",
+      "media_urn": "media:summary-context;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -184,7 +184,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -199,7 +199,7 @@
       "default_value": 1000
     },
     {
-      "media_urn": "media:type=preserve-structure-flag;v=1;textable;scalar",
+      "media_urn": "media:preserve-structure-flag;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -210,7 +210,7 @@
       "default_value": false
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -227,7 +227,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
+    "media_urn": "media:llm-inference-output;textable;keyed",
     "output_description": "Summary with metadata including compression metrics"
   }
 }

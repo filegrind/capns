@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=raw;v=1;binary",
+  "urn": "media:raw;binary",
   "media_type": "application/octet-stream",
   "title": "Binary",
   "description": "Raw binary data"

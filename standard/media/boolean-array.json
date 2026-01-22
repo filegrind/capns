@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=boolean-array;v=1;textable;sequence",
+  "urn": "media:boolean-array;textable;sequence",
   "media_type": "application/json",
   "title": "Boolean Array",
   "profile_uri": "https://capns.org/schema/bool-array",

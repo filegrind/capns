@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=index-range;v=1;textable;scalar",
+  "urn": "media:index-range;textable;scalar",
   "media_type": "text/plain",
   "title": "Index Range",
   "profile_uri": "https://capns.org/schema/index_range",

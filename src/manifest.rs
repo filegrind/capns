@@ -69,7 +69,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
+        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
     }
 
     #[test]
@@ -115,9 +115,9 @@ mod tests {
 
         // Add stdin via args architecture
         let stdin_arg = CapArg::new(
-            "media:type=pdf;v=1;binary",
+            "media:pdf;binary",
             true,
-            vec![ArgSource::Stdin { stdin: "media:type=pdf;v=1;binary".to_string() }],
+            vec![ArgSource::Stdin { stdin: "media:pdf;binary".to_string() }],
         );
         cap.add_arg(stdin_arg);
 
@@ -133,7 +133,7 @@ mod tests {
         assert!(json.contains("\"name\":\"TestComponent\""));
         assert!(json.contains("\"version\":\"0.1.0\""));
         assert!(json.contains("\"author\":\"Test Author\""));
-        assert!(json.contains("\"stdin\":\"media:type=pdf;v=1;binary\""));
+        assert!(json.contains("\"stdin\":\"media:pdf;binary\""));
 
         // Test deserialization
         let deserialized: CapManifest = serde_json::from_str(&json).unwrap();
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_cap_manifest_optional_author_field() {
-        let urn = CapUrn::from_string(&test_urn("op=validate;type=file")).unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=validate;file")).unwrap();
         let cap = Cap::new(urn, "Validate".to_string(), "validate".to_string());
 
         let manifest_without_author = CapManifest::new(
@@ -239,7 +239,7 @@ mod tests {
             }
         }
 
-        let urn = CapUrn::from_string(&test_urn("op=test;type=component")).unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=test;component")).unwrap();
         let cap = Cap::new(urn, "Test Component".to_string(), "test".to_string());
 
         let component = TestComponent {

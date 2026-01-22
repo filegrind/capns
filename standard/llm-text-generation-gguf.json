@@ -5,8 +5,8 @@
       "type": "llm",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=prompt-text;v=1;textable;scalar",
-      "out": "media:type=llm-inference-output;v=1;textable;keyed"
+      "in": "media:prompt-text;textable;scalar",
+      "out": "media:llm-inference-output;textable;keyed"
     }
   },
   "command": "run_inference",
@@ -14,7 +14,7 @@
   "cap_description": "Generate text using GGUF models with llama.cpp backend",
   "metadata": {},
   "media_specs": {
-    "media:type=llm-inference-output;v=1;textable;keyed": {
+    "media:llm-inference-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -65,11 +65,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "media_urn": "media:prompt-text;textable;scalar",
       "required": false,
       "sources": [
         {
-          "stdin": "media:type=prompt-text;v=1;textable;scalar"
+          "stdin": "media:prompt-text;textable;scalar"
         },
         {
           "cli_flag": "--prompt"
@@ -82,7 +82,7 @@
       }
     },
     {
-      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "media_urn": "media:file-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -96,7 +96,7 @@
       }
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -110,7 +110,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -125,7 +125,7 @@
       "default_value": 512
     },
     {
-      "media_urn": "media:type=temperature;v=1;textable;numeric;scalar",
+      "media_urn": "media:temperature;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -140,7 +140,7 @@
       "default_value": 0.7
     },
     {
-      "media_urn": "media:type=top-k;v=1;textable;numeric;scalar",
+      "media_urn": "media:top-k;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -155,7 +155,7 @@
       "default_value": 40
     },
     {
-      "media_urn": "media:type=top-p;v=1;textable;numeric;scalar",
+      "media_urn": "media:top-p;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -170,7 +170,7 @@
       "default_value": 0.9
     },
     {
-      "media_urn": "media:type=min-p;v=1;textable;numeric;scalar",
+      "media_urn": "media:min-p;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -185,7 +185,7 @@
       "default_value": 0.05
     },
     {
-      "media_urn": "media:type=seed;v=1;textable;numeric;scalar",
+      "media_urn": "media:seed;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -200,7 +200,7 @@
       "default_value": 42
     },
     {
-      "media_urn": "media:type=max-context-length;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-context-length;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -215,7 +215,7 @@
       "default_value": 4096
     },
     {
-      "media_urn": "media:type=batch-size;v=1;textable;numeric;scalar",
+      "media_urn": "media:batch-size;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -230,7 +230,7 @@
       "default_value": 2048
     },
     {
-      "media_urn": "media:type=stream-flag;v=1;textable;scalar",
+      "media_urn": "media:stream-flag;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -241,7 +241,7 @@
       "default_value": false
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -255,7 +255,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
+    "media_urn": "media:llm-inference-output;textable;keyed",
     "output_description": "Generated text with metadata including tokens and timing"
   }
 }

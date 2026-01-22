@@ -3,8 +3,8 @@
     "tags": {
       "op": "contents",
       "type": "model",
-      "in": "media:type=void;v=1",
-      "out": "media:type=model-contents;v=1;textable;keyed"
+      "in": "media:void",
+      "out": "media:model-contents;textable;keyed"
     }
   },
   "command": "inspect_contents",
@@ -12,7 +12,7 @@
   "cap_description": "Inspect the contents and structure of a model",
   "metadata": {},
   "media_specs": {
-    "media:type=model-contents;v=1;textable;keyed": {
+    "media:model-contents;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/contents-output",
       "schema": {
@@ -155,7 +155,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "media_urn": "media:model-id;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -172,7 +172,7 @@
       }
     },
     {
-      "media_urn": "media:type=inspection-depth;v=1;textable;scalar",
+      "media_urn": "media:inspection-depth;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -190,7 +190,7 @@
       "default_value": "summary"
     },
     {
-      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "media_urn": "media:output-format;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -209,7 +209,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=model-contents;v=1;textable;keyed",
+    "media_urn": "media:model-contents;textable;keyed",
     "output_description": "Model contents including files, layers, parameters and metadata"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=boolean;v=1;textable;scalar",
+  "urn": "media:boolean;textable;scalar",
   "media_type": "text/plain",
   "title": "Boolean Value",
   "profile_uri": "https://capns.org/schema/bool",

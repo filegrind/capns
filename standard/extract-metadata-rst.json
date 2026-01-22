@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "extract_metadata",
-      "in": "media:type=rst;v=1;textable",
-      "out": "media:type=file-metadata;v=1;textable;keyed"
+      "in": "media:rst;textable",
+      "out": "media:file-metadata;textable;keyed"
     }
   },
   "command": "extract-metadata",
@@ -12,11 +12,11 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "media_urn": "media:file-path;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=rst;v=1;textable"
+          "stdin": "media:rst;textable"
         },
         {
           "position": 0
@@ -29,7 +29,7 @@
       }
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -43,7 +43,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=object;v=1;textable;keyed",
+    "media_urn": "media:object;textable;keyed",
     "output_description": "Structured metadata including file properties and RST-specific metadata"
   }
 }

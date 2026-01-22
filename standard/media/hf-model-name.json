@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=hf-model-name;v=1;textable;scalar",
+  "urn": "media:hf-model-name;textable;scalar",
   "media_type": "text/plain",
   "title": "Hf Model Name",
   "profile_uri": "https://capns.org/schema/hf_model_name",

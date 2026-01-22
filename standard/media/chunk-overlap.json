@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=chunk-overlap;v=1;textable;numeric;scalar",
+  "urn": "media:chunk-overlap;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Chunk Overlap",
   "profile_uri": "https://capns.org/schema/chunk_overlap",

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=disbound-pages;v=1;textable;keyed;sequence",
+  "urn": "media:disbound-pages;textable;keyed;sequence",
   "media_type": "application/json",
   "title": "Disbind Output",
   "profile_uri": "https://capns.org/schema/disbound-pages",

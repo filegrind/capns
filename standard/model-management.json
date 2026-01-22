@@ -3,8 +3,8 @@
     "tags": {
       "op": "management",
       "type": "model",
-      "in": "media:type=void;v=1",
-      "out": "media:type=manage-output;v=1;textable;keyed"
+      "in": "media:void",
+      "out": "media:manage-output;textable;keyed"
     }
   },
   "command": "manage",
@@ -12,7 +12,7 @@
   "cap_description": "General model management operations including installation, configuration and lifecycle",
   "metadata": {},
   "media_specs": {
-    "media:type=manage-output;v=1;textable;keyed": {
+    "media:manage-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/manage-output",
       "schema": {
@@ -77,7 +77,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=management-operation;v=1;textable;scalar",
+      "media_urn": "media:management-operation;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -99,7 +99,7 @@
       }
     },
     {
-      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "media_urn": "media:model-id;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -112,7 +112,7 @@
       }
     },
     {
-      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "media_urn": "media:output-format;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -131,7 +131,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=manage-output;v=1;textable;keyed",
+    "media_urn": "media:manage-output;textable;keyed",
     "output_description": "Management operation result with status and details"
   }
 }

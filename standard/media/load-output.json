@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=load-output;v=1;textable;keyed",
+  "urn": "media:load-output;textable;keyed",
   "media_type": "application/json",
   "title": "Model Load Output",
   "profile_uri": "https://capns.org/schema/load-output",

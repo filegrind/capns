@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=number-array;v=1;textable;numeric;sequence",
+  "urn": "media:number-array;textable;numeric;sequence",
   "media_type": "application/json",
   "title": "Number Array",
   "profile_uri": "https://capns.org/schema/num-array",

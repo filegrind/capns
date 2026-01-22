@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=manage-output;v=1;textable;keyed",
+  "urn": "media:manage-output;textable;keyed",
   "media_type": "application/json",
   "title": "Model Management Output",
   "profile_uri": "https://capns.org/schema/manage-output",

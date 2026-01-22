@@ -4,8 +4,8 @@
       "op": "analyze_image",
       "type": "vision",
       "model_type": "mlx",
-      "in": "media:type=png;v=1;binary",
-      "out": "media:type=vision-inference-output;v=1;textable;keyed"
+      "in": "media:png;binary",
+      "out": "media:vision-inference-output;textable;keyed"
     }
   },
   "command": "analyze_image",
@@ -13,7 +13,7 @@
   "cap_description": "Analyze images using MLX-based vision-language models on Apple Silicon",
   "metadata": {},
   "media_specs": {
-    "media:type=vision-inference-output;v=1;textable;keyed": {
+    "media:vision-inference-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/vision_inference-output",
       "schema": {
@@ -59,7 +59,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=mlx-model-path;v=1;textable;scalar",
+      "media_urn": "media:mlx-model-path;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -75,7 +75,7 @@
       }
     },
     {
-      "media_urn": "media:type=image-path;v=1;textable;scalar",
+      "media_urn": "media:image-path;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -91,7 +91,7 @@
       }
     },
     {
-      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "media_urn": "media:prompt-text;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -106,7 +106,7 @@
       "default_value": "Describe this image in detail."
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -122,7 +122,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=vision-inference-output;v=1;textable;keyed",
+    "media_urn": "media:vision-inference-output;textable;keyed",
     "output_description": "Image analysis with description and metadata"
   }
 }

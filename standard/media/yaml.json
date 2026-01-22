@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=yaml;v=1;textable;keyed",
+  "urn": "media:yaml;textable;keyed",
   "media_type": "application/yaml",
   "title": "YAML Document",
   "profile_uri": "https://capns.org/schema/yaml",

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=object;v=1;textable;keyed",
+  "urn": "media:object;textable;keyed",
   "media_type": "application/json",
   "title": "Object Value",
   "profile_uri": "https://capns.org/schema/obj",

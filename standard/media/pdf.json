@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=pdf;v=1;binary",
+  "urn": "media:pdf;binary",
   "media_type": "application/pdf",
   "title": "PDF Document",
   "profile_uri": "https://capns.org/schema/pdf",

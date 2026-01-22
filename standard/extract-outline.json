@@ -2,8 +2,8 @@
   "urn": {
     "tags": {
       "op": "extract_outline",
-      "in": "media:type=pdf;v=1;binary",
-      "out": "media:type=document-outline;v=1;textable;keyed"
+      "in": "media:pdf;binary",
+      "out": "media:document-outline;textable;keyed"
     }
   },
   "command": "extract-outline",
@@ -11,7 +11,7 @@
   "cap_description": "Extract document outline/table of contents with hierarchical structure",
   "metadata": {},
   "media_specs": {
-    "media:type=document-outline;v=1;textable;keyed": {
+    "media:document-outline;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/document-outline",
       "schema": {
@@ -135,11 +135,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "media_urn": "media:file-path;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=pdf;v=1;binary"
+          "stdin": "media:pdf;binary"
         },
         {
           "position": 0
@@ -152,7 +152,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-depth;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-depth;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -166,7 +166,7 @@
       }
     },
     {
-      "media_urn": "media:type=include-order-indexes;v=1;textable;scalar",
+      "media_urn": "media:include-order-indexes;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -177,7 +177,7 @@
       "default_value": true
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -191,7 +191,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=document-outline;v=1;textable;keyed",
+    "media_urn": "media:document-outline;textable;keyed",
     "output_description": "Hierarchical document outline with section titles and optional page numbers"
   }
 }

@@ -21,12 +21,12 @@ use crate::media_urn::{MediaUrn, MediaUrnError, MEDIA_VOID, MEDIA_OBJECT};
 /// fields specify the input and output media URNs respectively.
 ///
 /// Examples:
-/// - `cap:in="media:type=binary;v=1";op=generate;out="media:type=binary;v=1";target=thumbnail`
-/// - `cap:in="media:type=void;v=1";op=dimensions;out="media:type=integer;v=1"`
-/// - `cap:in="media:type=string;v=1";out="media:type=object;v=1";key="Value With Spaces"`
+/// - `cap:in="media:binary";op=generate;out="media:binary";target=thumbnail`
+/// - `cap:in="media:void";op=dimensions;out="media:integer"`
+/// - `cap:in="media:string";out="media:object";key="Value With Spaces"`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapUrn {
-    /// Input media URN - required (use media:type=void;v=1 for caps with no input)
+    /// Input media URN - required (use media:void for caps with no input)
     in_urn: String,
     /// Output media URN - required
     out_urn: String,
@@ -617,6 +617,15 @@ impl CapUrnBuilder {
         self
     }
 
+	pub fn tag(mut self, key: String) -> Self {
+		let key_lower = key.to_lowercase();
+		if key_lower == "in" || key_lower == "out" {
+			return self;
+		}
+		self.tags.insert(key_lower, "*".to_string());
+		self
+	}
+
     pub fn build(self) -> Result<CapUrn, CapUrnError> {
         let in_urn = self.in_urn.ok_or(CapUrnError::MissingInSpec)?;
         let out_urn = self.out_urn.ok_or(CapUrnError::MissingOutSpec)?;
@@ -681,10 +690,10 @@ mod tests {
 
     #[test]
     fn test_direction_matching() {
-        let in_str = "media:type=string;v=1";
-        let out_obj = "media:type=object;v=1";
-        let in_bin = "media:type=binary;v=1";
-        let out_int = "media:type=integer;v=1";
+        let in_str = "media:string";
+        let out_obj = "media:object";
+        let in_bin = "media:binary";
+        let out_int = "media:integer";
 
         // Direction specs must match for caps to match
         let cap1 = CapUrn::from_string(&format!("cap:in=\"{}\";op=test;out=\"{}\"", in_str, out_obj)).unwrap();
@@ -1070,7 +1079,7 @@ mod tests {
 
         // Different direction specs are incompatible
         let cap5 = CapUrn::from_string(&format!(
-            "cap:in=\"media:type=binary;v=1\";out=\"{}\";op=generate",
+            "cap:in=\"media:binary\";out=\"{}\";op=generate",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1096,21 +1105,21 @@ mod tests {
     fn test_merge_and_subset() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
         let cap2 = CapUrn::from_string(&format!(
-            "cap:in=\"media:type=binary;v=1\";out=\"media:type=integer;v=1\";ext=pdf;output=binary"
+            "cap:in=\"media:binary\";out=\"media:integer\";ext=pdf;output=binary"
         ))
         .unwrap();
 
         let merged = cap1.merge(&cap2);
         // Merged takes in/out from cap2
-        assert_eq!(merged.in_spec(), "media:type=binary;v=1");
-        assert_eq!(merged.out_spec(), "media:type=integer;v=1");
+        assert_eq!(merged.in_spec(), "media:binary");
+        assert_eq!(merged.out_spec(), "media:integer");
         // Has tags from both
         assert_eq!(merged.get_tag("op"), Some(&"generate".to_string()));
         assert_eq!(merged.get_tag("ext"), Some(&"pdf".to_string()));
 
         let subset = merged.subset(&["type", "ext"]);
         // subset keeps in/out from merged
-        assert_eq!(subset.in_spec(), "media:type=binary;v=1");
+        assert_eq!(subset.in_spec(), "media:binary");
         assert_eq!(subset.get_tag("ext"), Some(&"pdf".to_string()));
         assert_eq!(subset.get_tag("type"), None);
     }
@@ -1243,8 +1252,8 @@ mod tests {
 
     #[test]
     fn test_get_tag_returns_direction_specs() {
-        let in_str = "media:type=string;v=1";
-        let out_int = "media:type=integer;v=1";
+        let in_str = "media:string";
+        let out_int = "media:integer";
         let cap = CapUrn::from_string(&format!(
             "cap:in=\"{}\";op=test;out=\"{}\"",
             in_str, out_int
@@ -1331,7 +1340,7 @@ mod tests {
     #[test]
     fn test_matching_semantics_test7_fallback_pattern() {
         // Test 7: Fallback pattern
-        let in_bin = "media:type=binary;v=1";
+        let in_bin = "media:binary";
         let cap = CapUrn::from_string(&format!(
             "cap:in=\"{}\";op=generate_thumbnail;out=\"{}\"",
             in_bin, in_bin
@@ -1351,7 +1360,7 @@ mod tests {
     #[test]
     fn test_matching_semantics_test7b_thumbnail_void_input() {
         // Test 7b: Thumbnail fallback with void input (real-world scenario)
-        let out_bin = "media:type=binary;v=1";
+        let out_bin = "media:binary";
         let cap = CapUrn::from_string(&format!(
             "cap:in=\"{}\";op=generate_thumbnail;out=\"{}\"",
             MEDIA_VOID, out_bin
@@ -1373,7 +1382,7 @@ mod tests {
         // Test 8: Wildcard direction matches anything
         let cap = CapUrn::from_string("cap:in=*;out=*").unwrap();
         let request = CapUrn::from_string(&format!(
-            "cap:ext=pdf;in=\"media:type=string;v=1\";op=generate;out=\"{}\"",
+            "cap:ext=pdf;in=\"media:string\";op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1398,12 +1407,12 @@ mod tests {
     fn test_matching_semantics_test10_direction_mismatch() {
         // Test 10: Direction mismatch prevents matching
         let cap = CapUrn::from_string(&format!(
-            "cap:in=\"media:type=string;v=1\";op=generate;out=\"{}\"",
+            "cap:in=\"media:string\";op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();
         let request = CapUrn::from_string(&format!(
-            "cap:in=\"media:type=binary;v=1\";op=generate;out=\"{}\"",
+            "cap:in=\"media:binary\";op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();

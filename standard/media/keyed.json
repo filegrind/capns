@@ -1,5 +1,5 @@
 {
-  "urn": "media:v=1;keyed",
+  "urn": "media:keyed",
   "media_type": "application/json",
   "title": "Keyed Value",
   "profile_uri": "https://capns.org/schema/keyed",

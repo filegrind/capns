@@ -28,28 +28,28 @@ pub fn matches(&self, request: &CapUrn) -> bool {
 
 ```
 Test 1: Exact match with direction specifiers
-  Cap:     cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
-  Request: cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
+  Cap:     cap:in="media:binary";op=extract;out="media:object"
+  Request: cap:in="media:binary";op=extract;out="media:object"
   Result:  MATCH
 
 Test 2: Cap has wildcard direction specifiers (fallback provider)
   Cap:     cap:in=*;op=extract;out=*
-  Request: cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
+  Request: cap:in="media:binary";op=extract;out="media:object"
   Result:  MATCH (cap can handle any input/output)
 
 Test 3: Direction specifier mismatch
-  Cap:     cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
-  Request: cap:in="media:type=text;v=1";op=extract;out="media:type=object;v=1"
+  Cap:     cap:in="media:binary";op=extract;out="media:object"
+  Request: cap:in="media:text";op=extract;out="media:object"
   Result:  NO MATCH (input media types differ)
 
 Test 4: Cap has extra tags (more specific)
-  Cap:     cap:ext=pdf;in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
-  Request: cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
+  Cap:     cap:ext=pdf;in="media:binary";op=extract;out="media:object"
+  Request: cap:in="media:binary";op=extract;out="media:object"
   Result:  MATCH (request doesn't constrain ext)
 
 Test 5: Void input (generation cap)
-  Cap:     cap:in="media:type=void;v=1";op=generate;out="media:type=binary;v=1"
-  Request: cap:in="media:type=void;v=1";op=generate;out="media:type=binary;v=1"
+  Cap:     cap:in="media:void";op=generate;out="media:binary"
+  Request: cap:in="media:void";op=generate;out="media:binary"
   Result:  MATCH
 ```
 
@@ -62,11 +62,11 @@ When multiple caps match a request, select by specificity:
 3. Select highest specificity; ties go to first registered
 
 ```
-Request: cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1";ext=pdf
+Request: cap:in="media:binary";op=extract;out="media:object";ext=pdf
 
 Cap A: cap:in=*;op=extract;out=*                    (specificity: 1)
-Cap B: cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"  (specificity: 3)
-Cap C: cap:ext=pdf;in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"  (specificity: 4)
+Cap B: cap:in="media:binary";op=extract;out="media:object"  (specificity: 3)
+Cap C: cap:ext=pdf;in="media:binary";op=extract;out="media:object"  (specificity: 4)
 
 Winner: Cap C (highest specificity)
 ```

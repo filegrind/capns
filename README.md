@@ -22,8 +22,8 @@ The system is designed for scenarios where:
 Cap URNs extend Tagged URNs with required direction specifiers:
 
 ```
-cap:in="media:type=void;v=1";op=generate;out="media:type=object;v=1"
-cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1";target=metadata
+cap:in="media:void";op=generate;out="media:object"
+cap:in="media:binary";op=extract;out="media:object";target=metadata
 ```
 
 **Direction Specifiers:**
@@ -60,7 +60,7 @@ pub struct Cap {
 - `command` - CLI command or method name for execution
 - `arguments` - Required and optional argument definitions with validation
 - `output` - Output schema and type information
-- `stdin` - If present, the media URN that stdin expects (e.g., "media:type=pdf;v=1;binary"). Absence means cap doesn't accept stdin.
+- `stdin` - If present, the media URN that stdin expects (e.g., "media:pdf;binary"). Absence means cap doesn't accept stdin.
 
 ## Language Implementations
 
@@ -71,13 +71,13 @@ use capns::{CapUrn, Cap, CapUrnBuilder};
 
 // Create cap URN
 let cap = CapUrn::from_string(
-    "cap:in=\"media:type=binary;v=1\";op=extract;out=\"media:type=object;v=1\";target=metadata"
+    "cap:in=\"media:binary\";op=extract;out=\"media:object\";target=metadata"
 )?;
 
 // Build with builder pattern
 let cap = CapUrnBuilder::new()
-    .in_spec("media:type=binary;v=1")
-    .out_spec("media:type=object;v=1")
+    .in_spec("media:binary")
+    .out_spec("media:object")
     .tag("op", "extract")
     .tag("target", "metadata")
     .build()?;
@@ -90,12 +90,12 @@ import "github.com/fgnd/capns-go"
 
 // Create cap URN
 cap, err := capns.NewCapUrnFromString(
-    `cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"`)
+    `cap:in="media:binary";op=extract;out="media:object"`)
 
 // Build with builder pattern
 cap, err = capns.NewCapUrnBuilder().
-    InSpec("media:type=binary;v=1").
-    OutSpec("media:type=object;v=1").
+    InSpec("media:binary").
+    OutSpec("media:object").
     Tag("op", "extract").
     Build()
 ```
@@ -108,13 +108,13 @@ cap, err = capns.NewCapUrnBuilder().
 // Create cap URN
 NSError *error;
 CSCapUrn *cap = [CSCapUrn fromString:
-    @"cap:in=\"media:type=binary;v=1\";op=extract;out=\"media:type=object;v=1\""
+    @"cap:in=\"media:binary\";op=extract;out=\"media:object\""
     error:&error];
 
 // Build with builder pattern
 CSCapUrnBuilder *builder = [CSCapUrnBuilder builder];
-[builder inSpec:@"media:type=binary;v=1"];
-[builder outSpec:@"media:type=object;v=1"];
+[builder inSpec:@"media:binary"];
+[builder outSpec:@"media:object"];
 [builder tag:@"op" value:@"extract"];
 CSCapUrn *cap = [builder build:&error];
 ```
@@ -125,9 +125,9 @@ Capabilities match requests when all specified tags are compatible:
 
 ```rust
 let cap = CapUrn::from_string(
-    "cap:in=\"media:type=binary;v=1\";op=extract;out=\"media:type=object;v=1\";ext=pdf")?;
+    "cap:in=\"media:binary\";op=extract;out=\"media:object\";ext=pdf")?;
 let request = CapUrn::from_string(
-    "cap:in=\"media:type=binary;v=1\";op=extract;out=\"media:type=object;v=1\"")?;
+    "cap:in=\"media:binary\";op=extract;out=\"media:object\"")?;
 
 if cap.matches(&request) {
     println!("Cap can handle this request");
@@ -139,7 +139,7 @@ More specific capabilities are preferred:
 ```rust
 let general = CapUrn::from_string("cap:in=*;op=extract;out=*")?;
 let specific = CapUrn::from_string(
-    "cap:in=\"media:type=binary;v=1\";op=extract;out=\"media:type=object;v=1\"")?;
+    "cap:in=\"media:binary\";op=extract;out=\"media:object\"")?;
 
 // specific.specificity() > general.specificity()
 ```
@@ -149,12 +149,12 @@ let specific = CapUrn::from_string(
 Common capability patterns:
 
 **Document Processing:**
-- `cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1";target=metadata`
-- `cap:in="media:type=binary;v=1";op=generate;out="media:type=binary;v=1";target=thumbnail`
+- `cap:in="media:binary";op=extract;out="media:object";target=metadata`
+- `cap:in="media:binary";op=generate;out="media:binary";target=thumbnail`
 
 **AI/ML Inference:**
-- `cap:in="media:type=text;v=1";op=generate;out="media:type=object;v=1";target=embeddings`
-- `cap:in="media:type=object;v=1";op=conversation;out="media:type=object;v=1"`
+- `cap:in="media:text";op=generate;out="media:object";target=embeddings`
+- `cap:in="media:object";op=conversation;out="media:object"`
 
 ## Integration
 

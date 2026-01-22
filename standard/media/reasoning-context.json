@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=reasoning-context;v=1;textable;scalar",
+  "urn": "media:reasoning-context;textable;scalar",
   "media_type": "text/plain",
   "title": "Reasoning Context",
   "profile_uri": "https://capns.org/schema/reasoning_context",

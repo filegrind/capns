@@ -422,9 +422,9 @@ mod tests {
     async fn test_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         // Use URNs with required in/out (new media URN format)
-        let key1 = registry.cache_key("cap:in=\"media:type=void;v=1\";op=extract;out=\"media:type=object;v=1\";target=metadata");
-        let key2 = registry.cache_key("cap:in=\"media:type=void;v=1\";op=extract;out=\"media:type=object;v=1\";target=metadata");
-        let key3 = registry.cache_key("cap:in=\"media:type=void;v=1\";op=different;out=\"media:type=object;v=1\"");
+        let key1 = registry.cache_key("cap:in=\"media:void\";op=extract;out=\"media:object\";target=metadata");
+        let key2 = registry.cache_key("cap:in=\"media:void\";op=extract;out=\"media:object\";target=metadata");
+        let key3 = registry.cache_key("cap:in=\"media:void\";op=different;out=\"media:object\"");
 
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);
@@ -438,7 +438,7 @@ mod json_parse_tests {
     #[test]
     fn test_parse_registry_json() {
         // JSON without stdin args - means cap doesn't accept stdin
-        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:type=listing-id;v=1","out":"media:type=task-id;v=1"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:type=listing-id;v=1":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:type=task-id;v=1":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"args":[{"media_urn":"media:type=listing-id;v=1","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:type=task-id;v=1","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
+        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:listing-id","out":"media:task-id"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:listing-id":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:task-id":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Create Grinder Tool Task");
@@ -449,12 +449,12 @@ mod json_parse_tests {
     #[test]
     fn test_parse_registry_json_with_stdin() {
         // JSON with stdin args - means cap accepts stdin of specified media type
-        let json = r#"{"urn":{"tags":{"op":"extract_metadata","in":"media:type=pdf;v=1;binary","out":"media:type=file-metadata;v=1;textable;keyed"}},"command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:type=pdf;v=1;binary","required":true,"sources":[{"stdin":"media:type=pdf;v=1;binary"}]}]}"#;
+        let json = r#"{"urn":{"tags":{"op":"extract_metadata","in":"media:pdf;binary","out":"media:file-metadata;textable;keyed"}},"command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:pdf;binary","required":true,"sources":[{"stdin":"media:pdf;binary"}]}]}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Extract Metadata");
         assert!(cap.accepts_stdin());
-        assert_eq!(cap.get_stdin_media_urn(), Some("media:type=pdf;v=1;binary"));
+        assert_eq!(cap.get_stdin_media_urn(), Some("media:pdf;binary"));
     }
 }
 
@@ -466,7 +466,7 @@ mod url_encoding_tests {
     /// This guards against the bug where encoding "cap:" as "cap%3A" causes 404s
     #[test]
     fn test_url_keeps_cap_prefix_literal() {
-        let urn = r#"cap:in="media:type=string;v=1";op=test;out="media:type=object;v=1""#;
+        let urn = r#"cap:in="media:string";op=test;out="media:object""#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
@@ -480,7 +480,7 @@ mod url_encoding_tests {
     /// Test that quoted values in cap URNs are properly URL-encoded
     #[test]
     fn test_url_encodes_quoted_media_urns() {
-        let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
+        let urn = r#"cap:in="media:listing-id";op=use_grinder;out="media:task-id""#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
@@ -499,7 +499,7 @@ mod url_encoding_tests {
     /// Test the exact URL format expected by the capns.org API
     #[test]
     fn test_exact_url_format() {
-        let urn = r#"cap:in="media:type=listing-id;v=1";op=use_grinder;out="media:type=task-id;v=1""#;
+        let urn = r#"cap:in="media:listing-id";op=use_grinder;out="media:task-id""#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
@@ -513,8 +513,8 @@ mod url_encoding_tests {
     #[test]
     fn test_normalize_handles_different_tag_orders() {
         // Different tag orders should normalize to the same canonical form
-        let urn1 = r#"cap:op=test;in="media:type=string;v=1";out="media:type=object;v=1""#;
-        let urn2 = r#"cap:in="media:type=string;v=1";out="media:type=object;v=1";op=test"#;
+        let urn1 = r#"cap:op=test;in="media:string";out="media:object""#;
+        let urn2 = r#"cap:in="media:string";out="media:object";op=test"#;
 
         let normalized1 = normalize_cap_urn(urn1);
         let normalized2 = normalize_cap_urn(urn2);

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=genre;v=1;textable;scalar",
+  "urn": "media:genre;textable;scalar",
   "media_type": "text/plain",
   "title": "Genre",
   "profile_uri": "https://capns.org/schema/genre",

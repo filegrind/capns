@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=cache-dir;v=1;textable;scalar",
+  "urn": "media:cache-dir;textable;scalar",
   "media_type": "text/plain",
   "title": "Cache Dir",
   "profile_uri": "https://capns.org/schema/cache_dir",

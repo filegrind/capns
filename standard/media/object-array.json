@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=object-array;v=1;textable;keyed;sequence",
+  "urn": "media:object-array;textable;keyed;sequence",
   "media_type": "application/json",
   "title": "Object Array",
   "profile_uri": "https://capns.org/schema/obj-array",

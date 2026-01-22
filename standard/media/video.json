@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=video;v=1;binary",
+  "urn": "media:video;binary",
   "media_type": "video/mp4",
   "title": "Video Data",
   "profile_uri": "https://capns.org/schema/video",

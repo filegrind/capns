@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=tone;v=1;textable;scalar",
+  "urn": "media:tone;textable;scalar",
   "media_type": "text/plain",
   "title": "Tone",
   "profile_uri": "https://capns.org/schema/tone",

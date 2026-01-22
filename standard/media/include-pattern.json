@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=include-pattern;v=1;textable;scalar",
+  "urn": "media:include-pattern;textable;scalar",
   "media_type": "text/plain",
   "title": "Include Pattern",
   "profile_uri": "https://capns.org/schema/include_pattern",

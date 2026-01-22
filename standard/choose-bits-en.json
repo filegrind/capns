@@ -4,8 +4,8 @@
       "op": "choose_bits",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=content-text;v=1;textable;scalar",
-      "out": "media:type=boolean-array;v=1;textable;sequence"
+      "in": "media:content-text;textable;scalar",
+      "out": "media:boolean-array;textable;sequence"
     }
   },
   "command": "bit_choices",
@@ -13,7 +13,7 @@
   "cap_description": "Make multiple binary (yes/no, true/false) decisions based on content and multiple questions",
   "metadata": {},
   "media_specs": {
-    "media:type=string-array;v=1;textable;sequence": {
+    "media:string-array;textable;sequence": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/questions-array",
       "schema": {
@@ -31,11 +31,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=content-text;v=1;textable;scalar",
+      "media_urn": "media:content-text;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=content-text;v=1;textable;scalar"
+          "stdin": "media:content-text;textable;scalar"
         },
         {
           "cli_flag": "--content"
@@ -51,7 +51,7 @@
       }
     },
     {
-      "media_urn": "media:type=questions-array;v=1;textable;sequence",
+      "media_urn": "media:questions-array;textable;sequence",
       "required": true,
       "sources": [
         {
@@ -64,7 +64,7 @@
       "arg_description": "Array of binary questions to answer about the content"
     },
     {
-      "media_urn": "media:type=language-code;v=1;textable;scalar",
+      "media_urn": "media:language-code;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -89,7 +89,7 @@
       "default_value": "en"
     },
     {
-      "media_urn": "media:type=max-content-length;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-content-length;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -104,7 +104,7 @@
       "default_value": 2048
     },
     {
-      "media_urn": "media:type=confidence-threshold;v=1;textable;numeric;scalar",
+      "media_urn": "media:confidence-threshold;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -119,7 +119,7 @@
       "default_value": 0.7
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -136,7 +136,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=boolean-array;v=1;textable;sequence",
+    "media_urn": "media:boolean-array;textable;sequence",
     "output_description": "Array of boolean decision results corresponding to each question"
   }
 }

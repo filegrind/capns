@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=summary-focus;v=1;textable;scalar",
+  "urn": "media:summary-focus;textable;scalar",
   "media_type": "text/plain",
   "title": "Summary Focus",
   "profile_uri": "https://capns.org/schema/summary_focus",

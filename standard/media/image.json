@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=png;v=1;binary",
+  "urn": "media:png;binary",
   "media_type": "image/png",
   "title": "Image",
   "profile_uri": "https://capns.org/schema/image",

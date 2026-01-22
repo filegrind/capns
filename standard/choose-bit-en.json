@@ -4,8 +4,8 @@
       "op": "choose_bit",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=content-text;v=1;textable;scalar",
-      "out": "media:type=boolean;v=1;textable;scalar"
+      "in": "media:content-text;textable;scalar",
+      "out": "media:boolean;textable;scalar"
     }
   },
   "command": "bit_choice",
@@ -14,11 +14,11 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=content-text;v=1;textable;scalar",
+      "media_urn": "media:content-text;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=content-text;v=1;textable;scalar"
+          "stdin": "media:content-text;textable;scalar"
         },
         {
           "cli_flag": "--content"
@@ -34,7 +34,7 @@
       }
     },
     {
-      "media_urn": "media:type=question-text;v=1;textable;scalar",
+      "media_urn": "media:question-text;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -51,7 +51,7 @@
       }
     },
     {
-      "media_urn": "media:type=language-code;v=1;textable;scalar",
+      "media_urn": "media:language-code;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -76,7 +76,7 @@
       "default_value": "en"
     },
     {
-      "media_urn": "media:type=max-content-length;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-content-length;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -91,7 +91,7 @@
       "default_value": 2048
     },
     {
-      "media_urn": "media:type=confidence-threshold;v=1;textable;numeric;scalar",
+      "media_urn": "media:confidence-threshold;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -106,7 +106,7 @@
       "default_value": 0.7
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -123,7 +123,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=boolean;v=1;textable;scalar",
+    "media_urn": "media:boolean;textable;scalar",
     "output_description": "Binary decision result (true/false)"
   }
 }

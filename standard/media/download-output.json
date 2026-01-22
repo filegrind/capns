@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=download-result;v=1;textable;keyed",
+  "urn": "media:download-result;textable;keyed",
   "media_type": "application/json",
   "title": "Download Output",
   "profile_uri": "https://capns.org/schema/download-output",

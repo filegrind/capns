@@ -1,0 +1,32 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "in": "media:textable",
+      "out": "media:textable"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Textable to Textable",
+  "cap_description": "Parse a textable to its textable representation",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:textable",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:textable"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "The textable value to parse as textable"
+    }
+  ],
+  "output": {
+    "media_urn": "media:textable",
+    "output_description": "Textable value parsed from the textable input"
+  }
+}

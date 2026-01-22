@@ -3,8 +3,8 @@
     "tags": {
       "op": "list",
       "type": "model",
-      "in": "media:type=void;v=1",
-      "out": "media:type=list-output;v=1;textable;keyed"
+      "in": "media:void",
+      "out": "media:list-output;textable;keyed"
     }
   },
   "command": "list",
@@ -12,7 +12,7 @@
   "cap_description": "List available models and their status",
   "metadata": {},
   "media_specs": {
-    "media:type=list-output;v=1;textable;keyed": {
+    "media:list-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/list-output",
       "schema": {
@@ -89,7 +89,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=filter-pattern;v=1;textable;scalar",
+      "media_urn": "media:filter-pattern;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -102,7 +102,7 @@
       }
     },
     {
-      "media_urn": "media:type=model-status;v=1;textable;scalar",
+      "media_urn": "media:model-status;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -121,7 +121,7 @@
       }
     },
     {
-      "media_urn": "media:type=output-format;v=1;textable;scalar",
+      "media_urn": "media:output-format;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -140,7 +140,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=list-output;v=1;textable;keyed",
+    "media_urn": "media:list-output;textable;keyed",
     "output_description": "List of models with their metadata and status"
   }
 }

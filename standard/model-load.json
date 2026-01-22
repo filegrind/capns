@@ -3,8 +3,8 @@
     "tags": {
       "op": "load",
       "type": "model",
-      "in": "media:type=void;v=1",
-      "out": "media:type=load-output;v=1;textable;keyed"
+      "in": "media:void",
+      "out": "media:load-output;textable;keyed"
     }
   },
   "command": "load",
@@ -12,7 +12,7 @@
   "cap_description": "Load a model into memory for inference operations",
   "metadata": {},
   "media_specs": {
-    "media:type=load-output;v=1;textable;keyed": {
+    "media:load-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/load-output",
       "schema": {
@@ -76,7 +76,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "media_urn": "media:model-id;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -93,7 +93,7 @@
       }
     },
     {
-      "media_urn": "media:type=device;v=1;textable;scalar",
+      "media_urn": "media:device;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -112,7 +112,7 @@
       "default_value": "cpu"
     },
     {
-      "media_urn": "media:type=precision;v=1;textable;scalar",
+      "media_urn": "media:precision;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -132,7 +132,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=load-output;v=1;textable;keyed",
+    "media_urn": "media:load-output;textable;keyed",
     "output_description": "Load result with model handle and configuration"
   }
 }

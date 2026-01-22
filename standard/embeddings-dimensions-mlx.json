@@ -3,8 +3,8 @@
     "tags": {
       "op": "embeddings_dimensions",
       "model_type": "mlx",
-      "in": "media:type=void;v=1",
-      "out": "media:type=integer;v=1;textable;numeric;scalar"
+      "in": "media:void",
+      "out": "media:integer;textable;numeric;scalar"
     }
   },
   "command": "get_embedding_dimensions",
@@ -13,7 +13,7 @@
   "metadata": {},
   "args": [
     {
-      "media_urn": "media:type=mlx-model-path;v=1;textable;scalar",
+      "media_urn": "media:mlx-model-path;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -30,7 +30,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=integer;v=1;textable;numeric;scalar",
+    "media_urn": "media:integer;textable;numeric;scalar",
     "output_description": "Dimensionality of the embeddings (positive integer)",
     "validation": {
       "min": 1,

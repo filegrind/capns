@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=extract-outline-output;v=1;textable;keyed",
+  "urn": "media:extract-outline-output;textable;keyed",
   "media_type": "application/json",
   "title": "Extract Outline Output",
   "profile_uri": "https://capns.org/schema/extract-outline-output",

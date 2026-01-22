@@ -4,8 +4,8 @@
       "op": "query_structured",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=object;v=1;textable;keyed",
-      "out": "media:type=json;v=1;textable;keyed"
+      "in": "media:object;textable;keyed",
+      "out": "media:json;textable;keyed"
     }
   },
   "command": "structured_query",
@@ -13,7 +13,7 @@
   "cap_description": "Execute structured queries with JSON schema constraints and template rendering",
   "metadata": {},
   "media_specs": {
-    "media:type=json;v=1;textable;keyed": {
+    "media:json;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/structured-query-output",
       "schema": {
@@ -31,11 +31,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=query-name;v=1;textable;scalar",
+      "media_urn": "media:query-name;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=object;v=1;textable;keyed"
+          "stdin": "media:object;textable;keyed"
         },
         {
           "cli_flag": "--query-name"
@@ -52,7 +52,7 @@
       }
     },
     {
-      "media_urn": "media:type=substitutions;v=1;textable;keyed",
+      "media_urn": "media:substitutions;textable;keyed",
       "required": true,
       "sources": [
         {
@@ -65,7 +65,7 @@
       "arg_description": "Template substitutions for the query prompt"
     },
     {
-      "media_urn": "media:type=language-code;v=1;textable;scalar",
+      "media_urn": "media:language-code;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -90,7 +90,7 @@
       "default_value": "en"
     },
     {
-      "media_urn": "media:type=schema-variables;v=1;textable;keyed",
+      "media_urn": "media:schema-variables;textable;keyed",
       "required": false,
       "sources": [
         {
@@ -101,7 +101,7 @@
       "default_value": {}
     },
     {
-      "media_urn": "media:type=callback-enabled-flag;v=1;textable;scalar",
+      "media_urn": "media:callback-enabled-flag;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -112,7 +112,7 @@
       "default_value": false
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -129,7 +129,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=json;v=1;textable;keyed",
+    "media_urn": "media:json;textable;keyed",
     "output_description": "Structured JSON response conforming to the query's schema"
   }
 }

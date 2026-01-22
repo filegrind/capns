@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=programming-language;v=1;textable;scalar",
+  "urn": "media:programming-language;textable;scalar",
   "media_type": "text/plain",
   "title": "Programming Language",
   "profile_uri": "https://capns.org/schema/programming_language",

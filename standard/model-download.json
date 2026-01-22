@@ -3,8 +3,8 @@
     "tags": {
       "op": "download",
       "type": "model",
-      "in": "media:type=void;v=1",
-      "out": "media:type=download-result;v=1;textable;keyed"
+      "in": "media:void",
+      "out": "media:download-result;textable;keyed"
     }
   },
   "command": "download",
@@ -12,7 +12,7 @@
   "cap_description": "Download machine learning models from various repositories",
   "metadata": {},
   "media_specs": {
-    "media:type=download-result;v=1;textable;keyed": {
+    "media:download-result;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/download-output",
       "schema": {
@@ -65,7 +65,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=model-id;v=1;textable;scalar",
+      "media_urn": "media:model-id;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -82,7 +82,7 @@
       }
     },
     {
-      "media_urn": "media:type=repository;v=1;textable;scalar",
+      "media_urn": "media:repository;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -100,7 +100,7 @@
       "default_value": "huggingface"
     },
     {
-      "media_urn": "media:type=force-flag;v=1;textable;scalar",
+      "media_urn": "media:force-flag;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -111,7 +111,7 @@
       "default_value": false
     },
     {
-      "media_urn": "media:type=cache-dir;v=1;textable;scalar",
+      "media_urn": "media:cache-dir;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -125,7 +125,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=download-result;v=1;textable;keyed",
+    "media_urn": "media:download-result;textable;keyed",
     "output_description": "Download result with model path and metadata"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=seed;v=1;textable;numeric;scalar",
+  "urn": "media:seed;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Seed",
   "profile_uri": "https://capns.org/schema/seed",

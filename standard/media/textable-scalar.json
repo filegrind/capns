@@ -1,5 +1,5 @@
 {
-  "urn": "media:v=1;textable;scalar",
+  "urn": "media:textable;scalar",
   "media_type": "text/plain",
   "title": "Textable Scalar Value",
   "profile_uri": "https://capns.org/schema/textable-scalar",

@@ -316,7 +316,7 @@ mod tests {
         let tracked_file_id = "tracked-file-123".to_string();
         let original_path = "/path/to/original.pdf".to_string();
         let security_bookmark = vec![0x62, 0x6f, 0x6f, 0x6b]; // "book"
-        let media_urn = "media:type=pdf;v=1;binary".to_string();
+        let media_urn = "media:pdf;binary".to_string();
 
         let source = StdinSource::FileReference {
             tracked_file_id: tracked_file_id.clone(),
@@ -386,7 +386,7 @@ mod tests {
             tracked_file_id: "test-id".to_string(),
             original_path: "/test/path.pdf".to_string(),
             security_bookmark: vec![1, 2, 3],
-            media_urn: "media:type=pdf;v=1".to_string(),
+            media_urn: "media:pdf".to_string(),
         };
         let cloned = source.clone();
 
@@ -424,7 +424,7 @@ mod tests {
             tracked_file_id: "test-id".to_string(),
             original_path: "/test/path.pdf".to_string(),
             security_bookmark: vec![],
-            media_urn: "media:type=pdf;v=1".to_string(),
+            media_urn: "media:pdf".to_string(),
         };
         let debug_str = format!("{:?}", file_source);
         assert!(debug_str.contains("FileReference"));

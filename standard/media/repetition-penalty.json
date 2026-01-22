@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=repetition-penalty;v=1;textable;numeric;scalar",
+  "urn": "media:repetition-penalty;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Repetition Penalty",
   "profile_uri": "https://capns.org/schema/repetition_penalty",

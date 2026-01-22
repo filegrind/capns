@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=code-context;v=1;textable;scalar",
+  "urn": "media:code-context;textable;scalar",
   "media_type": "text/plain",
   "title": "Code Context",
   "profile_uri": "https://capns.org/schema/code_context",

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=thumbnail-height;v=1;textable;numeric;scalar",
+  "urn": "media:thumbnail-height;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Thumbnail Height",
   "profile_uri": "https://capns.org/schema/thumbnail_height",

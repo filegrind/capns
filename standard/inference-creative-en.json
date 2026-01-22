@@ -4,8 +4,8 @@
       "op": "creative",
       "language": "en",
       "type": "constrained",
-      "in": "media:type=prompt-text;v=1;textable;scalar",
-      "out": "media:type=llm-inference-output;v=1;textable;keyed"
+      "in": "media:prompt-text;textable;scalar",
+      "out": "media:llm-inference-output;textable;keyed"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Creative writing and content generation in English",
   "metadata": {},
   "media_specs": {
-    "media:type=llm-inference-output;v=1;textable;keyed": {
+    "media:llm-inference-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -79,11 +79,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "media_urn": "media:prompt-text;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=prompt-text;v=1;textable;scalar"
+          "stdin": "media:prompt-text;textable;scalar"
         },
         {
           "cli_flag": "--prompt"
@@ -99,7 +99,7 @@
       }
     },
     {
-      "media_urn": "media:type=genre;v=1;textable;scalar",
+      "media_urn": "media:genre;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -125,7 +125,7 @@
       "default_value": "fiction"
     },
     {
-      "media_urn": "media:type=tone;v=1;textable;scalar",
+      "media_urn": "media:tone;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -149,7 +149,7 @@
       "default_value": "conversational"
     },
     {
-      "media_urn": "media:type=output-length;v=1;textable;scalar",
+      "media_urn": "media:output-length;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -168,7 +168,7 @@
       "default_value": "medium"
     },
     {
-      "media_urn": "media:type=creative-context;v=1;textable;scalar",
+      "media_urn": "media:creative-context;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -181,7 +181,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -196,7 +196,7 @@
       "default_value": 3000
     },
     {
-      "media_urn": "media:type=creativity-level;v=1;textable;numeric;scalar",
+      "media_urn": "media:creativity-level;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -211,7 +211,7 @@
       "default_value": 0.8
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -228,7 +228,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
+    "media_urn": "media:llm-inference-output;textable;keyed",
     "output_description": "Creative written content with metadata"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=llm-inference-output;v=1;textable;keyed",
+  "urn": "media:llm-inference-output;textable;keyed",
   "media_type": "application/json",
   "title": "LLM Inference Output",
   "profile_uri": "https://capns.org/schema/llm-inference-output",

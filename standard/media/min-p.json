@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=min-p;v=1;textable;numeric;scalar",
+  "urn": "media:min-p;textable;numeric;scalar",
   "media_type": "text/plain",
   "title": "Min P",
   "profile_uri": "https://capns.org/schema/min_p",

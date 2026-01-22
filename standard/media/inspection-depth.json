@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=inspection-depth;v=1;textable;scalar",
+  "urn": "media:inspection-depth;textable;scalar",
   "media_type": "text/plain",
   "title": "Inspection Depth",
   "profile_uri": "https://capns.org/schema/inspection_depth",

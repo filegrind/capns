@@ -4,8 +4,8 @@
       "op": "conversation",
       "language": "es",
       "type": "constrained",
-      "in": "media:type=prompt-text;v=1;textable;scalar",
-      "out": "media:type=llm-inference-output;v=1;textable;keyed"
+      "in": "media:prompt-text;textable;scalar",
+      "out": "media:llm-inference-output;textable;keyed"
     }
   },
   "command": "llm_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Conversacion natural y respuestas de chat en espanol",
   "metadata": {},
   "media_specs": {
-    "media:type=llm-inference-output;v=1;textable;keyed": {
+    "media:llm-inference-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -72,11 +72,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "media_urn": "media:prompt-text;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=prompt-text;v=1;textable;scalar"
+          "stdin": "media:prompt-text;textable;scalar"
         },
         {
           "cli_flag": "--prompt"
@@ -92,7 +92,7 @@
       }
     },
     {
-      "media_urn": "media:type=conversation-context;v=1;textable;scalar",
+      "media_urn": "media:conversation-context;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -105,7 +105,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -120,7 +120,7 @@
       "default_value": 2000
     },
     {
-      "media_urn": "media:type=temperature;v=1;textable;numeric;scalar",
+      "media_urn": "media:temperature;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -135,7 +135,7 @@
       "default_value": 0.7
     },
     {
-      "media_urn": "media:type=system-prompt;v=1;textable;scalar",
+      "media_urn": "media:system-prompt;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -148,7 +148,7 @@
       }
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -165,7 +165,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
+    "media_urn": "media:llm-inference-output;textable;keyed",
     "output_description": "Respuesta conversacional generada con informacion de contexto"
   }
 }

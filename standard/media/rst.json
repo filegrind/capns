@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=rst;v=1;textable",
+  "urn": "media:rst;textable",
   "media_type": "text/x-rst",
   "title": "reStructuredText",
   "profile_uri": "https://capns.org/schema/rst",

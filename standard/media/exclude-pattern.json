@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=exclude-pattern;v=1;textable;scalar",
+  "urn": "media:exclude-pattern;textable;scalar",
   "media_type": "text/plain",
   "title": "Exclude Pattern",
   "profile_uri": "https://capns.org/schema/exclude_pattern",

@@ -1,7 +1,7 @@
 //! Media URN Registry - Remote lookup and caching for media specs
 //!
 //! This module provides the `MediaUrnRegistry` which handles:
-//! - Remote lookup of media specs via `https://capns.org/media:type=xxx;v=1`
+//! - Remote lookup of media specs via `https://capns.org/media:xxx`
 //! - Two-level caching (in-memory HashMap + disk with TTL)
 //! - Bundled standard media specs at compile time
 //!
@@ -13,7 +13,7 @@
 //! ## Usage
 //! ```ignore
 //! let registry = MediaUrnRegistry::new().await?;
-//! let spec = registry.get_media_spec("media:type=pdf;v=1;binary").await?;
+//! let spec = registry.get_media_spec("media:pdf;binary").await?;
 //! println!("Title: {:?}", spec.title);
 //! ```
 
@@ -480,9 +480,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
-        let key1 = registry.cache_key("media:type=string;v=1;textable;scalar");
-        let key2 = registry.cache_key("media:type=string;v=1;textable;scalar");
-        let key3 = registry.cache_key("media:type=integer;v=1;textable;scalar");
+        let key1 = registry.cache_key("media:string;textable;scalar");
+        let key2 = registry.cache_key("media:string;textable;scalar");
+        let key3 = registry.cache_key("media:integer;textable;scalar");
 
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn test_stored_media_spec_to_def() {
         let spec = StoredMediaSpec {
-            urn: "media:type=pdf;v=1;binary".to_string(),
+            urn: "media:pdf;binary".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF Document".to_string(),
             profile_uri: Some("https://capns.org/schema/pdf".to_string()),
@@ -513,8 +513,8 @@ mod tests {
     #[test]
     fn test_normalize_media_urn() {
         // Same URN should normalize to same value
-        let urn1 = normalize_media_urn("media:type=string;v=1");
-        let urn2 = normalize_media_urn("media:v=1;type=string");
+        let urn1 = normalize_media_urn("media:string");
+        let urn2 = normalize_media_urn("media:string");
         // Note: actual equality depends on TaggedUrn canonicalization
         assert!(!urn1.is_empty());
         assert!(!urn2.is_empty());

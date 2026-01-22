@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=precision;v=1;textable;scalar",
+  "urn": "media:precision;textable;scalar",
   "media_type": "text/plain",
   "title": "Precision",
   "profile_uri": "https://capns.org/schema/precision",

@@ -4,8 +4,8 @@
       "op": "generate_text",
       "type": "llm",
       "model_type": "mlx",
-      "in": "media:type=mlx-model-path;v=1;textable;scalar",
-      "out": "media:type=llm-inference-output;v=1;textable;keyed"
+      "in": "media:mlx-model-path;textable;scalar",
+      "out": "media:llm-inference-output;textable;keyed"
     }
   },
   "command": "run_inference",
@@ -13,7 +13,7 @@
   "cap_description": "Generate text using MLX-based LLM models on Apple Silicon",
   "metadata": {},
   "media_specs": {
-    "media:type=llm-inference-output;v=1;textable;keyed": {
+    "media:llm-inference-output;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/llm_inference-output",
       "schema": {
@@ -68,11 +68,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=mlx-model-path;v=1;textable;scalar",
+      "media_urn": "media:mlx-model-path;textable;scalar",
       "required": true,
       "sources": [
         {
-          "stdin": "media:type=mlx-model-path;v=1;textable;scalar"
+          "stdin": "media:mlx-model-path;textable;scalar"
         },
         {
           "cli_flag": "--model"
@@ -87,7 +87,7 @@
       }
     },
     {
-      "media_urn": "media:type=prompt-text;v=1;textable;scalar",
+      "media_urn": "media:prompt-text;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -101,7 +101,7 @@
       }
     },
     {
-      "media_urn": "media:type=max-tokens;v=1;textable;numeric;scalar",
+      "media_urn": "media:max-tokens;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -116,7 +116,7 @@
       "default_value": 512
     },
     {
-      "media_urn": "media:type=temperature;v=1;textable;numeric;scalar",
+      "media_urn": "media:temperature;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -131,7 +131,7 @@
       "default_value": 0.7
     },
     {
-      "media_urn": "media:type=top-p;v=1;textable;numeric;scalar",
+      "media_urn": "media:top-p;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -146,7 +146,7 @@
       "default_value": 0.9
     },
     {
-      "media_urn": "media:type=repetition-penalty;v=1;textable;numeric;scalar",
+      "media_urn": "media:repetition-penalty;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -161,7 +161,7 @@
       "default_value": 1.1
     },
     {
-      "media_urn": "media:type=seed;v=1;textable;numeric;scalar",
+      "media_urn": "media:seed;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -175,7 +175,7 @@
       }
     },
     {
-      "media_urn": "media:type=stream-flag;v=1;textable;scalar",
+      "media_urn": "media:stream-flag;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -187,7 +187,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=llm-inference-output;v=1;textable;keyed",
+    "media_urn": "media:llm-inference-output;textable;keyed",
     "output_description": "Generated text with metadata including tokens and timing"
   }
 }

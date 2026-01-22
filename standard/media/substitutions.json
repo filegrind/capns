@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=substitutions;v=1;textable;keyed",
+  "urn": "media:substitutions;textable;keyed",
   "media_type": "application/json",
   "title": "Substitutions",
   "profile_uri": "https://capns.org/schema/substitutions",

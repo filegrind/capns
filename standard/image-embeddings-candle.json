@@ -3,8 +3,8 @@
     "tags": {
       "op": "generate_image_embeddings",
       "model_type": "candle",
-      "in": "media:type=png;v=1;binary",
-      "out": "media:type=embedding-vector;v=1;textable;keyed"
+      "in": "media:png;binary",
+      "out": "media:embedding-vector;textable;keyed"
     }
   },
   "command": "generate_image_embeddings",
@@ -12,7 +12,7 @@
   "cap_description": "Generate image embeddings using CLIP models with Candle ML framework",
   "metadata": {},
   "media_specs": {
-    "media:type=embedding-vector;v=1;textable;keyed": {
+    "media:embedding-vector;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/image-embeddings",
       "schema": {
@@ -54,7 +54,7 @@
         }
       }
     },
-    "media:type=embedding-vector-batch;v=1;textable;keyed;sequence": {
+    "media:embedding-vector-batch;textable;keyed;sequence": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/image-embeddings-batch-output",
       "schema": {
@@ -113,7 +113,7 @@
   },
   "args": [
     {
-      "media_urn": "media:type=image-path;v=1;textable;scalar",
+      "media_urn": "media:image-path;textable;scalar",
       "required": true,
       "sources": [
         {
@@ -130,7 +130,7 @@
       }
     },
     {
-      "media_urn": "media:type=hf-model-name;v=1;textable;scalar",
+      "media_urn": "media:hf-model-name;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -145,7 +145,7 @@
       "default_value": "openai/clip-vit-base-patch32"
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -159,7 +159,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=embedding-vector;v=1;textable;keyed",
+    "media_urn": "media:embedding-vector;textable;keyed",
     "output_description": "Image embedding vector with model metadata"
   }
 }

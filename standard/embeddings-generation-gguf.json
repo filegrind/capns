@@ -4,8 +4,8 @@
       "op": "generate_embeddings",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:type=input-text;v=1;textable;scalar",
-      "out": "media:type=embedding-vector;v=1;textable;keyed"
+      "in": "media:input-text;textable;scalar",
+      "out": "media:embedding-vector;textable;keyed"
     }
   },
   "command": "generate_embeddings",
@@ -13,7 +13,7 @@
   "cap_description": "Generate vector embeddings from text using GGUF models with llama.cpp backend",
   "metadata": {},
   "media_specs": {
-    "media:type=embedding-vector;v=1;textable;keyed": {
+    "media:embedding-vector;textable;keyed": {
       "media_type": "application/json",
       "profile_uri": "https://capns.org/schema/embeddings",
       "schema": {
@@ -104,11 +104,11 @@
   },
   "args": [
     {
-      "media_urn": "media:type=input-text;v=1;textable;scalar",
+      "media_urn": "media:input-text;textable;scalar",
       "required": false,
       "sources": [
         {
-          "stdin": "media:type=input-text;v=1;textable;scalar"
+          "stdin": "media:input-text;textable;scalar"
         },
         {
           "cli_flag": "--text"
@@ -121,7 +121,7 @@
       }
     },
     {
-      "media_urn": "media:type=file-path;v=1;textable;scalar",
+      "media_urn": "media:file-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -135,7 +135,7 @@
       }
     },
     {
-      "media_urn": "media:type=model-spec;v=1;textable;scalar",
+      "media_urn": "media:model-spec;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -150,7 +150,7 @@
       "default_value": "hf:nomic-ai/nomic-embed-text-v1.5-GGUF"
     },
     {
-      "media_urn": "media:type=chunk-size;v=1;textable;numeric;scalar",
+      "media_urn": "media:chunk-size;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -165,7 +165,7 @@
       "default_value": 400
     },
     {
-      "media_urn": "media:type=chunk-overlap;v=1;textable;numeric;scalar",
+      "media_urn": "media:chunk-overlap;textable;numeric;scalar",
       "required": false,
       "sources": [
         {
@@ -180,7 +180,7 @@
       "default_value": 50
     },
     {
-      "media_urn": "media:type=output-path;v=1;textable;scalar",
+      "media_urn": "media:output-path;textable;scalar",
       "required": false,
       "sources": [
         {
@@ -194,7 +194,7 @@
     }
   ],
   "output": {
-    "media_urn": "media:type=embedding-vector;v=1;textable;keyed",
+    "media_urn": "media:embedding-vector;textable;keyed",
     "output_description": "JSON containing L2-normalized embeddings, chunk metadata and model information"
   }
 }

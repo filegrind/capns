@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=stream-flag;v=1;textable;scalar",
+  "urn": "media:stream-flag;textable;scalar",
   "media_type": "text/plain",
   "title": "Stream Flag",
   "profile_uri": "https://capns.org/schema/stream_flag",

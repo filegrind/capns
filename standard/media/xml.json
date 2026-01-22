@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=xml;v=1;textable",
+  "urn": "media:xml;textable",
   "media_type": "application/xml",
   "title": "XML Document",
   "profile_uri": "https://capns.org/schema/xml",

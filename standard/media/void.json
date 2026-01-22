@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=void;v=1",
+  "urn": "media:void",
   "media_type": "application/x-void",
   "title": "Void Value",
   "profile_uri": "https://capns.org/schema/void",

@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=model-spec;v=1;textable;scalar",
+  "urn": "media:model-spec;textable;scalar",
   "media_type": "text/plain",
   "title": "Model Spec",
   "profile_uri": "https://capns.org/schema/model_spec",

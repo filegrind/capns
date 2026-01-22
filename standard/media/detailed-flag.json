@@ -1,5 +1,5 @@
 {
-  "urn": "media:type=detailed-flag;v=1;textable;scalar",
+  "urn": "media:detailed-flag;textable;scalar",
   "media_type": "text/plain",
   "title": "Detailed Flag",
   "profile_uri": "https://capns.org/schema/detailed_flag",
