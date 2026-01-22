@@ -11,8 +11,8 @@ Cap URNs extend Tagged URNs with capability-specific requirements. This document
 Cap URNs **must** include `in` and `out` tags that specify input/output media types:
 
 ```
-cap:in="media:type=void;v=1";op=generate;out="media:type=object;v=1"
-cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1";target=metadata
+cap:in="media:void";op=generate;out="media:object"
+cap:in="media:binary";op=extract;out="media:object";target=metadata
 ```
 
 - `in` - The input media type (what the cap accepts)
@@ -27,7 +27,7 @@ Unlike base Tagged URNs which allow value-less tags (e.g., `cap:optimize` as sho
 ### 3. Media URN Validation
 
 Direction specifier values (`in` and `out`) must be:
-- A valid Media URN: `media:type=<type>;v=<version>[;profile=<profile>]`
+- A valid Media URN: `media:<type>;v=<version>[;profile=<profile>]`
 - Or a wildcard: `*`
 
 Invalid direction specifier values cause parsing to fail.
@@ -46,13 +46,13 @@ Unlike regular tags where missing tags are implicit wildcards, direction specs (
 
 ```
 # Both caps must have compatible in/out for a match
-Cap:     cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
-Request: cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
+Cap:     cap:in="media:binary";op=extract;out="media:object"
+Request: cap:in="media:binary";op=extract;out="media:object"
 Result:  MATCH
 
 # Direction mismatch prevents match
-Cap:     cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"
-Request: cap:in="media:type=text;v=1";op=extract;out="media:type=object;v=1"
+Cap:     cap:in="media:binary";op=extract;out="media:object"
+Request: cap:in="media:text";op=extract;out="media:object"
 Result:  NO MATCH (input types differ)
 ```
 
@@ -62,7 +62,7 @@ Wildcard `*` in direction specs matches any media type:
 
 ```
 Cap:     cap:in=*;op=convert;out=*
-Request: cap:in="media:type=binary;v=1";op=convert;out="media:type=text;v=1"
+Request: cap:in="media:binary";op=convert;out="media:text"
 Result:  MATCH (cap accepts any input/output)
 ```
 
@@ -70,7 +70,7 @@ Result:  MATCH (cap accepts any input/output)
 
 Specificity for caps includes direction specs:
 - Each non-wildcard direction spec contributes to specificity
-- `cap:in="media:type=binary;v=1";op=extract;out="media:type=object;v=1"` has specificity 3
+- `cap:in="media:binary";op=extract;out="media:object"` has specificity 3
 - `cap:in=*;op=extract;out=*` has specificity 1 (only `op` is specific)
 
 ## Cap-Specific Error Codes

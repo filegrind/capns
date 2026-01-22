@@ -11,7 +11,7 @@
 //!
 //! ```json
 //! {
-//!   "urn": { "tags": { "op": "conversation", "in": "media:type=string;v=1", "out": "my:output.v1" } },
+//!   "urn": { "tags": { "op": "conversation", "in": "media:string", "out": "my:output.v1" } },
 //!   "media_specs": {
 //!     "my:output.v1": {
 //!       "media_type": "application/json",
@@ -20,7 +20,7 @@
 //!     }
 //!   },
 //!   "args": [
-//!     { "media_urn": "media:type=string;v=1", "required": true, "sources": [{"cli_flag": "--input"}] }
+//!     { "media_urn": "media:string", "required": true, "sources": [{"cli_flag": "--input"}] }
 //!   ],
 //!   "output": { "media_urn": "my:output.v1", ... }
 //! }
@@ -115,7 +115,7 @@ impl ArgumentValidation {
 /// Source specification for argument input
 ///
 /// Each variant serializes to a distinct JSON object with a unique key:
-/// - `{"stdin": "media:type=..."}`
+/// - `{"stdin": "media:..."}`
 /// - `{"position": 0}`
 /// - `{"cli_flag": "--flag-name"}`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -310,13 +310,13 @@ impl CapArg {
 
 /// Output definition
 ///
-/// The `media_urn` field contains a media URN (e.g., "media:type=object;v=1") that
+/// The `media_urn` field contains a media URN (e.g., "media:object") that
 /// references a definition in the cap's `media_specs` table or a built-in primitive.
 /// Any output schema should be defined in the media_specs entry, not inline here.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
     /// Media URN referencing a media spec definition
-    /// e.g., "media:type=object;v=1" or a custom media URN like "media:type=my-output;v=1"
+    /// e.g., "media:object" or a custom media URN like "media:my-output"
     pub media_urn: String,
 
     #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
@@ -333,7 +333,7 @@ impl CapOutput {
     /// Create a new output definition with media URN
     ///
     /// # Arguments
-    /// * `media_urn` - Media URN referencing a media_specs entry (e.g., "media:type=object;v=1")
+    /// * `media_urn` - Media URN referencing a media_specs entry (e.g., "media:object")
     /// * `description` - Human-readable description of the output
     pub fn new(media_urn: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
@@ -577,7 +577,7 @@ impl<'de> Deserialize<'de> for Cap {
                     // Extract required in/out specs first
                     let in_spec = tags.get("in")
                         .and_then(|v| v.as_str())
-                        .ok_or_else(|| serde::de::Error::custom("Missing required 'in' tag in urn - caps must declare their input type (use media:type=void;v=1 for no input)"))?
+                        .ok_or_else(|| serde::de::Error::custom("Missing required 'in' tag in urn - caps must declare their input type (use media:void for no input)"))?
                         .to_string();
                     let out_spec = tags.get("out")
                         .and_then(|v| v.as_str())
@@ -902,24 +902,24 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
+        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
     }
 
     #[test]
     fn test_cap_creation() {
-        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
         assert!(cap.urn_string().contains("op=transform"));
-        assert!(cap.urn_string().contains("in=\"media:type=void;v=1\""));
-        assert!(cap.urn_string().contains("out=\"media:type=object;v=1\""));
+        assert!(cap.urn_string().contains("in=\"media:void\""));
+        assert!(cap.urn_string().contains("out=\"media:object\""));
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
 
     #[test]
     fn test_cap_with_metadata() {
-        let urn = CapUrn::from_string(&test_urn("op=arithmetic;type=compute;subtype=math")).unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=arithmetic;compute;subtype=math")).unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
         metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
@@ -935,11 +935,11 @@ mod tests {
 
     #[test]
     fn test_cap_matching() {
-        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
+        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
-        assert!(cap.matches_request(&test_urn("op=transform;format=json;type=data_processing")));
-        assert!(cap.matches_request(&test_urn("op=transform;format=*;type=data_processing")));
+        assert!(cap.matches_request(&test_urn("op=transform;format=json;data_processing")));
+        assert!(cap.matches_request(&test_urn("op=transform;format=*;data_processing")));
         assert!(cap.matches_request(&test_urn("type=data_processing")));
         assert!(!cap.matches_request(&test_urn("type=compute")));
     }
@@ -982,9 +982,9 @@ mod tests {
 
         // Enable stdin support by adding an arg with a stdin source
         let stdin_arg = CapArg {
-            media_urn: "media:type=text;v=1;textable".to_string(),
+            media_urn: "media:text;textable".to_string(),
             required: true,
-            sources: vec![ArgSource::Stdin { stdin: "media:type=text;v=1;textable".to_string() }],
+            sources: vec![ArgSource::Stdin { stdin: "media:text;textable".to_string() }],
             arg_description: Some("Input text".to_string()),
             validation: ArgumentValidation::default(),
             default_value: None,
@@ -993,7 +993,7 @@ mod tests {
         cap.add_arg(stdin_arg);
 
         assert!(cap.accepts_stdin());
-        assert_eq!(cap.get_stdin_media_urn(), Some("media:type=text;v=1;textable"));
+        assert_eq!(cap.get_stdin_media_urn(), Some("media:text;textable"));
 
         // Test serialization/deserialization preserves the args
         let serialized = serde_json::to_string(&cap).unwrap();
@@ -1001,15 +1001,15 @@ mod tests {
         assert!(serialized.contains("\"stdin\""));
         let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
         assert!(deserialized.accepts_stdin());
-        assert_eq!(deserialized.get_stdin_media_urn(), Some("media:type=text;v=1;textable"));
+        assert_eq!(deserialized.get_stdin_media_urn(), Some("media:text;textable"));
     }
 
     #[test]
     fn test_arg_source_types() {
         // Test stdin source
-        let stdin_source = ArgSource::Stdin { stdin: "media:type=text;v=1".to_string() };
+        let stdin_source = ArgSource::Stdin { stdin: "media:text".to_string() };
         assert_eq!(stdin_source.get_type(), "stdin");
-        assert_eq!(stdin_source.stdin_media_urn(), Some("media:type=text;v=1"));
+        assert_eq!(stdin_source.stdin_media_urn(), Some("media:text"));
         assert_eq!(stdin_source.position(), None);
         assert_eq!(stdin_source.cli_flag(), None);
 
@@ -1031,7 +1031,7 @@ mod tests {
     #[test]
     fn test_cap_arg_serialization() {
         let arg = CapArg {
-            media_urn: "media:type=string;v=1".to_string(),
+            media_urn: "media:string".to_string(),
             required: true,
             sources: vec![
                 ArgSource::CliFlag { cli_flag: "--name".to_string() },
@@ -1044,7 +1044,7 @@ mod tests {
         };
 
         let serialized = serde_json::to_string(&arg).unwrap();
-        assert!(serialized.contains("\"media_urn\":\"media:type=string;v=1\""));
+        assert!(serialized.contains("\"media_urn\":\"media:string\""));
         assert!(serialized.contains("\"required\":true"));
         assert!(serialized.contains("\"cli_flag\":\"--name\""));
         assert!(serialized.contains("\"position\":0"));
@@ -1057,23 +1057,23 @@ mod tests {
     fn test_cap_arg_constructors() {
         // Test basic constructor
         let arg = CapArg::new(
-            "media:type=string;v=1",
+            "media:string",
             true,
             vec![ArgSource::CliFlag { cli_flag: "--name".to_string() }],
         );
-        assert_eq!(arg.media_urn, "media:type=string;v=1");
+        assert_eq!(arg.media_urn, "media:string");
         assert!(arg.required);
         assert_eq!(arg.sources.len(), 1);
         assert!(arg.arg_description.is_none());
 
         // Test with description
         let arg = CapArg::with_description(
-            "media:type=integer;v=1",
+            "media:integer",
             false,
             vec![ArgSource::Position { position: 0 }],
             "The count argument",
         );
-        assert_eq!(arg.media_urn, "media:type=integer;v=1");
+        assert_eq!(arg.media_urn, "media:integer");
         assert!(!arg.required);
         assert_eq!(arg.arg_description, Some("The count argument".to_string()));
     }

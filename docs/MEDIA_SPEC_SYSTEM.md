@@ -16,17 +16,17 @@ These spec IDs are implicitly available and do not need to be declared in `media
 
 | Spec ID | Media Type | Profile URI | Description |
 |---------|------------|-------------|-------------|
-| `media:type=string;v=1` | `text/plain` | `https://capns.org/schema/str` | String value |
-| `media:type=integer;v=1` | `text/plain` | `https://capns.org/schema/int` | Integer value |
-| `media:type=number;v=1` | `text/plain` | `https://capns.org/schema/num` | Number value |
-| `media:type=boolean;v=1` | `text/plain` | `https://capns.org/schema/bool` | Boolean value |
-| `media:type=object;v=1` | `application/json` | `https://capns.org/schema/obj` | JSON object |
-| `media:type=string-array;v=1` | `application/json` | `https://capns.org/schema/str-array` | String array |
-| `media:type=integer-array;v=1` | `application/json` | `https://capns.org/schema/int-array` | Integer array |
-| `media:type=number-array;v=1` | `application/json` | `https://capns.org/schema/num-array` | Number array |
-| `media:type=boolean-array;v=1` | `application/json` | `https://capns.org/schema/bool-array` | Boolean array |
-| `media:type=object-array;v=1` | `application/json` | `https://capns.org/schema/obj-array` | Object array |
-| `media:type=binary;v=1` | `application/octet-stream` | - | Binary data |
+| `media:string` | `text/plain` | `https://capns.org/schema/str` | String value |
+| `media:integer` | `text/plain` | `https://capns.org/schema/int` | Integer value |
+| `media:number` | `text/plain` | `https://capns.org/schema/num` | Number value |
+| `media:boolean` | `text/plain` | `https://capns.org/schema/bool` | Boolean value |
+| `media:object` | `application/json` | `https://capns.org/schema/obj` | JSON object |
+| `media:string-array` | `application/json` | `https://capns.org/schema/str-array` | String array |
+| `media:integer-array` | `application/json` | `https://capns.org/schema/int-array` | Integer array |
+| `media:number-array` | `application/json` | `https://capns.org/schema/num-array` | Number array |
+| `media:boolean-array` | `application/json` | `https://capns.org/schema/bool-array` | Boolean array |
+| `media:object-array` | `application/json` | `https://capns.org/schema/obj-array` | Object array |
+| `media:binary` | `application/octet-stream` | - | Binary data |
 
 ### Domain-Specific Spec IDs
 
@@ -44,19 +44,19 @@ Additional well-known spec IDs for specific domains:
 
 | Spec ID | Media Type | Description |
 |---------|------------|-------------|
-| `media:type=extract-metadata-output;v=1` | `application/json` | Document metadata extraction output |
-| `media:type=extract-outline-output;v=1` | `application/json` | Document outline extraction output |
-| `media:type=disbound-pages;v=1` | `application/json` | File chips extraction output |
-| `media:type=llm-inference-output;v=1` | `application/json` | LLM inference response |
-| `media:type=embeddings;v=1` | `application/json` | Embeddings generation output |
-| `media:type=structured-query-output;v=1` | `application/json` | Structured query output |
-| `media:type=questions-array;v=1` | `application/json` | Questions array for bit choices |
-| `media:type=download-output;v=1` | `application/json` | Model download output |
-| `media:type=load-output;v=1` | `application/json` | Model load output |
-| `media:type=unload-output;v=1` | `application/json` | Model unload output |
-| `media:type=list-output;v=1` | `application/json` | Model list output |
-| `media:type=status-output;v=1` | `application/json` | Model status output |
-| `media:type=contents-output;v=1` | `application/json` | Model contents output |
+| `media:extract-metadata-output` | `application/json` | Document metadata extraction output |
+| `media:extract-outline-output` | `application/json` | Document outline extraction output |
+| `media:disbound-pages` | `application/json` | File chips extraction output |
+| `media:llm-inference-output` | `application/json` | LLM inference response |
+| `media:embeddings` | `application/json` | Embeddings generation output |
+| `media:structured-query-output` | `application/json` | Structured query output |
+| `media:questions-array` | `application/json` | Questions array for bit choices |
+| `media:download-output` | `application/json` | Model download output |
+| `media:load-output` | `application/json` | Model load output |
+| `media:unload-output` | `application/json` | Model unload output |
+| `media:list-output` | `application/json` | Model list output |
+| `media:status-output` | `application/json` | Model status output |
+| `media:contents-output` | `application/json` | Model contents output |
 
 ## Media Specs Table
 
@@ -89,7 +89,7 @@ The object form allows embedding a JSON Schema for offline validation.
 Cap URNs use `in` and `out` tags to specify input and output types via spec IDs:
 
 ```
-cap:ext=pdf;in=media:type=binary;v=1;op=extract_metadata;out=media:type=extract-metadata-output;v=1
+cap:ext=pdf;in=media:binary;op=extract_metadata;out=media:extract-metadata-output
 ```
 
 ### Tag Reference
@@ -97,8 +97,8 @@ cap:ext=pdf;in=media:type=binary;v=1;op=extract_metadata;out=media:type=extract-
 | Tag | Description | Example |
 |-----|-------------|---------|
 | `op` | Operation name | `extract_metadata` |
-| `in` | Input spec ID | `media:type=binary;v=1` |
-| `out` | Output spec ID | `media:type=extract-metadata-output;v=1` |
+| `in` | Input spec ID | `media:binary` |
+| `out` | Output spec ID | `media:extract-metadata-output` |
 | `ext` | File extension (for document ops) | `pdf` |
 | `language` | Language code (for LLM ops) | `en` |
 | `type` | Constraint type | `constrained`, `task_creation`, `model` |
@@ -124,13 +124,13 @@ let resolved = resolve_spec_id(spec_id, &cap.media_specs)?;
 title = "Extract Document Metadata"
 cap_description = "Extract metadata from PDF documents"
 command = "extract-metadata"
-stdin = "media:type=pdf;v=1;binary"  # Specifies the media type stdin expects
+stdin = "media:pdf;binary"  # Specifies the media type stdin expects
 
-[media_specs."media:type=extract-metadata-output;v=1"]
+[media_specs."media:extract-metadata-output"]
 media_type = "application/json"
 profile_uri = "https://capns.org/schema/extract-metadata-output"
 
-[media_specs."media:type=extract-metadata-output;v=1".schema]
+[media_specs."media:extract-metadata-output".schema]
 type = "object"
 additionalProperties = false
 properties.title = { type = "string" }
@@ -141,18 +141,18 @@ required = ["title", "page_count"]
 [urn.tags]
 op = "extract_metadata"
 ext = "pdf"
-in = "media:type=binary;v=1"
-out = "media:type=extract-metadata-output;v=1"
+in = "media:binary"
+out = "media:extract-metadata-output"
 
 [[arguments.required]]
 name = "file_path"
-media_spec = "media:type=string;v=1"
+media_spec = "media:string"
 arg_description = "Path to the document file"
 cli_flag = "file_path"
 position = 0
 
 [output]
-media_spec = "media:type=extract-metadata-output;v=1"
+media_spec = "media:extract-metadata-output"
 output_description = "Structured metadata extracted from the document"
 ```
 

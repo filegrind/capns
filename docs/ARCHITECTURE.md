@@ -111,12 +111,12 @@ pub struct CapCube {
 When multiple capabilities match a request, the system selects based on specificity:
 
 ```
-Request: cap:op=generate_thumbnail;out=media:type=binary;v=1;ext=pdf
+Request: cap:op=generate_thumbnail;out=media:binary;ext=pdf
 
-Provider cap: cap:op=generate_thumbnail;out=media:type=binary;v=1
+Provider cap: cap:op=generate_thumbnail;out=media:binary
   -> Specificity: 2 (matches op, out; missing ext treated as wildcard)
 
-Plugin cap: cap:op=generate_thumbnail;out=media:type=binary;v=1;ext=pdf
+Plugin cap: cap:op=generate_thumbnail;out=media:binary;ext=pdf
   -> Specificity: 3 (matches op, out, ext)
 
 Winner: Plugin (specificity 3 > 2)

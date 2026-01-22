@@ -219,7 +219,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
+        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
     }
 
     #[test]
@@ -357,7 +357,7 @@ mod tests {
 
         // Argument with unknown media URN
         let arg = CapArg::new(
-            "media:type=unknown;v=1", // Not in media_specs and not a built-in
+            "media:unknown", // Not in media_specs and not a built-in
             true,
             vec![ArgSource::Position { position: 0 }],
         );
@@ -367,7 +367,7 @@ mod tests {
         assert!(result.is_err());
 
         if let Err(SchemaValidationError::MediaUrnNotResolved { media_urn, .. }) = result {
-            assert_eq!(media_urn, "media:type=unknown;v=1");
+            assert_eq!(media_urn, "media:unknown");
         } else {
             panic!("Expected MediaUrnNotResolved error");
         }

@@ -32,9 +32,9 @@ pub enum CapMatrixError {
 /// to `to_spec` format. The edge stores the full Cap definition for execution.
 #[derive(Debug, Clone)]
 pub struct CapGraphEdge {
-    /// The input MediaSpec ID (e.g., "media:type=binary;v=1")
+    /// The input MediaSpec ID (e.g., "media:binary")
     pub from_spec: String,
-    /// The output MediaSpec ID (e.g., "media:type=string;v=1")
+    /// The output MediaSpec ID (e.g., "media:string")
     pub to_spec: String,
     /// The capability that performs this conversion
     pub cap: Cap,
@@ -47,7 +47,7 @@ pub struct CapGraphEdge {
 /// A directed graph where nodes are MediaSpec IDs and edges are capabilities.
 ///
 /// This graph enables discovering conversion paths between different media formats.
-/// For example, finding how to convert from "media:type=binary;v=1" to "media:type=string;v=1" through
+/// For example, finding how to convert from "media:binary" to "media:string" through
 /// intermediate transformations.
 ///
 /// The graph is built from capabilities in registries, where each cap's `in_spec`
@@ -141,7 +141,7 @@ impl CapGraph {
     ///
     /// Uses MediaUrn::satisfies() matching: returns edges where the provided spec
     /// satisfies the edge's from_spec requirement. This allows a specific media URN
-    /// like "media:type=pdf;v=1;binary" to match caps that accept "media:type=pdf;v=1".
+    /// like "media:pdf;binary" to match caps that accept "media:pdf".
     pub fn get_outgoing(&self, spec: &str) -> Vec<&CapGraphEdge> {
         let provided_urn = match MediaUrn::from_string(spec) {
             Ok(urn) => urn,
@@ -680,7 +680,7 @@ impl CompositeCapSet {
     /// Build a directed graph from all capabilities in the registries.
     ///
     /// The graph represents all possible conversions where:
-    /// - Nodes are MediaSpec IDs (e.g., "media:type=string;v=1", "media:type=binary;v=1")
+    /// - Nodes are MediaSpec IDs (e.g., "media:string", "media:binary")
     /// - Edges are capabilities that convert from one spec to another
     ///
     /// This enables discovering conversion paths between different media formats.
@@ -869,7 +869,7 @@ impl CapCube {
     /// Build a directed graph from all capabilities across all registries.
     ///
     /// The graph represents all possible conversions where:
-    /// - Nodes are MediaSpec IDs (e.g., "media:type=string;v=1", "media:type=binary;v=1")
+    /// - Nodes are MediaSpec IDs (e.g., "media:string", "media:binary")
     /// - Edges are capabilities that convert from one spec to another
     ///
     /// This enables discovering conversion paths between different media formats.
@@ -881,10 +881,10 @@ impl CapCube {
     /// let graph = cube.graph()?;
     ///
     /// // Find all ways to convert binary to text
-    /// let paths = graph.find_all_paths("media:type=binary;v=1", "media:type=string;v=1", 3);
+    /// let paths = graph.find_all_paths("media:binary", "media:string", 3);
     ///
     /// // Check if conversion is possible
-    /// if graph.can_convert("media:type=binary;v=1", "media:type=object;v=1") {
+    /// if graph.can_convert("media:binary", "media:object") {
     ///     // conversion exists
     /// }
     /// ```
@@ -934,7 +934,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:type=void;v=1\";out=\"media:type=object;v=1\";{}", tags)
+        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
     }
 
     // Mock CapSet for testing
@@ -966,7 +966,7 @@ mod tests {
         });
 
         let cap = Cap {
-            urn: CapUrn::from_string(&test_urn("op=test;type=basic")).unwrap(),
+            urn: CapUrn::from_string(&test_urn("op=test;basic")).unwrap(),
             title: "Test Basic Capability".to_string(),
             cap_description: Some("Test capability".to_string()),
             metadata: HashMap::new(),
@@ -981,11 +981,11 @@ mod tests {
         registry.register_cap_set("test-host".to_string(), host, vec![cap]).unwrap();
 
         // Test exact match
-        let sets = registry.find_cap_sets(&test_urn("op=test;type=basic")).unwrap();
+        let sets = registry.find_cap_sets(&test_urn("op=test;basic")).unwrap();
         assert_eq!(sets.len(), 1);
 
         // Test subset match (request has more specific requirements)
-        let sets = registry.find_cap_sets(&test_urn("op=test;type=basic;model=gpt-4")).unwrap();
+        let sets = registry.find_cap_sets(&test_urn("op=test;basic;model=gpt-4")).unwrap();
         assert_eq!(sets.len(), 1);
 
         // Test no match
@@ -1018,7 +1018,7 @@ mod tests {
             name: "specific".to_string(),
         });
         let specific_cap = Cap {
-            urn: CapUrn::from_string(&test_urn("op=generate;type=text;model=gpt-4")).unwrap(),
+            urn: CapUrn::from_string(&test_urn("op=generate;text;model=gpt-4")).unwrap(),
             title: "Specific Text Generation Capability".to_string(),
             cap_description: Some("Specific text generation".to_string()),
             metadata: HashMap::new(),
@@ -1034,10 +1034,10 @@ mod tests {
         registry.register_cap_set("specific".to_string(), specific_host, vec![specific_cap]).unwrap();
 
         // Request should match the more specific host (using valid URN characters)
-        let (_best_host, _best_cap) = registry.find_best_cap_set(&test_urn("op=generate;type=text;model=gpt-4;temperature=low")).unwrap();
+        let (_best_host, _best_cap) = registry.find_best_cap_set(&test_urn("op=generate;text;model=gpt-4;temperature=low")).unwrap();
 
         // Both sets should match, but we should get the more specific one
-        let all_sets = registry.find_cap_sets(&test_urn("op=generate;type=text;model=gpt-4;temperature=low")).unwrap();
+        let all_sets = registry.find_cap_sets(&test_urn("op=generate;text;model=gpt-4;temperature=low")).unwrap();
         assert_eq!(all_sets.len(), 2);
     }
 
@@ -1114,7 +1114,7 @@ mod tests {
         // Provider: less specific cap
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
         let provider_cap = make_cap(
-            r#"cap:in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
+            r#"cap:in="media:binary";op=generate_thumbnail;out="media:binary""#,
             "Provider Thumbnail Generator (generic)"
         );
         provider_registry.register_cap_set(
@@ -1126,7 +1126,7 @@ mod tests {
         // Plugin: more specific cap (has ext=pdf)
         let plugin_host = Box::new(MockCapSet { name: "plugin".to_string() });
         let plugin_cap = make_cap(
-            r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
+            r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#,
             "Plugin PDF Thumbnail Generator (specific)"
         );
         plugin_registry.register_cap_set(
@@ -1141,7 +1141,7 @@ mod tests {
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
         // Request for PDF thumbnails - plugin's more specific cap should win
-        let request = r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#;
+        let request = r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#;
         let best = composite.find_best_cap_set(request).unwrap();
 
         // Plugin registry has specificity 4 (in, op, out, ext)
@@ -1238,7 +1238,7 @@ mod tests {
         // Provider with generic fallback (can handle any file type)
         let provider_host = Box::new(MockCapSet { name: "provider_fallback".to_string() });
         let provider_cap = make_cap(
-            r#"cap:in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
+            r#"cap:in="media:binary";op=generate_thumbnail;out="media:binary""#,
             "Generic Thumbnail Provider"
         );
         provider_registry.register_cap_set(
@@ -1250,7 +1250,7 @@ mod tests {
         // Plugin with PDF-specific handler
         let plugin_host = Box::new(MockCapSet { name: "pdf_plugin".to_string() });
         let plugin_cap = make_cap(
-            r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#,
+            r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#,
             "PDF Thumbnail Plugin"
         );
         plugin_registry.register_cap_set(
@@ -1265,7 +1265,7 @@ mod tests {
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
         // Request for PDF thumbnail
-        let request = r#"cap:ext=pdf;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#;
+        let request = r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#;
         let best = composite.find_best_cap_set(request).unwrap();
 
         // Plugin (specificity 4) should beat provider (specificity 3)
@@ -1274,7 +1274,7 @@ mod tests {
         assert_eq!(best.specificity, 4);
 
         // Also test that for a different file type, provider wins
-        let request_wav = r#"cap:ext=wav;in="media:type=binary;v=1";op=generate_thumbnail;out="media:type=binary;v=1""#;
+        let request_wav = r#"cap:ext=wav;in="media:binary";op=generate_thumbnail;out="media:binary""#;
         let best_wav = composite.find_best_cap_set(request_wav).unwrap();
 
         // Only provider matches (plugin doesn't match ext=wav)
@@ -1321,7 +1321,7 @@ mod tests {
 
         // Create a cap that converts binary to str
         let cap = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract_text;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract_text;out="media:string""#).unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: Some("Extract text from binary".to_string()),
             metadata: HashMap::new(),
@@ -1336,14 +1336,14 @@ mod tests {
         graph.add_cap(&cap, "test_registry");
 
         // Check nodes were created
-        assert!(graph.get_nodes().contains("media:type=binary;v=1"));
-        assert!(graph.get_nodes().contains("media:type=string;v=1"));
+        assert!(graph.get_nodes().contains("media:binary"));
+        assert!(graph.get_nodes().contains("media:string"));
         assert_eq!(graph.get_nodes().len(), 2);
 
         // Check edge was created
         assert_eq!(graph.get_edges().len(), 1);
-        assert!(graph.has_direct_edge("media:type=binary;v=1", "media:type=string;v=1"));
-        assert!(!graph.has_direct_edge("media:type=string;v=1", "media:type=binary;v=1")); // No reverse edge
+        assert!(graph.has_direct_edge("media:binary", "media:string"));
+        assert!(!graph.has_direct_edge("media:string", "media:binary")); // No reverse edge
     }
 
     #[test]
@@ -1352,7 +1352,7 @@ mod tests {
 
         // binary -> str
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract_text;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract_text;out="media:string""#).unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1366,7 +1366,7 @@ mod tests {
 
         // binary -> obj (JSON)
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=parse_json;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=parse_json;out="media:object""#).unwrap(),
             title: "JSON Parser".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1382,15 +1382,15 @@ mod tests {
         graph.add_cap(&cap2, "registry2");
 
         // Check outgoing from binary
-        let outgoing = graph.get_outgoing("media:type=binary;v=1");
+        let outgoing = graph.get_outgoing("media:binary");
         assert_eq!(outgoing.len(), 2);
 
         // Check incoming to str
-        let incoming_str = graph.get_incoming("media:type=string;v=1");
+        let incoming_str = graph.get_incoming("media:string");
         assert_eq!(incoming_str.len(), 1);
 
         // Check incoming to obj
-        let incoming_obj = graph.get_incoming("media:type=object;v=1");
+        let incoming_obj = graph.get_incoming("media:object");
         assert_eq!(incoming_obj.len(), 1);
     }
 
@@ -1400,7 +1400,7 @@ mod tests {
 
         // binary -> str
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#).unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1414,7 +1414,7 @@ mod tests {
 
         // str -> obj
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=parse;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#).unwrap(),
             title: "Str to Obj".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1430,20 +1430,20 @@ mod tests {
         graph.add_cap(&cap2, "registry");
 
         // Direct conversions
-        assert!(graph.can_convert("media:type=binary;v=1", "media:type=string;v=1"));
-        assert!(graph.can_convert("media:type=string;v=1", "media:type=object;v=1"));
+        assert!(graph.can_convert("media:binary", "media:string"));
+        assert!(graph.can_convert("media:string", "media:object"));
 
         // Indirect conversion (through intermediate)
-        assert!(graph.can_convert("media:type=binary;v=1", "media:type=object;v=1"));
+        assert!(graph.can_convert("media:binary", "media:object"));
 
         // Same spec
-        assert!(graph.can_convert("media:type=binary;v=1", "media:type=binary;v=1"));
+        assert!(graph.can_convert("media:binary", "media:binary"));
 
         // No path
-        assert!(!graph.can_convert("media:type=object;v=1", "media:type=binary;v=1"));
+        assert!(!graph.can_convert("media:object", "media:binary"));
 
         // Unknown spec
-        assert!(!graph.can_convert("media:type=binary;v=1", "unknown:spec.v1"));
+        assert!(!graph.can_convert("media:binary", "unknown:spec.v1"));
     }
 
     #[test]
@@ -1452,7 +1452,7 @@ mod tests {
 
         // Create a chain: binary -> str -> obj
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#).unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1465,7 +1465,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=parse;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#).unwrap(),
             title: "Str to Obj".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1481,23 +1481,23 @@ mod tests {
         graph.add_cap(&cap2, "registry");
 
         // Find path from binary to obj (should be 2 edges)
-        let path = graph.find_path("media:type=binary;v=1", "media:type=object;v=1").unwrap();
+        let path = graph.find_path("media:binary", "media:object").unwrap();
         assert_eq!(path.len(), 2);
-        assert_eq!(path[0].from_spec, "media:type=binary;v=1");
-        assert_eq!(path[0].to_spec, "media:type=string;v=1");
-        assert_eq!(path[1].from_spec, "media:type=string;v=1");
-        assert_eq!(path[1].to_spec, "media:type=object;v=1");
+        assert_eq!(path[0].from_spec, "media:binary");
+        assert_eq!(path[0].to_spec, "media:string");
+        assert_eq!(path[1].from_spec, "media:string");
+        assert_eq!(path[1].to_spec, "media:object");
 
         // Find direct path
-        let direct = graph.find_path("media:type=binary;v=1", "media:type=string;v=1").unwrap();
+        let direct = graph.find_path("media:binary", "media:string").unwrap();
         assert_eq!(direct.len(), 1);
 
         // No path
-        let no_path = graph.find_path("media:type=object;v=1", "media:type=binary;v=1");
+        let no_path = graph.find_path("media:object", "media:binary");
         assert!(no_path.is_none());
 
         // Same spec (empty path)
-        let same = graph.find_path("media:type=binary;v=1", "media:type=binary;v=1").unwrap();
+        let same = graph.find_path("media:binary", "media:binary").unwrap();
         assert!(same.is_empty());
     }
 
@@ -1507,7 +1507,7 @@ mod tests {
 
         // Create multiple paths: A -> B -> C and A -> C directly
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=step1;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=step1;out="media:string""#).unwrap(),
             title: "A to B".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1520,7 +1520,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=step2;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=step2;out="media:object""#).unwrap(),
             title: "B to C".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1533,7 +1533,7 @@ mod tests {
         };
 
         let cap3 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=direct;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=direct;out="media:object""#).unwrap(),
             title: "A to C Direct".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1550,7 +1550,7 @@ mod tests {
         graph.add_cap(&cap3, "registry");
 
         // Find all paths from binary to obj
-        let all_paths = graph.find_all_paths("media:type=binary;v=1", "media:type=object;v=1", 5);
+        let all_paths = graph.find_all_paths("media:binary", "media:object", 5);
         assert_eq!(all_paths.len(), 2);
 
         // Paths should be sorted by length (shortest first)
@@ -1564,7 +1564,7 @@ mod tests {
 
         // Add multiple caps with different specificities for same conversion
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=generic;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=generic;out="media:string""#).unwrap(),
             title: "Generic".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1577,7 +1577,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:ext=pdf;in="media:type=binary;v=1";op=specific;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:ext=pdf;in="media:binary";op=specific;out="media:string""#).unwrap(),
             title: "Specific PDF".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1593,7 +1593,7 @@ mod tests {
         graph.add_cap(&cap2, "registry");
 
         // Get direct edges - should be sorted by specificity (highest first)
-        let edges = graph.get_direct_edges("media:type=binary;v=1", "media:type=string;v=1");
+        let edges = graph.get_direct_edges("media:binary", "media:string");
         assert_eq!(edges.len(), 2);
         assert_eq!(edges[0].cap.title, "Specific PDF"); // Higher specificity
         assert_eq!(edges[1].cap.title, "Generic"); // Lower specificity
@@ -1609,7 +1609,7 @@ mod tests {
         // Provider: binary -> str
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
         let provider_cap = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=extract;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#).unwrap(),
             title: "Provider Text Extractor".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1629,7 +1629,7 @@ mod tests {
         // Plugin: str -> obj
         let plugin_host = Box::new(MockCapSet { name: "plugin".to_string() });
         let plugin_cap = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=parse;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#).unwrap(),
             title: "Plugin JSON Parser".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1654,20 +1654,20 @@ mod tests {
         let graph = cube.graph().unwrap();
 
         // Check nodes
-        assert!(graph.get_nodes().contains("media:type=binary;v=1"));
-        assert!(graph.get_nodes().contains("media:type=string;v=1"));
-        assert!(graph.get_nodes().contains("media:type=object;v=1"));
+        assert!(graph.get_nodes().contains("media:binary"));
+        assert!(graph.get_nodes().contains("media:string"));
+        assert!(graph.get_nodes().contains("media:object"));
 
         // Check edges
         assert_eq!(graph.get_edges().len(), 2);
 
         // Check conversion paths
-        assert!(graph.can_convert("media:type=binary;v=1", "media:type=string;v=1"));
-        assert!(graph.can_convert("media:type=string;v=1", "media:type=object;v=1"));
-        assert!(graph.can_convert("media:type=binary;v=1", "media:type=object;v=1")); // Through intermediate
+        assert!(graph.can_convert("media:binary", "media:string"));
+        assert!(graph.can_convert("media:string", "media:object"));
+        assert!(graph.can_convert("media:binary", "media:object")); // Through intermediate
 
         // Find path from binary to obj
-        let path = graph.find_path("media:type=binary;v=1", "media:type=object;v=1").unwrap();
+        let path = graph.find_path("media:binary", "media:object").unwrap();
         assert_eq!(path.len(), 2);
 
         // Check registry names in edges
@@ -1687,7 +1687,7 @@ mod tests {
         let mut graph = CapGraph::new();
 
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=binary;v=1";op=a;out="media:type=string;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=a;out="media:string""#).unwrap(),
             title: "Cap 1".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1700,7 +1700,7 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:type=string;v=1";op=b;out="media:type=object;v=1""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=b;out="media:object""#).unwrap(),
             title: "Cap 2".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
