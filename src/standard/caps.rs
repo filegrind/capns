@@ -65,7 +65,7 @@ pub fn input_media_urn_for_ext(ext: Option<&str>) -> &'static str {
 pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "conversation")
-        .tag("constrained")
+        .solo_tag("constrained")
         .tag("language", lang_code)
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
@@ -77,7 +77,7 @@ pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
 pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "multiplechoice")
-        .tag("constrained")
+        .solo_tag("constrained")
         .tag("language", lang_code)
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
@@ -89,7 +89,7 @@ pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
 pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "codegeneration")
-        .tag("constrained")
+        .solo_tag("constrained")
         .tag("language", lang_code)
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
@@ -101,7 +101,7 @@ pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
 pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "creative")
-        .tag("constrained")
+        .solo_tag("constrained")
         .tag("language", lang_code)
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
@@ -113,7 +113,7 @@ pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
 pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "summarization")
-        .tag("constrained")
+        .solo_tag("constrained")
         .tag("language", lang_code)
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
@@ -151,9 +151,8 @@ pub fn embeddings_generation_urn() -> CapUrn {
 
 /// Build URN for model-download capability
 pub fn model_download_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "download")
-        .tag("model")
+		CapUrnBuilder::new()
+		.tag("op", "download-model")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_DOWNLOAD_OUTPUT)
         .build()
@@ -163,8 +162,7 @@ pub fn model_download_urn() -> CapUrn {
 /// Build URN for model-load capability
 pub fn model_load_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "load")
-        .tag("model")
+        .tag("op", "load-model")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_LOAD_OUTPUT)
         .build()
@@ -174,8 +172,7 @@ pub fn model_load_urn() -> CapUrn {
 /// Build URN for model-unload capability
 pub fn model_unload_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "unload")
-        .tag("model")
+        .tag("op", "unload-model")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_UNLOAD_OUTPUT)
         .build()
@@ -185,8 +182,7 @@ pub fn model_unload_urn() -> CapUrn {
 /// Build URN for model-list capability
 pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "list")
-        .tag("model")
+        .tag("op", "list-model")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_LIST_OUTPUT)
         .build()
@@ -196,8 +192,7 @@ pub fn model_list_urn() -> CapUrn {
 /// Build URN for model-status capability
 pub fn model_status_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "status")
-        .tag("model")
+        .tag("op", "status-model")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_STATUS_OUTPUT)
         .build()
@@ -207,8 +202,7 @@ pub fn model_status_urn() -> CapUrn {
 /// Build URN for model-contents capability
 pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "contents")
-        .tag("model")
+		.tag("op", "contents-model")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_CONTENTS_OUTPUT)
         .build()
@@ -284,7 +278,7 @@ pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_frontmatter_summary")
         .tag("language", lang_code)
-        .tag("constrained")
+        .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_STRING)
         .build()
@@ -296,7 +290,7 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "query_structured")
         .tag("language", lang_code)
-        .tag("constrained")
+        .solo_tag("constrained")
         .in_spec(MEDIA_OBJECT)
         .out_spec(MEDIA_STRUCTURED_QUERY_OUTPUT)
         .build()
@@ -308,7 +302,7 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "choose_bit")
         .tag("language", lang_code)
-        .tag("constrained")
+        .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_BOOLEAN)
         .build()
@@ -320,7 +314,7 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "choose_bits")
         .tag("language", lang_code)
-        .tag("constrained")
+        .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_BOOLEAN_ARRAY)
         .build()

@@ -193,7 +193,7 @@ impl MediaUrn {
     /// Create a simple MediaUrn with just type and version
     pub fn simple(type_name: &str, version: u32) -> Self {
         let urn = TaggedUrnBuilder::new(Self::PREFIX)
-            .tag(type_name)
+            .solo_tag(type_name)
             .tag("v", &version.to_string())
             .build()
             .expect("valid media URN");
@@ -203,7 +203,7 @@ impl MediaUrn {
     /// Create a MediaUrn with type, subtype, and optional version
     pub fn with_subtype(type_name: &str, subtype: &str, version: Option<u32>) -> Self {
         let mut builder = TaggedUrnBuilder::new(Self::PREFIX)
-            .tag(type_name)
+            .solo_tag(type_name)
             .tag("subtype", subtype);
         if let Some(v) = version {
             builder = builder.tag("v", &v.to_string());
