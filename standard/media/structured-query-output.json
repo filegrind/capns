@@ -1,7 +1,0 @@
-{
-  "urn": "media:json;textable;keyed",
-  "media_type": "application/json",
-  "title": "Structured Query Output",
-  "profile_uri": "https://capns.org/schema/structured-query-output",
-  "description": "Structured query operation result"
-}

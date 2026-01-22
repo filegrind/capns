@@ -1,7 +1,0 @@
-{
-  "urn": "media:epub;binary",
-  "media_type": "application/epub+zip",
-  "title": "EPUB Document",
-  "profile_uri": "https://capns.org/schema/epub",
-  "description": "EPUB e-book document data"
-}

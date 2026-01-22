@@ -1,7 +1,0 @@
-{
-  "urn": "media:embedding-vector;textable;keyed",
-  "media_type": "application/json",
-  "title": "Embeddings",
-  "profile_uri": "https://capns.org/schema/embeddings",
-  "description": "Calculated Embeddings"
-}

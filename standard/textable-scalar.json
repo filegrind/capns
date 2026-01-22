@@ -1,7 +1,0 @@
-{
-  "urn": "media:textable;scalar",
-  "media_type": "text/plain",
-  "title": "Textable Scalar Value",
-  "profile_uri": "https://capns.org/schema/textable-scalar",
-  "description": "Base type for any textable scalar value (string, integer, number, boolean)"
-}

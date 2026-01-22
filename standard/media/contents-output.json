@@ -1,7 +1,0 @@
-{
-  "urn": "media:model-contents;textable;keyed",
-  "media_type": "application/json",
-  "title": "Contents Output",
-  "profile_uri": "https://capns.org/schema/contents-output",
-  "description": "Contents operation result"
-}

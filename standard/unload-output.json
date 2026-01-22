@@ -1,7 +1,0 @@
-{
-  "urn": "media:unload-output;textable;keyed",
-  "media_type": "application/json",
-  "title": "Model Unload Output",
-  "profile_uri": "https://capns.org/schema/unload-output",
-  "description": "Unload operation result"
-}

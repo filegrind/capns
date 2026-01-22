@@ -1,7 +1,0 @@
-{
-  "urn": "media:detailed-flag;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Detailed Flag",
-  "profile_uri": "https://capns.org/schema/detailed_flag",
-  "description": "Detailed Flag value"
-}

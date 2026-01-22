@@ -1,7 +1,0 @@
-{
-  "urn": "media:model-id;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Model Id",
-  "profile_uri": "https://capns.org/schema/model_id",
-  "description": "Model Id value"
-}

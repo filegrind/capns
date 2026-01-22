@@ -1,7 +1,0 @@
-{
-  "urn": "media:object-array;textable;keyed;sequence",
-  "media_type": "application/json",
-  "title": "Object Array",
-  "profile_uri": "https://capns.org/schema/obj-array",
-  "description": "Array of JSON object values"
-}

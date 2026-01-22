@@ -1,7 +1,0 @@
-{
-  "urn": "media:download-result;textable;keyed",
-  "media_type": "application/json",
-  "title": "Model Download Result",
-  "profile_uri": "https://capns.org/schema/download-result",
-  "description": "Download operation result"
-}

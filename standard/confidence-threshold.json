@@ -1,7 +1,0 @@
-{
-  "urn": "media:confidence-threshold;textable;numeric;scalar",
-  "media_type": "text/plain",
-  "title": "Confidence Threshold",
-  "profile_uri": "https://capns.org/schema/confidence_threshold",
-  "description": "Confidence Threshold numeric value"
-}

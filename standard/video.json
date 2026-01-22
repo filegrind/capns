@@ -1,7 +1,0 @@
-{
-  "urn": "media:video;binary",
-  "media_type": "video/mp4",
-  "title": "Video Data",
-  "profile_uri": "https://capns.org/schema/video",
-  "description": "Video data (MP4, WebM, etc.)"
-}

@@ -1,7 +1,0 @@
-{
-  "urn": "media:textable",
-  "media_type": "text/plain",
-  "title": "Textable Value",
-  "profile_uri": "https://capns.org/schema/textable",
-  "description": "Base type for any textable value"
-}

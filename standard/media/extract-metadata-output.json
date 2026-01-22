@@ -1,7 +1,0 @@
-{
-  "urn": "media:extract-metadata-output;textable;keyed",
-  "media_type": "application/json",
-  "title": "Extract Metadata Output",
-  "profile_uri": "https://capns.org/schema/extract-metadata-output",
-  "description": "Extract metadata operation result"
-}

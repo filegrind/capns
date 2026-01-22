@@ -1,7 +1,0 @@
-{
-  "urn": "media:summary-focus;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Summary Focus",
-  "profile_uri": "https://capns.org/schema/summary_focus",
-  "description": "Summary Focus value"
-}

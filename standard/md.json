@@ -1,7 +1,0 @@
-{
-  "urn": "media:md;textable",
-  "media_type": "text/markdown",
-  "title": "Markdown Document",
-  "profile_uri": "https://capns.org/schema/md",
-  "description": "Markdown formatted text"
-}

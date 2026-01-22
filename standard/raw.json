@@ -1,7 +1,0 @@
-{
-  "urn": "media:raw;binary",
-  "media_type": "application/octet-stream",
-  "title": "Raw",
-  "profile_uri": "https://capns.org/schema/raw",
-  "description": "Raw value"
-}

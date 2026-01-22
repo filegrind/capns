@@ -1,7 +1,0 @@
-{
-  "urn": "media:thumbnail-width;textable;numeric;scalar",
-  "media_type": "text/plain",
-  "title": "Thumbnail Width",
-  "profile_uri": "https://capns.org/schema/thumbnail_width",
-  "description": "Thumbnail Width numeric value"
-}

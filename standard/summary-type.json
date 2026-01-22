@@ -1,7 +1,0 @@
-{
-  "urn": "media:summary-type;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Summary Type",
-  "profile_uri": "https://capns.org/schema/summary_type",
-  "description": "Summary Type value"
-}

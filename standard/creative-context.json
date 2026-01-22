@@ -1,7 +1,0 @@
-{
-  "urn": "media:creative-context;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Creative Context",
-  "profile_uri": "https://capns.org/schema/creative_context",
-  "description": "Creative Context contextual information"
-}

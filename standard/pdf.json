@@ -1,7 +1,0 @@
-{
-  "urn": "media:pdf;binary",
-  "media_type": "application/pdf",
-  "title": "PDF Document",
-  "profile_uri": "https://capns.org/schema/pdf",
-  "description": "PDF document data"
-}

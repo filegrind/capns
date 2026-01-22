@@ -1,7 +1,0 @@
-{
-  "urn": "media:number;textable;numeric;scalar",
-  "media_type": "text/plain",
-  "title": "Number Value",
-  "profile_uri": "https://capns.org/schema/num",
-  "description": "Floating-point numeric value"
-}

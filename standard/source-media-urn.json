@@ -1,7 +1,0 @@
-{
-  "urn": "media:source-media-urn;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Source Media Urn",
-  "profile_uri": "https://capns.org/schema/source_media_urn",
-  "description": "Source Media Urn value"
-}

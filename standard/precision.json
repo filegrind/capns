@@ -1,7 +1,0 @@
-{
-  "urn": "media:precision;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Precision",
-  "profile_uri": "https://capns.org/schema/precision",
-  "description": "Precision value"
-}

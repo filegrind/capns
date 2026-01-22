@@ -1,7 +1,0 @@
-{
-  "urn": "media:integer;textable;numeric;scalar",
-  "media_type": "text/plain",
-  "title": "Integer Value",
-  "profile_uri": "https://capns.org/schema/int",
-  "description": "Integer numeric value"
-}

@@ -1,7 +1,0 @@
-{
-  "urn": "media:language;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Language",
-  "profile_uri": "https://capns.org/schema/language",
-  "description": "Language value"
-}

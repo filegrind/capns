@@ -1,7 +1,0 @@
-{
-  "urn": "media:transcription-output;textable;keyed",
-  "media_type": "application/json",
-  "title": "Audio Transcription Output",
-  "profile_uri": "https://capns.org/schema/transcription-output",
-  "description": "Transcribed text output from audio/video transcription"
-}

@@ -1,7 +1,0 @@
-{
-  "urn": "media:file-path;textable;scalar",
-  "media_type": "text/plain",
-  "title": "File Path",
-  "profile_uri": "https://capns.org/schema/file_path",
-  "description": "File Path file system path"
-}

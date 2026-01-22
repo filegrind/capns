@@ -1,7 +1,0 @@
-{
-  "urn": "media:programming-language;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Programming Language",
-  "profile_uri": "https://capns.org/schema/programming_language",
-  "description": "Programming Language value"
-}

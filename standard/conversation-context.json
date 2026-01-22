@@ -1,7 +1,0 @@
-{
-  "urn": "media:conversation-context;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Conversation Context",
-  "profile_uri": "https://capns.org/schema/conversation_context",
-  "description": "Conversation Context contextual information"
-}

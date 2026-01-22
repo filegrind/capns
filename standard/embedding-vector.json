@@ -1,7 +1,0 @@
-{
-  "urn": "media:embedding-vector;textable;keyed",
-  "media_type": "application/json",
-  "title": "Embedding Vector",
-  "profile_uri": "https://capns.org/schema/embedding-vector",
-  "description": "Embedding Vector"
-}

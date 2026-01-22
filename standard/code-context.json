@@ -1,7 +1,0 @@
-{
-  "urn": "media:code-context;textable;scalar",
-  "media_type": "text/plain",
-  "title": "Code Context",
-  "profile_uri": "https://capns.org/schema/code_context",
-  "description": "Code Context contextual information"
-}
