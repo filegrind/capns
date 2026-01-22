@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "embeddings_dimensions",
-      "in": "media:void",
+      "in": "media:model-spec;textable;scalar",
       "out": "media:integer;textable;numeric;scalar"
     }
   },

@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "model-management",
-      "in": "media:void",
+      "in": "media:management-operation;textable;scalar",
       "out": "media:manage-output;textable;keyed"
     }
   },

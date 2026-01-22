@@ -4,7 +4,7 @@
       "op": "embeddings_dimensions",
       "format": "gguf",
       "model_type": "gguf",
-      "in": "media:void",
+      "in": "media:model-spec;textable;scalar",
       "out": "media:integer;textable;numeric;scalar"
     }
   },

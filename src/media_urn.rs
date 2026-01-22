@@ -104,6 +104,14 @@ pub const MEDIA_CONTENT_TEXT: &str = "media:content-text;textable;scalar";
 pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter-text;textable;scalar";
 /// Media URN for model identifier/name
 pub const MEDIA_MODEL_ID: &str = "media:model-id;textable;scalar";
+/// Media URN for model spec (provider:model format)
+pub const MEDIA_MODEL_SPEC: &str = "media:model-spec;textable;scalar";
+/// Media URN for HuggingFace model name
+pub const MEDIA_HF_MODEL_NAME: &str = "media:hf-model-name;textable;scalar";
+/// Media URN for MLX model path
+pub const MEDIA_MLX_MODEL_PATH: &str = "media:mlx-model-path;textable;scalar";
+/// Media URN for management operation type
+pub const MEDIA_MANAGEMENT_OPERATION: &str = "media:management-operation;textable;scalar";
 
 /// Helper to build binary media URN with extension
 pub fn binary_media_urn_for_ext(ext: &str) -> String {

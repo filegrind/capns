@@ -3,7 +3,7 @@
     "tags": {
       "op": "embeddings_dimensions",
       "model_type": "mlx",
-      "in": "media:void",
+      "in": "media:mlx-model-path;textable;scalar",
       "out": "media:integer;textable;numeric;scalar"
     }
   },

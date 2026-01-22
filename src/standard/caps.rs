@@ -17,7 +17,7 @@ use crate::media_urn::{
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG,
     // Semantic text input types
     MEDIA_INPUT_TEXT, MEDIA_PROMPT_TEXT, MEDIA_QUERY_TEXT, MEDIA_CONTENT_TEXT, MEDIA_FRONTMATTER_TEXT,
-    MEDIA_MODEL_ID,
+    MEDIA_MODEL_ID, MEDIA_MODEL_SPEC, MEDIA_HF_MODEL_NAME, MEDIA_MLX_MODEL_PATH, MEDIA_MANAGEMENT_OPERATION,
     // CAPNS output types
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
@@ -132,7 +132,7 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
 pub fn embeddings_dimensions_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "embeddings_dimensions")
-        .in_spec(MEDIA_VOID)
+        .in_spec(MEDIA_MODEL_SPEC)
         .out_spec(MEDIA_INTEGER)
         .build()
         .expect("Failed to build embeddings-dimensions cap URN")

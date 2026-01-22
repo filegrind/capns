@@ -3,7 +3,7 @@
     "tags": {
       "op": "embeddings_dimensions",
       "model_type": "candle",
-      "in": "media:void",
+      "in": "media:hf-model-name;textable;scalar",
       "out": "media:integer;textable;numeric;scalar"
     }
   },
