@@ -356,7 +356,7 @@ impl CapRegistry {
             })?;
             cached_caps.clear();
         }
-        
+
         // Clear filesystem cache
         if self.cache_dir.exists() {
             fs::remove_dir_all(&self.cache_dir)
@@ -366,6 +366,35 @@ impl CapRegistry {
             })?;
         }
         Ok(())
+    }
+
+    // ==========================================================================
+    // TEST HELPERS
+    // ==========================================================================
+
+    /// Create an empty registry for testing purposes.
+    /// This is a synchronous constructor that doesn't perform any initialization.
+    #[cfg(test)]
+    pub fn new_for_test() -> Self {
+        use std::path::PathBuf;
+        Self {
+            client: reqwest::Client::new(),
+            cache_dir: PathBuf::from("/tmp/capns-test-cache"),
+            cached_caps: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Add caps to the in-memory cache for testing purposes.
+    /// This allows tests to set up specific caps without network access.
+    #[cfg(test)]
+    pub fn add_caps_to_cache(&self, caps: Vec<Cap>) {
+        if let Ok(mut cached_caps) = self.cached_caps.lock() {
+            for cap in caps {
+                let urn = cap.urn_string();
+                let normalized_urn = normalize_cap_urn(&urn);
+                cached_caps.insert(normalized_urn, cap);
+            }
+        }
     }
 }
 
