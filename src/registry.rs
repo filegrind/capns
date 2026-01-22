@@ -369,12 +369,12 @@ impl CapRegistry {
     }
 
     // ==========================================================================
-    // TEST HELPERS
+    // TEST HELPERS - Available for integration tests in dependent crates
     // ==========================================================================
 
     /// Create an empty registry for testing purposes.
     /// This is a synchronous constructor that doesn't perform any initialization.
-    #[cfg(test)]
+    /// Intended for use in tests only - creates a registry with no network configuration.
     pub fn new_for_test() -> Self {
         use std::path::PathBuf;
         Self {
@@ -386,7 +386,7 @@ impl CapRegistry {
 
     /// Add caps to the in-memory cache for testing purposes.
     /// This allows tests to set up specific caps without network access.
-    #[cfg(test)]
+    /// Intended for use in tests only.
     pub fn add_caps_to_cache(&self, caps: Vec<Cap>) {
         if let Ok(mut cached_caps) = self.cached_caps.lock() {
             for cap in caps {
