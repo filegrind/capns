@@ -3,7 +3,7 @@
     "tags": {
       "op": "summarization",
       "language": "en",
-      "type": "constrained",
+      "constrained": "*",
       "in": "media:input-text;textable;scalar",
       "out": "media:llm-inference-output;textable;keyed"
     }

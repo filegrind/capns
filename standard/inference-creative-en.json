@@ -3,7 +3,7 @@
     "tags": {
       "op": "creative",
       "language": "en",
-      "type": "constrained",
+      "constrained": "*",
       "in": "media:prompt-text;textable;scalar",
       "out": "media:llm-inference-output;textable;keyed"
     }

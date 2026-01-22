@@ -3,7 +3,7 @@
     "tags": {
       "op": "generate_frontmatter_summary",
       "language": "en",
-      "type": "constrained",
+      "constrained": "*",
       "in": "media:frontmatter-text;textable;scalar",
       "out": "media:string;textable;scalar"
     }

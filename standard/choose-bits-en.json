@@ -3,7 +3,7 @@
     "tags": {
       "op": "choose_bits",
       "language": "en",
-      "type": "constrained",
+      "constrained": "*",
       "in": "media:content-text;textable;scalar",
       "out": "media:boolean-array;textable;sequence"
     }

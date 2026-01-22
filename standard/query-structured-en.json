@@ -3,7 +3,7 @@
     "tags": {
       "op": "query_structured",
       "language": "en",
-      "type": "constrained",
+      "constrained": "*",
       "in": "media:object;textable;keyed",
       "out": "media:json;textable;keyed"
     }
