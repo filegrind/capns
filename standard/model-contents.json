@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "model-contents",
-      "in": "media:void",
+      "in": "media:model-id;textable;scalar",
       "out": "media:model-contents;textable;keyed"
     }
   },

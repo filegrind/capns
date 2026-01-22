@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "load-model",
-      "in": "media:void",
+      "in": "media:model-id;textable;scalar",
       "out": "media:load-output;textable;keyed"
     }
   },

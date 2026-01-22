@@ -6,7 +6,7 @@
       "out": "media:disbound-pages;textable;keyed;sequence"
     }
   },
-  "command": "grind",
+  "command": "disbind",
   "title": "Extract Markdown File Chips",
   "cap_description": "Grind with text content from markdown files",
   "metadata": {},

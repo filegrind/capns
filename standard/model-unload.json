@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "unload-model",
-      "in": "media:void",
+      "in": "media:model-id;textable;scalar",
       "out": "media:unload-output;textable;keyed"
     }
   },

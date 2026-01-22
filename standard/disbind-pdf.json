@@ -6,7 +6,7 @@
       "out": "media:disbound-pages;textable;keyed;sequence"
     }
   },
-  "command": "grind",
+  "command": "disbind",
   "title": "Extract File Chips",
   "cap_description": "Extract structured page content from the document",
   "metadata": {},

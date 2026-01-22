@@ -2,7 +2,7 @@
   "urn": {
     "tags": {
       "op": "model-status",
-      "in": "media:void",
+      "in": "media:model-id;textable;scalar",
       "out": "media:status-output;textable;keyed"
     }
   },
