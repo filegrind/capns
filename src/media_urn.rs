@@ -91,6 +91,20 @@ pub const MEDIA_FILE_PATH: &str = "media:file-path;textable;scalar";
 /// Media URN for an array of file paths - textable, sequence, marked as file-path for special handling
 pub const MEDIA_FILE_PATH_ARRAY: &str = "media:file-path-array;textable;sequence";
 
+// Semantic text input types - distinguished by their purpose/context
+/// Media URN for input text to generate embeddings
+pub const MEDIA_INPUT_TEXT: &str = "media:input-text;textable;scalar";
+/// Media URN for prompt text for LLM inference
+pub const MEDIA_PROMPT_TEXT: &str = "media:prompt-text;textable;scalar";
+/// Media URN for query text for searches/questions
+pub const MEDIA_QUERY_TEXT: &str = "media:query-text;textable;scalar";
+/// Media URN for content text for summarization/analysis
+pub const MEDIA_CONTENT_TEXT: &str = "media:content-text;textable;scalar";
+/// Media URN for frontmatter text (book metadata)
+pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter-text;textable;scalar";
+/// Media URN for model identifier/name
+pub const MEDIA_MODEL_ID: &str = "media:model-id;textable;scalar";
+
 /// Helper to build binary media URN with extension
 pub fn binary_media_urn_for_ext(ext: &str) -> String {
     format!("media:binary;ext={};binary", ext)

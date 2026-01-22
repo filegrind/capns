@@ -15,6 +15,9 @@ use crate::media_urn::{
     MEDIA_PDF, MEDIA_EPUB,
     // Text format types (PRIMARY naming)
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG,
+    // Semantic text input types
+    MEDIA_INPUT_TEXT, MEDIA_PROMPT_TEXT, MEDIA_QUERY_TEXT, MEDIA_CONTENT_TEXT, MEDIA_FRONTMATTER_TEXT,
+    MEDIA_MODEL_ID,
     // CAPNS output types
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
@@ -67,7 +70,7 @@ pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
         .tag("op", "conversation")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_PROMPT_TEXT)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build conversation cap URN")
@@ -79,7 +82,7 @@ pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "multiplechoice")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_QUERY_TEXT)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build multiplechoice cap URN")
@@ -91,7 +94,7 @@ pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
         .tag("op", "codegeneration")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_PROMPT_TEXT)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build codegeneration cap URN")
@@ -103,7 +106,7 @@ pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
         .tag("op", "creative")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_PROMPT_TEXT)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build creative cap URN")
@@ -115,7 +118,7 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "summarization")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_INPUT_TEXT)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build summarization cap URN")
@@ -139,7 +142,7 @@ pub fn embeddings_dimensions_urn() -> CapUrn {
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_embeddings")
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_INPUT_TEXT)
         .out_spec(MEDIA_GENERATE_OUTPUT)
         .build()
         .expect("Failed to build embeddings-generation cap URN")
@@ -153,7 +156,7 @@ pub fn embeddings_generation_urn() -> CapUrn {
 pub fn model_download_urn() -> CapUrn {
 		CapUrnBuilder::new()
 		.tag("op", "download-model")
-        .in_spec(MEDIA_VOID)
+        .in_spec(MEDIA_MODEL_ID)
         .out_spec(MEDIA_DOWNLOAD_OUTPUT)
         .build()
         .expect("Failed to build model-download cap URN")
@@ -163,7 +166,7 @@ pub fn model_download_urn() -> CapUrn {
 pub fn model_load_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "load-model")
-        .in_spec(MEDIA_VOID)
+        .in_spec(MEDIA_MODEL_ID)
         .out_spec(MEDIA_LOAD_OUTPUT)
         .build()
         .expect("Failed to build model-load cap URN")
@@ -173,7 +176,7 @@ pub fn model_load_urn() -> CapUrn {
 pub fn model_unload_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "unload-model")
-        .in_spec(MEDIA_VOID)
+        .in_spec(MEDIA_MODEL_ID)
         .out_spec(MEDIA_UNLOAD_OUTPUT)
         .build()
         .expect("Failed to build model-unload cap URN")
@@ -182,7 +185,7 @@ pub fn model_unload_urn() -> CapUrn {
 /// Build URN for model-list capability
 pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "list-model")
+        .tag("op", "list-models")
         .in_spec(MEDIA_VOID)
         .out_spec(MEDIA_LIST_OUTPUT)
         .build()
@@ -192,8 +195,8 @@ pub fn model_list_urn() -> CapUrn {
 /// Build URN for model-status capability
 pub fn model_status_urn() -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "status-model")
-        .in_spec(MEDIA_VOID)
+        .tag("op", "model-status")
+        .in_spec(MEDIA_MODEL_ID)
         .out_spec(MEDIA_STATUS_OUTPUT)
         .build()
         .expect("Failed to build model-status cap URN")
@@ -202,8 +205,8 @@ pub fn model_status_urn() -> CapUrn {
 /// Build URN for model-contents capability
 pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
-		.tag("op", "contents-model")
-        .in_spec(MEDIA_VOID)
+		.tag("op", "model-contents")
+        .in_spec(MEDIA_MODEL_ID)
         .out_spec(MEDIA_CONTENTS_OUTPUT)
         .build()
         .expect("Failed to build model-contents cap URN")
@@ -279,7 +282,7 @@ pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "generate_frontmatter_summary")
         .tag("language", lang_code)
         .solo_tag("constrained")
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_FRONTMATTER_TEXT)
         .out_spec(MEDIA_STRING)
         .build()
         .expect("Failed to build frontmatter-summarization cap URN")
@@ -303,7 +306,7 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bit")
         .tag("language", lang_code)
         .solo_tag("constrained")
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_CONTENT_TEXT)
         .out_spec(MEDIA_BOOLEAN)
         .build()
         .expect("Failed to build bit-choice cap URN")
@@ -315,7 +318,7 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bits")
         .tag("language", lang_code)
         .solo_tag("constrained")
-        .in_spec(MEDIA_STRING)
+        .in_spec(MEDIA_CONTENT_TEXT)
         .out_spec(MEDIA_BOOLEAN_ARRAY)
         .build()
         .expect("Failed to build bit-choices cap URN")
