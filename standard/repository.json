@@ -1,0 +1,7 @@
+{
+  "urn": "media:repository;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Repository",
+  "profile_uri": "https://capns.org/schema/repository",
+  "description": "Repository value"
+}

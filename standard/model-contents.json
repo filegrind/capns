@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "contents",
-      "type": "model",
+      "op": "model-contents",
       "in": "media:void",
       "out": "media:model-contents;textable;keyed"
     }

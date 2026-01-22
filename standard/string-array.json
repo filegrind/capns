@@ -1,0 +1,7 @@
+{
+  "urn": "media:string-array;textable;sequence",
+  "media_type": "application/json",
+  "title": "String Array",
+  "profile_uri": "https://capns.org/schema/str-array",
+  "description": "Array of string values"
+}

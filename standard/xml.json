@@ -1,0 +1,7 @@
+{
+  "urn": "media:xml;textable",
+  "media_type": "application/xml",
+  "title": "XML Document",
+  "profile_uri": "https://capns.org/schema/xml",
+  "description": "XML formatted document"
+}

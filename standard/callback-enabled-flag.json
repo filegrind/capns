@@ -1,0 +1,7 @@
+{
+  "urn": "media:callback-enabled-flag;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Callback Enabled Flag",
+  "profile_uri": "https://capns.org/schema/callback_enabled_flag",
+  "description": "Callback Enabled Flag value"
+}

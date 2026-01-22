@@ -1,0 +1,7 @@
+{
+  "urn": "media:model-spec;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Model Spec",
+  "profile_uri": "https://capns.org/schema/model_spec",
+  "description": "Model Spec value"
+}

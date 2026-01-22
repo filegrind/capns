@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "status",
-      "type": "model",
+      "op": "model-status",
       "in": "media:void",
       "out": "media:status-output;textable;keyed"
     }

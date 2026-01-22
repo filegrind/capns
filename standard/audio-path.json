@@ -1,0 +1,7 @@
+{
+  "urn": "media:audio-path;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Audio Path",
+  "profile_uri": "https://capns.org/schema/audio_path",
+  "description": "Audio Path file system path"
+}

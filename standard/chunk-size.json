@@ -1,0 +1,7 @@
+{
+  "urn": "media:chunk-size;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Chunk Size",
+  "profile_uri": "https://capns.org/schema/chunk_size",
+  "description": "Chunk Size numeric value"
+}

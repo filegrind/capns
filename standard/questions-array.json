@@ -1,0 +1,7 @@
+{
+  "urn": "media:questions-array;textable;sequence",
+  "media_type": "application/json",
+  "title": "Questions Array",
+  "profile_uri": "https://capns.org/schema/questions_array",
+  "description": "Questions Array array/sequence"
+}

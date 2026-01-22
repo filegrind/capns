@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "unload",
-      "type": "model",
+      "op": "unload-model",
       "in": "media:void",
       "out": "media:unload-output;textable;keyed"
     }

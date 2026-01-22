@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "download",
-      "type": "model",
+      "op": "download-model",
       "in": "media:void",
       "out": "media:download-result;textable;keyed"
     }

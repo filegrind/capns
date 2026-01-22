@@ -1,0 +1,7 @@
+{
+  "urn": "media:temperature;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Temperature",
+  "profile_uri": "https://capns.org/schema/temperature",
+  "description": "Temperature numeric value"
+}

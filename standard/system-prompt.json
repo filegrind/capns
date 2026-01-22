@@ -1,0 +1,7 @@
+{
+  "urn": "media:system-prompt;textable;scalar",
+  "media_type": "text/plain",
+  "title": "System Prompt",
+  "profile_uri": "https://capns.org/schema/system_prompt",
+  "description": "System Prompt value"
+}

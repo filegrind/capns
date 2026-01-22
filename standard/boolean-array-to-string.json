@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "string",
+      "in": "media:boolean-array;textable;sequence",
+      "out": "media:string;textable;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Boolean Array to String",
+  "cap_description": "Convert a boolean array to its string representation",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:source-media-urn;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:boolean-array;textable;sequence"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "Media URN of the source data type"
+    }
+  ],
+  "output": {
+    "media_urn": "media:string;textable;scalar",
+    "output_description": "JSON string representation of the boolean array"
+  }
+}

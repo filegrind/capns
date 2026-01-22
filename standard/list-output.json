@@ -1,0 +1,7 @@
+{
+  "urn": "media:list-output;textable;keyed",
+  "media_type": "application/json",
+  "title": "Model List Output",
+  "profile_uri": "https://capns.org/schema/list-output",
+  "description": "List operation result"
+}

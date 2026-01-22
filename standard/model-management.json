@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "management",
-      "type": "model",
+      "op": "model-management",
       "in": "media:void",
       "out": "media:manage-output;textable;keyed"
     }

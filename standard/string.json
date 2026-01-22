@@ -1,0 +1,7 @@
+{
+  "urn": "media:string;textable;scalar",
+  "media_type": "text/plain",
+  "title": "String Value",
+  "profile_uri": "https://capns.org/schema/str",
+  "description": "Plain text string value"
+}

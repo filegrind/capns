@@ -1,0 +1,7 @@
+{
+  "urn": "media:genre;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Genre",
+  "profile_uri": "https://capns.org/schema/genre",
+  "description": "Genre value"
+}

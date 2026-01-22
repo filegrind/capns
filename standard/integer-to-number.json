@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "number",
+      "in": "media:integer;textable;numeric;scalar",
+      "out": "media:number;textable;numeric;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Integer to Number",
+  "cap_description": "Convert an integer value to a number (floating point)",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:source-media-urn;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:integer;textable;numeric;scalar"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "Media URN of the source data type"
+    }
+  ],
+  "output": {
+    "media_urn": "media:number;textable;numeric;scalar",
+    "output_description": "Numeric value (floating point representation of the integer)"
+  }
+}

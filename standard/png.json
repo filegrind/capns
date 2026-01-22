@@ -1,0 +1,7 @@
+{
+  "urn": "media:png;binary",
+  "media_type": "image/png",
+  "title": "Image Data",
+  "profile_uri": "https://capns.org/schema/png",
+  "description": "Image data (PNG)"
+}

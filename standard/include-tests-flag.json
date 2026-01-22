@@ -1,0 +1,7 @@
+{
+  "urn": "media:include-tests-flag;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Include Tests Flag",
+  "profile_uri": "https://capns.org/schema/include_tests_flag",
+  "description": "Include Tests Flag value"
+}

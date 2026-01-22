@@ -1,0 +1,7 @@
+{
+  "urn": "media:vision-inference-output;textable;keyed",
+  "media_type": "application/json",
+  "title": "Vision Inference Output",
+  "profile_uri": "https://capns.org/schema/vision-inference-output",
+  "description": "Output from vision/image analysis models"
+}

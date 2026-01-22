@@ -1,0 +1,7 @@
+{
+  "urn": "media:document-outline;textable;keyed",
+  "media_type": "application/json",
+  "title": "Document Outline",
+  "profile_uri": "https://capns.org/schema/document-outline",
+  "description": "Document outline structure"
+}

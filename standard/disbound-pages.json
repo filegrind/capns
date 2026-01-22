@@ -1,0 +1,7 @@
+{
+  "urn": "media:disbound-pages;textable;keyed;sequence",
+  "media_type": "application/json",
+  "title": "Disbind Output",
+  "profile_uri": "https://capns.org/schema/disbound-pages",
+  "description": "Disbind operation result - structured page content"
+}

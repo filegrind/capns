@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "object",
+      "in": "media:integer;textable;numeric;scalar",
+      "out": "media:object;textable;keyed"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Integer to Object",
+  "cap_description": "Wrap an integer value in a JSON object with value and source_type keys",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:source-media-urn;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:integer;textable;numeric;scalar"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "Media URN of the source data type"
+    }
+  ],
+  "output": {
+    "media_urn": "media:object;textable;keyed",
+    "output_description": "JSON object containing the original integer value"
+  }
+}

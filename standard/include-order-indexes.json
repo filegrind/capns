@@ -1,0 +1,7 @@
+{
+  "urn": "media:include-order-indexes;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Include Order Indexes",
+  "profile_uri": "https://capns.org/schema/include_order_indexes",
+  "description": "Include Order Indexes value"
+}

@@ -1,0 +1,7 @@
+{
+  "urn": "media:decision-type;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Decision Type",
+  "profile_uri": "https://capns.org/schema/decision_type",
+  "description": "Decision Type value"
+}

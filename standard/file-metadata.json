@@ -1,0 +1,7 @@
+{
+  "urn": "media:file-metadata;textable;keyed",
+  "media_type": "application/json",
+  "title": "File Metadata",
+  "profile_uri": "https://capns.org/schema/file-metadata",
+  "description": "File metadata structure"
+}

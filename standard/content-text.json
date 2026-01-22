@@ -1,0 +1,7 @@
+{
+  "urn": "media:content-text;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Content Text",
+  "profile_uri": "https://capns.org/schema/content_text",
+  "description": "Content Text text input"
+}

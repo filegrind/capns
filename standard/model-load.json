@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "load",
-      "type": "model",
+      "op": "load-model",
       "in": "media:void",
       "out": "media:load-output;textable;keyed"
     }

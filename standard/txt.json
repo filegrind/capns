@@ -1,0 +1,7 @@
+{
+  "urn": "media:txt;textable",
+  "media_type": "text/plain",
+  "title": "Plain Text",
+  "profile_uri": "https://capns.org/schema/txt",
+  "description": "Plain text document"
+}

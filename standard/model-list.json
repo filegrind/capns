@@ -1,8 +1,7 @@
 {
   "urn": {
     "tags": {
-      "op": "list",
-      "type": "model",
+      "op": "list-models",
       "in": "media:void",
       "out": "media:list-output;textable;keyed"
     }

@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "integer",
+      "in": "media:number;textable;numeric;scalar",
+      "out": "media:integer;textable;numeric;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce Number to Integer",
+  "cap_description": "Convert a numeric value to an integer by rounding",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:source-media-urn;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:number;textable;numeric;scalar"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "Media URN of the source data type"
+    }
+  ],
+  "output": {
+    "media_urn": "media:integer;textable;numeric;scalar",
+    "output_description": "Integer value (rounded from the number)"
+  }
+}

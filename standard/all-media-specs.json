@@ -1,0 +1,870 @@
+[
+  {
+    "urn": "media:audio-path;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Audio Path",
+    "profile_uri": "https://capns.org/schema/audio_path",
+    "description": "Audio Path file system path"
+  },
+  {
+    "urn": "media:batch-size;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Batch Size",
+    "profile_uri": "https://capns.org/schema/batch_size",
+    "description": "Batch Size numeric value"
+  },
+  {
+    "urn": "media:boolean-array;textable;sequence",
+    "media_type": "application/json",
+    "title": "Boolean Array",
+    "profile_uri": "https://capns.org/schema/bool-array",
+    "description": "Array of boolean values"
+  },
+  {
+    "urn": "media:boolean;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Boolean Value",
+    "profile_uri": "https://capns.org/schema/bool",
+    "description": "Boolean true/false value"
+  },
+  {
+    "urn": "media:cache-dir;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Cache Dir",
+    "profile_uri": "https://capns.org/schema/cache_dir",
+    "description": "Cache Dir value"
+  },
+  {
+    "urn": "media:callback-enabled-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Callback Enabled Flag",
+    "profile_uri": "https://capns.org/schema/callback_enabled_flag",
+    "description": "Callback Enabled Flag value"
+  },
+  {
+    "urn": "media:chunk-overlap;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Chunk Overlap",
+    "profile_uri": "https://capns.org/schema/chunk_overlap",
+    "description": "Chunk Overlap numeric value"
+  },
+  {
+    "urn": "media:chunk-size;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Chunk Size",
+    "profile_uri": "https://capns.org/schema/chunk_size",
+    "description": "Chunk Size numeric value"
+  },
+  {
+    "urn": "media:code-context;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Code Context",
+    "profile_uri": "https://capns.org/schema/code_context",
+    "description": "Code Context contextual information"
+  },
+  {
+    "urn": "media:coding-style;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Coding Style",
+    "profile_uri": "https://capns.org/schema/coding_style",
+    "description": "Coding Style value"
+  },
+  {
+    "urn": "media:confidence-threshold;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Confidence Threshold",
+    "profile_uri": "https://capns.org/schema/confidence_threshold",
+    "description": "Confidence Threshold numeric value"
+  },
+  {
+    "urn": "media:content-text;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Content Text",
+    "profile_uri": "https://capns.org/schema/content_text",
+    "description": "Content Text text input"
+  },
+  {
+    "urn": "media:conversation-context;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Conversation Context",
+    "profile_uri": "https://capns.org/schema/conversation_context",
+    "description": "Conversation Context contextual information"
+  },
+  {
+    "urn": "media:creative-context;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Creative Context",
+    "profile_uri": "https://capns.org/schema/creative_context",
+    "description": "Creative Context contextual information"
+  },
+  {
+    "urn": "media:creativity-level;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Creativity Level",
+    "profile_uri": "https://capns.org/schema/creativity_level",
+    "description": "Creativity Level numeric value"
+  },
+  {
+    "urn": "media:decision-type;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Decision Type",
+    "profile_uri": "https://capns.org/schema/decision_type",
+    "description": "Decision Type value"
+  },
+  {
+    "urn": "media:detailed-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Detailed Flag",
+    "profile_uri": "https://capns.org/schema/detailed_flag",
+    "description": "Detailed Flag value"
+  },
+  {
+    "urn": "media:device;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Device",
+    "profile_uri": "https://capns.org/schema/device",
+    "description": "Device value"
+  },
+  {
+    "urn": "media:disbound-pages;textable;keyed;sequence",
+    "media_type": "application/json",
+    "title": "Disbind Output",
+    "profile_uri": "https://capns.org/schema/disbound-pages",
+    "description": "Disbind operation result - structured page content"
+  },
+  {
+    "urn": "media:document-outline;textable;keyed",
+    "media_type": "application/json",
+    "title": "Document Outline",
+    "profile_uri": "https://capns.org/schema/document-outline",
+    "description": "Document outline structure"
+  },
+  {
+    "urn": "media:download-result;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model Download Result",
+    "profile_uri": "https://capns.org/schema/download-result",
+    "description": "Download operation result"
+  },
+  {
+    "urn": "media:embedding-vector-batch;textable;keyed;sequence",
+    "media_type": "application/json",
+    "title": "Embedding Vector Batch",
+    "profile_uri": "https://capns.org/schema/embedding-vector-batch",
+    "description": "Batch of embedding vectors"
+  },
+  {
+    "urn": "media:embedding-vector;textable;keyed",
+    "media_type": "application/json",
+    "title": "Embedding Vector",
+    "profile_uri": "https://capns.org/schema/embedding-vector",
+    "description": "Embedding Vector"
+  },
+  {
+    "urn": "media:epub;binary",
+    "media_type": "application/epub+zip",
+    "title": "EPUB Document",
+    "profile_uri": "https://capns.org/schema/epub",
+    "description": "EPUB e-book document data"
+  },
+  {
+    "urn": "media:exclude-pattern;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Exclude Pattern",
+    "profile_uri": "https://capns.org/schema/exclude_pattern",
+    "description": "Exclude Pattern value"
+  },
+  {
+    "urn": "media:file-metadata;textable;keyed",
+    "media_type": "application/json",
+    "title": "File Metadata",
+    "profile_uri": "https://capns.org/schema/file-metadata",
+    "description": "File metadata structure"
+  },
+  {
+    "urn": "media:file-path;textable;scalar",
+    "media_type": "text/plain",
+    "title": "File Path",
+    "profile_uri": "https://capns.org/schema/file_path",
+    "description": "File Path file system path"
+  },
+  {
+    "urn": "media:filter-pattern;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Filter Pattern",
+    "profile_uri": "https://capns.org/schema/filter_pattern",
+    "description": "Filter Pattern value"
+  },
+  {
+    "urn": "media:force-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Force Flag",
+    "profile_uri": "https://capns.org/schema/force_flag",
+    "description": "Force Flag value"
+  },
+  {
+    "urn": "media:frontmatter-text;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Frontmatter Text",
+    "profile_uri": "https://capns.org/schema/frontmatter_text",
+    "description": "Frontmatter Text text input"
+  },
+  {
+    "urn": "media:genre;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Genre",
+    "profile_uri": "https://capns.org/schema/genre",
+    "description": "Genre value"
+  },
+  {
+    "urn": "media:hf-model-name;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Hf Model Name",
+    "profile_uri": "https://capns.org/schema/hf_model_name",
+    "description": "Hf Model Name value"
+  },
+  {
+    "urn": "media:html;textable",
+    "media_type": "text/html",
+    "title": "HTML Document",
+    "profile_uri": "https://capns.org/schema/html",
+    "description": "HTML formatted document"
+  },
+  {
+    "urn": "media:image-caption;textable;keyed",
+    "media_type": "application/json",
+    "title": "Image Caption Output",
+    "profile_uri": "https://capns.org/schema/caption-output",
+    "description": "Output from image captioning models"
+  },
+  {
+    "urn": "media:image-path;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Image Path",
+    "profile_uri": "https://capns.org/schema/image_path",
+    "description": "Image Path file system path"
+  },
+  {
+    "urn": "media:include-comments-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Include Comments Flag",
+    "profile_uri": "https://capns.org/schema/include_comments_flag",
+    "description": "Include Comments Flag value"
+  },
+  {
+    "urn": "media:include-order-indexes;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Include Order Indexes",
+    "profile_uri": "https://capns.org/schema/include_order_indexes",
+    "description": "Include Order Indexes value"
+  },
+  {
+    "urn": "media:include-pattern;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Include Pattern",
+    "profile_uri": "https://capns.org/schema/include_pattern",
+    "description": "Include Pattern value"
+  },
+  {
+    "urn": "media:include-tests-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Include Tests Flag",
+    "profile_uri": "https://capns.org/schema/include_tests_flag",
+    "description": "Include Tests Flag value"
+  },
+  {
+    "urn": "media:index-range;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Index Range",
+    "profile_uri": "https://capns.org/schema/index_range",
+    "description": "Index Range value"
+  },
+  {
+    "urn": "media:input-text;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Input Text",
+    "profile_uri": "https://capns.org/schema/input_text",
+    "description": "Input Text text input"
+  },
+  {
+    "urn": "media:inspection-depth;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Inspection Depth",
+    "profile_uri": "https://capns.org/schema/inspection_depth",
+    "description": "Inspection Depth value"
+  },
+  {
+    "urn": "media:integer-array;textable;numeric;sequence",
+    "media_type": "application/json",
+    "title": "Integer Array",
+    "profile_uri": "https://capns.org/schema/int-array",
+    "description": "Array of integer values"
+  },
+  {
+    "urn": "media:integer;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Integer Value",
+    "profile_uri": "https://capns.org/schema/int",
+    "description": "Integer numeric value"
+  },
+  {
+    "urn": "media:json;textable;keyed",
+    "media_type": "application/json",
+    "title": "JSON Document",
+    "profile_uri": "https://capns.org/schema/json",
+    "description": "JSON formatted document"
+  },
+  {
+    "urn": "media:keyed",
+    "media_type": "application/json",
+    "title": "Keyed Value",
+    "profile_uri": "https://capns.org/schema/keyed",
+    "description": "Base type for any keyed/object value with key-value pairs"
+  },
+  {
+    "urn": "media:language-code;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Language Code",
+    "profile_uri": "https://capns.org/schema/language_code",
+    "description": "Language Code value"
+  },
+  {
+    "urn": "media:language;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Language",
+    "profile_uri": "https://capns.org/schema/language",
+    "description": "Language value"
+  },
+  {
+    "urn": "media:list-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model List Output",
+    "profile_uri": "https://capns.org/schema/list-output",
+    "description": "List operation result"
+  },
+  {
+    "urn": "media:llm-inference-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "LLM Inference Output",
+    "profile_uri": "https://capns.org/schema/llm-inference-output",
+    "description": "LLM inference operation result"
+  },
+  {
+    "urn": "media:load-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model Load Output",
+    "profile_uri": "https://capns.org/schema/load-output",
+    "description": "Load operation result"
+  },
+  {
+    "urn": "media:log;textable",
+    "media_type": "text/plain",
+    "title": "Log File",
+    "profile_uri": "https://capns.org/schema/log",
+    "description": "Log file text content"
+  },
+  {
+    "urn": "media:manage-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model Management Output",
+    "profile_uri": "https://capns.org/schema/manage-output",
+    "description": "Output from model management operations"
+  },
+  {
+    "urn": "media:management-operation;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Management Operation",
+    "profile_uri": "https://capns.org/schema/management_operation",
+    "description": "Management Operation value"
+  },
+  {
+    "urn": "media:max-content-length;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Max Content Length",
+    "profile_uri": "https://capns.org/schema/max_content_length",
+    "description": "Max Content Length numeric value"
+  },
+  {
+    "urn": "media:max-context-length;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Max Context Length",
+    "profile_uri": "https://capns.org/schema/max_context_length",
+    "description": "Max Context Length numeric value"
+  },
+  {
+    "urn": "media:max-depth;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Max Depth",
+    "profile_uri": "https://capns.org/schema/max_depth",
+    "description": "Max Depth numeric value"
+  },
+  {
+    "urn": "media:max-tokens;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Max Tokens",
+    "profile_uri": "https://capns.org/schema/max_tokens",
+    "description": "Max Tokens numeric value"
+  },
+  {
+    "urn": "media:md;textable",
+    "media_type": "text/markdown",
+    "title": "Markdown Document",
+    "profile_uri": "https://capns.org/schema/md",
+    "description": "Markdown formatted text"
+  },
+  {
+    "urn": "media:min-p;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Min P",
+    "profile_uri": "https://capns.org/schema/min_p",
+    "description": "Min P numeric value"
+  },
+  {
+    "urn": "media:mlx-model-path;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Mlx Model Path",
+    "profile_uri": "https://capns.org/schema/mlx_model_path",
+    "description": "Mlx Model Path file system path"
+  },
+  {
+    "urn": "media:model-contents;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model Contents",
+    "profile_uri": "https://capns.org/schema/model-contents",
+    "description": "Contents operation result"
+  },
+  {
+    "urn": "media:model-id;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Model Id",
+    "profile_uri": "https://capns.org/schema/model_id",
+    "description": "Model Id value"
+  },
+  {
+    "urn": "media:model-spec;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Model Spec",
+    "profile_uri": "https://capns.org/schema/model_spec",
+    "description": "Model Spec value"
+  },
+  {
+    "urn": "media:model-status;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Model Status",
+    "profile_uri": "https://capns.org/schema/model_status",
+    "description": "Model Status value"
+  },
+  {
+    "urn": "media:number-array;textable;numeric;sequence",
+    "media_type": "application/json",
+    "title": "Number Array",
+    "profile_uri": "https://capns.org/schema/num-array",
+    "description": "Array of floating-point numeric values"
+  },
+  {
+    "urn": "media:number;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Number Value",
+    "profile_uri": "https://capns.org/schema/num",
+    "description": "Floating-point numeric value"
+  },
+  {
+    "urn": "media:numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Numeric Scalar Value",
+    "profile_uri": "https://capns.org/schema/numeric-scalar",
+    "description": "Base type for any numeric scalar value (integer, number, boolean)"
+  },
+  {
+    "urn": "media:object-array;textable;keyed;sequence",
+    "media_type": "application/json",
+    "title": "Object Array",
+    "profile_uri": "https://capns.org/schema/obj-array",
+    "description": "Array of JSON object values"
+  },
+  {
+    "urn": "media:object;textable;keyed",
+    "media_type": "application/json",
+    "title": "Object Value",
+    "profile_uri": "https://capns.org/schema/obj",
+    "description": "JSON object value"
+  },
+  {
+    "urn": "media:output-format;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Output Format",
+    "profile_uri": "https://capns.org/schema/output_format",
+    "description": "Output Format value"
+  },
+  {
+    "urn": "media:output-length;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Output Length",
+    "profile_uri": "https://capns.org/schema/output_length",
+    "description": "Output Length value"
+  },
+  {
+    "urn": "media:output-path;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Output Path",
+    "profile_uri": "https://capns.org/schema/output_path",
+    "description": "Output Path file system path"
+  },
+  {
+    "urn": "media:pdf;binary",
+    "media_type": "application/pdf",
+    "title": "PDF Document",
+    "profile_uri": "https://capns.org/schema/pdf",
+    "description": "PDF document data"
+  },
+  {
+    "urn": "media:png;binary",
+    "media_type": "image/png",
+    "title": "Image Data",
+    "profile_uri": "https://capns.org/schema/png",
+    "description": "Image data (PNG)"
+  },
+  {
+    "urn": "media:precision;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Precision",
+    "profile_uri": "https://capns.org/schema/precision",
+    "description": "Precision value"
+  },
+  {
+    "urn": "media:preserve-all-data;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Preserve All Data",
+    "profile_uri": "https://capns.org/schema/preserve_all_data",
+    "description": "Preserve All Data value"
+  },
+  {
+    "urn": "media:preserve-structure-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Preserve Structure Flag",
+    "profile_uri": "https://capns.org/schema/preserve_structure_flag",
+    "description": "Preserve Structure Flag value"
+  },
+  {
+    "urn": "media:programming-language;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Programming Language",
+    "profile_uri": "https://capns.org/schema/programming_language",
+    "description": "Programming Language value"
+  },
+  {
+    "urn": "media:prompt-text;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Prompt Text",
+    "profile_uri": "https://capns.org/schema/prompt_text",
+    "description": "Prompt Text text input"
+  },
+  {
+    "urn": "media:query-name;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Query Name",
+    "profile_uri": "https://capns.org/schema/query_name",
+    "description": "Query Name value"
+  },
+  {
+    "urn": "media:query-text;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Query Text",
+    "profile_uri": "https://capns.org/schema/query_text",
+    "description": "Query Text text input"
+  },
+  {
+    "urn": "media:question-text;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Question Text",
+    "profile_uri": "https://capns.org/schema/question_text",
+    "description": "Question Text text input"
+  },
+  {
+    "urn": "media:questions-array;textable;sequence",
+    "media_type": "application/json",
+    "title": "Questions Array",
+    "profile_uri": "https://capns.org/schema/questions_array",
+    "description": "Questions Array array/sequence"
+  },
+  {
+    "urn": "media:raw;binary",
+    "media_type": "application/octet-stream",
+    "title": "Raw",
+    "profile_uri": "https://capns.org/schema/raw",
+    "description": "Raw value"
+  },
+  {
+    "urn": "media:reasoning-context;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Reasoning Context",
+    "profile_uri": "https://capns.org/schema/reasoning_context",
+    "description": "Reasoning Context contextual information"
+  },
+  {
+    "urn": "media:remove-boilerplate;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Remove Boilerplate",
+    "profile_uri": "https://capns.org/schema/remove_boilerplate",
+    "description": "Remove Boilerplate value"
+  },
+  {
+    "urn": "media:repetition-penalty;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Repetition Penalty",
+    "profile_uri": "https://capns.org/schema/repetition_penalty",
+    "description": "Repetition Penalty numeric value"
+  },
+  {
+    "urn": "media:repository;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Repository",
+    "profile_uri": "https://capns.org/schema/repository",
+    "description": "Repository value"
+  },
+  {
+    "urn": "media:require-explanation-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Require Explanation Flag",
+    "profile_uri": "https://capns.org/schema/require_explanation_flag",
+    "description": "Require Explanation Flag value"
+  },
+  {
+    "urn": "media:rst;textable",
+    "media_type": "text/x-rst",
+    "title": "reStructuredText",
+    "profile_uri": "https://capns.org/schema/rst",
+    "description": "reStructuredText formatted document"
+  },
+  {
+    "urn": "media:scalar",
+    "media_type": "application/octet-stream",
+    "title": "Scalar Value",
+    "profile_uri": "https://capns.org/schema/scalar",
+    "description": "Base type for any scalar value (string, number, integer, boolean)"
+  },
+  {
+    "urn": "media:schema-variables;textable;keyed",
+    "media_type": "application/json",
+    "title": "Schema Variables",
+    "profile_uri": "https://capns.org/schema/schema_variables",
+    "description": "Schema Variables object with key-value pairs"
+  },
+  {
+    "urn": "media:seed;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Seed",
+    "profile_uri": "https://capns.org/schema/seed",
+    "description": "Seed numeric value"
+  },
+  {
+    "urn": "media:sequence",
+    "media_type": "application/json",
+    "title": "Sequence Value",
+    "profile_uri": "https://capns.org/schema/sequence",
+    "description": "Base type for any sequence/array value"
+  },
+  {
+    "urn": "media:source-media-urn;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Source Media Urn",
+    "profile_uri": "https://capns.org/schema/source_media_urn",
+    "description": "Source Media Urn value"
+  },
+  {
+    "urn": "media:status-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model Status Output",
+    "profile_uri": "https://capns.org/schema/status-output",
+    "description": "Status operation result"
+  },
+  {
+    "urn": "media:stream-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Stream Flag",
+    "profile_uri": "https://capns.org/schema/stream_flag",
+    "description": "Stream Flag value"
+  },
+  {
+    "urn": "media:string-array;textable;sequence",
+    "media_type": "application/json",
+    "title": "String Array",
+    "profile_uri": "https://capns.org/schema/str-array",
+    "description": "Array of string values"
+  },
+  {
+    "urn": "media:string;textable;scalar",
+    "media_type": "text/plain",
+    "title": "String Value",
+    "profile_uri": "https://capns.org/schema/str",
+    "description": "Plain text string value"
+  },
+  {
+    "urn": "media:substitutions;textable;keyed",
+    "media_type": "application/json",
+    "title": "Substitutions",
+    "profile_uri": "https://capns.org/schema/substitutions",
+    "description": "Substitutions object with key-value pairs"
+  },
+  {
+    "urn": "media:summary-context;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Summary Context",
+    "profile_uri": "https://capns.org/schema/summary_context",
+    "description": "Summary Context contextual information"
+  },
+  {
+    "urn": "media:summary-focus;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Summary Focus",
+    "profile_uri": "https://capns.org/schema/summary_focus",
+    "description": "Summary Focus value"
+  },
+  {
+    "urn": "media:summary-type;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Summary Type",
+    "profile_uri": "https://capns.org/schema/summary_type",
+    "description": "Summary Type value"
+  },
+  {
+    "urn": "media:system-prompt;textable;scalar",
+    "media_type": "text/plain",
+    "title": "System Prompt",
+    "profile_uri": "https://capns.org/schema/system_prompt",
+    "description": "System Prompt value"
+  },
+  {
+    "urn": "media:temperature;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Temperature",
+    "profile_uri": "https://capns.org/schema/temperature",
+    "description": "Temperature numeric value"
+  },
+  {
+    "urn": "media:textable;keyed",
+    "media_type": "application/json",
+    "title": "Textable Keyed Value",
+    "profile_uri": "https://capns.org/schema/textable-keyed",
+    "description": "Base type for any textable keyed/object value"
+  },
+  {
+    "urn": "media:textable;scalar",
+    "media_type": "text/plain",
+    "title": "Textable Scalar Value",
+    "profile_uri": "https://capns.org/schema/textable-scalar",
+    "description": "Base type for any textable scalar value (string, integer, number, boolean)"
+  },
+  {
+    "urn": "media:textable",
+    "media_type": "text/plain",
+    "title": "Textable Value",
+    "profile_uri": "https://capns.org/schema/textable",
+    "description": "Base type for any textable value"
+  },
+  {
+    "urn": "media:thumbnail-height;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Thumbnail Height",
+    "profile_uri": "https://capns.org/schema/thumbnail_height",
+    "description": "Thumbnail Height numeric value"
+  },
+  {
+    "urn": "media:thumbnail-width;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Thumbnail Width",
+    "profile_uri": "https://capns.org/schema/thumbnail_width",
+    "description": "Thumbnail Width numeric value"
+  },
+  {
+    "urn": "media:timestamps-flag;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Timestamps Flag",
+    "profile_uri": "https://capns.org/schema/timestamps_flag",
+    "description": "Timestamps Flag value"
+  },
+  {
+    "urn": "media:tone;textable;scalar",
+    "media_type": "text/plain",
+    "title": "Tone",
+    "profile_uri": "https://capns.org/schema/tone",
+    "description": "Tone value"
+  },
+  {
+    "urn": "media:top-k;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Top K",
+    "profile_uri": "https://capns.org/schema/top_k",
+    "description": "Top K numeric value"
+  },
+  {
+    "urn": "media:top-p;textable;numeric;scalar",
+    "media_type": "text/plain",
+    "title": "Top P",
+    "profile_uri": "https://capns.org/schema/top_p",
+    "description": "Top P numeric value"
+  },
+  {
+    "urn": "media:transcription-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Audio Transcription Output",
+    "profile_uri": "https://capns.org/schema/transcription-output",
+    "description": "Transcribed text output from audio/video transcription"
+  },
+  {
+    "urn": "media:txt;textable",
+    "media_type": "text/plain",
+    "title": "Plain Text",
+    "profile_uri": "https://capns.org/schema/txt",
+    "description": "Plain text document"
+  },
+  {
+    "urn": "media:unload-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Model Unload Output",
+    "profile_uri": "https://capns.org/schema/unload-output",
+    "description": "Unload operation result"
+  },
+  {
+    "urn": "media:video;binary",
+    "media_type": "video/mp4",
+    "title": "Video Data",
+    "profile_uri": "https://capns.org/schema/video",
+    "description": "Video data (MP4, WebM, etc.)"
+  },
+  {
+    "urn": "media:vision-inference-output;textable;keyed",
+    "media_type": "application/json",
+    "title": "Vision Inference Output",
+    "profile_uri": "https://capns.org/schema/vision-inference-output",
+    "description": "Output from vision/image analysis models"
+  },
+  {
+    "urn": "media:void",
+    "media_type": "application/x-void",
+    "title": "Void Value",
+    "profile_uri": "https://capns.org/schema/void",
+    "description": "No value / void return type"
+  },
+  {
+    "urn": "media:wav;audio;binary;",
+    "media_type": "audio/wav",
+    "title": "WAV Audio",
+    "profile_uri": "https://capns.org/schema/wav",
+    "description": "Audio data (WAV, MP3, etc.)"
+  },
+  {
+    "urn": "media:xml;textable",
+    "media_type": "application/xml",
+    "title": "XML Document",
+    "profile_uri": "https://capns.org/schema/xml",
+    "description": "XML formatted document"
+  },
+  {
+    "urn": "media:yaml;textable;keyed",
+    "media_type": "application/yaml",
+    "title": "YAML Document",
+    "profile_uri": "https://capns.org/schema/yaml",
+    "description": "YAML formatted document"
+  }
+]

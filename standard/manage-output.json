@@ -1,0 +1,7 @@
+{
+  "urn": "media:manage-output;textable;keyed",
+  "media_type": "application/json",
+  "title": "Model Management Output",
+  "profile_uri": "https://capns.org/schema/manage-output",
+  "description": "Output from model management operations"
+}

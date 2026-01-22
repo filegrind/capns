@@ -1,0 +1,7 @@
+{
+  "urn": "media:language-code;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Language Code",
+  "profile_uri": "https://capns.org/schema/language_code",
+  "description": "Language Code value"
+}

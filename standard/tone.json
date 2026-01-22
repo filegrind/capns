@@ -1,0 +1,7 @@
+{
+  "urn": "media:tone;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Tone",
+  "profile_uri": "https://capns.org/schema/tone",
+  "description": "Tone value"
+}

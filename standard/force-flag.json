@@ -1,0 +1,7 @@
+{
+  "urn": "media:force-flag;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Force Flag",
+  "profile_uri": "https://capns.org/schema/force_flag",
+  "description": "Force Flag value"
+}

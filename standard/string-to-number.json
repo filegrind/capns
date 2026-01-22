@@ -1,0 +1,33 @@
+{
+  "urn": {
+    "tags": {
+      "op": "coerce",
+      "target": "number",
+      "in": "media:string;textable;scalar",
+      "out": "media:number;textable;numeric;scalar"
+    }
+  },
+  "command": "coerce",
+  "title": "Coerce String to Number",
+  "cap_description": "Convert a string value to a number by parsing",
+  "metadata": {},
+  "args": [
+    {
+      "media_urn": "media:source-media-urn;textable;scalar",
+      "required": true,
+      "sources": [
+        {
+          "stdin": "media:string;textable;scalar"
+        },
+        {
+          "position": 0
+        }
+      ],
+      "arg_description": "Media URN of the source data type"
+    }
+  ],
+  "output": {
+    "media_urn": "media:number;textable;numeric;scalar",
+    "output_description": "Numeric value parsed from the string"
+  }
+}

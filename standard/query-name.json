@@ -1,0 +1,7 @@
+{
+  "urn": "media:query-name;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Query Name",
+  "profile_uri": "https://capns.org/schema/query_name",
+  "description": "Query Name value"
+}

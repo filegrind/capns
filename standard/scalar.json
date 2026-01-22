@@ -1,0 +1,7 @@
+{
+  "urn": "media:scalar",
+  "media_type": "application/octet-stream",
+  "title": "Scalar Value",
+  "profile_uri": "https://capns.org/schema/scalar",
+  "description": "Base type for any scalar value (string, number, integer, boolean)"
+}
