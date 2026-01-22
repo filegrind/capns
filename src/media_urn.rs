@@ -349,21 +349,70 @@ impl MediaUrn {
     }
 
     /// Check if this represents a file path type.
-    /// Returns true if the type is "file-path".
+    /// Returns true if the "file-path" marker tag is present.
     pub fn is_file_path(&self) -> bool {
-        self.type_name() == Some("file-path")
+        self.0.tags.get("file-path").map_or(false, |v| v == "*")
     }
 
     /// Check if this represents a file path array type.
-    /// Returns true if the type is "file-path-array".
+    /// Returns true if the "file-path-array" marker tag is present.
     pub fn is_file_path_array(&self) -> bool {
-        self.type_name() == Some("file-path-array")
+        self.0.tags.get("file-path-array").map_or(false, |v| v == "*")
     }
 
     /// Check if this represents any file path type (single or array).
-    /// Returns true if the type is "file-path" or "file-path-array".
+    /// Returns true if either "file-path" or "file-path-array" marker tag is present.
     pub fn is_any_file_path(&self) -> bool {
         self.is_file_path() || self.is_file_path_array()
+    }
+
+    /// Check if this media URN can provide input for a cap with the given requirement.
+    ///
+    /// This is used for path finding to determine if our current output (self) can
+    /// flow into a cap that requires the given input media URN (requirement).
+    ///
+    /// The check ensures that all marker tags (wildcard tags) in the requirement
+    /// are also present in self. For example:
+    /// - `media:pdf;binary` can_provide_input_for `media:pdf;binary` -> TRUE
+    /// - `media:pdf;binary` can_provide_input_for `media:pdf` -> TRUE (has extra binary)
+    /// - `media:png;binary` can_provide_input_for `media:pdf;binary` -> FALSE (missing pdf)
+    /// - `media:binary` can_provide_input_for `media:pdf;binary` -> FALSE (missing pdf)
+    ///
+    /// Marker tags are tags with value "*" (wildcards). These represent type/format
+    /// markers like "pdf", "png", "binary", "textable", etc.
+    pub fn can_provide_input_for(&self, requirement: &MediaUrn) -> bool {
+        // Get all marker tags (wildcards) from the requirement
+        // A marker tag is one with value "*"
+        for (key, value) in &requirement.0.tags {
+            if value == "*" {
+                // This is a marker tag - self must also have this marker
+                match self.0.tags.get(key) {
+                    Some(self_value) if self_value == "*" => {
+                        // Self also has this marker - OK
+                        continue;
+                    }
+                    _ => {
+                        // Self doesn't have this marker or has a different value - FAIL
+                        return false;
+                    }
+                }
+            } else {
+                // Non-marker tag (has specific value) - check if values match
+                match self.0.tags.get(key) {
+                    Some(self_value) => {
+                        if self_value != value && self_value != "*" {
+                            // Values don't match and self doesn't have wildcard
+                            return false;
+                        }
+                    }
+                    None => {
+                        // Self doesn't have this tag - treated as wildcard, OK
+                        continue;
+                    }
+                }
+            }
+        }
+        true
     }
 }
 
