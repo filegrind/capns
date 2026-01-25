@@ -5,8 +5,8 @@
 //! Uses spec ID resolution to get media types and schemas from the media_specs table.
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
-use crate::{Cap, CapOutput, CapArg, ArgSource};
-use crate::media_spec::resolve_media_urn;
+use crate::{Cap, CapOutput, CapArg, ArgSource, ArgumentValidation};
+use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec};
 use std::collections::HashSet;
 use crate::profile_schema_registry::ProfileSchemaRegistry;
 use serde_json::Value;
@@ -45,6 +45,14 @@ pub enum ValidationError {
         validation_rule: String,
         actual_value: Value,
     },
+    /// Media spec validation rule violation (inherent to the semantic type)
+    MediaSpecValidationFailed {
+        cap_urn: String,
+        argument_name: String,
+        media_urn: String,
+        validation_rule: String,
+        actual_value: Value,
+    },
     /// Invalid output type
     InvalidOutputType {
         cap_urn: String,
@@ -55,6 +63,13 @@ pub enum ValidationError {
     /// Output validation rule violation
     OutputValidationFailed {
         cap_urn: String,
+        validation_rule: String,
+        actual_value: Value,
+    },
+    /// Output media spec validation rule violation (inherent to the semantic type)
+    OutputMediaSpecValidationFailed {
+        cap_urn: String,
+        media_urn: String,
         validation_rule: String,
         actual_value: Value,
     },
@@ -114,6 +129,10 @@ impl fmt::Display for ValidationError {
                 write!(f, "Cap '{}' argument '{}' failed validation rule '{}' with value: {}",
                        cap_urn, argument_name, validation_rule, actual_value)
             }
+            ValidationError::MediaSpecValidationFailed { cap_urn, argument_name, media_urn, validation_rule, actual_value } => {
+                write!(f, "Cap '{}' argument '{}' failed media spec '{}' validation rule '{}' with value: {}",
+                       cap_urn, argument_name, media_urn, validation_rule, actual_value)
+            }
             ValidationError::InvalidOutputType { cap_urn, expected_media_spec, actual_value, schema_errors } => {
                 write!(f, "Cap '{}' output expects media_spec '{}' but validation failed for value {}: {}",
                        cap_urn, expected_media_spec, actual_value, schema_errors.join(", "))
@@ -121,6 +140,10 @@ impl fmt::Display for ValidationError {
             ValidationError::OutputValidationFailed { cap_urn, validation_rule, actual_value } => {
                 write!(f, "Cap '{}' output failed validation rule '{}' with value: {}",
                        cap_urn, validation_rule, actual_value)
+            }
+            ValidationError::OutputMediaSpecValidationFailed { cap_urn, media_urn, validation_rule, actual_value } => {
+                write!(f, "Cap '{}' output failed media spec '{}' validation rule '{}' with value: {}",
+                       cap_urn, media_urn, validation_rule, actual_value)
             }
             ValidationError::InvalidCapSchema { cap_urn, issue } => {
                 write!(f, "Cap '{}' has invalid schema: {}", cap_urn, issue)
@@ -271,9 +294,15 @@ impl InputValidator {
         value: &Value,
     ) -> Result<(), ValidationError> {
         // Type validation via resolved spec (includes local schema validation if present)
-        self.validate_argument_type(cap, arg_def, value).await?;
+        // Returns the resolved media spec so we can access its validation rules
+        let resolved = self.validate_argument_type(cap, arg_def, value).await?;
 
-        // Validation rules (min/max, length, pattern, allowed_values)
+        // FIRST PASS: Media spec validation rules (inherent to the semantic type)
+        if let Some(ref validation) = resolved.validation {
+            self.validate_media_spec_rules(cap, arg_def, &resolved, validation, value)?;
+        }
+
+        // SECOND PASS: Arg-level validation rules (context-specific)
         self.validate_argument_rules(cap, arg_def, value)?;
 
         Ok(())
@@ -284,7 +313,7 @@ impl InputValidator {
         cap: &Cap,
         arg_def: &CapArg,
         value: &Value,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<ResolvedMediaSpec, ValidationError> {
         let cap_urn = cap.urn_string();
         let media_specs = cap.get_media_specs();
 
@@ -307,7 +336,7 @@ impl InputValidator {
                     schema_errors: vec!["Expected base64-encoded string for binary type".to_string()],
                 });
             }
-            return Ok(());
+            return Ok(resolved);
         }
 
         // First, try to use local schema from resolved spec
@@ -322,7 +351,7 @@ impl InputValidator {
                     schema_errors: errors,
                 });
             }
-            return Ok(());
+            return Ok(resolved);
         }
 
         // Otherwise, validate against profile schema (via ProfileSchemaRegistry)
@@ -338,6 +367,141 @@ impl InputValidator {
             }
         }
         // No profile or schema means any JSON value is valid for that media type
+
+        Ok(resolved)
+    }
+
+    /// Validate value against media spec's inherent validation rules (first pass)
+    fn validate_media_spec_rules(
+        &self,
+        cap: &Cap,
+        arg_def: &CapArg,
+        resolved: &ResolvedMediaSpec,
+        validation: &ArgumentValidation,
+        value: &Value,
+    ) -> Result<(), ValidationError> {
+        let cap_urn = cap.urn_string();
+
+        // Numeric validation
+        if let Some(min) = validation.min {
+            if let Some(num) = value.as_f64() {
+                if num < min {
+                    return Err(ValidationError::MediaSpecValidationFailed {
+                        cap_urn,
+                        argument_name: arg_def.media_urn.clone(),
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("minimum value {}", min),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        if let Some(max) = validation.max {
+            if let Some(num) = value.as_f64() {
+                if num > max {
+                    return Err(ValidationError::MediaSpecValidationFailed {
+                        cap_urn,
+                        argument_name: arg_def.media_urn.clone(),
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("maximum value {}", max),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        // Length validation (for strings and arrays)
+        if let Some(min_length) = validation.min_length {
+            match (value.as_str(), value.as_array()) {
+                (Some(s), _) => {
+                    if s.len() < min_length {
+                        return Err(ValidationError::MediaSpecValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.media_urn.clone(),
+                            media_urn: resolved.media_urn.clone(),
+                            validation_rule: format!("minimum length {}", min_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                (_, Some(arr)) => {
+                    if arr.len() < min_length {
+                        return Err(ValidationError::MediaSpecValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.media_urn.clone(),
+                            media_urn: resolved.media_urn.clone(),
+                            validation_rule: format!("minimum array length {}", min_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                _ => {}
+            }
+        }
+
+        if let Some(max_length) = validation.max_length {
+            match (value.as_str(), value.as_array()) {
+                (Some(s), _) => {
+                    if s.len() > max_length {
+                        return Err(ValidationError::MediaSpecValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.media_urn.clone(),
+                            media_urn: resolved.media_urn.clone(),
+                            validation_rule: format!("maximum length {}", max_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                (_, Some(arr)) => {
+                    if arr.len() > max_length {
+                        return Err(ValidationError::MediaSpecValidationFailed {
+                            cap_urn,
+                            argument_name: arg_def.media_urn.clone(),
+                            media_urn: resolved.media_urn.clone(),
+                            validation_rule: format!("maximum array length {}", max_length),
+                            actual_value: value.clone(),
+                        });
+                    }
+                },
+                _ => {}
+            }
+        }
+
+        // Pattern validation
+        if let Some(pattern) = &validation.pattern {
+            if let Some(s) = value.as_str() {
+                let regex = regex::Regex::new(pattern)
+                    .map_err(|e| ValidationError::InvalidCapSchema {
+                        cap_urn: cap_urn.clone(),
+                        issue: format!("Invalid regex pattern '{}' in media spec '{}': {}", pattern, resolved.media_urn, e),
+                    })?;
+                if !regex.is_match(s) {
+                    return Err(ValidationError::MediaSpecValidationFailed {
+                        cap_urn,
+                        argument_name: arg_def.media_urn.clone(),
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("pattern '{}'", pattern),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        // Allowed values validation
+        if let Some(allowed_values) = &validation.allowed_values {
+            if let Some(s) = value.as_str() {
+                if !allowed_values.contains(&s.to_string()) {
+                    return Err(ValidationError::MediaSpecValidationFailed {
+                        cap_urn,
+                        argument_name: arg_def.media_urn.clone(),
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("allowed values: {:?}", allowed_values),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
 
         Ok(())
     }
@@ -454,15 +618,18 @@ impl InputValidator {
         // Pattern validation
         if let Some(pattern) = &validation.pattern {
             if let Some(s) = value.as_str() {
-                if let Ok(regex) = regex::Regex::new(pattern) {
-                    if !regex.is_match(s) {
-                        return Err(ValidationError::ArgumentValidationFailed {
-                            cap_urn,
-                            argument_name: arg_def.media_urn.clone(),
-                            validation_rule: format!("pattern '{}'", pattern),
-                            actual_value: value.clone(),
-                        });
-                    }
+                let regex = regex::Regex::new(pattern)
+                    .map_err(|e| ValidationError::InvalidCapSchema {
+                        cap_urn: cap_urn.clone(),
+                        issue: format!("Invalid regex pattern '{}' in argument '{}': {}", pattern, arg_def.media_urn, e),
+                    })?;
+                if !regex.is_match(s) {
+                    return Err(ValidationError::ArgumentValidationFailed {
+                        cap_urn,
+                        argument_name: arg_def.media_urn.clone(),
+                        validation_rule: format!("pattern '{}'", pattern),
+                        actual_value: value.clone(),
+                    });
                 }
             }
         }
@@ -511,9 +678,15 @@ impl OutputValidator {
             })?;
 
         // Type validation via resolved spec (includes local schema validation if present)
-        self.validate_output_type(cap, output_def, output).await?;
+        // Returns the resolved media spec so we can access its validation rules
+        let resolved = self.validate_output_type(cap, output_def, output).await?;
 
-        // Validation rules (min/max, length, pattern, allowed_values)
+        // FIRST PASS: Media spec validation rules (inherent to the semantic type)
+        if let Some(ref validation) = resolved.validation {
+            self.validate_output_media_spec_rules(cap, &resolved, validation, output)?;
+        }
+
+        // SECOND PASS: Output-level validation rules (context-specific)
         self.validate_output_rules(cap, output_def, output)?;
 
         Ok(())
@@ -524,7 +697,7 @@ impl OutputValidator {
         cap: &Cap,
         output_def: &CapOutput,
         value: &Value,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<ResolvedMediaSpec, ValidationError> {
         let cap_urn = cap.urn_string();
         let media_specs = cap.get_media_specs();
 
@@ -546,7 +719,7 @@ impl OutputValidator {
                     schema_errors: vec!["Expected base64-encoded string for binary type".to_string()],
                 });
             }
-            return Ok(());
+            return Ok(resolved);
         }
 
         // First, try to use local schema from resolved spec
@@ -560,7 +733,7 @@ impl OutputValidator {
                     schema_errors: errors,
                 });
             }
-            return Ok(());
+            return Ok(resolved);
         }
 
         // Otherwise, validate against profile schema (via ProfileSchemaRegistry)
@@ -575,6 +748,106 @@ impl OutputValidator {
             }
         }
         // No profile or schema means any JSON value is valid for that media type
+
+        Ok(resolved)
+    }
+
+    /// Validate output value against media spec's inherent validation rules (first pass)
+    fn validate_output_media_spec_rules(
+        &self,
+        cap: &Cap,
+        resolved: &ResolvedMediaSpec,
+        validation: &ArgumentValidation,
+        value: &Value,
+    ) -> Result<(), ValidationError> {
+        let cap_urn = cap.urn_string();
+
+        // Numeric validation
+        if let Some(min) = validation.min {
+            if let Some(num) = value.as_f64() {
+                if num < min {
+                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                        cap_urn,
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("minimum value {}", min),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        if let Some(max) = validation.max {
+            if let Some(num) = value.as_f64() {
+                if num > max {
+                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                        cap_urn,
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("maximum value {}", max),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        // Length validation
+        if let Some(min_length) = validation.min_length {
+            if let Some(s) = value.as_str() {
+                if s.len() < min_length {
+                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                        cap_urn,
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("minimum length {}", min_length),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        if let Some(max_length) = validation.max_length {
+            if let Some(s) = value.as_str() {
+                if s.len() > max_length {
+                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                        cap_urn,
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("maximum length {}", max_length),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        // Pattern validation
+        if let Some(pattern) = &validation.pattern {
+            if let Some(s) = value.as_str() {
+                let regex = regex::Regex::new(pattern)
+                    .map_err(|e| ValidationError::InvalidCapSchema {
+                        cap_urn: cap_urn.clone(),
+                        issue: format!("Invalid regex pattern '{}' in media spec '{}': {}", pattern, resolved.media_urn, e),
+                    })?;
+                if !regex.is_match(s) {
+                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                        cap_urn,
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("pattern '{}'", pattern),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
+
+        // Allowed values validation
+        if let Some(allowed_values) = &validation.allowed_values {
+            if let Some(s) = value.as_str() {
+                if !allowed_values.contains(&s.to_string()) {
+                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                        cap_urn,
+                        media_urn: resolved.media_urn.clone(),
+                        validation_rule: format!("allowed values: {:?}", allowed_values),
+                        actual_value: value.clone(),
+                    });
+                }
+            }
+        }
 
         Ok(())
     }
@@ -659,14 +932,17 @@ impl OutputValidator {
 
         if let Some(pattern) = &validation.pattern {
             if let Some(s) = value.as_str() {
-                if let Ok(regex) = regex::Regex::new(pattern) {
-                    if !regex.is_match(s) {
-                        return Err(ValidationError::OutputValidationFailed {
-                            cap_urn,
-                            validation_rule: format!("pattern '{}'", pattern),
-                            actual_value: value.clone(),
-                        });
-                    }
+                let regex = regex::Regex::new(pattern)
+                    .map_err(|e| ValidationError::InvalidCapSchema {
+                        cap_urn: cap_urn.clone(),
+                        issue: format!("Invalid regex pattern '{}' in output: {}", pattern, e),
+                    })?;
+                if !regex.is_match(s) {
+                    return Err(ValidationError::OutputValidationFailed {
+                        cap_urn,
+                        validation_rule: format!("pattern '{}'", pattern),
+                        actual_value: value.clone(),
+                    });
                 }
             }
         }
@@ -994,7 +1270,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
+        format!("cap:in=media:void;out=media:object;{}", tags)
     }
 
     #[tokio::test]

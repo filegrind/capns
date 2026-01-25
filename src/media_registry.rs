@@ -51,6 +51,9 @@ pub struct StoredMediaSpec {
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Optional validation rules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<crate::ArgumentValidation>,
 }
 
 impl StoredMediaSpec {
@@ -62,6 +65,7 @@ impl StoredMediaSpec {
             schema: self.schema.clone(),
             title: Some(self.title.clone()),
             description: self.description.clone(),
+            validation: self.validation.clone(),
         })
     }
 }
@@ -497,6 +501,7 @@ mod tests {
             profile_uri: Some("https://capns.org/schema/pdf".to_string()),
             schema: None,
             description: Some("PDF document data".to_string()),
+            validation: None,
         };
 
         let def = spec.to_media_spec_def();
@@ -505,6 +510,7 @@ mod tests {
                 assert_eq!(obj.media_type, "application/pdf");
                 assert_eq!(obj.title, Some("PDF Document".to_string()));
                 assert_eq!(obj.description, Some("PDF document data".to_string()));
+                assert_eq!(obj.validation, None);
             }
             _ => panic!("Expected Object variant"),
         }

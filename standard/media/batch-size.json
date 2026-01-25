@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Batch Size",
   "profile_uri": "https://capns.org/schema/batch_size",
-  "description": "Batch Size numeric value"
+  "description": "Batch Size numeric value",
+  "validation": {
+    "min": 1
+  }
 }

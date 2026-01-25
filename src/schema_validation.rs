@@ -219,7 +219,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
+        format!("cap:in=media:void;out=media:object;{}", tags)
     }
 
     #[test]
@@ -246,6 +246,7 @@ mod tests {
                 schema: Some(schema),
                 title: None,
                 description: None,
+                validation: None,
             }),
         );
 
@@ -282,6 +283,7 @@ mod tests {
                 schema: Some(schema),
                 title: None,
                 description: None,
+                validation: None,
             }),
         );
 
@@ -319,6 +321,7 @@ mod tests {
                 schema: Some(schema),
                 title: None,
                 description: None,
+                validation: None,
             }),
         );
 

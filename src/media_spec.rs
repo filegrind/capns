@@ -174,6 +174,9 @@ pub struct MediaSpecDefObject {
     /// Optional description of the media type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Optional validation rules for this media type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<crate::ArgumentValidation>,
 }
 
 impl MediaSpecDef {
@@ -190,6 +193,7 @@ impl MediaSpecDef {
             schema: None,
             title: None,
             description: None,
+            validation: None,
         })
     }
 
@@ -205,6 +209,7 @@ impl MediaSpecDef {
             schema: Some(schema),
             title: None,
             description: None,
+            validation: None,
         })
     }
 
@@ -220,6 +225,7 @@ impl MediaSpecDef {
             schema: None,
             title: Some(title.into()),
             description: None,
+            validation: None,
         })
     }
 
@@ -237,6 +243,23 @@ impl MediaSpecDef {
             schema,
             title,
             description,
+            validation: None,
+        })
+    }
+
+    /// Create a rich object form definition with validation
+    pub fn object_with_validation(
+        media_type: impl Into<String>,
+        profile_uri: impl Into<String>,
+        validation: crate::ArgumentValidation,
+    ) -> Self {
+        MediaSpecDef::Object(MediaSpecDefObject {
+            media_type: media_type.into(),
+            profile_uri: profile_uri.into(),
+            schema: None,
+            title: None,
+            description: None,
+            validation: Some(validation),
         })
     }
 }
@@ -263,6 +286,8 @@ pub struct ResolvedMediaSpec {
     pub title: Option<String>,
     /// Optional description of the media type
     pub description: Option<String>,
+    /// Optional validation rules from the media spec definition
+    pub validation: Option<crate::ArgumentValidation>,
 }
 
 impl ResolvedMediaSpec {
@@ -372,6 +397,7 @@ pub async fn resolve_media_urn_with_registry(
                     schema: stored_spec.schema,
                     title: Some(stored_spec.title),
                     description: stored_spec.description,
+                    validation: stored_spec.validation,
                 });
             }
             Err(_) => {
@@ -396,6 +422,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
                 schema: None,
                 title: None,
                 description: None,
+                validation: None, // String form has no validation
             })
         }
         MediaSpecDef::Object(obj) => Ok(ResolvedMediaSpec {
@@ -405,6 +432,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
             schema: obj.schema.clone(),
             title: obj.title.clone(),
             description: obj.description.clone(),
+            validation: obj.validation.clone(), // Propagate validation
         }),
     }
 }
@@ -459,9 +487,10 @@ fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
         media_urn: media_urn.to_string(),
         media_type: media_type.to_string(),
         profile_uri: profile_uri.map(String::from),
-        schema: None, // Built-ins don't have local schemas
-        title: None,  // Will be populated from registry
+        schema: None,     // Built-ins don't have local schemas
+        title: None,      // Will be populated from registry
         description: None,
+        validation: None, // Built-ins don't have validation rules
     })
 }
 
@@ -842,6 +871,7 @@ mod tests {
                 schema: Some(schema.clone()),
                 title: None,
                 description: None,
+                validation: None,
             }),
         );
 
@@ -913,6 +943,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            validation: None,
         });
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"media_type\":\"application/json\""));
@@ -922,6 +953,8 @@ mod tests {
         // None title/description are also skipped
         assert!(!json.contains("\"title\":"));
         assert!(!json.contains("\"description\":"));
+        // None validation is also skipped
+        assert!(!json.contains("\"validation\":"));
     }
 
     #[test]
@@ -951,6 +984,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            validation: None,
         };
         assert!(resolved.is_binary());
         assert!(!resolved.is_json());
@@ -965,6 +999,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            validation: None,
         };
         assert!(resolved.is_json());
         assert!(!resolved.is_binary());
@@ -979,6 +1014,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            validation: None,
         };
         assert!(resolved.is_text());
         assert!(!resolved.is_binary());

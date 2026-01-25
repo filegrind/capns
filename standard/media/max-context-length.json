@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Max Context Length",
   "profile_uri": "https://capns.org/schema/max_context_length",
-  "description": "Max Context Length numeric value"
+  "description": "Max Context Length numeric value",
+  "validation": {
+    "min": 1
+  }
 }

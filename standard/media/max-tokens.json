@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Max Tokens",
   "profile_uri": "https://capns.org/schema/max_tokens",
-  "description": "Max Tokens numeric value"
+  "description": "Max Tokens numeric value",
+  "validation": {
+    "min": 1
+  }
 }

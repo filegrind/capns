@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Confidence Threshold",
   "profile_uri": "https://capns.org/schema/confidence_threshold",
-  "description": "Confidence Threshold numeric value"
+  "description": "Confidence Threshold numeric value",
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
 }

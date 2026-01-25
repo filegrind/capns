@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Creativity Level",
   "profile_uri": "https://capns.org/schema/creativity_level",
-  "description": "Creativity Level numeric value"
+  "description": "Creativity Level numeric value",
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
 }

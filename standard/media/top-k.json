@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Top K",
   "profile_uri": "https://capns.org/schema/top_k",
-  "description": "Top K numeric value"
+  "description": "Top K numeric value",
+  "validation": {
+    "min": 1
+  }
 }

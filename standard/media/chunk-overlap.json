@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Chunk Overlap",
   "profile_uri": "https://capns.org/schema/chunk_overlap",
-  "description": "Chunk Overlap numeric value"
+  "description": "Chunk Overlap numeric value",
+  "validation": {
+    "min": 0
+  }
 }

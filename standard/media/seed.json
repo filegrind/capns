@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Seed",
   "profile_uri": "https://capns.org/schema/seed",
-  "description": "Seed numeric value"
+  "description": "Seed numeric value",
+  "validation": {
+    "min": 0
+  }
 }

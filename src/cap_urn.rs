@@ -121,12 +121,14 @@ impl CapUrn {
     /// Values are quoted only when necessary (smart quoting via TaggedUrn)
     pub fn to_string(&self) -> String {
         // Build using TaggedUrnBuilder
+        // in_urn and out_urn are guaranteed non-empty by constructor
         let mut builder = TaggedUrnBuilder::new(Self::PREFIX)
-            .tag("in", &self.in_urn)
-            .tag("out", &self.out_urn);
+            .tag("in", &self.in_urn).expect("in_urn guaranteed non-empty")
+            .tag("out", &self.out_urn).expect("out_urn guaranteed non-empty");
 
         for (k, v) in &self.tags {
-            builder = builder.tag(k, v);
+            // Tags are validated at construction time
+            builder = builder.tag(k, v).expect("tag values validated at construction");
         }
 
         // Use build_allow_empty which returns TaggedUrn directly
@@ -180,15 +182,19 @@ impl CapUrn {
     /// Add or update a tag
     /// Key is normalized to lowercase; value is preserved as-is
     /// Note: Cannot modify 'in' or 'out' tags - use with_in_spec/with_out_spec
-    pub fn with_tag(mut self, key: String, value: String) -> Self {
+    /// Returns error if value is empty (use "*" for wildcard)
+    pub fn with_tag(mut self, key: String, value: String) -> Result<Self, CapUrnError> {
+        if value.is_empty() {
+            return Err(CapUrnError::EmptyValue(key));
+        }
         let key_lower = key.to_lowercase();
         if key_lower == "in" || key_lower == "out" {
             // Silently ignore attempts to set in/out via with_tag
             // Use with_in_spec/with_out_spec instead
-            return self;
+            return Ok(self);
         }
         self.tags.insert(key_lower, value);
-        self
+        Ok(self)
     }
 
     /// Create a new cap URN with a different input spec
@@ -445,6 +451,8 @@ pub enum CapUrnError {
     MissingInSpec,
     /// Error code 11: Missing required 'out' tag - caps must declare their output type
     MissingOutSpec,
+    /// Error code 12: Empty value provided (use "*" for wildcard)
+    EmptyValue(String),
 }
 
 impl CapUrnError {
@@ -507,6 +515,13 @@ impl fmt::Display for CapUrnError {
                 write!(
                     f,
                     "Cap URN is missing required 'out' tag - caps must declare their output type"
+                )
+            }
+            CapUrnError::EmptyValue(key) => {
+                write!(
+                    f,
+                    "Empty value for key '{}' (use '*' for wildcard)",
+                    key
                 )
             }
         }
@@ -1079,7 +1094,7 @@ mod tests {
 
         // Different direction specs are incompatible
         let cap5 = CapUrn::from_string(&format!(
-            "cap:in=\"media:binary\";out=\"{}\";op=generate",
+            "cap:in=media:binary;out=\"{}\";op=generate",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1105,7 +1120,7 @@ mod tests {
     fn test_merge_and_subset() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
         let cap2 = CapUrn::from_string(&format!(
-            "cap:in=\"media:binary\";out=\"media:integer\";ext=pdf;output=binary"
+            "cap:in=media:binary;out=media:integer;ext=pdf;output=binary"
         ))
         .unwrap();
 
@@ -1234,8 +1249,15 @@ mod tests {
     #[test]
     fn test_with_tag_preserves_value() {
         let cap = CapUrn::new(MEDIA_VOID.to_string(), MEDIA_OBJECT.to_string(), BTreeMap::new())
-            .with_tag("key".to_string(), "ValueWithCase".to_string());
+            .with_tag("key".to_string(), "ValueWithCase".to_string()).unwrap();
         assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
+    }
+
+    #[test]
+    fn test_with_tag_rejects_empty_value() {
+        let cap = CapUrn::new(MEDIA_VOID.to_string(), MEDIA_OBJECT.to_string(), BTreeMap::new());
+        let result = cap.with_tag("key".to_string(), "".to_string());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1382,7 +1404,7 @@ mod tests {
         // Test 8: Wildcard direction matches anything
         let cap = CapUrn::from_string("cap:in=*;out=*").unwrap();
         let request = CapUrn::from_string(&format!(
-            "cap:ext=pdf;in=\"media:string\";op=generate;out=\"{}\"",
+            "cap:ext=pdf;in=media:string;op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1407,12 +1429,12 @@ mod tests {
     fn test_matching_semantics_test10_direction_mismatch() {
         // Test 10: Direction mismatch prevents matching
         let cap = CapUrn::from_string(&format!(
-            "cap:in=\"media:string\";op=generate;out=\"{}\"",
+            "cap:in=media:string;op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();
         let request = CapUrn::from_string(&format!(
-            "cap:in=\"media:binary\";op=generate;out=\"{}\"",
+            "cap:in=media:binary;op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();
