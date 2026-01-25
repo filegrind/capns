@@ -203,6 +203,9 @@ pub struct MediaSpecDefObject {
     /// Optional validation rules for this media type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validation: Option<crate::ArgumentValidation>,
+    /// Optional metadata (arbitrary key-value pairs for display/categorization)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl MediaSpecDef {
@@ -220,6 +223,7 @@ impl MediaSpecDef {
             title: None,
             description: None,
             validation: None,
+            metadata: None,
         })
     }
 
@@ -236,6 +240,7 @@ impl MediaSpecDef {
             title: None,
             description: None,
             validation: None,
+            metadata: None,
         })
     }
 
@@ -252,6 +257,7 @@ impl MediaSpecDef {
             title: Some(title.into()),
             description: None,
             validation: None,
+            metadata: None,
         })
     }
 
@@ -270,6 +276,7 @@ impl MediaSpecDef {
             title,
             description,
             validation: None,
+            metadata: None,
         })
     }
 
@@ -286,6 +293,7 @@ impl MediaSpecDef {
             title: None,
             description: None,
             validation: Some(validation),
+            metadata: None,
         })
     }
 }
