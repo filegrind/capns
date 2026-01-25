@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Image Path",
   "profile_uri": "https://capns.org/schema/image_path",
-  "description": "Image Path file system path"
+  "description": "Image Path file system path",
+  "validation": {
+    "min_length": 1,
+    "pattern": "^[^\\0]+$"
+  }
 }

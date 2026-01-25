@@ -1,0 +1,16 @@
+{
+  "urn": "media:test-mock-external-services;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Mock external services during testing",
+  "profile_uri": "https://capns.org/schema/test-mock-external-services",
+  "description": "Mock external services during testing",
+  "metadata": {
+    "category": "test",
+    "subcategory": "test_behavior",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": []
+  }
+}

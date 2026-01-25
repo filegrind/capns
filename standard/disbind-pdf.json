@@ -142,11 +142,7 @@
           "position": 0
         }
       ],
-      "arg_description": "Path to the document file to process",
-      "validation": {
-        "pattern": "^[^\\0]+$",
-        "min_length": 1
-      }
+      "arg_description": "Path to the document file to process"
     },
     {
       "media_urn": "media:output-path;textable;scalar",
@@ -156,10 +152,7 @@
           "cli_flag": "--output"
         }
       ],
-      "arg_description": "Write output to specified file instead of stdout",
-      "validation": {
-        "pattern": "^[^\\0]+$"
-      }
+      "arg_description": "Write output to specified file instead of stdout"
     },
     {
       "media_urn": "media:index-range;textable;scalar",
@@ -169,10 +162,7 @@
           "cli_flag": "--index-range"
         }
       ],
-      "arg_description": "Index Range to extract (e.g., '1-5' or '10-')",
-      "validation": {
-        "pattern": "^\\d+(-\\d*)?$"
-      }
+      "arg_description": "Index Range to extract (e.g., '1-5' or '10-')"
     }
   ],
   "output": {

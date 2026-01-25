@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Audio Path",
   "profile_uri": "https://capns.org/schema/audio_path",
-  "description": "Audio Path file system path"
+  "description": "Audio Path file system path",
+  "validation": {
+    "min_length": 1,
+    "pattern": "^[^\\0]+$"
+  }
 }

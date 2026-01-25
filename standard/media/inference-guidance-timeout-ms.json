@@ -1,0 +1,24 @@
+{
+  "urn": "media:inference-guidance-timeout-ms;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Guidance operation timeout in milliseconds",
+  "profile_uri": "https://capns.org/schema/inference-guidance-timeout-ms",
+  "description": "Guidance operation timeout in milliseconds",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_advanced",
+    "display_index": 17,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 120000,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1000,
+    "max": 300000
+  }
+}

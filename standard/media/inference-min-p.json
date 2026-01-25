@@ -1,0 +1,25 @@
+{
+  "urn": "media:inference-min-p;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Minimum probability sampling parameter",
+  "profile_uri": "https://capns.org/schema/inference-min-p",
+  "description": "Minimum probability sampling parameter",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 11,
+    "ui_type": "SETTING_UI_TYPE_SLIDER",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 0.05,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
+}

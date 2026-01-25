@@ -1,0 +1,22 @@
+{
+  "urn": "media:fs-max-batch-size;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Maximum batch size for processing",
+  "profile_uri": "https://capns.org/schema/fs-max-batch-size",
+  "description": "Maximum batch size for processing",
+  "metadata": {
+    "category": "fs",
+    "subcategory": "fs_limits",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 100,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1,
+    "max": 1000
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "urn": "media:mem-stats-retention-hours;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Memory statistics retention in hours",
+  "profile_uri": "https://capns.org/schema/mem-stats-retention-hours",
+  "description": "Memory statistics retention in hours",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_monitoring",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 24,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1,
+    "max": 168
+  }
+}

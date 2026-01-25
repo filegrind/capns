@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-feature-flags;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Feature flags endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-feature-flags",
+  "description": "Feature flags endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/feature_flags",
+    "overridable_by": []
+  }
+}

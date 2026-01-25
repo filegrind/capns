@@ -1,0 +1,36 @@
+{
+  "urn": "media:interface-preferred-language;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Preferred interface language",
+  "profile_uri": "https://capns.org/schema/interface-preferred-language",
+  "description": "Preferred interface language",
+  "metadata": {
+    "category": "interface",
+    "subcategory": "interface_appearance",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "English",
+    "overridable_by": [
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "English",
+      "Spanish",
+      "French",
+      "German",
+      "Italian",
+      "Portuguese",
+      "Dutch",
+      "Russian",
+      "ChineseSimplified",
+      "ChineseTraditional",
+      "Japanese",
+      "Korean",
+      "Arabic"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "urn": "media:mem-emergency-model-unload-enabled;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable emergency model unloading",
+  "profile_uri": "https://capns.org/schema/mem-emergency-model-unload-enabled",
+  "description": "Enable emergency model unloading",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_management",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

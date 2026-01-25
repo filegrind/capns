@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-version-check;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Version check endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-version-check",
+  "description": "Version check endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/version_check",
+    "overridable_by": []
+  }
+}

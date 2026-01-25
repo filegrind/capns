@@ -1,0 +1,18 @@
+{
+  "urn": "media:mon-log-file-suffix;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Suffix for log file names",
+  "profile_uri": "https://capns.org/schema/mon-log-file-suffix",
+  "description": "Suffix for log file names",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_output",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_FILE_PICKER",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": ".log",
+    "overridable_by": [
+      "user"
+    ]
+  }
+}

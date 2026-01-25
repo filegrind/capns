@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-user-feedback;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "User feedback endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-user-feedback",
+  "description": "User feedback endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 7,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/user_feedback",
+    "overridable_by": []
+  }
+}

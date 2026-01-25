@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Model Spec",
   "profile_uri": "https://capns.org/schema/model_spec",
-  "description": "Model Spec value"
+  "description": "Model Spec value",
+  "validation": {
+    "min_length": 1
+  }
 }

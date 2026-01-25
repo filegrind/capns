@@ -1,0 +1,23 @@
+{
+  "urn": "media:mem-model-cleanup-interval-seconds;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Model cleanup interval in seconds",
+  "profile_uri": "https://capns.org/schema/mem-model-cleanup-interval-seconds",
+  "description": "Model cleanup interval in seconds",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_management",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 300,
+    "overridable_by": [
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 10,
+    "max": 3600
+  }
+}

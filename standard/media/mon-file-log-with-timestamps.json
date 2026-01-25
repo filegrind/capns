@@ -1,0 +1,20 @@
+{
+  "urn": "media:mon-file-log-with-timestamps;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Include timestamps in file logs",
+  "profile_uri": "https://capns.org/schema/mon-file-log-with-timestamps",
+  "description": "Include timestamps in file logs",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_output",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

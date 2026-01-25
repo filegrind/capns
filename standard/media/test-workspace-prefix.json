@@ -1,0 +1,16 @@
+{
+  "urn": "media:test-workspace-prefix;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Prefix for test workspace directories",
+  "profile_uri": "https://capns.org/schema/test-workspace-prefix",
+  "description": "Prefix for test workspace directories",
+  "metadata": {
+    "category": "test",
+    "subcategory": "test_configuration",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_TEXT_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "test-",
+    "overridable_by": []
+  }
+}

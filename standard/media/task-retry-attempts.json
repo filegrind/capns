@@ -1,0 +1,22 @@
+{
+  "urn": "media:task-retry-attempts;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Number of retry attempts",
+  "profile_uri": "https://capns.org/schema/task-retry-attempts",
+  "description": "Number of retry attempts",
+  "metadata": {
+    "category": "task",
+    "subcategory": "task_retry",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 3,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 10
+  }
+}

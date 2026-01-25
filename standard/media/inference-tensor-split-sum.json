@@ -1,0 +1,24 @@
+{
+  "urn": "media:inference-tensor-split-sum;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Tensor split ratio sum validation",
+  "profile_uri": "https://capns.org/schema/inference-tensor-split-sum",
+  "description": "Tensor split ratio sum validation",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_gpu_hardware",
+    "display_index": 11,
+    "ui_type": "SETTING_UI_TYPE_SLIDER",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 1,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "urn": "media:mem-throttle-escalation-delay-ms;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Throttle escalation delay in milliseconds",
+  "profile_uri": "https://capns.org/schema/mem-throttle-escalation-delay-ms",
+  "description": "Throttle escalation delay in milliseconds",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_thresholds",
+    "display_index": 11,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 10000,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1000,
+    "max": 60000
+  }
+}

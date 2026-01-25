@@ -1,0 +1,24 @@
+{
+  "urn": "media:inference-guidance-max-grammar-size;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Maximum grammar size for guidance",
+  "profile_uri": "https://capns.org/schema/inference-guidance-max-grammar-size",
+  "description": "Maximum grammar size for guidance",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_advanced",
+    "display_index": 10,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 500000,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 10000,
+    "max": 10000000
+  }
+}

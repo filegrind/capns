@@ -1,0 +1,16 @@
+{
+  "urn": "media:test-generate-test-reports;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Generate test reports",
+  "profile_uri": "https://capns.org/schema/test-generate-test-reports",
+  "description": "Generate test reports",
+  "metadata": {
+    "category": "test",
+    "subcategory": "test_configuration",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "urn": "media:inference-check-tensors;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable tensor validation during loading",
+  "profile_uri": "https://capns.org/schema/inference-check-tensors",
+  "description": "Enable tensor validation during loading",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_model_loading",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "cap",
+      "model"
+    ]
+  }
+}

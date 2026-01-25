@@ -1,0 +1,20 @@
+{
+  "urn": "media:mem-track-component-allocations;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Track component-level allocations",
+  "profile_uri": "https://capns.org/schema/mem-track-component-allocations",
+  "description": "Track component-level allocations",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_monitoring",
+    "display_index": 7,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

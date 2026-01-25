@@ -1,0 +1,24 @@
+{
+  "urn": "media:search-embedding-chunk-overlap;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Overlap between text chunks",
+  "profile_uri": "https://capns.org/schema/search-embedding-chunk-overlap",
+  "description": "Overlap between text chunks",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_embedding",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 50,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 500
+  }
+}

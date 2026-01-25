@@ -1,0 +1,20 @@
+{
+  "urn": "media:db-path;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Database file path or :memory: for in-memory database",
+  "profile_uri": "https://capns.org/schema/db-path",
+  "description": "Database file path or :memory: for in-memory database",
+  "validation": {
+    "min_length": 1,
+    "pattern": "^[^\\0]+$"
+  },
+  "metadata": {
+    "category": "db",
+    "subcategory": "db_connection",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_FILE_PICKER",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "data/filegrind.db",
+    "overridable_by": []
+  }
+}

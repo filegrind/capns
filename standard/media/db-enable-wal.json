@@ -1,0 +1,16 @@
+{
+  "urn": "media:db-enable-wal;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable Write-Ahead Logging mode",
+  "profile_uri": "https://capns.org/schema/db-enable-wal",
+  "description": "Enable Write-Ahead Logging mode",
+  "metadata": {
+    "category": "db",
+    "subcategory": "db_features",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": []
+  }
+}

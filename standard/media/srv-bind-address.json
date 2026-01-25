@@ -1,0 +1,16 @@
+{
+  "urn": "media:srv-bind-address;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "IP address to bind the server to",
+  "profile_uri": "https://capns.org/schema/srv-bind-address",
+  "description": "IP address to bind the server to",
+  "metadata": {
+    "category": "srv",
+    "subcategory": "srv_network",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_TEXT_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "127.0.0.1",
+    "overridable_by": []
+  }
+}

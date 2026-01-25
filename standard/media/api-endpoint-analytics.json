@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-analytics;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Analytics endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-analytics",
+  "description": "Analytics endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/analytics",
+    "overridable_by": []
+  }
+}

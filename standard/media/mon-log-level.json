@@ -1,0 +1,30 @@
+{
+  "urn": "media:mon-log-level;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Logging level",
+  "profile_uri": "https://capns.org/schema/mon-log-level",
+  "description": "Logging level",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_logging",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "info",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "trace",
+      "debug",
+      "info",
+      "warn",
+      "error"
+    ]
+  }
+}

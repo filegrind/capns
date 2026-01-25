@@ -54,6 +54,9 @@ pub struct StoredMediaSpec {
     /// Optional validation rules
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validation: Option<crate::ArgumentValidation>,
+    /// Optional metadata (arbitrary key-value pairs for display/categorization)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl StoredMediaSpec {
@@ -66,6 +69,7 @@ impl StoredMediaSpec {
             title: Some(self.title.clone()),
             description: self.description.clone(),
             validation: self.validation.clone(),
+            metadata: self.metadata.clone(),
         })
     }
 }

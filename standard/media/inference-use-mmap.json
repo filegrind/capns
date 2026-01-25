@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-use-mmap;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Use memory mapping for model loading",
+  "profile_uri": "https://capns.org/schema/inference-use-mmap",
+  "description": "Use memory mapping for model loading",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_model_loading",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

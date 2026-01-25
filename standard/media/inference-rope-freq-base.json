@@ -1,0 +1,24 @@
+{
+  "urn": "media:inference-rope-freq-base;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "RoPE frequency base",
+  "profile_uri": "https://capns.org/schema/inference-rope-freq-base",
+  "description": "RoPE frequency base",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_advanced",
+    "display_index": 21,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 10000,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1,
+    "max": 1000000
+  }
+}

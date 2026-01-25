@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-crash-report;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Crash report endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-crash-report",
+  "description": "Crash report endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 4,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/crash_report",
+    "overridable_by": []
+  }
+}

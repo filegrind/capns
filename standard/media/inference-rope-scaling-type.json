@@ -1,0 +1,27 @@
+{
+  "urn": "media:inference-rope-scaling-type;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "RoPE scaling method",
+  "profile_uri": "https://capns.org/schema/inference-rope-scaling-type",
+  "description": "RoPE scaling method",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_advanced",
+    "display_index": 23,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "none",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "none",
+      "linear",
+      "yarn"
+    ]
+  }
+}

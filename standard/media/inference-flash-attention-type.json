@@ -1,0 +1,29 @@
+{
+  "urn": "media:inference-flash-attention-type;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Flash attention type",
+  "profile_uri": "https://capns.org/schema/inference-flash-attention-type",
+  "description": "Flash attention type",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_gpu_hardware",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "auto",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "auto",
+      "f16",
+      "f32",
+      "enable",
+      "disable"
+    ]
+  }
+}

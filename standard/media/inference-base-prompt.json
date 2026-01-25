@@ -1,0 +1,21 @@
+{
+  "urn": "media:inference-base-prompt;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Base prompt for the model",
+  "profile_uri": "https://capns.org/schema/inference-base-prompt",
+  "description": "Base prompt for the model",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_TEXT_AREA",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "You are FileGrind. A digital library assistant. Use tools with syntax: <tool> tool_name args </tool>. Be concise and direct. If you don't know say 'I don't know'.",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  }
+}

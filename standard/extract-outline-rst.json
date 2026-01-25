@@ -22,11 +22,7 @@
           "position": 0
         }
       ],
-      "arg_description": "Path to the RST file to process",
-      "validation": {
-        "pattern": "^[^\\0]+$",
-        "min_length": 1
-      }
+      "arg_description": "Path to the RST file to process"
     },
     {
       "media_urn": "media:max-depth;textable;numeric;scalar",
@@ -38,7 +34,6 @@
       ],
       "arg_description": "Maximum outline depth to extract (1-10)",
       "validation": {
-        "min": 1,
         "max": 10
       }
     },
@@ -61,10 +56,7 @@
           "cli_flag": "--output"
         }
       ],
-      "arg_description": "Write output to specified file instead of stdout",
-      "validation": {
-        "pattern": "^[^\\0]+$"
-      }
+      "arg_description": "Write output to specified file instead of stdout"
     }
   ],
   "output": {

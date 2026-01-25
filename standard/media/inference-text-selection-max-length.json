@@ -1,0 +1,24 @@
+{
+  "urn": "media:inference-text-selection-max-length;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Maximum length for text selection",
+  "profile_uri": "https://capns.org/schema/inference-text-selection-max-length",
+  "description": "Maximum length for text selection",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 19,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 4096,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1000,
+    "max": 16384
+  }
+}

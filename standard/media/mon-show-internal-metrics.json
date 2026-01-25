@@ -1,0 +1,21 @@
+{
+  "urn": "media:mon-show-internal-metrics;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Show internal performance and resource metrics",
+  "profile_uri": "https://capns.org/schema/mon-show-internal-metrics",
+  "description": "Show internal performance and resource metrics",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_logging",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  }
+}

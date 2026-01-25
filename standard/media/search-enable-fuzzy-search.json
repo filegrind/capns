@@ -1,0 +1,21 @@
+{
+  "urn": "media:search-enable-fuzzy-search;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable fuzzy search functionality",
+  "profile_uri": "https://capns.org/schema/search-enable-fuzzy-search",
+  "description": "Enable fuzzy search functionality",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_configuration",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_SWITCH",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  }
+}

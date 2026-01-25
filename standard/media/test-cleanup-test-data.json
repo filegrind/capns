@@ -1,0 +1,16 @@
+{
+  "urn": "media:test-cleanup-test-data;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Clean up test data after tests",
+  "profile_uri": "https://capns.org/schema/test-cleanup-test-data",
+  "description": "Clean up test data after tests",
+  "metadata": {
+    "category": "test",
+    "subcategory": "test_behavior",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": []
+  }
+}

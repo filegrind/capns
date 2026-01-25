@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Source Media Urn",
   "profile_uri": "https://capns.org/schema/source_media_urn",
-  "description": "Source Media Urn value"
+  "description": "Source Media Urn value",
+  "validation": {
+    "pattern": "^media:.+",
+    "min_length": 7
+  }
 }

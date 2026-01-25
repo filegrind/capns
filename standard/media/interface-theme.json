@@ -1,0 +1,26 @@
+{
+  "urn": "media:interface-theme;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Application theme preference",
+  "profile_uri": "https://capns.org/schema/interface-theme",
+  "description": "Application theme preference",
+  "metadata": {
+    "category": "interface",
+    "subcategory": "interface_appearance",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "system",
+    "overridable_by": [
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "system",
+      "light",
+      "dark"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "urn": "media:interface-auto-check-updates;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Automatically check for application updates",
+  "profile_uri": "https://capns.org/schema/interface-auto-check-updates",
+  "description": "Automatically check for application updates",
+  "metadata": {
+    "category": "interface",
+    "subcategory": "interface_behavior",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "model",
+      "user",
+      "end_user"
+    ]
+  }
+}

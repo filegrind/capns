@@ -1,0 +1,28 @@
+{
+  "urn": "media:inference-kv-cache-type;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "KV cache type",
+  "profile_uri": "https://capns.org/schema/inference-kv-cache-type",
+  "description": "KV cache type",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_gpu_hardware",
+    "display_index": 4,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "f16",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "f16",
+      "f32",
+      "q4_0",
+      "q8_0"
+    ]
+  }
+}

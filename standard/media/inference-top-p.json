@@ -1,0 +1,25 @@
+{
+  "urn": "media:inference-top-p;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Top-p (nucleus) sampling parameter",
+  "profile_uri": "https://capns.org/schema/inference-top-p",
+  "description": "Top-p (nucleus) sampling parameter",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 16,
+    "ui_type": "SETTING_UI_TYPE_SLIDER",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 0.95,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
+}

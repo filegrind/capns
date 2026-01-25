@@ -1,0 +1,20 @@
+{
+  "urn": "media:test-timeout-multiplier;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Multiplier for test timeouts",
+  "profile_uri": "https://capns.org/schema/test-timeout-multiplier",
+  "description": "Multiplier for test timeouts",
+  "metadata": {
+    "category": "test",
+    "subcategory": "test_configuration",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 1,
+    "overridable_by": []
+  },
+  "validation": {
+    "min": 0.1,
+    "max": 10
+  }
+}

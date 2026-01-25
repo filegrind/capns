@@ -1,0 +1,22 @@
+{
+  "urn": "media:fs-batch-timeout-ms;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Batch processing timeout in milliseconds",
+  "profile_uri": "https://capns.org/schema/fs-batch-timeout-ms",
+  "description": "Batch processing timeout in milliseconds",
+  "metadata": {
+    "category": "fs",
+    "subcategory": "fs_processing",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 1000,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 100,
+    "max": 60000
+  }
+}

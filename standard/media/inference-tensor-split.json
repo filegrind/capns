@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-tensor-split;setting;textable;sequence",
+  "media_type": "text/plain",
+  "title": "Tensor split ratios for multi-GPU",
+  "profile_uri": "https://capns.org/schema/inference-tensor-split",
+  "description": "Tensor split ratios for multi-GPU",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_gpu_hardware",
+    "display_index": 10,
+    "ui_type": "SETTING_UI_TYPE_ARRAY_EDITOR",
+    "data_type": "SETTING_DATA_TYPE_ARRAY_STRING",
+    "default": [],
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

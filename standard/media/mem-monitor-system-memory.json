@@ -1,0 +1,20 @@
+{
+  "urn": "media:mem-monitor-system-memory;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Monitor system-wide memory usage",
+  "profile_uri": "https://capns.org/schema/mem-monitor-system-memory",
+  "description": "Monitor system-wide memory usage",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_monitoring",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

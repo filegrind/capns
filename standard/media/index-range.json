@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Index Range",
   "profile_uri": "https://capns.org/schema/index_range",
-  "description": "Index Range value"
+  "description": "Index Range value",
+  "validation": {
+    "pattern": "^\\d+(-\\d*)?$"
+  }
 }

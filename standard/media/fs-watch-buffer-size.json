@@ -1,0 +1,22 @@
+{
+  "urn": "media:fs-watch-buffer-size;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "File system watch buffer size",
+  "profile_uri": "https://capns.org/schema/fs-watch-buffer-size",
+  "description": "File system watch buffer size",
+  "metadata": {
+    "category": "fs",
+    "subcategory": "fs_monitoring",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 1000,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 10,
+    "max": 10000
+  }
+}

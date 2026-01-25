@@ -1,0 +1,24 @@
+{
+  "urn": "media:search-embedding-similarity-threshold;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Similarity threshold for matching",
+  "profile_uri": "https://capns.org/schema/search-embedding-similarity-threshold",
+  "description": "Similarity threshold for matching",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_embedding",
+    "display_index": 9,
+    "ui_type": "SETTING_UI_TYPE_SLIDER",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 0.7,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
+}

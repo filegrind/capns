@@ -1,0 +1,19 @@
+{
+  "urn": "media:api-enable-version-check;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable version checking",
+  "profile_uri": "https://capns.org/schema/api-enable-version-check",
+  "description": "Enable version checking",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_features",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_SWITCH",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "user",
+      "end_user"
+    ]
+  }
+}

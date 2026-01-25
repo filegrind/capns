@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-guidance-fork-ok;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Allow forking in guidance",
+  "profile_uri": "https://capns.org/schema/inference-guidance-fork-ok",
+  "description": "Allow forking in guidance",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_advanced",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

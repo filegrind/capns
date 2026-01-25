@@ -1,0 +1,21 @@
+{
+  "urn": "media:inference-dist-seed;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Random seed for reproducible sampling",
+  "profile_uri": "https://capns.org/schema/inference-dist-seed",
+  "description": "Random seed for reproducible sampling",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 4,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_INTEGER",
+    "default": 1234,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  }
+}

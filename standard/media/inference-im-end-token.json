@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-im-end-token;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Image end token ID",
+  "profile_uri": "https://capns.org/schema/inference-im-end-token",
+  "description": "Image end token ID",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_INTEGER",
+    "default": 151645,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

@@ -22,11 +22,7 @@
           "position": 0
         }
       ],
-      "arg_description": "Path to the RST file to process",
-      "validation": {
-        "pattern": "^[^\\0]+$",
-        "min_length": 1
-      }
+      "arg_description": "Path to the RST file to process"
     },
     {
       "media_urn": "media:thumbnail-width;textable;numeric;scalar",

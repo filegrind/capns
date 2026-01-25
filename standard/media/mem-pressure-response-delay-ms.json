@@ -1,0 +1,24 @@
+{
+  "urn": "media:mem-pressure-response-delay-ms;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Delay before responding to memory pressure in milliseconds",
+  "profile_uri": "https://capns.org/schema/mem-pressure-response-delay-ms",
+  "description": "Delay before responding to memory pressure in milliseconds",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_thresholds",
+    "display_index": 7,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 5000,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 100,
+    "max": 30000
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "urn": "media:search-max-search-results;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Maximum number of search results",
+  "profile_uri": "https://capns.org/schema/search-max-search-results",
+  "description": "Maximum number of search results",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_configuration",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 1000,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "min": 10,
+    "max": 10000
+  }
+}

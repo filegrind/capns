@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Output Path",
   "profile_uri": "https://capns.org/schema/output_path",
-  "description": "Output Path file system path"
+  "description": "Output Path file system path",
+  "validation": {
+    "min_length": 1,
+    "pattern": "^[^\\0]+$"
+  }
 }

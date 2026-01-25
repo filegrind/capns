@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-use-mlock;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Use memory locking for model loading",
+  "profile_uri": "https://capns.org/schema/inference-use-mlock",
+  "description": "Use memory locking for model loading",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_model_loading",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

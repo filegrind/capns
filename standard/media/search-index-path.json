@@ -1,0 +1,20 @@
+{
+  "urn": "media:search-index-path;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Search index path or :memory: for in-memory index",
+  "profile_uri": "https://capns.org/schema/search-index-path",
+  "description": "Search index path or :memory: for in-memory index",
+  "validation": {
+    "min_length": 1,
+    "pattern": "^[^\\0]+$"
+  },
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_configuration",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_FILE_PICKER",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "data/search_index",
+    "overridable_by": []
+  }
+}

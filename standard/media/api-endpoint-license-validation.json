@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-license-validation;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "License validation endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-license-validation",
+  "description": "License validation endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/license_validation",
+    "overridable_by": []
+  }
+}

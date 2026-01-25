@@ -1,0 +1,24 @@
+{
+  "urn": "media:mem-available-memory-pressure-mb;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Pressure threshold for available memory in MB",
+  "profile_uri": "https://capns.org/schema/mem-available-memory-pressure-mb",
+  "description": "Pressure threshold for available memory in MB",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_thresholds",
+    "display_index": 4,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 2048,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 128,
+    "max": 16384
+  }
+}

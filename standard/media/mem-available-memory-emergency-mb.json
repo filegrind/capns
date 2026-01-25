@@ -1,0 +1,24 @@
+{
+  "urn": "media:mem-available-memory-emergency-mb;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Emergency threshold for available memory in MB",
+  "profile_uri": "https://capns.org/schema/mem-available-memory-emergency-mb",
+  "description": "Emergency threshold for available memory in MB",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_thresholds",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 512,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 32,
+    "max": 4096
+  }
+}

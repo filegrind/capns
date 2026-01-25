@@ -1,0 +1,23 @@
+{
+  "urn": "media:task-timeout-seconds;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Task timeout in seconds",
+  "profile_uri": "https://capns.org/schema/task-timeout-seconds",
+  "description": "Task timeout in seconds",
+  "metadata": {
+    "category": "task",
+    "subcategory": "task_execution",
+    "display_index": 4,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 300,
+    "overridable_by": [
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 10,
+    "max": 3600
+  }
+}

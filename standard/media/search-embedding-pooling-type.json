@@ -1,0 +1,27 @@
+{
+  "urn": "media:search-embedding-pooling-type;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Pooling strategy for embeddings",
+  "profile_uri": "https://capns.org/schema/search-embedding-pooling-type",
+  "description": "Pooling strategy for embeddings",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_embedding",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "mean",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "none",
+      "mean",
+      "cls"
+    ]
+  }
+}

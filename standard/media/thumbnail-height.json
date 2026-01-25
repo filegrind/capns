@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Thumbnail Height",
   "profile_uri": "https://capns.org/schema/thumbnail_height",
-  "description": "Thumbnail Height numeric value"
+  "description": "Thumbnail Height numeric value",
+  "validation": {
+    "min": 1,
+    "max": 4096
+  }
 }

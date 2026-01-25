@@ -1,0 +1,25 @@
+{
+  "urn": "media:search-embedding-hybrid-search-weight;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Weight for combining semantic and text search",
+  "profile_uri": "https://capns.org/schema/search-embedding-hybrid-search-weight",
+  "description": "Weight for combining semantic and text search",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_embedding",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_SLIDER",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 0.5,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
+}

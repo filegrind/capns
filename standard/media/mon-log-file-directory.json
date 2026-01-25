@@ -1,0 +1,18 @@
+{
+  "urn": "media:mon-log-file-directory;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Directory for log files",
+  "profile_uri": "https://capns.org/schema/mon-log-file-directory",
+  "description": "Directory for log files",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_output",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_FOLDER_PICKER",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "logs",
+    "overridable_by": [
+      "user"
+    ]
+  }
+}

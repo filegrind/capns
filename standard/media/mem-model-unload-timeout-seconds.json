@@ -1,0 +1,23 @@
+{
+  "urn": "media:mem-model-unload-timeout-seconds;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Model unload timeout in seconds",
+  "profile_uri": "https://capns.org/schema/mem-model-unload-timeout-seconds",
+  "description": "Model unload timeout in seconds",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_management",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 300,
+    "overridable_by": [
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 30,
+    "max": 3600
+  }
+}

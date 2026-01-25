@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-guidance-precompute-large-lexemes;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Precompute large lexemes for guidance",
+  "profile_uri": "https://capns.org/schema/inference-guidance-precompute-large-lexemes",
+  "description": "Precompute large lexemes for guidance",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_advanced",
+    "display_index": 14,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

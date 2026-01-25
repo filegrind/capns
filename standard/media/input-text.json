@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Input Text",
   "profile_uri": "https://capns.org/schema/input_text",
-  "description": "Input Text text input"
+  "description": "Input Text text input",
+  "validation": {
+    "min_length": 1
+  }
 }

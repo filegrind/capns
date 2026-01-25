@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "System Prompt",
   "profile_uri": "https://capns.org/schema/system_prompt",
-  "description": "System Prompt value"
+  "description": "System Prompt value",
+  "validation": {
+    "min_length": 1
+  }
 }

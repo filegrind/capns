@@ -1,0 +1,20 @@
+{
+  "urn": "media:inference-use-flash-attention;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Use flash attention",
+  "profile_uri": "https://capns.org/schema/inference-use-flash-attention",
+  "description": "Use flash attention",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_gpu_hardware",
+    "display_index": 13,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

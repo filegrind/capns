@@ -1,0 +1,19 @@
+{
+  "urn": "media:mon-log-to-file;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable file logging",
+  "profile_uri": "https://capns.org/schema/mon-log-to-file",
+  "description": "Enable file logging",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_output",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "model",
+      "user"
+    ]
+  }
+}

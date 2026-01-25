@@ -1,0 +1,22 @@
+{
+  "urn": "media:task-worker-thread-count;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Number of worker threads",
+  "profile_uri": "https://capns.org/schema/task-worker-thread-count",
+  "description": "Number of worker threads",
+  "metadata": {
+    "category": "task",
+    "subcategory": "task_execution",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 4,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1,
+    "max": 32
+  }
+}

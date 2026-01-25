@@ -1,0 +1,20 @@
+{
+  "urn": "media:mon-enable-tracing;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Enable tracing functionality",
+  "profile_uri": "https://capns.org/schema/mon-enable-tracing",
+  "description": "Enable tracing functionality",
+  "metadata": {
+    "category": "mon",
+    "subcategory": "mon_logging",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

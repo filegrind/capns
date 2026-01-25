@@ -1,0 +1,24 @@
+{
+  "urn": "media:inference-max-context-length;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Maximum context length",
+  "profile_uri": "https://capns.org/schema/inference-max-context-length",
+  "description": "Maximum context length",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_generation",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 8192,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 512,
+    "max": 131072
+  }
+}

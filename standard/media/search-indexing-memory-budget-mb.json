@@ -1,0 +1,22 @@
+{
+  "urn": "media:search-indexing-memory-budget-mb;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Memory budget for indexing operations in MB",
+  "profile_uri": "https://capns.org/schema/search-indexing-memory-budget-mb",
+  "description": "Memory budget for indexing operations in MB",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_performance",
+    "display_index": 2,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 512,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 64,
+    "max": 4096
+  }
+}

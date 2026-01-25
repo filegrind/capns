@@ -1,0 +1,20 @@
+{
+  "urn": "media:search-embedding-enable-semantic-search;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Extract embeddings from this model",
+  "profile_uri": "https://capns.org/schema/search-embedding-enable-semantic-search",
+  "description": "Extract embeddings from this model",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_embedding",
+    "display_index": 5,
+    "ui_type": "SETTING_UI_TYPE_SWITCH",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

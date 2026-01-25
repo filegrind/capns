@@ -1,0 +1,24 @@
+{
+  "urn": "media:search-embedding-batch-size;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Embedding generation batch size",
+  "profile_uri": "https://capns.org/schema/search-embedding-batch-size",
+  "description": "Embedding generation batch size",
+  "metadata": {
+    "category": "search",
+    "subcategory": "search_embedding",
+    "display_index": 1,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 32,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1,
+    "max": 256
+  }
+}

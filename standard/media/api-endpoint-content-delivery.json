@@ -1,0 +1,16 @@
+{
+  "urn": "media:api-endpoint-content-delivery;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Content delivery endpoint path",
+  "profile_uri": "https://capns.org/schema/api-endpoint-content-delivery",
+  "description": "Content delivery endpoint path",
+  "metadata": {
+    "category": "api",
+    "subcategory": "api_endpoints",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_URL_FIELD",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "/content_delivery",
+    "overridable_by": []
+  }
+}

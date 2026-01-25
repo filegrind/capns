@@ -1,0 +1,22 @@
+{
+  "urn": "media:task-retry-delay-seconds;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "Delay between retries in seconds",
+  "profile_uri": "https://capns.org/schema/task-retry-delay-seconds",
+  "description": "Delay between retries in seconds",
+  "metadata": {
+    "category": "task",
+    "subcategory": "task_retry",
+    "display_index": 6,
+    "ui_type": "SETTING_UI_TYPE_NUMBER_FIELD",
+    "data_type": "SETTING_DATA_TYPE_UNSIGNED_INTEGER",
+    "default": 5,
+    "overridable_by": [
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 1,
+    "max": 300
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "urn": "media:mem-system-memory-critical-percent;setting;textable;numeric;scalar",
+  "media_type": "text/plain",
+  "title": "System memory critical threshold as percentage",
+  "profile_uri": "https://capns.org/schema/mem-system-memory-critical-percent",
+  "description": "System memory critical threshold as percentage",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_thresholds",
+    "display_index": 9,
+    "ui_type": "SETTING_UI_TYPE_SLIDER",
+    "data_type": "SETTING_DATA_TYPE_FLOAT",
+    "default": 0.9,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  },
+  "validation": {
+    "min": 0.5,
+    "max": 0.99
+  }
+}

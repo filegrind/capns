@@ -1,0 +1,20 @@
+{
+  "urn": "media:mem-respect-system-memory-pressure;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Respect system memory pressure signals",
+  "profile_uri": "https://capns.org/schema/mem-respect-system-memory-pressure",
+  "description": "Respect system memory pressure signals",
+  "metadata": {
+    "category": "mem",
+    "subcategory": "mem_thresholds",
+    "display_index": 8,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": true,
+    "overridable_by": [
+      "cap",
+      "model",
+      "user"
+    ]
+  }
+}

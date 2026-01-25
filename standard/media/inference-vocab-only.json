@@ -1,0 +1,19 @@
+{
+  "urn": "media:inference-vocab-only;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Load vocabulary only",
+  "profile_uri": "https://capns.org/schema/inference-vocab-only",
+  "description": "Load vocabulary only",
+  "metadata": {
+    "category": "inference",
+    "subcategory": "inference_model_loading",
+    "display_index": 4,
+    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+    "data_type": "SETTING_DATA_TYPE_BOOLEAN",
+    "default": false,
+    "overridable_by": [
+      "cap",
+      "model"
+    ]
+  }
+}

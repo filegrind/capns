@@ -3,5 +3,8 @@
   "media_type": "text/plain",
   "title": "Question Text",
   "profile_uri": "https://capns.org/schema/question_text",
-  "description": "Question Text text input"
+  "description": "Question Text text input",
+  "validation": {
+    "min_length": 1
+  }
 }

@@ -1,0 +1,29 @@
+{
+  "urn": "media:interface-response-format-preference;setting;textable;scalar",
+  "media_type": "text/plain",
+  "title": "Preferred response format",
+  "profile_uri": "https://capns.org/schema/interface-response-format-preference",
+  "description": "Preferred response format",
+  "metadata": {
+    "category": "interface",
+    "subcategory": "interface_behavior",
+    "display_index": 3,
+    "ui_type": "SETTING_UI_TYPE_DROPDOWN",
+    "data_type": "SETTING_DATA_TYPE_STRING",
+    "default": "standard",
+    "overridable_by": [
+      "cap",
+      "model",
+      "user",
+      "end_user"
+    ]
+  },
+  "validation": {
+    "allowed_values": [
+      "standard",
+      "structured",
+      "json",
+      "markdown"
+    ]
+  }
+}
