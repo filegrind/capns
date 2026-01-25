@@ -128,10 +128,6 @@
         }
       ],
       "arg_description": "Temperatura de muestreo para creatividad vs consistencia",
-      "validation": {
-        "min": 0,
-        "max": 2
-      },
       "default_value": 0.7
     },
     {

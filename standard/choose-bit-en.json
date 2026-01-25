@@ -99,10 +99,6 @@
         }
       ],
       "arg_description": "Minimum confidence threshold for decisions",
-      "validation": {
-        "min": 0,
-        "max": 1
-      },
       "default_value": 0.7
     },
     {

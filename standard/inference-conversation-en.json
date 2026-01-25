@@ -128,10 +128,6 @@
         }
       ],
       "arg_description": "Sampling temperature for creativity vs consistency",
-      "validation": {
-        "min": 0,
-        "max": 2
-      },
       "default_value": 0.7
     },
     {

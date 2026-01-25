@@ -204,10 +204,6 @@
         }
       ],
       "arg_description": "Creativity level (0.0-1.0, higher = more creative)",
-      "validation": {
-        "min": 0,
-        "max": 1
-      },
       "default_value": 0.8
     },
     {
