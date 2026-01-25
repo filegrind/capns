@@ -78,3 +78,6 @@ flame.svg
 *.log
 *.backup
 .scrap/
+
+standard/*
+standard/media/*
