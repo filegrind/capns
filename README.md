@@ -1,4 +1,4 @@
-# CapNs - Cap Definition System
+# Capns - Cap Namespace System
 
 A capability URN and definition system for plugin architectures, built on [Tagged URNs](../tagged-urn-rs/).
 
