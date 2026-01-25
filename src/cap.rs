@@ -902,7 +902,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
+        format!("cap:in=media:void;out=media:object;{}", tags)
     }
 
     #[test]
@@ -911,8 +911,8 @@ mod tests {
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
         assert!(cap.urn_string().contains("op=transform"));
-        assert!(cap.urn_string().contains("in=\"media:void\""));
-        assert!(cap.urn_string().contains("out=\"media:object\""));
+        assert!(cap.urn_string().contains("in=media:void"));
+        assert!(cap.urn_string().contains("out=media:object"));
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
@@ -935,11 +935,12 @@ mod tests {
 
     #[test]
     fn test_cap_matching() {
-        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
+        // Use type=data_processing key-value instead of flag for proper matching
+        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
-        assert!(cap.matches_request(&test_urn("op=transform;format=json;data_processing")));
-        assert!(cap.matches_request(&test_urn("op=transform;format=*;data_processing")));
+        assert!(cap.matches_request(&test_urn("op=transform;format=json;type=data_processing")));
+        assert!(cap.matches_request(&test_urn("op=transform;format=*;type=data_processing")));
         assert!(cap.matches_request(&test_urn("type=data_processing")));
         assert!(!cap.matches_request(&test_urn("type=compute")));
     }

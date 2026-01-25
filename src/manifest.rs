@@ -69,7 +69,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=\"media:void\";out=\"media:object\";{}", tags)
+        format!("cap:in=media:void;out=media:object;{}", tags)
     }
 
     #[test]
@@ -239,7 +239,8 @@ mod tests {
             }
         }
 
-        let urn = CapUrn::from_string(&test_urn("op=test;component")).unwrap();
+        // Use type=component key-value instead of flag
+        let urn = CapUrn::from_string(&test_urn("op=test;type=component")).unwrap();
         let cap = Cap::new(urn, "Test Component".to_string(), "test".to_string());
 
         let component = TestComponent {
