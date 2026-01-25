@@ -4,7 +4,7 @@
 
 Cap matching extends Tagged URN matching with direction specifier awareness. For base matching algorithm details, see the Tagged URN documentation.
 
-- **Base Specification:** [Tagged URN RULES.md](../../tagged-urn-rs/docs/RULES.md) (Matching Semantics section)
+- **Base Specification:** [Tagged URN RULES.md](https://github.com/filegrind/tagged-urn-rs/blob/main/docs/RULES.md) (Matching Semantics section)
 - **Cap-Specific Rules:** [Cap URN RULES.md](./RULES.md)
 - **Reference Implementation:** `capns/src/cap_urn.rs`
 

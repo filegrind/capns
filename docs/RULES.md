@@ -2,7 +2,7 @@
 
 ## Overview
 
-Cap URNs extend Tagged URNs with capability-specific requirements. This document covers **only** the cap-specific rules. For base Tagged URN rules (case handling, tag ordering, wildcards, quoting, character restrictions, etc.), see the [Tagged URN RULES.md](../../tagged-urn-rs/docs/RULES.md).
+Cap URNs extend Tagged URNs with capability-specific requirements. This document covers **only** the cap-specific rules. For base Tagged URN rules (case handling, tag ordering, wildcards, quoting, character restrictions, etc.), see the [Tagged URN RULES.md](https://github.com/filegrind/tagged-urn-rs/blob/main/docs/RULES.md).
 
 ## Cap-Specific Rules
 

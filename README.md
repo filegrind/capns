@@ -1,6 +1,6 @@
 # Capns - Cap Namespace System
 
-A capability URN and definition system for plugin architectures, built on [Tagged URNs](../tagged-urn-rs/).
+A capability URN and definition system for plugin architectures, built on [Tagged URNs](https://github.com/filegrind/tagged-urn-rs).
 
 ## Overview
 
@@ -36,7 +36,7 @@ cap:in="media:binary";op=extract;out="media:object";target=metadata
 - `target` - What the operation targets (e.g., `metadata`, `thumbnail`)
 - `ext` - File extension for format-specific capabilities
 
-For base Tagged URN format rules (case handling, quoting, wildcards, etc.), see [Tagged URN RULES.md](../tagged-urn-rs/docs/RULES.md).
+For base Tagged URN format rules (case handling, quoting, wildcards, etc.), see [Tagged URN RULES.md](https://github.com/filegrind/tagged-urn-rs/blob/main/docs/RULES.md).
 
 ## Cap Definitions
 
@@ -194,7 +194,7 @@ let (provider, cap) = cube.find_best_match(&request)?;
 - [MATCHING.md](docs/MATCHING.md) - Matching semantics
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture
 - [MEDIA_SPEC_SYSTEM.md](docs/MEDIA_SPEC_SYSTEM.md) - Media specification system
-- [Tagged URN RULES.md](../tagged-urn-rs/docs/RULES.md) - Base URN format rules
+- [Tagged URN RULES.md](https://github.com/filegrind/tagged-urn-rs/blob/main/docs/RULES.md) - Base URN format rules
 
 ## Testing
 
