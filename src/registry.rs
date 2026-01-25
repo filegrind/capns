@@ -3,13 +3,68 @@ use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const REGISTRY_BASE_URL: &str = "https://capns.org";
+const DEFAULT_REGISTRY_BASE_URL: &str = "https://capns.org";
 const CACHE_DURATION_HOURS: u64 = 24;
+
+/// Configuration for the CAPNS registry
+///
+/// Supports configuration via:
+/// 1. Builder methods (highest priority)
+/// 2. Environment variables (CAPNS_REGISTRY_URL, CAPNS_SCHEMA_BASE_URL)
+/// 3. Default values (https://capns.org)
+#[derive(Debug, Clone)]
+pub struct RegistryConfig {
+    /// Base URL for the registry API (e.g., "https://capns.org")
+    pub registry_base_url: String,
+    /// Base URL for schema profiles (defaults to {registry_base_url}/schema)
+    pub schema_base_url: String,
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        let registry_base = env::var("CAPNS_REGISTRY_URL")
+            .unwrap_or_else(|_| DEFAULT_REGISTRY_BASE_URL.to_string());
+        let schema_base = env::var("CAPNS_SCHEMA_BASE_URL")
+            .unwrap_or_else(|_| format!("{}/schema", registry_base));
+        Self {
+            registry_base_url: registry_base,
+            schema_base_url: schema_base,
+        }
+    }
+}
+
+impl RegistryConfig {
+    /// Create a new RegistryConfig with values from environment or defaults
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set a custom registry base URL
+    ///
+    /// This also updates the schema base URL to {url}/schema unless
+    /// schema_base_url was explicitly set.
+    pub fn with_registry_url(mut self, url: impl Into<String>) -> Self {
+        let url = url.into();
+        // If schema_base_url was derived from the old registry URL, update it
+        if self.schema_base_url == format!("{}/schema", self.registry_base_url) {
+            self.schema_base_url = format!("{}/schema", url);
+        }
+        self.registry_base_url = url;
+        self
+    }
+
+    /// Set a custom schema base URL
+    pub fn with_schema_url(mut self, url: impl Into<String>) -> Self {
+        self.schema_base_url = url.into();
+        self
+    }
+}
 
 // Bundle standard capabilities at compile time
 static STANDARD_CAPS: Dir = include_dir!("$CARGO_MANIFEST_DIR/standard");
@@ -50,14 +105,30 @@ pub struct CapRegistry {
     client: reqwest::Client,
     cache_dir: PathBuf,
     cached_caps: Arc<Mutex<HashMap<String, Cap>>>,
+    config: RegistryConfig,
 }
 
 impl CapRegistry {
     /// Create a new CapRegistry with standard capabilities bundled
+    ///
+    /// Uses configuration from environment variables or defaults:
+    /// - `CAPNS_REGISTRY_URL`: Base URL for the registry (default: https://capns.org)
+    /// - `CAPNS_SCHEMA_BASE_URL`: Base URL for schemas (default: {registry_url}/schema)
     pub async fn new() -> Result<Self, RegistryError> {
-        let _client = reqwest::Client::new();
-		let cache_dir = Self::get_cache_dir()?;
-		
+        Self::with_config(RegistryConfig::default()).await
+    }
+
+    /// Create a new CapRegistry with custom configuration
+    ///
+    /// # Example
+    /// ```ignore
+    /// let config = RegistryConfig::new()
+    ///     .with_registry_url("https://my-registry.example.com");
+    /// let registry = CapRegistry::with_config(config).await?;
+    /// ```
+    pub async fn with_config(config: RegistryConfig) -> Result<Self, RegistryError> {
+        let cache_dir = Self::get_cache_dir()?;
+
         fs::create_dir_all(&cache_dir).map_err(|e| {
             RegistryError::CacheError(format!("Failed to create cache directory: {}", e))
         })?;
@@ -72,17 +143,23 @@ impl CapRegistry {
         // Load all cached caps into memory
         let cached_caps_map = Self::load_all_cached_caps(&cache_dir)?;
         let cached_caps = Arc::new(Mutex::new(cached_caps_map));
-        
+
         let registry = Self {
             client,
             cache_dir,
             cached_caps,
+            config,
         };
-        
+
         // Copy bundled standard capabilities to cache if they don't exist
         registry.install_standard_caps().await?;
-        
+
         Ok(registry)
+    }
+
+    /// Get the current registry configuration
+    pub fn config(&self) -> &RegistryConfig {
+        &self.config
     }
     
     /// Install bundled standard capabilities to cache directory if they don't exist
@@ -296,7 +373,7 @@ impl CapRegistry {
         // The path is /cap:... where "cap:" is literal and the rest is URL-encoded
         let tags_part = normalized_urn.strip_prefix("cap:").unwrap_or(&normalized_urn);
         let encoded_tags = urlencoding::encode(tags_part);
-        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
+        let url = format!("{}/cap:{}", self.config.registry_base_url, encoded_tags);
         let response = self.client.get(&url).send().await.map_err(|e| {
             RegistryError::HttpError(format!("Failed to fetch from registry: {}", e))
         })?;
@@ -381,6 +458,18 @@ impl CapRegistry {
             client: reqwest::Client::new(),
             cache_dir: PathBuf::from("/tmp/capns-test-cache"),
             cached_caps: Arc::new(Mutex::new(HashMap::new())),
+            config: RegistryConfig::default(),
+        }
+    }
+
+    /// Create a registry for testing with a custom configuration
+    pub fn new_for_test_with_config(config: RegistryConfig) -> Self {
+        use std::path::PathBuf;
+        Self {
+            client: reqwest::Client::new(),
+            cache_dir: PathBuf::from("/tmp/capns-test-cache"),
+            cached_caps: Arc::new(Mutex::new(HashMap::new())),
+            config,
         }
     }
 
@@ -436,6 +525,7 @@ mod tests {
             client,
             cache_dir,
             cached_caps: Arc::new(Mutex::new(HashMap::new())),
+            config: RegistryConfig::default(),
         };
 
         (registry, temp_dir)
@@ -495,11 +585,12 @@ mod url_encoding_tests {
     /// This guards against the bug where encoding "cap:" as "cap%3A" causes 404s
     #[test]
     fn test_url_keeps_cap_prefix_literal() {
+        let config = RegistryConfig::default();
         let urn = r#"cap:in="media:string";op=test;out="media:object""#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
-        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
+        let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
         // URL must start with literal "cap:" not "cap%3A"
         assert!(url.contains("/cap:"), "URL must contain literal '/cap:' not encoded");
@@ -509,12 +600,13 @@ mod url_encoding_tests {
     /// Test that media URNs in cap URNs are properly URL-encoded
     #[test]
     fn test_url_encodes_quoted_media_urns() {
+        let config = RegistryConfig::default();
         // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
         let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task-id"#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
-        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
+        let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
         // Equals must be encoded as %3D
         assert!(url.contains("%3D"), "Equals signs must be URL-encoded as %3D");
@@ -527,12 +619,13 @@ mod url_encoding_tests {
     /// Test the URL format for a simple cap URN
     #[test]
     fn test_exact_url_format() {
+        let config = RegistryConfig::default();
         // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
         let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task-id"#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
-        let url = format!("{}/cap:{}", REGISTRY_BASE_URL, encoded_tags);
+        let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
         // Just verify URL contains the encoded media URNs
         assert!(url.contains("media%3Alisting-id"), "URL should contain encoded media URN");
@@ -550,5 +643,56 @@ mod url_encoding_tests {
         let normalized2 = normalize_cap_urn(urn2);
 
         assert_eq!(normalized1, normalized2, "Different tag orders should normalize to same form");
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = RegistryConfig::default();
+        // Default should use capns.org (unless env var is set)
+        assert!(config.registry_base_url.contains("capns.org") ||
+                env::var("CAPNS_REGISTRY_URL").is_ok(),
+                "Default registry URL should be capns.org or from env var");
+        assert!(config.schema_base_url.contains("/schema"),
+                "Schema URL should contain /schema");
+    }
+
+    #[test]
+    fn test_custom_registry_url() {
+        let config = RegistryConfig::new()
+            .with_registry_url("https://localhost:8888");
+        assert_eq!(config.registry_base_url, "https://localhost:8888");
+        assert_eq!(config.schema_base_url, "https://localhost:8888/schema");
+    }
+
+    #[test]
+    fn test_custom_registry_and_schema_url() {
+        let config = RegistryConfig::new()
+            .with_registry_url("https://localhost:8888")
+            .with_schema_url("https://schemas.example.com");
+        assert_eq!(config.registry_base_url, "https://localhost:8888");
+        assert_eq!(config.schema_base_url, "https://schemas.example.com");
+    }
+
+    #[test]
+    fn test_schema_url_not_overwritten_when_explicit() {
+        // If schema URL is set explicitly first, changing registry URL shouldn't change it
+        let config = RegistryConfig::new()
+            .with_schema_url("https://schemas.example.com")
+            .with_registry_url("https://localhost:8888");
+        assert_eq!(config.registry_base_url, "https://localhost:8888");
+        assert_eq!(config.schema_base_url, "https://schemas.example.com");
+    }
+
+    #[test]
+    fn test_registry_for_test_with_config() {
+        let config = RegistryConfig::new()
+            .with_registry_url("https://test-registry.local");
+        let registry = CapRegistry::new_for_test_with_config(config);
+        assert_eq!(registry.config().registry_base_url, "https://test-registry.local");
     }
 }
