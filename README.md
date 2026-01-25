@@ -196,17 +196,19 @@ let (provider, cap) = cube.find_best_match(&request)?;
 - [MEDIA_SPEC_SYSTEM.md](docs/MEDIA_SPEC_SYSTEM.md) - Media specification system
 - [Tagged URN RULES.md](https://github.com/filegrind/tagged-urn-rs/blob/main/docs/RULES.md) - Base URN format rules
 
+## Cross-Language Compatibility
+
+This Rust implementation is the reference. Identical implementations exist for:
+- [Go implementation](https://github.com/filegrind/capns-go)
+- [JavaScript implementation](https://github.com/filegrind/capns-js)
+- [Objective-C implementation](https://github.com/filegrind/capns-objc)
+
+All implementations pass the same test cases and follow identical rules.
+
 ## Testing
 
 ```bash
-# Rust
 cargo test
-
-# Go
-go test ./...
-
-# Objective-C
-swift test
 ```
 
 ## License
