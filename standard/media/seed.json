@@ -5,6 +5,7 @@
   "profile_uri": "https://capns.org/schema/seed",
   "description": "Seed numeric value",
   "validation": {
-    "min": 0
+    "min": 0,
+    "max": 4294967295
   }
 }

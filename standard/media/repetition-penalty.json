@@ -5,6 +5,7 @@
   "profile_uri": "https://capns.org/schema/repetition_penalty",
   "description": "Repetition Penalty numeric value",
   "validation": {
-    "min": 0
+    "min": 0,
+    "max": 2
   }
 }

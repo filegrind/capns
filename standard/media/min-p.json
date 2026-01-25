@@ -3,5 +3,9 @@
   "media_type": "text/plain",
   "title": "Min P",
   "profile_uri": "https://capns.org/schema/min_p",
-  "description": "Min P numeric value"
+  "description": "Min P numeric value",
+  "validation": {
+    "min": 0,
+    "max": 1
+  }
 }
