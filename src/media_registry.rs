@@ -18,6 +18,7 @@
 //! ```
 
 use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
+use crate::registry::RegistryConfig;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -27,7 +28,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const REGISTRY_BASE_URL: &str = "https://capns.org";
 const CACHE_DURATION_HOURS: u64 = 24;
 
 // Bundle standard media specs at compile time
@@ -101,11 +101,29 @@ pub struct MediaUrnRegistry {
     client: reqwest::Client,
     cache_dir: PathBuf,
     cached_specs: Arc<Mutex<HashMap<String, StoredMediaSpec>>>,
+    config: RegistryConfig,
 }
 
 impl MediaUrnRegistry {
     /// Create a new MediaUrnRegistry with standard media specs bundled
+    ///
+    /// Uses configuration from environment variables or defaults:
+    /// - `CAPNS_REGISTRY_URL`: Base URL for the registry (default: https://capns.org)
+    /// - `CAPNS_SCHEMA_BASE_URL`: Base URL for schemas (default: {registry_url}/schema)
     pub async fn new() -> Result<Self, MediaRegistryError> {
+        Self::with_config(RegistryConfig::default()).await
+    }
+
+    /// Create a new MediaUrnRegistry with custom configuration
+    ///
+    /// # Example
+    /// ```ignore
+    /// use capns::registry::RegistryConfig;
+    /// let config = RegistryConfig::new()
+    ///     .with_registry_url("https://my-registry.example.com");
+    /// let registry = MediaUrnRegistry::with_config(config).await?;
+    /// ```
+    pub async fn with_config(config: RegistryConfig) -> Result<Self, MediaRegistryError> {
         let cache_dir = Self::get_cache_dir()?;
 
         fs::create_dir_all(&cache_dir).map_err(|e| {
@@ -127,12 +145,18 @@ impl MediaUrnRegistry {
             client,
             cache_dir,
             cached_specs,
+            config,
         };
 
         // Install bundled standard media specs
         registry.install_standard_specs().await?;
 
         Ok(registry)
+    }
+
+    /// Get the current registry configuration
+    pub fn config(&self) -> &RegistryConfig {
+        &self.config
     }
 
     /// Install bundled standard media specs to cache if they don't exist
@@ -375,7 +399,7 @@ impl MediaUrnRegistry {
             .strip_prefix("media:")
             .unwrap_or(&normalized_urn);
         let encoded_tags = urlencoding::encode(tags_part);
-        let url = format!("{}/media:{}", REGISTRY_BASE_URL, encoded_tags);
+        let url = format!("{}/media:{}", self.config.registry_base_url, encoded_tags);
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             MediaRegistryError::HttpError(format!("Failed to fetch from registry: {}", e))
@@ -470,6 +494,7 @@ mod tests {
             client,
             cache_dir,
             cached_specs: Arc::new(Mutex::new(HashMap::new())),
+            config: RegistryConfig::default(),
         };
 
         (registry, temp_dir)

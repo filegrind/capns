@@ -36,8 +36,34 @@ use std::fmt;
 // PROFILE URLS (canonical /schema/ path)
 // =============================================================================
 
-/// Base URL for capns schemas
+/// Base URL for capns schemas (default, use `get_schema_base()` for configurable version)
 pub const SCHEMA_BASE: &str = "https://capns.org/schema";
+
+/// Get the schema base URL from environment variables or default
+///
+/// Checks in order:
+/// 1. `CAPNS_SCHEMA_BASE_URL` environment variable
+/// 2. `CAPNS_REGISTRY_URL` environment variable + "/schema"
+/// 3. Default: "https://capns.org/schema"
+pub fn get_schema_base() -> String {
+    if let Ok(schema_url) = std::env::var("CAPNS_SCHEMA_BASE_URL") {
+        return schema_url;
+    }
+    if let Ok(registry_url) = std::env::var("CAPNS_REGISTRY_URL") {
+        return format!("{}/schema", registry_url);
+    }
+    SCHEMA_BASE.to_string()
+}
+
+/// Get a profile URL for the given profile name
+///
+/// # Example
+/// ```ignore
+/// let url = get_profile_url("str"); // Returns "{schema_base}/str"
+/// ```
+pub fn get_profile_url(profile_name: &str) -> String {
+    format!("{}/{}", get_schema_base(), profile_name)
+}
 
 /// Profile URL for string type
 pub const PROFILE_STR: &str = "https://capns.org/schema/str";
