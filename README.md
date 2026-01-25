@@ -121,7 +121,15 @@ CSCapUrn *cap = [builder build:&error];
 
 ## Capability Matching
 
-Capabilities match requests when all specified tags are compatible:
+Capabilities match requests based on per-tag value semantics:
+
+| Pattern Value | Meaning | Instance Missing | Instance=v | Instance=x≠v |
+|---------------|---------|------------------|------------|--------------|
+| (missing) | No constraint | OK | OK | OK |
+| `K=?` | No constraint (explicit) | OK | OK | OK |
+| `K=!` | Must-not-have | OK | NO | NO |
+| `K=*` | Must-have, any value | NO | OK | OK |
+| `K=v` | Must-have, exact value | NO | OK | NO |
 
 ```rust
 let cap = CapUrn::from_string(
@@ -134,12 +142,12 @@ if cap.matches(&request) {
 }
 ```
 
-More specific capabilities are preferred:
+Specificity uses graded scoring (exact=3, must-have-any=2, must-not-have=1, unspecified=0):
 
 ```rust
-let general = CapUrn::from_string("cap:in=*;op=extract;out=*")?;
+let general = CapUrn::from_string("cap:in=*;op=extract;out=*")?;        // specificity: 3+2+2 = 7
 let specific = CapUrn::from_string(
-    "cap:in=\"media:binary\";op=extract;out=\"media:object\"")?;
+    "cap:in=\"media:binary\";op=extract;out=\"media:object\"")?;        // specificity: 3+3+3 = 9
 
 // specific.specificity() > general.specificity()
 ```

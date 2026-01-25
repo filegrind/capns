@@ -38,40 +38,59 @@ The URL `https://capns.org/{cap_urn}` must be valid, imposing practical length l
 
 ## Matching Semantics
 
-Cap matching follows Tagged URN matching with additional direction-aware behavior.
+Cap matching follows Tagged URN matching semantics. See [MATCHING.md](./MATCHING.md) for full details.
 
-### Direction Specs Are Always Part of Matching
+### Per-Tag Value Semantics
 
-Unlike regular tags where missing tags are implicit wildcards, direction specs (`in`/`out`) are **always** considered in matching:
+| Pattern Value | Meaning | Instance Missing | Instance=v | Instance=x≠v |
+|---------------|---------|------------------|------------|--------------|
+| (missing) | No constraint | OK | OK | OK |
+| `K=?` | No constraint (explicit) | OK | OK | OK |
+| `K=!` | Must-not-have | OK | NO | NO |
+| `K=*` | Must-have, any value | NO | OK | OK |
+| `K=v` | Must-have, exact value | NO | OK | NO |
+
+### Direction Specifier Matching
+
+Direction specs (`in`/`out`) follow standard tag matching:
 
 ```
-# Both caps must have compatible in/out for a match
+# Exact match
 Cap:     cap:in="media:binary";op=extract;out="media:object"
 Request: cap:in="media:binary";op=extract;out="media:object"
 Result:  MATCH
 
-# Direction mismatch prevents match
+# Direction mismatch
 Cap:     cap:in="media:binary";op=extract;out="media:object"
 Request: cap:in="media:text";op=extract;out="media:object"
 Result:  NO MATCH (input types differ)
 ```
 
-### Wildcard Direction Specs
+### Must-Have-Any Direction Specs
 
-Wildcard `*` in direction specs matches any media type:
+`*` in direction specs means "must have any value":
 
 ```
 Cap:     cap:in=*;op=convert;out=*
 Request: cap:in="media:binary";op=convert;out="media:text"
-Result:  MATCH (cap accepts any input/output)
+Result:  MATCH (request has in/out, cap accepts any values)
+
+Cap:     cap:in=*;op=convert;out=*
+Request: cap:op=convert
+Result:  NO MATCH (cap requires in/out presence, request lacks them)
 ```
 
-### Specificity Calculation
+### Graded Specificity
 
-Specificity for caps includes direction specs:
-- Each non-wildcard direction spec contributes to specificity
-- `cap:in="media:binary";op=extract;out="media:object"` has specificity 3
-- `cap:in=*;op=extract;out=*` has specificity 1 (only `op` is specific)
+Specificity uses graded scoring:
+- Exact value (K=v): 3 points
+- Must-have-any (K=*): 2 points
+- Must-not-have (K=!): 1 point
+- Unspecified (K=?) or missing: 0 points
+
+Examples:
+- `cap:in="media:binary";op=extract;out="media:object"` → 3+3+3 = 9
+- `cap:in=*;op=extract;out=*` → 2+3+2 = 7
 
 ## Cap-Specific Error Codes
 

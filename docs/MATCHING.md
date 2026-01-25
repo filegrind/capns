@@ -8,18 +8,30 @@ Cap matching extends Tagged URN matching with direction specifier awareness. For
 - **Cap-Specific Rules:** [Cap URN RULES.md](./RULES.md)
 - **Reference Implementation:** `capns/src/cap_urn.rs`
 
+## Per-Tag Value Semantics
+
+Cap matching uses the same per-tag semantics as Tagged URN:
+
+| Pattern Value | Meaning | Instance Missing | Instance=v | Instance=x≠v |
+|---------------|---------|------------------|------------|--------------|
+| (missing) | No constraint | OK | OK | OK |
+| `K=?` | No constraint (explicit) | OK | OK | OK |
+| `K=!` | Must-not-have | OK | NO | NO |
+| `K=*` | Must-have, any value | NO | OK | OK |
+| `K=v` | Must-have, exact value | NO | OK | NO |
+
+Special values work symmetrically on both instance and pattern sides.
+
 ## Cap-Specific Matching Behavior
 
 ### Direction Specifiers in Matching
 
-Cap URNs have required `in` and `out` tags (direction specifiers) whose values are Media URNs. These are **always** part of matching:
+Cap URNs have required `in` and `out` tags (direction specifiers) whose values are Media URNs. These follow standard tag matching:
 
 ```rust
 /// Check if this cap matches a request
-/// Direction specifiers (in/out) are always considered in matching
+/// Direction specifiers (in/out) are matched using standard tag semantics
 pub fn matches(&self, request: &CapUrn) -> bool {
-    // Standard tagged URN matching applies to all tags including in/out
-    // Direction specifiers must match (or be wildcards) for a cap to handle a request
     self.urn.matches(&request.urn)
 }
 ```
@@ -35,7 +47,7 @@ Test 1: Exact match with direction specifiers
 Test 2: Cap has wildcard direction specifiers (fallback provider)
   Cap:     cap:in=*;op=extract;out=*
   Request: cap:in="media:binary";op=extract;out="media:object"
-  Result:  MATCH (cap can handle any input/output)
+  Result:  MATCH (cap requires any input/output, request has them)
 
 Test 3: Direction specifier mismatch
   Cap:     cap:in="media:binary";op=extract;out="media:object"
@@ -47,26 +59,44 @@ Test 4: Cap has extra tags (more specific)
   Request: cap:in="media:binary";op=extract;out="media:object"
   Result:  MATCH (request doesn't constrain ext)
 
-Test 5: Void input (generation cap)
-  Cap:     cap:in="media:void";op=generate;out="media:binary"
-  Request: cap:in="media:void";op=generate;out="media:binary"
-  Result:  MATCH
+Test 5: Request requires tag cap doesn't have
+  Cap:     cap:in="media:binary";op=extract;out="media:object"
+  Request: cap:ext=*;in="media:binary";op=extract;out="media:object"
+  Result:  NO MATCH (request requires ext, cap doesn't have it)
+
+Test 6: Must-not-have in request
+  Cap:     cap:in="media:binary";op=extract;out="media:object"
+  Request: cap:debug=!;in="media:binary";op=extract;out="media:object"
+  Result:  MATCH (cap lacks debug, request wants it absent)
 ```
 
-### Provider Selection
+### Graded Specificity
 
-When multiple caps match a request, select by specificity:
+When multiple caps match a request, select by graded specificity:
 
-1. Collect all caps where `cap.matches(request)` is true
-2. Calculate specificity (count of non-wildcard tags, including direction specifiers)
-3. Select highest specificity; ties go to first registered
+| Value Type | Score |
+|------------|-------|
+| Exact value (K=v) | 3 |
+| Must-have-any (K=*) | 2 |
+| Must-not-have (K=!) | 1 |
+| Unspecified (K=?) or missing | 0 |
+
+**Total specificity** = sum of all tag scores
 
 ```
-Request: cap:in="media:binary";op=extract;out="media:object";ext=pdf
+Request: cap:ext=pdf;in="media:binary";op=extract;out="media:object"
 
-Cap A: cap:in=*;op=extract;out=*                    (specificity: 1)
-Cap B: cap:in="media:binary";op=extract;out="media:object"  (specificity: 3)
-Cap C: cap:ext=pdf;in="media:binary";op=extract;out="media:object"  (specificity: 4)
+Cap A: cap:in=*;op=extract;out=*                    (specificity: 2+3+2 = 7)
+Cap B: cap:in="media:binary";op=extract;out="media:object"  (specificity: 3+3+3 = 9)
+Cap C: cap:ext=pdf;in="media:binary";op=extract;out="media:object"  (specificity: 3+3+3+3 = 12)
 
 Winner: Cap C (highest specificity)
 ```
+
+### Selection Algorithm
+
+1. Collect all caps where `cap.matches(request)` is true
+2. Calculate graded specificity for each
+3. Select highest specificity
+4. Ties use specificity tuple `(exact_count, must_have_any_count, must_not_count)`
+5. If still tied, first registered wins
