@@ -162,26 +162,6 @@ pub fn model_download_urn() -> CapUrn {
         .expect("Failed to build model-download cap URN")
 }
 
-/// Build URN for model-load capability
-pub fn model_load_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "load-model")
-        .in_spec(MEDIA_MODEL_ID)
-        .out_spec(MEDIA_LOAD_OUTPUT)
-        .build()
-        .expect("Failed to build model-load cap URN")
-}
-
-/// Build URN for model-unload capability
-pub fn model_unload_urn() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "unload-model")
-        .in_spec(MEDIA_MODEL_ID)
-        .out_spec(MEDIA_UNLOAD_OUTPUT)
-        .build()
-        .expect("Failed to build model-unload cap URN")
-}
-
 /// Build URN for model-list capability
 pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
@@ -514,18 +494,6 @@ pub async fn embeddings_generation_cap(registry: Arc<CapRegistry>) -> Result<Cap
 /// Get model download cap from registry
 pub async fn model_download_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
     let urn = model_download_urn();
-    registry.get_cap(&urn.to_string()).await
-}
-
-/// Get model load cap from registry
-pub async fn model_load_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
-    let urn = model_load_urn();
-    registry.get_cap(&urn.to_string()).await
-}
-
-/// Get model unload cap from registry
-pub async fn model_unload_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
-    let urn = model_unload_urn();
     registry.get_cap(&urn.to_string()).await
 }
 
