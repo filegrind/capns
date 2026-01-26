@@ -18,7 +18,7 @@ features = ["derive"]
 version = "1.0"
 
 [dependencies.tagged-urn]
-version = "0.11.3765"
+version = "0.12.3794"
 
 [dependencies.tokio]
 features = ["full"]
@@ -31,6 +31,6 @@ tempfile = "3.10"
 authors = ["FGND Team"]
 description = "Core cap URN and definition system for FGND plugins"
 edition = "2021"
-name = "capns"
-version = "0.108.50234"
 license = "MIT"
+name = "capns"
+version = "0.112.33465"
