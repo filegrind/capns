@@ -53,7 +53,7 @@ pub struct StoredMediaSpec {
     pub description: Option<String>,
     /// Optional validation rules
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub validation: Option<crate::ArgumentValidation>,
+    pub validation: Option<crate::MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,

@@ -18,7 +18,7 @@ pub enum SchemaValidationError {
     SchemaCompilation(String),
 
     #[error("Validation failed for argument '{argument}': {details}")]
-    ArgumentValidation { argument: String, details: String },
+    MediaValidation { argument: String, details: String },
 
     #[error("Validation failed for output: {details}")]
     OutputValidation { details: String },
@@ -163,7 +163,7 @@ impl SchemaValidator {
                     details: error_details,
                 });
             } else {
-                return Err(SchemaValidationError::ArgumentValidation {
+                return Err(SchemaValidationError::MediaValidation {
                     argument: name.to_string(),
                     details: error_details,
                 });

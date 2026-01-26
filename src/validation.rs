@@ -6,7 +6,7 @@
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
 use crate::{Cap, CapOutput, CapArg, ArgSource};
-use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec, ArgumentValidation};
+use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec, MediaValidation};
 use std::collections::HashSet;
 use crate::profile_schema_registry::ProfileSchemaRegistry;
 use serde_json::Value;
@@ -353,7 +353,7 @@ impl InputValidator {
         cap: &Cap,
         arg_def: &CapArg,
         resolved: &ResolvedMediaSpec,
-        validation: &ArgumentValidation,
+        validation: &MediaValidation,
         value: &Value,
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
@@ -605,7 +605,7 @@ impl OutputValidator {
         &self,
         cap: &Cap,
         resolved: &ResolvedMediaSpec,
-        validation: &ArgumentValidation,
+        validation: &MediaValidation,
         value: &Value,
     ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();

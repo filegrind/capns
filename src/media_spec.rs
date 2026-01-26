@@ -4,7 +4,7 @@
 //! - Media URN resolution (e.g., `media:string` → resolved media spec)
 //! - MediaSpec parsing (canonical form: `text/plain; profile=https://...`)
 //! - MediaSpecDef for defining specs in cap definitions
-//! - ArgumentValidation for validation rules inherent to media types
+//! - MediaValidation for validation rules inherent to media types
 //!
 //! ## Media URN Format
 //! Media URNs are tagged URNs with "media" prefix, e.g., `media:string`
@@ -156,7 +156,7 @@ pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schem
 pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questions-array";
 
 // =============================================================================
-// ARGUMENT VALIDATION (for media spec definitions)
+// MEDIA VALIDATION (for media spec definitions)
 // =============================================================================
 
 /// Validation rules for media types
@@ -164,7 +164,7 @@ pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questi
 /// These rules are inherent to the semantic media type and are defined
 /// in the media spec, not on individual arguments or outputs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-pub struct ArgumentValidation {
+pub struct MediaValidation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min: Option<f64>,
 
@@ -184,7 +184,7 @@ pub struct ArgumentValidation {
     pub allowed_values: Option<Vec<String>>,
 }
 
-impl ArgumentValidation {
+impl MediaValidation {
     /// Check if all validation fields are empty/None
     pub fn is_empty(&self) -> bool {
         self.min.is_none() &&
@@ -292,7 +292,7 @@ pub struct MediaSpecDefObject {
     pub description: Option<String>,
     /// Optional validation rules for this media type
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub validation: Option<ArgumentValidation>,
+    pub validation: Option<MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -374,7 +374,7 @@ impl MediaSpecDef {
     pub fn object_with_validation(
         media_type: impl Into<String>,
         profile_uri: impl Into<String>,
-        validation: ArgumentValidation,
+        validation: MediaValidation,
     ) -> Self {
         MediaSpecDef::Object(MediaSpecDefObject {
             media_type: media_type.into(),
@@ -411,7 +411,7 @@ pub struct ResolvedMediaSpec {
     /// Optional description of the media type
     pub description: Option<String>,
     /// Optional validation rules from the media spec definition
-    pub validation: Option<ArgumentValidation>,
+    pub validation: Option<MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     pub metadata: Option<serde_json::Value>,
 }
@@ -1225,7 +1225,7 @@ mod tests {
                 schema: None,
                 title: Some("Bounded Number".to_string()),
                 description: None,
-                validation: Some(ArgumentValidation {
+                validation: Some(MediaValidation {
                     min: Some(0.0),
                     max: Some(100.0),
                     min_length: None,

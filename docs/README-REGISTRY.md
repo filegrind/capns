@@ -10,7 +10,7 @@ The capns registry (https://capns.org) provides canonical definitions for cap UR
 - **Automatic fallback**: Query capns.org if not cached locally 
 - **Persistent caching**: Cache definitions to avoid repeated network calls
 - **Validation**: Reject caps without canonical definitions
-- **Argument validation**: Validate cap calls against registry schemas
+- **Media validation**: Validate cap calls against registry schemas
 
 ## Usage Examples
 
