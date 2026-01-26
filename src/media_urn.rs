@@ -313,53 +313,6 @@ impl MediaUrn {
     /// # Matching rules:
     /// - Type must match exactly
     /// Check if this media URN satisfies a requirement.
-    ///
-    /// For media URNs, satisfies uses STRICT matching for type flags:
-    /// - Both must have the exact same set of flag tags (tags with value "*")
-    /// - Non-flag tags follow standard wildcard matching (missing = wildcard)
-    ///
-    /// This prevents media:object from matching media:string since they have
-    /// different type flags.
-    pub fn satisfies(&self, requirement: &MediaUrn) -> bool {
-        // Get all flag tags (value == "*") from both URNs
-        let self_flags: std::collections::HashSet<_> = self.0.tags.iter()
-            .filter(|(_, v)| v.as_str() == "*")
-            .map(|(k, _)| k.as_str())
-            .collect();
-
-        let req_flags: std::collections::HashSet<_> = requirement.0.tags.iter()
-            .filter(|(_, v)| v.as_str() == "*")
-            .map(|(k, _)| k.as_str())
-            .collect();
-
-        // Flags must match exactly - this ensures media:object != media:string
-        if self_flags != req_flags {
-            return false;
-        }
-
-        // For non-flag tags, requirement's tags must be present in self
-        for (key, req_value) in &requirement.0.tags {
-            if req_value == "*" {
-                // Already checked flags above
-                continue;
-            }
-
-            match self.0.tags.get(key) {
-                Some(self_value) => {
-                    if self_value != "*" && self_value != req_value {
-                        return false;
-                    }
-                }
-                None => {
-                    // Self is missing a required non-flag tag
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-
     /// Get the extension tag value (e.g., "pdf", "epub", "md")
     pub fn extension(&self) -> Option<&str> {
         self.get_tag("ext")
@@ -709,21 +662,22 @@ mod tests {
     }
 
     #[test]
-    fn test_satisfies() {
-        // PDF listing satisfies PDF requirement (PRIMARY type naming)
+    fn test_media_urn_matching() {
+        // PDF listing matches PDF requirement (PRIMARY type naming)
+        // A more specific URN (media:pdf;binary) matches a less specific requirement (media:pdf)
         let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf;binary"
         let pdf_requirement = MediaUrn::from_string("media:pdf").unwrap();
-        assert!(pdf_listing.satisfies(&pdf_requirement));
+        assert!(pdf_listing.matches(&pdf_requirement).expect("MediaUrn prefix mismatch impossible"));
 
-        // Markdown listing satisfies md requirement (PRIMARY type naming)
+        // Markdown listing matches md requirement (PRIMARY type naming)
         let md_listing = MediaUrn::from_string(MEDIA_MD).unwrap(); // "media:md;textable"
         let md_requirement = MediaUrn::from_string("media:md").unwrap();
-        assert!(md_listing.satisfies(&md_requirement));
+        assert!(md_listing.matches(&md_requirement).expect("MediaUrn prefix mismatch impossible"));
 
-        // Same URNs should satisfy each other
+        // Same URNs should match each other
         let string_urn = MediaUrn::from_string(MEDIA_STRING).unwrap();
         let string_req = MediaUrn::from_string(MEDIA_STRING).unwrap();
-        assert!(string_urn.satisfies(&string_req));
+        assert!(string_urn.matches(&string_req).expect("MediaUrn prefix mismatch impossible"));
     }
 
     #[test]
@@ -779,20 +733,20 @@ mod debug_tests {
         println!("MEDIA_BINARY = {}", MEDIA_BINARY);
         println!("MEDIA_STRING = {}", MEDIA_STRING);
         println!("MEDIA_OBJECT = {}", MEDIA_OBJECT);
-        
+
         let str_urn = MediaUrn::from_string(MEDIA_STRING).unwrap();
         let obj_urn = MediaUrn::from_string(MEDIA_OBJECT).unwrap();
-        let bin_urn = MediaUrn::from_string(MEDIA_BINARY).unwrap();
-        
+        let _bin_urn = MediaUrn::from_string(MEDIA_BINARY).unwrap();
+
         println!("string.matches(string) = {:?}", str_urn.matches(&str_urn));
         println!("object.matches(string) = {:?}", obj_urn.matches(&str_urn));
         println!("object.matches(object) = {:?}", obj_urn.matches(&obj_urn));
         println!("string.matches(object) = {:?}", str_urn.matches(&obj_urn));
-        
-        println!("string.satisfies(string) = {}", str_urn.satisfies(&str_urn));
-        println!("object.satisfies(string) = {}", obj_urn.satisfies(&str_urn));
-        
-        // The failing test: MEDIA_OBJECT should NOT satisfy MEDIA_STRING
-        assert!(!obj_urn.satisfies(&str_urn), "MEDIA_OBJECT should NOT satisfy MEDIA_STRING");
+
+        // MEDIA_OBJECT should NOT match MEDIA_STRING (different type flags)
+        assert!(
+            !obj_urn.matches(&str_urn).expect("MediaUrn prefix mismatch impossible"),
+            "MEDIA_OBJECT should NOT match MEDIA_STRING"
+        );
     }
 }

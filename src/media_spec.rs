@@ -412,6 +412,8 @@ pub struct ResolvedMediaSpec {
     pub description: Option<String>,
     /// Optional validation rules from the media spec definition
     pub validation: Option<ArgumentValidation>,
+    /// Optional metadata (arbitrary key-value pairs for display/categorization)
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl ResolvedMediaSpec {
@@ -522,6 +524,7 @@ pub async fn resolve_media_urn_with_registry(
                     title: Some(stored_spec.title),
                     description: stored_spec.description,
                     validation: stored_spec.validation,
+                    metadata: stored_spec.metadata,
                 });
             }
             Err(_) => {
@@ -547,6 +550,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
                 title: None,
                 description: None,
                 validation: None, // String form has no validation
+                metadata: None,   // String form has no metadata
             })
         }
         MediaSpecDef::Object(obj) => Ok(ResolvedMediaSpec {
@@ -557,6 +561,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
             title: obj.title.clone(),
             description: obj.description.clone(),
             validation: obj.validation.clone(), // Propagate validation
+            metadata: obj.metadata.clone(),     // Propagate metadata
         }),
     }
 }
@@ -615,6 +620,7 @@ fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
         title: None,      // Will be populated from registry
         description: None,
         validation: None, // Built-ins don't have validation rules
+        metadata: None,   // Built-ins don't have metadata
     })
 }
 
@@ -1111,6 +1117,7 @@ mod tests {
             title: None,
             description: None,
             validation: None,
+            metadata: None,
         };
         assert!(resolved.is_binary());
         assert!(!resolved.is_json());
@@ -1126,6 +1133,7 @@ mod tests {
             title: None,
             description: None,
             validation: None,
+            metadata: None,
         };
         assert!(resolved.is_json());
         assert!(!resolved.is_binary());
@@ -1141,9 +1149,109 @@ mod tests {
             title: None,
             description: None,
             validation: None,
+            metadata: None,
         };
         assert!(resolved.is_text());
         assert!(!resolved.is_binary());
         assert!(!resolved.is_json());
+    }
+
+    // -------------------------------------------------------------------------
+    // Metadata propagation tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_metadata_propagation_from_object_def() {
+        // Create a media spec definition with metadata
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(
+            "media:custom-setting;setting".to_string(),
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "text/plain".to_string(),
+                profile_uri: "https://example.com/schema".to_string(),
+                schema: None,
+                title: Some("Custom Setting".to_string()),
+                description: Some("A custom setting".to_string()),
+                validation: None,
+                metadata: Some(serde_json::json!({
+                    "category_key": "interface",
+                    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
+                    "subcategory_key": "appearance",
+                    "display_index": 5
+                })),
+            }),
+        );
+
+        // Resolve and verify metadata is propagated
+        let resolved = resolve_media_urn("media:custom-setting;setting", &media_specs).unwrap();
+        assert!(resolved.metadata.is_some());
+        let metadata = resolved.metadata.unwrap();
+        assert_eq!(metadata.get("category_key").unwrap(), "interface");
+        assert_eq!(metadata.get("ui_type").unwrap(), "SETTING_UI_TYPE_CHECKBOX");
+        assert_eq!(metadata.get("subcategory_key").unwrap(), "appearance");
+        assert_eq!(metadata.get("display_index").unwrap(), 5);
+    }
+
+    #[test]
+    fn test_metadata_none_for_string_def() {
+        // String form definitions should have no metadata
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(
+            "media:simple;textable".to_string(),
+            MediaSpecDef::String("text/plain; profile=https://example.com".to_string()),
+        );
+
+        let resolved = resolve_media_urn("media:simple;textable", &media_specs).unwrap();
+        assert!(resolved.metadata.is_none());
+    }
+
+    #[test]
+    fn test_metadata_none_for_builtin() {
+        // Built-in media URNs should have no metadata
+        let media_specs = std::collections::HashMap::new();
+        let resolved = resolve_media_urn(crate::MEDIA_STRING, &media_specs).unwrap();
+        assert!(resolved.metadata.is_none());
+    }
+
+    #[test]
+    fn test_metadata_with_validation() {
+        // Ensure metadata and validation can coexist
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(
+            "media:bounded-number;numeric;setting".to_string(),
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "text/plain".to_string(),
+                profile_uri: "https://example.com/schema".to_string(),
+                schema: None,
+                title: Some("Bounded Number".to_string()),
+                description: None,
+                validation: Some(ArgumentValidation {
+                    min: Some(0.0),
+                    max: Some(100.0),
+                    min_length: None,
+                    max_length: None,
+                    pattern: None,
+                    allowed_values: None,
+                }),
+                metadata: Some(serde_json::json!({
+                    "category_key": "inference",
+                    "ui_type": "SETTING_UI_TYPE_SLIDER"
+                })),
+            }),
+        );
+
+        let resolved = resolve_media_urn("media:bounded-number;numeric;setting", &media_specs).unwrap();
+
+        // Verify validation
+        assert!(resolved.validation.is_some());
+        let validation = resolved.validation.unwrap();
+        assert_eq!(validation.min, Some(0.0));
+        assert_eq!(validation.max, Some(100.0));
+
+        // Verify metadata
+        assert!(resolved.metadata.is_some());
+        let metadata = resolved.metadata.unwrap();
+        assert_eq!(metadata.get("category_key").unwrap(), "inference");
+        assert_eq!(metadata.get("ui_type").unwrap(), "SETTING_UI_TYPE_SLIDER");
     }
 }

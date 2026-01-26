@@ -152,7 +152,7 @@ impl CapGraph {
             .iter()
             .filter(|edge| {
                 match MediaUrn::from_string(&edge.from_spec) {
-                    Ok(requirement_urn) => provided_urn.satisfies(&requirement_urn),
+                    Ok(requirement_urn) => provided_urn.matches(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -173,7 +173,7 @@ impl CapGraph {
             .iter()
             .filter(|edge| {
                 match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.satisfies(&requirement_urn),
+                    Ok(produced_urn) => produced_urn.matches(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -193,7 +193,7 @@ impl CapGraph {
             .iter()
             .any(|edge| {
                 match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.satisfies(&to_requirement),
+                    Ok(produced_urn) => produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -214,7 +214,7 @@ impl CapGraph {
             .into_iter()
             .filter(|edge| {
                 match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.satisfies(&to_requirement),
+                    Ok(produced_urn) => produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -251,7 +251,7 @@ impl CapGraph {
         // Start by checking edges from the initial spec
         for edge in &initial_edges {
             if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                if produced_urn.satisfies(&to_requirement) {
+                if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                     return true;
                 }
             }
@@ -265,7 +265,7 @@ impl CapGraph {
         while let Some(current) = queue.pop_front() {
             for edge in self.get_outgoing(&current) {
                 if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                    if produced_urn.satisfies(&to_requirement) {
+                    if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                         return true;
                     }
                 }
@@ -311,7 +311,7 @@ impl CapGraph {
             let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, *edge))?;
 
             if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                if produced_urn.satisfies(&to_requirement) {
+                if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                     // Direct path found
                     return Some(vec![&self.edges[edge_idx]]);
                 }
@@ -329,7 +329,7 @@ impl CapGraph {
                 let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, edge))?;
 
                 if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                    if produced_urn.satisfies(&to_requirement) {
+                    if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                         // Found target - reconstruct path
                         let mut path_indices = vec![edge_idx];
                         let mut backtrack = current.clone();
@@ -422,9 +422,10 @@ impl CapGraph {
             };
 
             // Check if edge output satisfies target
-            let output_satisfies = MediaUrn::from_string(&edge.to_spec)
-                .map(|produced| produced.satisfies(target))
-                .unwrap_or(false);
+            let output_satisfies = match MediaUrn::from_string(&edge.to_spec) {
+                Ok(produced) => produced.matches(target).expect("MediaUrn prefix mismatch impossible"),
+                Err(_) => false,
+            };
 
             if output_satisfies {
                 // Found a path
