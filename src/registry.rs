@@ -165,27 +165,42 @@ impl CapRegistry {
     /// Install bundled standard capabilities to cache directory if they don't exist
     async fn install_standard_caps(&self) -> Result<(), RegistryError> {
         for file in STANDARD_CAPS.files() {
+            // Skip non-JSON files (e.g., .gitkeep)
+            let extension = file.path().extension().and_then(|e| e.to_str());
+            if extension != Some("json") {
+                continue;
+            }
+
             // Get filename without extension for URN construction
-            let filename = file.path().file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| RegistryError::CacheError(
-                    format!("Invalid filename: {:?}", file.path())
-                ))?;
-            
+            let filename = match file.path().file_stem().and_then(|s| s.to_str()) {
+                Some(name) => name,
+                None => {
+                    eprintln!("[WARN] Skipping file with invalid filename: {:?}", file.path());
+                    continue;
+                }
+            };
+
             // Parse the JSON content to get the Cap definition
-            let content = file.contents_utf8()
-                .ok_or_else(|| RegistryError::CacheError(
-                    format!("File is not valid UTF-8: {:?}", file.path())
-                ))?;
-            
-            let cap: Cap = serde_json::from_str(content).map_err(|e| {
-                RegistryError::ParseError(format!("Failed to parse bundled cap {}: {}", filename, e))
-            })?;
-            
+            let content = match file.contents_utf8() {
+                Some(c) => c,
+                None => {
+                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    continue;
+                }
+            };
+
+            let cap: Cap = match serde_json::from_str(content) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[WARN] Skipping invalid cap definition {}: {}", filename, e);
+                    continue;
+                }
+            };
+
             // Get normalized URN from the cap definition
             let urn = cap.urn_string();
             let normalized_urn = normalize_cap_urn(&urn);
-            
+
             // Check if this capability is already cached
             let cache_file = self.cache_file_path(&normalized_urn);
             if !cache_file.exists() {
@@ -198,44 +213,66 @@ impl CapRegistry {
                         .as_secs(),
                     ttl_hours: CACHE_DURATION_HOURS,
                 };
-                
-                let cache_content = serde_json::to_string_pretty(&cache_entry).map_err(|e| {
-                    RegistryError::CacheError(format!("Failed to serialize standard cap {}: {}", filename, e))
-                })?;
-                
-                fs::write(&cache_file, cache_content).map_err(|e| {
-                    RegistryError::CacheError(format!("Failed to write standard cap to cache {}: {}", filename, e))
-                })?;
-                
+
+                let cache_content = match serde_json::to_string_pretty(&cache_entry) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("[WARN] Failed to serialize standard cap {}: {}", filename, e);
+                        continue;
+                    }
+                };
+
+                if let Err(e) = fs::write(&cache_file, cache_content) {
+                    eprintln!("[WARN] Failed to write standard cap to cache {}: {}", filename, e);
+                    continue;
+                }
+
                 // Also add to in-memory cache
                 if let Ok(mut cached_caps) = self.cached_caps.lock() {
                     cached_caps.insert(normalized_urn.clone(), cap);
                 }
-                
+
                 eprintln!("Installed standard capability: {}", normalized_urn);
             }
         }
-        
+
         Ok(())
     }
     
     /// Get all bundled standard capabilities without network access
     pub fn get_standard_caps(&self) -> Result<Vec<Cap>, RegistryError> {
         let mut caps = Vec::new();
-        
+
         for file in STANDARD_CAPS.files() {
-            let content = file.contents_utf8()
-                .ok_or_else(|| RegistryError::CacheError(
-                    format!("File is not valid UTF-8: {:?}", file.path())
-                ))?;
-            
-            let cap: Cap = serde_json::from_str(content).map_err(|e| {
-                RegistryError::ParseError(format!("Failed to parse bundled cap: {}", e))
-            })?;
-            
+            // Skip non-JSON files (e.g., .gitkeep)
+            let extension = file.path().extension().and_then(|e| e.to_str());
+            if extension != Some("json") {
+                continue;
+            }
+
+            let filename = file.path().file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("<unknown>");
+
+            let content = match file.contents_utf8() {
+                Some(c) => c,
+                None => {
+                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    continue;
+                }
+            };
+
+            let cap: Cap = match serde_json::from_str(content) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[WARN] Skipping invalid cap definition {}: {}", filename, e);
+                    continue;
+                }
+            };
+
             caps.push(cap);
         }
-        
+
         Ok(caps)
     }
 
@@ -315,23 +352,40 @@ impl CapRegistry {
         for entry in fs::read_dir(cache_dir).map_err(|e| {
             RegistryError::CacheError(format!("Failed to read cache directory: {}", e))
         })? {
-            let entry = entry.map_err(|e| {
-                RegistryError::CacheError(format!("Failed to read cache entry: {}", e))
-            })?;
-            
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("[WARN] Failed to read cache entry: {}", e);
+                    continue;
+                }
+            };
+
             let path = entry.path();
             if let Some(extension) = path.extension() {
                 if extension == "json" {
-                    let content = fs::read_to_string(&path)
-                        .map_err(|e| RegistryError::CacheError(format!("Failed to read cache file {:?}: {}", path, e)))?;
-                    
-                    let cache_entry: CacheEntry = serde_json::from_str(&content)
-                        .map_err(|e| RegistryError::CacheError(format!("Failed to parse cache file {:?}: {}", path, e)))?;
+                    let content = match fs::read_to_string(&path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("[WARN] Failed to read cache file {:?}: {}", path, e);
+                            continue;
+                        }
+                    };
+
+                    let cache_entry: CacheEntry = match serde_json::from_str(&content) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            eprintln!("[WARN] Failed to parse cache file {:?}: {}", path, e);
+                            // Try to remove the invalid cache file
+                            let _ = fs::remove_file(&path);
+                            continue;
+                        }
+                    };
 
                     if cache_entry.is_expired() {
                         // Remove expired cache file
-                        fs::remove_file(&path)
-                            .map_err(|e| RegistryError::CacheError(format!("Failed to remove expired cache file {:?}: {}", path, e)))?;
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("[WARN] Failed to remove expired cache file {:?}: {}", path, e);
+                        }
                         continue;
                     }
 

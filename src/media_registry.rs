@@ -166,27 +166,35 @@ impl MediaUrnRegistry {
     /// Install bundled standard media specs to cache if they don't exist
     async fn install_standard_specs(&self) -> Result<(), MediaRegistryError> {
         for file in STANDARD_MEDIA_SPECS.files() {
-            let filename = file
-                .path()
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .ok_or_else(|| {
-                    MediaRegistryError::CacheError(format!("Invalid filename: {:?}", file.path()))
-                })?;
+            // Skip non-JSON files (e.g., .gitkeep)
+            let extension = file.path().extension().and_then(|e| e.to_str());
+            if extension != Some("json") {
+                continue;
+            }
 
-            let content = file.contents_utf8().ok_or_else(|| {
-                MediaRegistryError::CacheError(format!(
-                    "File is not valid UTF-8: {:?}",
-                    file.path()
-                ))
-            })?;
+            let filename = match file.path().file_stem().and_then(|s| s.to_str()) {
+                Some(name) => name,
+                None => {
+                    eprintln!("[WARN] Skipping file with invalid filename: {:?}", file.path());
+                    continue;
+                }
+            };
 
-            let spec: StoredMediaSpec = serde_json::from_str(content).map_err(|e| {
-                MediaRegistryError::ParseError(format!(
-                    "Failed to parse bundled media spec {}: {}",
-                    filename, e
-                ))
-            })?;
+            let content = match file.contents_utf8() {
+                Some(c) => c,
+                None => {
+                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    continue;
+                }
+            };
+
+            let spec: StoredMediaSpec = match serde_json::from_str(content) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("[WARN] Skipping invalid media spec {}: {}", filename, e);
+                    continue;
+                }
+            };
 
             let normalized_urn = normalize_media_urn(&spec.urn);
 
@@ -203,19 +211,18 @@ impl MediaUrnRegistry {
                     ttl_hours: CACHE_DURATION_HOURS,
                 };
 
-                let cache_content = serde_json::to_string_pretty(&cache_entry).map_err(|e| {
-                    MediaRegistryError::CacheError(format!(
-                        "Failed to serialize media spec {}: {}",
-                        filename, e
-                    ))
-                })?;
+                let cache_content = match serde_json::to_string_pretty(&cache_entry) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("[WARN] Failed to serialize media spec {}: {}", filename, e);
+                        continue;
+                    }
+                };
 
-                fs::write(&cache_file, cache_content).map_err(|e| {
-                    MediaRegistryError::CacheError(format!(
-                        "Failed to write media spec to cache {}: {}",
-                        filename, e
-                    ))
-                })?;
+                if let Err(e) = fs::write(&cache_file, cache_content) {
+                    eprintln!("[WARN] Failed to write media spec to cache {}: {}", filename, e);
+                    continue;
+                }
 
                 // Add to in-memory cache
                 if let Ok(mut cached_specs) = self.cached_specs.lock() {
@@ -234,16 +241,31 @@ impl MediaUrnRegistry {
         let mut specs = Vec::new();
 
         for file in STANDARD_MEDIA_SPECS.files() {
-            let content = file.contents_utf8().ok_or_else(|| {
-                MediaRegistryError::CacheError(format!(
-                    "File is not valid UTF-8: {:?}",
-                    file.path()
-                ))
-            })?;
+            // Skip non-JSON files (e.g., .gitkeep)
+            let extension = file.path().extension().and_then(|e| e.to_str());
+            if extension != Some("json") {
+                continue;
+            }
 
-            let spec: StoredMediaSpec = serde_json::from_str(content).map_err(|e| {
-                MediaRegistryError::ParseError(format!("Failed to parse bundled media spec: {}", e))
-            })?;
+            let filename = file.path().file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("<unknown>");
+
+            let content = match file.contents_utf8() {
+                Some(c) => c,
+                None => {
+                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    continue;
+                }
+            };
+
+            let spec: StoredMediaSpec = match serde_json::from_str(content) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("[WARN] Skipping invalid media spec {}: {}", filename, e);
+                    continue;
+                }
+            };
 
             specs.push(spec);
         }
@@ -332,36 +354,40 @@ impl MediaUrnRegistry {
         for entry in fs::read_dir(cache_dir).map_err(|e| {
             MediaRegistryError::CacheError(format!("Failed to read cache directory: {}", e))
         })? {
-            let entry = entry.map_err(|e| {
-                MediaRegistryError::CacheError(format!("Failed to read cache entry: {}", e))
-            })?;
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("[WARN] Failed to read cache entry: {}", e);
+                    continue;
+                }
+            };
 
             let path = entry.path();
             if let Some(extension) = path.extension() {
                 if extension == "json" {
-                    let content = fs::read_to_string(&path).map_err(|e| {
-                        MediaRegistryError::CacheError(format!(
-                            "Failed to read cache file {:?}: {}",
-                            path, e
-                        ))
-                    })?;
+                    let content = match fs::read_to_string(&path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("[WARN] Failed to read cache file {:?}: {}", path, e);
+                            continue;
+                        }
+                    };
 
-                    let cache_entry: MediaCacheEntry =
-                        serde_json::from_str(&content).map_err(|e| {
-                            MediaRegistryError::CacheError(format!(
-                                "Failed to parse cache file {:?}: {}",
-                                path, e
-                            ))
-                        })?;
+                    let cache_entry: MediaCacheEntry = match serde_json::from_str(&content) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            eprintln!("[WARN] Failed to parse cache file {:?}: {}", path, e);
+                            // Try to remove the invalid cache file
+                            let _ = fs::remove_file(&path);
+                            continue;
+                        }
+                    };
 
                     if cache_entry.is_expired() {
                         // Remove expired cache file
-                        fs::remove_file(&path).map_err(|e| {
-                            MediaRegistryError::CacheError(format!(
-                                "Failed to remove expired cache file {:?}: {}",
-                                path, e
-                            ))
-                        })?;
+                        if let Err(e) = fs::remove_file(&path) {
+                            eprintln!("[WARN] Failed to remove expired cache file {:?}: {}", path, e);
+                        }
                         continue;
                     }
 
