@@ -5,8 +5,8 @@
 //! Uses spec ID resolution to get media types and schemas from the media_specs table.
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
-use crate::{Cap, CapOutput, CapArg, ArgSource, ArgumentValidation};
-use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec};
+use crate::{Cap, CapOutput, CapArg, ArgSource};
+use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec, ArgumentValidation};
 use std::collections::HashSet;
 use crate::profile_schema_registry::ProfileSchemaRegistry;
 use serde_json::Value;
@@ -38,13 +38,6 @@ pub enum ValidationError {
         actual_value: Value,
         schema_errors: Vec<String>,
     },
-    /// Argument validation rule violation
-    ArgumentValidationFailed {
-        cap_urn: String,
-        argument_name: String,
-        validation_rule: String,
-        actual_value: Value,
-    },
     /// Media spec validation rule violation (inherent to the semantic type)
     MediaSpecValidationFailed {
         cap_urn: String,
@@ -59,12 +52,6 @@ pub enum ValidationError {
         expected_media_spec: String,
         actual_value: Value,
         schema_errors: Vec<String>,
-    },
-    /// Output validation rule violation
-    OutputValidationFailed {
-        cap_urn: String,
-        validation_rule: String,
-        actual_value: Value,
     },
     /// Output media spec validation rule violation (inherent to the semantic type)
     OutputMediaSpecValidationFailed {
@@ -125,10 +112,6 @@ impl fmt::Display for ValidationError {
                 write!(f, "Cap '{}' argument '{}' expects media_spec '{}' but validation failed for value {}: {}",
                        cap_urn, argument_name, expected_media_spec, actual_value, schema_errors.join(", "))
             }
-            ValidationError::ArgumentValidationFailed { cap_urn, argument_name, validation_rule, actual_value } => {
-                write!(f, "Cap '{}' argument '{}' failed validation rule '{}' with value: {}",
-                       cap_urn, argument_name, validation_rule, actual_value)
-            }
             ValidationError::MediaSpecValidationFailed { cap_urn, argument_name, media_urn, validation_rule, actual_value } => {
                 write!(f, "Cap '{}' argument '{}' failed media spec '{}' validation rule '{}' with value: {}",
                        cap_urn, argument_name, media_urn, validation_rule, actual_value)
@@ -136,10 +119,6 @@ impl fmt::Display for ValidationError {
             ValidationError::InvalidOutputType { cap_urn, expected_media_spec, actual_value, schema_errors } => {
                 write!(f, "Cap '{}' output expects media_spec '{}' but validation failed for value {}: {}",
                        cap_urn, expected_media_spec, actual_value, schema_errors.join(", "))
-            }
-            ValidationError::OutputValidationFailed { cap_urn, validation_rule, actual_value } => {
-                write!(f, "Cap '{}' output failed validation rule '{}' with value: {}",
-                       cap_urn, validation_rule, actual_value)
             }
             ValidationError::OutputMediaSpecValidationFailed { cap_urn, media_urn, validation_rule, actual_value } => {
                 write!(f, "Cap '{}' output failed media spec '{}' validation rule '{}' with value: {}",
@@ -297,13 +276,10 @@ impl InputValidator {
         // Returns the resolved media spec so we can access its validation rules
         let resolved = self.validate_argument_type(cap, arg_def, value).await?;
 
-        // FIRST PASS: Media spec validation rules (inherent to the semantic type)
+        // Media spec validation rules (inherent to the semantic type)
         if let Some(ref validation) = resolved.validation {
             self.validate_media_spec_rules(cap, arg_def, &resolved, validation, value)?;
         }
-
-        // SECOND PASS: Arg-level validation rules (context-specific)
-        self.validate_argument_rules(cap, arg_def, value)?;
 
         Ok(())
     }
@@ -525,131 +501,6 @@ impl InputValidator {
             }
         }
     }
-
-    fn validate_argument_rules(
-        &self,
-        cap: &Cap,
-        arg_def: &CapArg,
-        value: &Value,
-    ) -> Result<(), ValidationError> {
-        let cap_urn = cap.urn_string();
-        let validation = &arg_def.validation;
-
-        // Numeric validation
-        if let Some(min) = validation.min {
-            if let Some(num) = value.as_f64() {
-                if num < min {
-                    return Err(ValidationError::ArgumentValidationFailed {
-                        cap_urn,
-                        argument_name: arg_def.media_urn.clone(),
-                        validation_rule: format!("minimum value {}", min),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(max) = validation.max {
-            if let Some(num) = value.as_f64() {
-                if num > max {
-                    return Err(ValidationError::ArgumentValidationFailed {
-                        cap_urn,
-                        argument_name: arg_def.media_urn.clone(),
-                        validation_rule: format!("maximum value {}", max),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        // Length validation (for strings and arrays)
-        if let Some(min_length) = validation.min_length {
-            match (value.as_str(), value.as_array()) {
-                (Some(s), _) => {
-                    if s.len() < min_length {
-                        return Err(ValidationError::ArgumentValidationFailed {
-                            cap_urn,
-                            argument_name: arg_def.media_urn.clone(),
-                            validation_rule: format!("minimum length {}", min_length),
-                            actual_value: value.clone(),
-                        });
-                    }
-                },
-                (_, Some(arr)) => {
-                    if arr.len() < min_length {
-                        return Err(ValidationError::ArgumentValidationFailed {
-                            cap_urn,
-                            argument_name: arg_def.media_urn.clone(),
-                            validation_rule: format!("minimum array length {}", min_length),
-                            actual_value: value.clone(),
-                        });
-                    }
-                },
-                _ => {}
-            }
-        }
-
-        if let Some(max_length) = validation.max_length {
-            match (value.as_str(), value.as_array()) {
-                (Some(s), _) => {
-                    if s.len() > max_length {
-                        return Err(ValidationError::ArgumentValidationFailed {
-                            cap_urn,
-                            argument_name: arg_def.media_urn.clone(),
-                            validation_rule: format!("maximum length {}", max_length),
-                            actual_value: value.clone(),
-                        });
-                    }
-                },
-                (_, Some(arr)) => {
-                    if arr.len() > max_length {
-                        return Err(ValidationError::ArgumentValidationFailed {
-                            cap_urn,
-                            argument_name: arg_def.media_urn.clone(),
-                            validation_rule: format!("maximum array length {}", max_length),
-                            actual_value: value.clone(),
-                        });
-                    }
-                },
-                _ => {}
-            }
-        }
-
-        // Pattern validation
-        if let Some(pattern) = &validation.pattern {
-            if let Some(s) = value.as_str() {
-                let regex = regex::Regex::new(pattern)
-                    .map_err(|e| ValidationError::InvalidCapSchema {
-                        cap_urn: cap_urn.clone(),
-                        issue: format!("Invalid regex pattern '{}' in argument '{}': {}", pattern, arg_def.media_urn, e),
-                    })?;
-                if !regex.is_match(s) {
-                    return Err(ValidationError::ArgumentValidationFailed {
-                        cap_urn,
-                        argument_name: arg_def.media_urn.clone(),
-                        validation_rule: format!("pattern '{}'", pattern),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        // Allowed values validation
-        if let Some(allowed_values) = &validation.allowed_values {
-            if let Some(s) = value.as_str() {
-                if !allowed_values.contains(&s.to_string()) {
-                    return Err(ValidationError::ArgumentValidationFailed {
-                        cap_urn,
-                        argument_name: arg_def.media_urn.clone(),
-                        validation_rule: format!("allowed values: {:?}", allowed_values),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Output validator using ProfileSchemaRegistry
@@ -681,13 +532,10 @@ impl OutputValidator {
         // Returns the resolved media spec so we can access its validation rules
         let resolved = self.validate_output_type(cap, output_def, output).await?;
 
-        // FIRST PASS: Media spec validation rules (inherent to the semantic type)
+        // Media spec validation rules (inherent to the semantic type)
         if let Some(ref validation) = resolved.validation {
             self.validate_output_media_spec_rules(cap, &resolved, validation, output)?;
         }
-
-        // SECOND PASS: Output-level validation rules (context-specific)
-        self.validate_output_rules(cap, output_def, output)?;
 
         Ok(())
     }
@@ -870,96 +718,6 @@ impl OutputValidator {
                 Err(error_strings)
             }
         }
-    }
-
-    fn validate_output_rules(
-        &self,
-        cap: &Cap,
-        output_def: &CapOutput,
-        value: &Value,
-    ) -> Result<(), ValidationError> {
-        let cap_urn = cap.urn_string();
-        let validation = &output_def.validation;
-
-        // Apply same validation rules as arguments
-        if let Some(min) = validation.min {
-            if let Some(num) = value.as_f64() {
-                if num < min {
-                    return Err(ValidationError::OutputValidationFailed {
-                        cap_urn,
-                        validation_rule: format!("minimum value {}", min),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(max) = validation.max {
-            if let Some(num) = value.as_f64() {
-                if num > max {
-                    return Err(ValidationError::OutputValidationFailed {
-                        cap_urn,
-                        validation_rule: format!("maximum value {}", max),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(min_length) = validation.min_length {
-            if let Some(s) = value.as_str() {
-                if s.len() < min_length {
-                    return Err(ValidationError::OutputValidationFailed {
-                        cap_urn,
-                        validation_rule: format!("minimum length {}", min_length),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(max_length) = validation.max_length {
-            if let Some(s) = value.as_str() {
-                if s.len() > max_length {
-                    return Err(ValidationError::OutputValidationFailed {
-                        cap_urn,
-                        validation_rule: format!("maximum length {}", max_length),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(pattern) = &validation.pattern {
-            if let Some(s) = value.as_str() {
-                let regex = regex::Regex::new(pattern)
-                    .map_err(|e| ValidationError::InvalidCapSchema {
-                        cap_urn: cap_urn.clone(),
-                        issue: format!("Invalid regex pattern '{}' in output: {}", pattern, e),
-                    })?;
-                if !regex.is_match(s) {
-                    return Err(ValidationError::OutputValidationFailed {
-                        cap_urn,
-                        validation_rule: format!("pattern '{}'", pattern),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(allowed_values) = &validation.allowed_values {
-            if let Some(s) = value.as_str() {
-                if !allowed_values.contains(&s.to_string()) {
-                    return Err(ValidationError::OutputValidationFailed {
-                        cap_urn,
-                        validation_rule: format!("allowed values: {:?}", allowed_values),
-                        actual_value: value.clone(),
-                    });
-                }
-            }
-        }
-
-        Ok(())
     }
 }
 

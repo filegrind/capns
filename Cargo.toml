@@ -18,7 +18,7 @@ features = ["derive"]
 version = "1.0"
 
 [dependencies.tagged-urn]
-path = "../tagged-urn-rs"
+version = "0.11.3765"
 
 [dependencies.tokio]
 features = ["full"]
@@ -33,3 +33,4 @@ description = "Core cap URN and definition system for FGND plugins"
 edition = "2021"
 name = "capns"
 version = "0.108.50234"
+license = "MIT"

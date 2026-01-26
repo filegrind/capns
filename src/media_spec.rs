@@ -4,6 +4,7 @@
 //! - Media URN resolution (e.g., `media:string` → resolved media spec)
 //! - MediaSpec parsing (canonical form: `text/plain; profile=https://...`)
 //! - MediaSpecDef for defining specs in cap definitions
+//! - ArgumentValidation for validation rules inherent to media types
 //!
 //! ## Media URN Format
 //! Media URNs are tagged URNs with "media" prefix, e.g., `media:string`
@@ -155,6 +156,95 @@ pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schem
 pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questions-array";
 
 // =============================================================================
+// ARGUMENT VALIDATION (for media spec definitions)
+// =============================================================================
+
+/// Validation rules for media types
+///
+/// These rules are inherent to the semantic media type and are defined
+/// in the media spec, not on individual arguments or outputs.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ArgumentValidation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_length: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_values: Option<Vec<String>>,
+}
+
+impl ArgumentValidation {
+    /// Check if all validation fields are empty/None
+    pub fn is_empty(&self) -> bool {
+        self.min.is_none() &&
+        self.max.is_none() &&
+        self.min_length.is_none() &&
+        self.max_length.is_none() &&
+        self.pattern.is_none() &&
+        self.allowed_values.is_none()
+    }
+
+    /// Create validation with min/max numeric constraints
+    pub fn numeric_range(min: Option<f64>, max: Option<f64>) -> Self {
+        Self {
+            min,
+            max,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            allowed_values: None,
+        }
+    }
+
+    /// Create validation with string length constraints
+    pub fn string_length(min_length: Option<usize>, max_length: Option<usize>) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length,
+            max_length,
+            pattern: None,
+            allowed_values: None,
+        }
+    }
+
+    /// Create validation with pattern
+    pub fn with_pattern(pattern: String) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            pattern: Some(pattern),
+            allowed_values: None,
+        }
+    }
+
+    /// Create validation with allowed values
+    pub fn with_allowed_values(values: Vec<String>) -> Self {
+        Self {
+            min: None,
+            max: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            allowed_values: Some(values),
+        }
+    }
+}
+
+// =============================================================================
 // MEDIA SPEC DEFINITION (for cap definitions)
 // =============================================================================
 
@@ -202,7 +292,7 @@ pub struct MediaSpecDefObject {
     pub description: Option<String>,
     /// Optional validation rules for this media type
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub validation: Option<crate::ArgumentValidation>,
+    pub validation: Option<ArgumentValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -284,7 +374,7 @@ impl MediaSpecDef {
     pub fn object_with_validation(
         media_type: impl Into<String>,
         profile_uri: impl Into<String>,
-        validation: crate::ArgumentValidation,
+        validation: ArgumentValidation,
     ) -> Self {
         MediaSpecDef::Object(MediaSpecDefObject {
             media_type: media_type.into(),
@@ -321,7 +411,7 @@ pub struct ResolvedMediaSpec {
     /// Optional description of the media type
     pub description: Option<String>,
     /// Optional validation rules from the media spec definition
-    pub validation: Option<crate::ArgumentValidation>,
+    pub validation: Option<ArgumentValidation>,
 }
 
 impl ResolvedMediaSpec {
@@ -906,6 +996,7 @@ mod tests {
                 title: None,
                 description: None,
                 validation: None,
+                metadata: None,
             }),
         );
 
@@ -978,6 +1069,7 @@ mod tests {
             title: None,
             description: None,
             validation: None,
+            metadata: None,
         });
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"media_type\":\"application/json\""));

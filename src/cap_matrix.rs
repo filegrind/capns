@@ -613,6 +613,16 @@ impl CapMatrix {
             .collect()
     }
 
+    /// Get capabilities for a specific host
+    pub fn get_capabilities_for_host(&self, host_name: &str) -> Option<&[Cap]> {
+        self.sets.get(host_name).map(|entry| entry.capabilities.as_slice())
+    }
+
+    /// Iterate over all hosts and their capabilities
+    pub fn iter_hosts_and_caps(&self) -> impl Iterator<Item = (&str, &[Cap])> {
+        self.sets.iter().map(|(name, entry)| (name.as_str(), entry.capabilities.as_slice()))
+    }
+
     /// Check if any host can handle the specified capability
     pub fn can_handle(&self, request_urn: &str) -> bool {
         self.find_cap_sets(request_urn).is_ok()

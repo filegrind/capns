@@ -531,6 +531,7 @@ mod tests {
             schema: None,
             description: Some("PDF document data".to_string()),
             validation: None,
+            metadata: None,
         };
 
         let def = spec.to_media_spec_def();

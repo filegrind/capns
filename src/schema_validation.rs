@@ -247,6 +247,7 @@ mod tests {
                 title: None,
                 description: None,
                 validation: None,
+                metadata: None,
             }),
         );
 
@@ -284,6 +285,7 @@ mod tests {
                 title: None,
                 description: None,
                 validation: None,
+                metadata: None,
             }),
         );
 
@@ -322,6 +324,7 @@ mod tests {
                 title: None,
                 description: None,
                 validation: None,
+                metadata: None,
             }),
         );
 

@@ -31,87 +31,6 @@ use crate::media_spec::{resolve_media_urn, MediaSpecDef, MediaSpecError, Resolve
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-/// Argument validation rules
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-pub struct ArgumentValidation {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min: Option<f64>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max: Option<f64>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_length: Option<usize>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_length: Option<usize>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pattern: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_values: Option<Vec<String>>,
-}
-
-impl ArgumentValidation {
-    fn is_empty(&self) -> bool {
-        self.min.is_none() &&
-        self.max.is_none() &&
-        self.min_length.is_none() &&
-        self.max_length.is_none() &&
-        self.pattern.is_none() &&
-        self.allowed_values.is_none()
-    }
-
-    /// Create validation with min/max numeric constraints
-    pub fn numeric_range(min: Option<f64>, max: Option<f64>) -> Self {
-        Self {
-            min,
-            max,
-            min_length: None,
-            max_length: None,
-            pattern: None,
-            allowed_values: None,
-        }
-    }
-
-    /// Create validation with string length constraints
-    pub fn string_length(min_length: Option<usize>, max_length: Option<usize>) -> Self {
-        Self {
-            min: None,
-            max: None,
-            min_length,
-            max_length,
-            pattern: None,
-            allowed_values: None,
-        }
-    }
-
-    /// Create validation with pattern
-    pub fn pattern(pattern: String) -> Self {
-        Self {
-            min: None,
-            max: None,
-            min_length: None,
-            max_length: None,
-            pattern: Some(pattern),
-            allowed_values: None,
-        }
-    }
-
-    /// Create validation with allowed values
-    pub fn allowed_values(values: Vec<String>) -> Self {
-        Self {
-            min: None,
-            max: None,
-            min_length: None,
-            max_length: None,
-            pattern: None,
-            allowed_values: Some(values),
-        }
-    }
-}
-
 /// Source specification for argument input
 ///
 /// Each variant serializes to a distinct JSON object with a unique key:
@@ -185,10 +104,6 @@ pub struct CapArg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arg_description: Option<String>,
 
-    /// Validation rules
-    #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
-    pub validation: ArgumentValidation,
-
     /// Default value for optional arguments
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<serde_json::Value>,
@@ -206,7 +121,6 @@ impl CapArg {
             required,
             sources,
             arg_description: None,
-            validation: ArgumentValidation::default(),
             default_value: None,
             metadata: None,
         }
@@ -224,7 +138,6 @@ impl CapArg {
             required,
             sources,
             arg_description: Some(description.into()),
-            validation: ArgumentValidation::default(),
             default_value: None,
             metadata: None,
         }
@@ -236,7 +149,6 @@ impl CapArg {
         required: bool,
         sources: Vec<ArgSource>,
         description: Option<String>,
-        validation: ArgumentValidation,
         default: Option<serde_json::Value>,
         metadata: Option<serde_json::Value>,
     ) -> Self {
@@ -245,7 +157,6 @@ impl CapArg {
             required,
             sources,
             arg_description: description,
-            validation,
             default_value: default,
             metadata,
         }
@@ -319,9 +230,6 @@ pub struct CapOutput {
     /// e.g., "media:object" or a custom media URN like "media:my-output"
     pub media_urn: String,
 
-    #[serde(skip_serializing_if = "ArgumentValidation::is_empty", default)]
-    pub validation: ArgumentValidation,
-
     pub output_description: String,
 
     /// Arbitrary metadata as JSON object
@@ -339,17 +247,6 @@ impl CapOutput {
         Self {
             media_urn: media_urn.into(),
             output_description: description.into(),
-            validation: ArgumentValidation::default(),
-            metadata: None,
-        }
-    }
-
-    /// Create output with validation
-    pub fn with_validation(media_urn: impl Into<String>, description: impl Into<String>, validation: ArgumentValidation) -> Self {
-        Self {
-            media_urn: media_urn.into(),
-            output_description: description.into(),
-            validation,
             metadata: None,
         }
     }
@@ -358,13 +255,11 @@ impl CapOutput {
     pub fn with_full_definition(
         media_urn: impl Into<String>,
         description: impl Into<String>,
-        validation: ArgumentValidation,
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
             media_urn: media_urn.into(),
             output_description: description.into(),
-            validation,
             metadata,
         }
     }
@@ -987,7 +882,6 @@ mod tests {
             required: true,
             sources: vec![ArgSource::Stdin { stdin: "media:text;textable".to_string() }],
             arg_description: Some("Input text".to_string()),
-            validation: ArgumentValidation::default(),
             default_value: None,
             metadata: None,
         };
@@ -1039,7 +933,6 @@ mod tests {
                 ArgSource::Position { position: 0 },
             ],
             arg_description: Some("The name argument".to_string()),
-            validation: ArgumentValidation::default(),
             default_value: None,
             metadata: None,
         };
