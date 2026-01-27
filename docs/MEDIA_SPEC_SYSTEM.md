@@ -47,14 +47,14 @@ Additional well-known spec IDs for specific domains:
 | `media:extract-metadata-output` | `application/json` | Document metadata extraction output |
 | `media:extract-outline-output` | `application/json` | Document outline extraction output |
 | `media:disbound-pages` | `application/json` | File chips extraction output |
-| `media:llm-inference-output` | `application/json` | LLM inference response |
+| `media:generated-text` | `application/json` | LLM inference response |
 | `media:embeddings` | `application/json` | Embeddings generation output |
 | `media:structured-query-output` | `application/json` | Structured query output |
 | `media:questions-array` | `application/json` | Questions array for bit choices |
 | `media:download-output` | `application/json` | Model download output |
 | `media:load-output` | `application/json` | Model load output |
 | `media:unload-output` | `application/json` | Model unload output |
-| `media:list-output` | `application/json` | Model list output |
+| `media:model-list` | `application/json` | Model list output |
 | `media:status-output` | `application/json` | Model status output |
 | `media:contents-output` | `application/json` | Model contents output |
 

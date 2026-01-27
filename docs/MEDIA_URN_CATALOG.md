@@ -57,7 +57,7 @@ Array variants of primitive types.
 | `media:download-result;textable;keyed` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
 | `media:load-output;textable;keyed` | `MEDIA_LOAD_OUTPUT` | Model load result |
 | `media:unload-output;textable;keyed` | `MEDIA_UNLOAD_OUTPUT` | Model unload result |
-| `media:list-output;textable;keyed` | `MEDIA_LIST_OUTPUT` | Model listing result |
+| `media:model-list;textable;keyed` | `MEDIA_LIST_OUTPUT` | Model listing result |
 | `media:status-output;textable;keyed` | `MEDIA_STATUS_OUTPUT` | Status query result |
 | `media:model-contents;textable;keyed` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
 | `media:embedding-vector;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
@@ -67,7 +67,7 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:llm-inference-output;textable;keyed` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
+| `media:generated-text;textable;keyed` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
 | `media:vision-inference-output;textable;keyed` | - | Vision model analysis result |
 | `media:embedding-vector;textable;keyed` | - | Embedding generation result |
 | `media:json;textable;keyed` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |

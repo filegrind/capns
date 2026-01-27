@@ -143,7 +143,7 @@ pub const PROFILE_CAPNS_LOAD_OUTPUT: &str = "https://capns.org/schema/load-outpu
 /// Profile URL for model unload output
 pub const PROFILE_CAPNS_UNLOAD_OUTPUT: &str = "https://capns.org/schema/unload-output";
 /// Profile URL for model list output
-pub const PROFILE_CAPNS_LIST_OUTPUT: &str = "https://capns.org/schema/list-output";
+pub const PROFILE_CAPNS_LIST_OUTPUT: &str = "https://capns.org/schema/model-list";
 /// Profile URL for model status output
 pub const PROFILE_CAPNS_STATUS_OUTPUT: &str = "https://capns.org/schema/status-output";
 /// Profile URL for model contents output

@@ -61,6 +61,20 @@ pub const MEDIA_VIDEO: &str = "media:video;binary";
 /// Media URN for generic text (semantic type)
 pub const MEDIA_TEXT: &str = "media:text;textable";
 
+// Semantic AI input types - distinguished by their purpose/context
+/// Media URN for image input to visual embedding models (CLIP)
+pub const MEDIA_IMAGE_VISUAL_EMBEDDING: &str = "media:image;png;binary;visual-embedding-source";
+/// Media URN for image input to captioning models (BLIP)
+pub const MEDIA_IMAGE_CAPTIONING: &str = "media:image;png;binary;captioning-source";
+/// Media URN for image input to vision-language models (VLM Q&A)
+pub const MEDIA_IMAGE_VISION_QUERY: &str = "media:image;png;binary;vision-query-source";
+/// Media URN for audio input containing speech for transcription (Whisper)
+pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;binary;speech";
+/// Media URN for text input to embedding models
+pub const MEDIA_TEXT_EMBEDDING: &str = "media:text;textable;scalar;embedding-source";
+/// Media URN for thumbnail image output
+pub const MEDIA_IMAGE_THUMBNAIL: &str = "media:image;png;binary;thumbnail";
+
 // Document types (PRIMARY naming - type IS the format)
 /// Media URN for PDF documents
 pub const MEDIA_PDF: &str = "media:pdf;binary";
@@ -103,11 +117,11 @@ pub const MEDIA_CONTENT_TEXT: &str = "media:content-text;textable;scalar";
 /// Media URN for frontmatter text (book metadata)
 pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter-text;textable;scalar";
 /// Media URN for model identifier/name
-pub const MEDIA_MODEL_ID: &str = "media:model-id;textable;scalar";
+pub const MEDIA_MODEL_ID: &str = "media:model-spec;textable;scalar";
 /// Media URN for model spec (provider:model format)
 pub const MEDIA_MODEL_SPEC: &str = "media:model-spec;textable;scalar";
 /// Media URN for HuggingFace model name
-pub const MEDIA_HF_MODEL_NAME: &str = "media:hf-model-name;textable;scalar";
+pub const MEDIA_HF_MODEL_NAME: &str = "media:model-spec;textable;scalar";
 /// Media URN for MLX model path
 pub const MEDIA_MLX_MODEL_PATH: &str = "media:mlx-model-path;textable;scalar";
 /// Media URN for management operation type
@@ -141,7 +155,7 @@ pub const MEDIA_LOAD_OUTPUT: &str = "media:load-output;textable;keyed";
 /// Media URN for model unload output - textable, keyed
 pub const MEDIA_UNLOAD_OUTPUT: &str = "media:unload-output;textable;keyed";
 /// Media URN for model list output - textable, keyed
-pub const MEDIA_LIST_OUTPUT: &str = "media:list-output;textable;keyed";
+pub const MEDIA_LIST_OUTPUT: &str = "media:model-list;textable;keyed";
 /// Media URN for model status output - textable, keyed
 pub const MEDIA_STATUS_OUTPUT: &str = "media:status-output;textable;keyed";
 /// Media URN for model contents output - textable, keyed
@@ -153,7 +167,7 @@ pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:json;textable;keyed";
 /// Media URN for questions array - textable, sequence
 pub const MEDIA_QUESTIONS_ARRAY: &str = "media:string-array;textable;sequence";
 /// Media URN for LLM inference output - textable, keyed
-pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:llm-inference-output;textable;keyed";
+pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:generated-text;textable;keyed";
 /// Media URN for extracted metadata - textable, keyed
 pub const MEDIA_FILE_METADATA: &str = "media:file-metadata;textable;keyed";
 /// Media URN for extracted outline - textable, keyed

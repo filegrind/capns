@@ -18,6 +18,11 @@ use crate::media_urn::{
     // Semantic text input types
     MEDIA_INPUT_TEXT, MEDIA_PROMPT_TEXT, MEDIA_QUERY_TEXT, MEDIA_CONTENT_TEXT, MEDIA_FRONTMATTER_TEXT,
     MEDIA_MODEL_ID, MEDIA_MODEL_SPEC, MEDIA_HF_MODEL_NAME, MEDIA_MLX_MODEL_PATH, MEDIA_MANAGEMENT_OPERATION,
+    // Semantic AI input types
+    MEDIA_IMAGE_VISUAL_EMBEDDING, MEDIA_IMAGE_CAPTIONING, MEDIA_IMAGE_VISION_QUERY,
+    MEDIA_AUDIO_SPEECH, MEDIA_TEXT_EMBEDDING,
+    // Semantic output types
+    MEDIA_IMAGE_THUMBNAIL,
     // CAPNS output types
     MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
@@ -142,7 +147,7 @@ pub fn embeddings_dimensions_urn() -> CapUrn {
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_embeddings")
-        .in_spec(MEDIA_INPUT_TEXT)
+        .in_spec(MEDIA_TEXT_EMBEDDING)
         .out_spec(MEDIA_GENERATE_OUTPUT)
         .build()
         .expect("Failed to build embeddings-generation cap URN")
@@ -217,7 +222,7 @@ pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
         .in_spec(input_spec)
-        .out_spec(MEDIA_PNG)
+        .out_spec(MEDIA_IMAGE_THUMBNAIL)
         .build()
         .expect("Failed to build generate-thumbnail cap URN")
 }
