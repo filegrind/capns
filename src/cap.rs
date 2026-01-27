@@ -167,40 +167,70 @@ impl CapArg {
         &self.media_urn
     }
 
-    /// Resolve this argument's media spec using the provided media_specs table
+    /// Resolve this argument's media spec
+    ///
+    /// Resolution order:
+    /// 1. Cap's local media_specs (cap-specific overrides)
+    /// 2. Registry's local cache (bundled standard specs)
+    /// 3. Online registry fetch (with graceful degradation)
     ///
     /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
+    /// * `media_specs` - Optional media_specs map from the cap definition
+    /// * `registry` - The media URN registry
     ///
     /// # Errors
     /// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
-    pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_media_urn(&self.media_urn, media_specs)
+    pub async fn resolve(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_media_urn(&self.media_urn, media_specs, registry).await
     }
 
     /// Check if argument is binary based on resolved media spec
-    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.is_binary())
+    pub async fn is_binary(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.is_binary())
     }
 
     /// Check if argument is JSON based on resolved media spec
-    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.is_json())
+    pub async fn is_json(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
     }
 
     /// Get the media type from resolved spec
-    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.media_type)
+    pub async fn media_type(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<String, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
-    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.profile_uri)
+    pub async fn profile_uri(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<Option<String>, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
-    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.schema)
+    pub async fn schema(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<Option<serde_json::Value>, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.schema)
     }
 
     /// Get metadata JSON
@@ -269,40 +299,70 @@ impl CapOutput {
         &self.media_urn
     }
 
-    /// Resolve this output's media spec using the provided media_specs table
+    /// Resolve this output's media spec
+    ///
+    /// Resolution order:
+    /// 1. Cap's local media_specs (cap-specific overrides)
+    /// 2. Registry's local cache (bundled standard specs)
+    /// 3. Online registry fetch (with graceful degradation)
     ///
     /// # Arguments
-    /// * `media_specs` - The media_specs map from the cap definition
+    /// * `media_specs` - Optional media_specs map from the cap definition
+    /// * `registry` - The media URN registry
     ///
     /// # Errors
     /// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
-    pub fn resolve(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_media_urn(&self.media_urn, media_specs)
+    pub async fn resolve(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_media_urn(&self.media_urn, media_specs, registry).await
     }
 
     /// Check if output is binary based on resolved media spec
-    pub fn is_binary(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.is_binary())
+    pub async fn is_binary(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.is_binary())
     }
 
     /// Check if output is JSON based on resolved media spec
-    pub fn is_json(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.is_json())
+    pub async fn is_json(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
     }
 
     /// Get the media type from resolved spec
-    pub fn media_type(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<String, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.media_type)
+    pub async fn media_type(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<String, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
-    pub fn profile_uri(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<String>, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.profile_uri)
+    pub async fn profile_uri(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<Option<String>, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
-    pub fn schema(&self, media_specs: &HashMap<String, MediaSpecDef>) -> Result<Option<serde_json::Value>, MediaSpecError> {
-        self.resolve(media_specs).map(|ms| ms.schema)
+    pub async fn schema(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<Option<serde_json::Value>, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.schema)
     }
 
     /// Get metadata JSON
@@ -670,9 +730,13 @@ impl Cap {
         self.media_specs.insert(spec_id.into(), def);
     }
 
-    /// Resolve a spec ID using this cap's media_specs
-    pub fn resolve_media_urn(&self, spec_id: &str) -> Result<ResolvedMediaSpec, MediaSpecError> {
-        resolve_media_urn(spec_id, &self.media_specs)
+    /// Resolve a spec ID using this cap's media_specs and the registry
+    pub async fn resolve_media_urn(
+        &self,
+        spec_id: &str,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<ResolvedMediaSpec, MediaSpecError> {
+        resolve_media_urn(spec_id, Some(&self.media_specs), registry).await
     }
 
     /// Check if this cap matches a request string

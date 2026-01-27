@@ -141,8 +141,11 @@ impl ResponseWrapper {
     }
 
     /// Validate response against cap output definition (basic validation)
-    /// Note: Full async validation with ProfileSchemaRegistry should be done separately
-    pub fn validate_against_cap(&self, cap: &Cap) -> Result<(), ValidationError> {
+    pub async fn validate_against_cap(
+        &self,
+        cap: &Cap,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<(), ValidationError> {
         let media_specs = cap.get_media_specs();
 
         // Convert response to JSON value for validation
@@ -173,7 +176,8 @@ impl ResponseWrapper {
             ResponseContentType::Binary => {
                 // Binary outputs can't be validated as JSON, validate the response type instead
                 if let Some(output_def) = cap.get_output() {
-                    let is_binary = output_def.is_binary(media_specs)
+                    let is_binary = output_def.is_binary(Some(media_specs), registry)
+                        .await
                         .map_err(|e| ValidationError::InvalidMediaSpec {
                             cap_urn: cap.urn_string(),
                             field_name: "output".to_string(),
@@ -192,9 +196,6 @@ impl ResponseWrapper {
             }
         };
 
-        // Note: Full profile-based validation requires ProfileSchemaRegistry and async
-        // This method only does basic type checking
-
         Ok(())
     }
 
@@ -211,15 +212,19 @@ impl ResponseWrapper {
     ///
     /// # Errors
     /// Returns error if the output spec ID cannot be resolved
-    pub fn matches_output_type(&self, cap: &Cap) -> Result<bool, crate::media_spec::MediaSpecError> {
+    pub async fn matches_output_type(
+        &self,
+        cap: &Cap,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, crate::media_spec::MediaSpecError> {
         let output_def = cap.get_output()
             .ok_or_else(|| crate::media_spec::MediaSpecError::UnresolvableMediaUrn(
                 "cap has no output definition".to_string()
             ))?;
 
         let media_specs = cap.get_media_specs();
-        let is_output_binary = output_def.is_binary(media_specs)?;
-        let is_output_json = output_def.is_json(media_specs)?;
+        let is_output_binary = output_def.is_binary(Some(media_specs), registry).await?;
+        let is_output_json = output_def.is_json(Some(media_specs), registry).await?;
 
         Ok(match &self.content_type {
             ResponseContentType::Json => is_output_json || !is_output_binary,

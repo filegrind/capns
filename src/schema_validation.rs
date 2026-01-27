@@ -1,11 +1,11 @@
 //! JSON Schema validation for capability arguments and outputs
 //!
 //! Provides comprehensive validation of JSON data against JSON Schema Draft-07.
-//! Schemas are now located in the `media_specs` table of the cap definition,
-//! not in inline fields on arguments/outputs.
+//! Schemas are located in the `media_specs` table of the cap definition or in the registry.
 
 use crate::{Cap, CapOutput, CapArg};
 use crate::media_spec::resolve_media_urn;
+use crate::media_registry::MediaUrnRegistry;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ pub enum SchemaValidationError {
     InvalidJson,
 }
 
-/// Schema validator that resolves schemas from media_specs
+/// Schema validator that resolves schemas from media_specs and registry
 pub struct SchemaValidator {
     /// Cache of compiled schemas for performance
     schema_cache: HashMap<String, JSONSchema>,
@@ -51,10 +51,11 @@ impl SchemaValidator {
     }
 
     /// Validate all arguments for a capability against their schemas
-    pub fn validate_arguments(
+    pub async fn validate_arguments(
         &mut self,
         cap: &Cap,
         arguments: &[JsonValue],
+        registry: &MediaUrnRegistry,
     ) -> Result<(), SchemaValidationError> {
         let args = cap.get_args();
 
@@ -74,24 +75,24 @@ impl SchemaValidator {
         // Validate positional arguments
         for (arg_def, position) in positional_args {
             if let Some(arg_value) = arguments.get(position) {
-                self.validate_argument_with_cap(cap, arg_def, arg_value)?;
+                self.validate_argument_with_cap(cap, arg_def, arg_value, registry).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Validate a single argument against its schema from media_specs
-    pub fn validate_argument_with_cap(
+    /// Validate a single argument against its schema from media_specs or registry
+    pub async fn validate_argument_with_cap(
         &mut self,
         cap: &Cap,
         arg_def: &CapArg,
         value: &JsonValue,
+        registry: &MediaUrnRegistry,
     ) -> Result<(), SchemaValidationError> {
-        let media_specs = cap.get_media_specs();
-
         // Resolve the spec ID to get the schema
-        let resolved = resolve_media_urn(&arg_def.media_urn, media_specs)
+        let resolved = resolve_media_urn(&arg_def.media_urn, Some(cap.get_media_specs()), registry)
+            .await
             .map_err(|e| SchemaValidationError::MediaUrnNotResolved {
                 media_urn: arg_def.media_urn.clone(),
                 error: e.to_string(),
@@ -106,17 +107,17 @@ impl SchemaValidator {
         self.validate_value_against_schema(&arg_def.media_urn, value, &schema)
     }
 
-    /// Validate output against its schema from media_specs
-    pub fn validate_output_with_cap(
+    /// Validate output against its schema from media_specs or registry
+    pub async fn validate_output_with_cap(
         &mut self,
         cap: &Cap,
         output_def: &CapOutput,
         value: &JsonValue,
+        registry: &MediaUrnRegistry,
     ) -> Result<(), SchemaValidationError> {
-        let media_specs = cap.get_media_specs();
-
         // Resolve the spec ID to get the schema
-        let resolved = resolve_media_urn(&output_def.media_urn, media_specs)
+        let resolved = resolve_media_urn(&output_def.media_urn, Some(cap.get_media_specs()), registry)
+            .await
             .map_err(|e| SchemaValidationError::MediaUrnNotResolved {
                 media_urn: output_def.media_urn.clone(),
                 error: e.to_string(),
@@ -222,8 +223,14 @@ mod tests {
         format!("cap:in=media:void;out=media:object;{}", tags)
     }
 
-    #[test]
-    fn test_argument_schema_validation_success() {
+    // Helper to create a test registry
+    async fn test_registry() -> MediaUrnRegistry {
+        MediaUrnRegistry::new().await.expect("Failed to create test registry")
+    }
+
+    #[tokio::test]
+    async fn test_argument_schema_validation_success() {
+        let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
         let schema = json!({
@@ -258,11 +265,12 @@ mod tests {
         );
 
         let valid_value = json!({"name": "John", "age": 30});
-        assert!(validator.validate_argument_with_cap(&cap, &arg, &valid_value).is_ok());
+        assert!(validator.validate_argument_with_cap(&cap, &arg, &valid_value, &registry).await.is_ok());
     }
 
-    #[test]
-    fn test_argument_schema_validation_failure() {
+    #[tokio::test]
+    async fn test_argument_schema_validation_failure() {
+        let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
         let schema = json!({
@@ -296,11 +304,12 @@ mod tests {
         );
 
         let invalid_value = json!({"age": 30}); // Missing required "name"
-        assert!(validator.validate_argument_with_cap(&cap, &arg, &invalid_value).is_err());
+        assert!(validator.validate_argument_with_cap(&cap, &arg, &invalid_value, &registry).await.is_err());
     }
 
-    #[test]
-    fn test_output_schema_validation_success() {
+    #[tokio::test]
+    async fn test_output_schema_validation_success() {
+        let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
         let schema = json!({
@@ -331,18 +340,19 @@ mod tests {
         let output = CapOutput::new("my:query-result.v1", "Query result");
 
         let valid_value = json!({"result": "success", "timestamp": "2023-01-01T00:00:00Z"});
-        assert!(validator.validate_output_with_cap(&cap, &output, &valid_value).is_ok());
+        assert!(validator.validate_output_with_cap(&cap, &output, &valid_value, &registry).await.is_ok());
     }
 
-    #[test]
-    fn test_skip_validation_without_schema() {
+    #[tokio::test]
+    async fn test_skip_validation_without_schema() {
+        let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
         // Create cap - using built-in spec ID which has no local schema
         let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
-        // Argument using built-in spec ID (no local schema)
+        // Argument using built-in spec ID (should resolve from registry, no schema)
         let arg = CapArg::new(
             MEDIA_STRING,
             true,
@@ -350,30 +360,31 @@ mod tests {
         );
 
         let value = json!("any string value");
-        // Should succeed because built-in specs don't have local schemas
-        assert!(validator.validate_argument_with_cap(&cap, &arg, &value).is_ok());
+        // Should succeed - MEDIA_STRING resolves from registry and has no schema
+        assert!(validator.validate_argument_with_cap(&cap, &arg, &value, &registry).await.is_ok());
     }
 
-    #[test]
-    fn test_unresolvable_media_urn_fails_hard() {
+    #[tokio::test]
+    async fn test_unresolvable_media_urn_fails_hard() {
+        let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
         let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let cap = Cap::new(urn, "Test".to_string(), "test".to_string());
 
-        // Argument with unknown media URN
+        // Argument with unknown media URN - not in media_specs and not in registry
         let arg = CapArg::new(
-            "media:unknown", // Not in media_specs and not a built-in
+            "media:completely-unknown-urn-that-does-not-exist",
             true,
             vec![ArgSource::Position { position: 0 }],
         );
 
         let value = json!("test");
-        let result = validator.validate_argument_with_cap(&cap, &arg, &value);
+        let result = validator.validate_argument_with_cap(&cap, &arg, &value, &registry).await;
         assert!(result.is_err());
 
         if let Err(SchemaValidationError::MediaUrnNotResolved { media_urn, .. }) = result {
-            assert_eq!(media_urn, "media:unknown");
+            assert_eq!(media_urn, "media:completely-unknown-urn-that-does-not-exist");
         } else {
             panic!("Expected MediaUrnNotResolved error");
         }

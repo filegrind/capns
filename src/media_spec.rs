@@ -446,96 +446,68 @@ impl ResolvedMediaSpec {
 // MEDIA URN RESOLUTION
 // =============================================================================
 
-/// Resolve a media URN to a full media spec definition (sync version)
+/// Resolve a media URN to a full media spec definition.
+///
+/// This is the SINGLE resolution path for all media URN lookups.
 ///
 /// Resolution order:
-/// 1. Look up in provided media_specs map (HIGHEST - overrides everything)
-/// 2. If not found, check if it's a built-in primitive
-/// 3. If neither, fail hard with an error
-///
-/// For async resolution with registry support, use `resolve_media_urn_with_registry`.
-///
-/// # Arguments
-/// * `media_urn` - The media URN to resolve (e.g., "media:string")
-/// * `media_specs` - The media_specs map from the cap definition
-///
-/// # Errors
-/// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
-pub fn resolve_media_urn(
-    media_urn: &str,
-    media_specs: &HashMap<String, MediaSpecDef>,
-) -> Result<ResolvedMediaSpec, MediaSpecError> {
-    // First, try to look up in the provided media_specs
-    if let Some(def) = media_specs.get(media_urn) {
-        return resolve_def(media_urn, def);
-    }
-
-    // Second, check if it's a built-in primitive
-    if let Some(resolved) = resolve_builtin(media_urn) {
-        return Ok(resolved);
-    }
-
-    // Fail hard - no fallbacks
-    Err(MediaSpecError::UnresolvableMediaUrn(media_urn.to_string()))
-}
-
-/// Resolve a media URN with registry support (async version)
-///
-/// Resolution order:
-/// 1. Check cap's local `media_specs` table (HIGHEST - overrides everything)
-/// 2. Check built-in constants
-/// 3. Check registry cache (in-memory → disk)
-/// 4. Fetch from remote registry
-/// 5. If none resolve → Error
+/// 1. Cap's local `media_specs` table (HIGHEST - cap-specific overrides)
+/// 2. Registry's local cache (bundled standard specs)
+/// 3. Online registry fetch (with graceful degradation if unreachable)
+/// 4. If none resolve → Error
 ///
 /// # Arguments
-/// * `media_urn` - The media URN to resolve (e.g., "media:string")
+/// * `media_urn` - The media URN to resolve (e.g., "media:string;textable;scalar")
 /// * `media_specs` - Optional media_specs map from the cap definition
-/// * `registry` - Optional MediaUrnRegistry for remote lookups
+/// * `registry` - The MediaUrnRegistry for cache and remote lookups
 ///
 /// # Errors
-/// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
-pub async fn resolve_media_urn_with_registry(
+/// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved
+/// from any source.
+pub async fn resolve_media_urn(
     media_urn: &str,
     media_specs: Option<&HashMap<String, MediaSpecDef>>,
-    registry: Option<&crate::media_registry::MediaUrnRegistry>,
+    registry: &crate::media_registry::MediaUrnRegistry,
 ) -> Result<ResolvedMediaSpec, MediaSpecError> {
-    // First, try to look up in the provided media_specs (if any)
+    // 1. First, try cap's local media_specs (highest priority - cap-specific overrides)
     if let Some(specs) = media_specs {
         if let Some(def) = specs.get(media_urn) {
             return resolve_def(media_urn, def);
         }
     }
 
-    // Second, check if it's a built-in primitive
-    if let Some(resolved) = resolve_builtin(media_urn) {
-        return Ok(resolved);
-    }
-
-    // Third, try the registry if available
-    if let Some(registry) = registry {
-        match registry.get_media_spec(media_urn).await {
-            Ok(stored_spec) => {
-                return Ok(ResolvedMediaSpec {
-                    media_urn: media_urn.to_string(),
-                    media_type: stored_spec.media_type,
-                    profile_uri: stored_spec.profile_uri,
-                    schema: stored_spec.schema,
-                    title: Some(stored_spec.title),
-                    description: stored_spec.description,
-                    validation: stored_spec.validation,
-                    metadata: stored_spec.metadata,
-                });
-            }
-            Err(_) => {
-                // Registry lookup failed, continue to error
-            }
+    // 2. Try registry (checks local cache first, then online with graceful degradation)
+    match registry.get_media_spec(media_urn).await {
+        Ok(stored_spec) => {
+            return Ok(ResolvedMediaSpec {
+                media_urn: media_urn.to_string(),
+                media_type: stored_spec.media_type,
+                profile_uri: stored_spec.profile_uri,
+                schema: stored_spec.schema,
+                title: Some(stored_spec.title),
+                description: stored_spec.description,
+                validation: stored_spec.validation,
+                metadata: stored_spec.metadata,
+            });
+        }
+        Err(e) => {
+            // Registry lookup failed (not in cache, online unreachable or not found)
+            // Log and continue to error
+            eprintln!(
+                "[WARN] Media URN '{}' not found in registry: {} - \
+                ensure it's defined in capns_dot_org/standard/media/",
+                media_urn, e
+            );
         }
     }
 
-    // Fail hard - no fallbacks
-    Err(MediaSpecError::UnresolvableMediaUrn(media_urn.to_string()))
+    // Fail - not found in any source
+    Err(MediaSpecError::UnresolvableMediaUrn(format!(
+        "cannot resolve media URN '{}' - not found in cap's media_specs or registry",
+        media_urn
+    )))
 }
+
 
 /// Resolve a MediaSpecDef to a ResolvedMediaSpec
 fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, MediaSpecError> {
@@ -566,109 +538,6 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
     }
 }
 
-/// Resolve a built-in media URN
-fn resolve_builtin(media_urn: &str) -> Option<ResolvedMediaSpec> {
-    let (media_type, profile_uri) = match media_urn {
-        // Standard primitives
-        MEDIA_STRING => ("text/plain", Some(PROFILE_STR)),
-        MEDIA_INTEGER => ("text/plain", Some(PROFILE_INT)),
-        MEDIA_NUMBER => ("text/plain", Some(PROFILE_NUM)),
-        MEDIA_BOOLEAN => ("text/plain", Some(PROFILE_BOOL)),
-        MEDIA_OBJECT => ("application/json", Some(PROFILE_OBJ)),
-        MEDIA_STRING_ARRAY => ("application/json", Some(PROFILE_STR_ARRAY)),
-        MEDIA_INTEGER_ARRAY => ("application/json", Some(PROFILE_INT_ARRAY)),
-        MEDIA_NUMBER_ARRAY => ("application/json", Some(PROFILE_NUM_ARRAY)),
-        MEDIA_BOOLEAN_ARRAY => ("application/json", Some(PROFILE_BOOL_ARRAY)),
-        MEDIA_OBJECT_ARRAY => ("application/json", Some(PROFILE_OBJ_ARRAY)),
-        MEDIA_BINARY => ("application/octet-stream", None),
-        MEDIA_VOID => ("application/x-void", Some(PROFILE_VOID)),
-        // Semantic content types
-        MEDIA_PNG => ("image/png", Some(PROFILE_IMAGE)),
-        MEDIA_AUDIO => ("audio/wav", Some(PROFILE_AUDIO)),
-        MEDIA_VIDEO => ("video/mp4", Some(PROFILE_VIDEO)),
-        MEDIA_TEXT => ("text/plain", Some(PROFILE_TEXT)),
-        // Document types (PRIMARY naming)
-        MEDIA_PDF => ("application/pdf", Some(PROFILE_PDF)),
-        MEDIA_EPUB => ("application/epub+zip", Some(PROFILE_EPUB)),
-        // Text format types (PRIMARY naming)
-        MEDIA_MD => ("text/markdown", Some(PROFILE_MD)),
-        MEDIA_TXT => ("text/plain", Some(PROFILE_TXT)),
-        MEDIA_RST => ("text/x-rst", Some(PROFILE_RST)),
-        MEDIA_LOG => ("text/plain", Some(PROFILE_LOG)),
-        MEDIA_HTML => ("text/html", Some(PROFILE_HTML)),
-        MEDIA_XML => ("application/xml", Some(PROFILE_XML)),
-        MEDIA_JSON => ("application/json", Some(PROFILE_JSON)),
-        MEDIA_YAML => ("application/x-yaml", Some(PROFILE_YAML)),
-        // CAPNS output types
-        MEDIA_DOWNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_DOWNLOAD_OUTPUT)),
-        MEDIA_LOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LOAD_OUTPUT)),
-        MEDIA_UNLOAD_OUTPUT => ("application/json", Some(PROFILE_CAPNS_UNLOAD_OUTPUT)),
-        MEDIA_LIST_OUTPUT => ("application/json", Some(PROFILE_CAPNS_LIST_OUTPUT)),
-        MEDIA_STATUS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STATUS_OUTPUT)),
-        MEDIA_CONTENTS_OUTPUT => ("application/json", Some(PROFILE_CAPNS_CONTENTS_OUTPUT)),
-        MEDIA_GENERATE_OUTPUT => ("application/json", Some(PROFILE_CAPNS_GENERATE_OUTPUT)),
-        MEDIA_STRUCTURED_QUERY_OUTPUT => ("application/json", Some(PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT)),
-        MEDIA_QUESTIONS_ARRAY => ("application/json", Some(PROFILE_CAPNS_QUESTIONS_ARRAY)),
-        _ => return None,
-    };
-
-    Some(ResolvedMediaSpec {
-        media_urn: media_urn.to_string(),
-        media_type: media_type.to_string(),
-        profile_uri: profile_uri.map(String::from),
-        schema: None,     // Built-ins don't have local schemas
-        title: None,      // Will be populated from registry
-        description: None,
-        validation: None, // Built-ins don't have validation rules
-        metadata: None,   // Built-ins don't have metadata
-    })
-}
-
-/// Check if a media URN is a built-in primitive
-pub fn is_builtin_media_urn(media_urn: &str) -> bool {
-    matches!(
-        media_urn,
-        MEDIA_STRING
-            | MEDIA_INTEGER
-            | MEDIA_NUMBER
-            | MEDIA_BOOLEAN
-            | MEDIA_OBJECT
-            | MEDIA_STRING_ARRAY
-            | MEDIA_INTEGER_ARRAY
-            | MEDIA_NUMBER_ARRAY
-            | MEDIA_BOOLEAN_ARRAY
-            | MEDIA_OBJECT_ARRAY
-            | MEDIA_BINARY
-            | MEDIA_VOID
-            // Semantic content types
-            | MEDIA_PNG
-            | MEDIA_AUDIO
-            | MEDIA_VIDEO
-            | MEDIA_TEXT
-            // Document types (PRIMARY naming)
-            | MEDIA_PDF
-            | MEDIA_EPUB
-            // Text format types (PRIMARY naming)
-            | MEDIA_MD
-            | MEDIA_TXT
-            | MEDIA_RST
-            | MEDIA_LOG
-            | MEDIA_HTML
-            | MEDIA_XML
-            | MEDIA_JSON
-            | MEDIA_YAML
-            // CAPNS output types
-            | MEDIA_DOWNLOAD_OUTPUT
-            | MEDIA_LOAD_OUTPUT
-            | MEDIA_UNLOAD_OUTPUT
-            | MEDIA_LIST_OUTPUT
-            | MEDIA_STATUS_OUTPUT
-            | MEDIA_CONTENTS_OUTPUT
-            | MEDIA_GENERATE_OUTPUT
-            | MEDIA_STRUCTURED_QUERY_OUTPUT
-            | MEDIA_QUESTIONS_ARRAY
-    )
-}
 
 // =============================================================================
 // MEDIA SPEC (parsed form)
@@ -939,42 +808,47 @@ mod tests {
     // Media URN resolution tests
     // -------------------------------------------------------------------------
 
-    #[test]
-    fn test_resolve_builtin_str() {
-        let media_specs = HashMap::new();
-        let resolved = resolve_media_urn(MEDIA_STRING, &media_specs).unwrap();
+    // Helper to create a test registry
+    async fn test_registry() -> crate::media_registry::MediaUrnRegistry {
+        crate::media_registry::MediaUrnRegistry::new().await.expect("Failed to create test registry")
+    }
+
+    #[tokio::test]
+    async fn test_resolve_from_registry_str() {
+        let registry = test_registry().await;
+        let resolved = resolve_media_urn(MEDIA_STRING, None, &registry).await.unwrap();
         assert_eq!(resolved.media_urn, MEDIA_STRING);
         assert_eq!(resolved.media_type, "text/plain");
-        assert_eq!(resolved.profile_uri, Some(PROFILE_STR.to_string()));
-        assert!(resolved.schema.is_none());
+        // Registry provides the full spec including profile
+        assert!(resolved.profile_uri.is_some());
     }
 
-    #[test]
-    fn test_resolve_builtin_obj() {
-        let media_specs = HashMap::new();
-        let resolved = resolve_media_urn(MEDIA_OBJECT, &media_specs).unwrap();
+    #[tokio::test]
+    async fn test_resolve_from_registry_obj() {
+        let registry = test_registry().await;
+        let resolved = resolve_media_urn(MEDIA_OBJECT, None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/json");
-        assert_eq!(resolved.profile_uri, Some(PROFILE_OBJ.to_string()));
     }
 
-    #[test]
-    fn test_resolve_builtin_binary() {
-        let media_specs = HashMap::new();
-        let resolved = resolve_media_urn(MEDIA_BINARY, &media_specs).unwrap();
+    #[tokio::test]
+    async fn test_resolve_from_registry_binary() {
+        let registry = test_registry().await;
+        let resolved = resolve_media_urn(MEDIA_BINARY, None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/octet-stream");
-        assert!(resolved.profile_uri.is_none());
         assert!(resolved.is_binary());
     }
 
-    #[test]
-    fn test_resolve_custom_string_form() {
+    #[tokio::test]
+    async fn test_resolve_custom_string_form() {
+        let registry = test_registry().await;
         let mut media_specs = HashMap::new();
         media_specs.insert(
             "media:custom-spec".to_string(),
             MediaSpecDef::String("application/json; profile=https://example.com/schema".to_string()),
         );
 
-        let resolved = resolve_media_urn("media:custom-spec", &media_specs).unwrap();
+        // Local media_specs takes precedence over registry
+        let resolved = resolve_media_urn("media:custom-spec", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.media_urn, "media:custom-spec");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
@@ -984,8 +858,9 @@ mod tests {
         assert!(resolved.schema.is_none());
     }
 
-    #[test]
-    fn test_resolve_custom_object_form() {
+    #[tokio::test]
+    async fn test_resolve_custom_object_form() {
+        let registry = test_registry().await;
         let mut media_specs = HashMap::new();
         let schema = serde_json::json!({
             "type": "object",
@@ -1006,7 +881,7 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_media_urn("media:output-spec", &media_specs).unwrap();
+        let resolved = resolve_media_urn("media:output-spec", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.media_urn, "media:output-spec");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
@@ -1016,43 +891,36 @@ mod tests {
         assert_eq!(resolved.schema, Some(schema));
     }
 
-    #[test]
-    fn test_resolve_unresolvable_fails_hard() {
-        let media_specs = HashMap::new();
-        let result = resolve_media_urn("media:unknown", &media_specs);
+    #[tokio::test]
+    async fn test_resolve_unresolvable_fails_hard() {
+        let registry = test_registry().await;
+        // URN not in local media_specs and not in registry
+        let result = resolve_media_urn("media:completely-unknown-urn-not-in-registry", None, &registry).await;
         assert!(result.is_err());
-        if let Err(MediaSpecError::UnresolvableMediaUrn(urn)) = result {
-            assert_eq!(urn, "media:unknown");
+        if let Err(MediaSpecError::UnresolvableMediaUrn(msg)) = result {
+            assert!(msg.contains("media:completely-unknown-urn-not-in-registry"));
         } else {
             panic!("Expected UnresolvableMediaUrn error");
         }
     }
 
-    #[test]
-    fn test_custom_overrides_builtin() {
-        // Custom definition in media_specs takes precedence over built-in
+    #[tokio::test]
+    async fn test_local_overrides_registry() {
+        let registry = test_registry().await;
+        // Custom definition in media_specs takes precedence over registry
         let mut media_specs = HashMap::new();
         media_specs.insert(
             MEDIA_STRING.to_string(),
             MediaSpecDef::String("application/json; profile=https://custom.example.com/str".to_string()),
         );
 
-        let resolved = resolve_media_urn(MEDIA_STRING, &media_specs).unwrap();
-        // Custom definition used, not built-in
+        let resolved = resolve_media_urn(MEDIA_STRING, Some(&media_specs), &registry).await.unwrap();
+        // Custom definition used, not registry
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
             Some("https://custom.example.com/str".to_string())
         );
-    }
-
-    #[test]
-    fn test_is_builtin_media_urn() {
-        assert!(is_builtin_media_urn(MEDIA_STRING));
-        assert!(is_builtin_media_urn(MEDIA_INTEGER));
-        assert!(is_builtin_media_urn(MEDIA_BINARY));
-        assert!(!is_builtin_media_urn("media:custom-spec"));
-        assert!(!is_builtin_media_urn("random-string"));
     }
 
     // -------------------------------------------------------------------------
@@ -1160,8 +1028,9 @@ mod tests {
     // Metadata propagation tests
     // -------------------------------------------------------------------------
 
-    #[test]
-    fn test_metadata_propagation_from_object_def() {
+    #[tokio::test]
+    async fn test_metadata_propagation_from_object_def() {
+        let registry = test_registry().await;
         // Create a media spec definition with metadata
         let mut media_specs = std::collections::HashMap::new();
         media_specs.insert(
@@ -1183,7 +1052,7 @@ mod tests {
         );
 
         // Resolve and verify metadata is propagated
-        let resolved = resolve_media_urn("media:custom-setting;setting", &media_specs).unwrap();
+        let resolved = resolve_media_urn("media:custom-setting;setting", Some(&media_specs), &registry).await.unwrap();
         assert!(resolved.metadata.is_some());
         let metadata = resolved.metadata.unwrap();
         assert_eq!(metadata.get("category_key").unwrap(), "interface");
@@ -1192,8 +1061,9 @@ mod tests {
         assert_eq!(metadata.get("display_index").unwrap(), 5);
     }
 
-    #[test]
-    fn test_metadata_none_for_string_def() {
+    #[tokio::test]
+    async fn test_metadata_none_for_string_def() {
+        let registry = test_registry().await;
         // String form definitions should have no metadata
         let mut media_specs = std::collections::HashMap::new();
         media_specs.insert(
@@ -1201,20 +1071,13 @@ mod tests {
             MediaSpecDef::String("text/plain; profile=https://example.com".to_string()),
         );
 
-        let resolved = resolve_media_urn("media:simple;textable", &media_specs).unwrap();
+        let resolved = resolve_media_urn("media:simple;textable", Some(&media_specs), &registry).await.unwrap();
         assert!(resolved.metadata.is_none());
     }
 
-    #[test]
-    fn test_metadata_none_for_builtin() {
-        // Built-in media URNs should have no metadata
-        let media_specs = std::collections::HashMap::new();
-        let resolved = resolve_media_urn(crate::MEDIA_STRING, &media_specs).unwrap();
-        assert!(resolved.metadata.is_none());
-    }
-
-    #[test]
-    fn test_metadata_with_validation() {
+    #[tokio::test]
+    async fn test_metadata_with_validation() {
+        let registry = test_registry().await;
         // Ensure metadata and validation can coexist
         let mut media_specs = std::collections::HashMap::new();
         media_specs.insert(
@@ -1240,7 +1103,7 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_media_urn("media:bounded-number;numeric;setting", &media_specs).unwrap();
+        let resolved = resolve_media_urn("media:bounded-number;numeric;setting", Some(&media_specs), &registry).await.unwrap();
 
         // Verify validation
         assert!(resolved.validation.is_some());

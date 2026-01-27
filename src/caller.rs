@@ -2,8 +2,10 @@
 
 use anyhow::{Result, anyhow};
 use serde_json::Value as JsonValue;
+use std::sync::Arc;
 use crate::{CapUrn, ResponseWrapper, Cap};
 use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec};
+use crate::media_registry::MediaUrnRegistry;
 
 /// Source for stdin data - either raw bytes or a file reference.
 ///
@@ -28,6 +30,7 @@ pub struct CapCaller {
     cap: String,
     cap_set: Box<dyn CapSet>,
     cap_definition: Cap,
+    media_registry: Arc<MediaUrnRegistry>,
 }
 
 /// Trait for Cap Host communication
@@ -47,11 +50,13 @@ impl CapCaller {
         cap: String,
         cap_set: Box<dyn CapSet>,
         cap_definition: Cap,
+        media_registry: Arc<MediaUrnRegistry>,
     ) -> Self {
         Self {
             cap,
             cap_set,
             cap_definition,
+            media_registry,
         }
     }
 
@@ -131,7 +136,7 @@ impl CapCaller {
         ).await?;
 
         // Resolve output spec to determine response type
-        let output_spec = self.resolve_output_spec()?;
+        let output_spec = self.resolve_output_spec().await?;
 
         // Determine response type based on what was returned and resolved output spec
         let response = if let Some(binary_data) = binary_output {
@@ -155,7 +160,7 @@ impl CapCaller {
         };
 
         // Validate output against cap definition (basic type check)
-        self.validate_output_basic(&response)?;
+        self.validate_output_basic(&response).await?;
 
         Ok(response)
     }
@@ -177,17 +182,18 @@ impl CapCaller {
     ///
     /// This method fails hard if:
     /// - The cap URN is invalid
-    /// - The spec ID cannot be resolved (not in media_specs and not a built-in)
-    fn resolve_output_spec(&self) -> Result<ResolvedMediaSpec> {
+    /// - The spec ID cannot be resolved (not in media_specs, not in registry)
+    async fn resolve_output_spec(&self) -> Result<ResolvedMediaSpec> {
         let cap_urn = CapUrn::from_string(&self.cap)
             .map_err(|e| anyhow!("Invalid cap URN '{}': {}", self.cap, e))?;
 
         // Direction specs are now required first-class fields
         let spec_id = cap_urn.out_spec();
 
-        resolve_media_urn(spec_id, self.cap_definition.get_media_specs())
+        resolve_media_urn(spec_id, Some(self.cap_definition.get_media_specs()), &self.media_registry)
+            .await
             .map_err(|e| anyhow!(
-                "Failed to resolve output spec ID '{}' for cap '{}': {} - check that media_specs contains this spec ID or it is a built-in",
+                "Failed to resolve output spec ID '{}' for cap '{}': {} - check that media_specs contains this spec ID or it is in the registry",
                 spec_id, self.cap, e
             ))
     }
@@ -279,8 +285,8 @@ impl CapCaller {
 
     /// Basic output validation
     /// Full async validation with ProfileSchemaRegistry should be done at a higher level
-    fn validate_output_basic(&self, response: &ResponseWrapper) -> Result<()> {
-        let output_spec = self.resolve_output_spec()?;
+    async fn validate_output_basic(&self, response: &ResponseWrapper) -> Result<()> {
+        let output_spec = self.resolve_output_spec().await?;
 
         // For text/JSON outputs, check it's parseable if JSON expected
         if let Ok(text) = response.as_string() {

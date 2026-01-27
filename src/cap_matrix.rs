@@ -509,6 +509,8 @@ pub struct CapGraphStats {
 pub struct CapMatrix {
     /// Map of host name to entry. pub(crate) for CapCube access.
     pub(crate) sets: HashMap<String, CapSetEntry>,
+    /// Media URN registry for resolving media specs
+    pub(crate) media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>,
 }
 
 /// Entry for a registered capability host
@@ -520,10 +522,11 @@ pub(crate) struct CapSetEntry {
 }
 
 impl CapMatrix {
-    /// Create a new empty capability host registry
-    pub fn new() -> Self {
+    /// Create a new capability host registry with the given media registry
+    pub fn new(media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>) -> Self {
         Self {
             sets: HashMap::new(),
+            media_registry,
         }
     }
 
@@ -640,11 +643,7 @@ impl CapMatrix {
     }
 }
 
-impl Default for CapMatrix {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// CapMatrix cannot implement Default since it requires a MediaUrnRegistry
 
 use crate::CapCaller;
 
@@ -669,11 +668,13 @@ pub struct BestCapSetMatch {
 /// This registry holds Arc references to child registries, allowing
 /// the original owners (e.g., ProviderRegistry, PluginGateway) to retain
 /// ownership while still participating in unified capability lookup.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CapCube {
     /// Child registries in priority order (first added = highest priority on ties)
     /// Uses Arc<std::sync::RwLock> for shared access
     registries: Vec<(String, std::sync::Arc<std::sync::RwLock<CapMatrix>>)>,
+    /// Media URN registry for resolving media specs
+    media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>,
 }
 
 /// Wrapper that implements CapSet for CapCube
@@ -778,10 +779,11 @@ impl CapSet for CompositeCapSet {
 }
 
 impl CapCube {
-    /// Create a new empty composite registry
-    pub fn new() -> Self {
+    /// Create a new composite registry with the given media registry
+    pub fn new(media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>) -> Self {
         Self {
             registries: Vec::new(),
+            media_registry,
         }
     }
 
@@ -823,6 +825,7 @@ impl CapCube {
             cap_urn.to_string(),
             Box::new(composite_host),
             best_match.cap,
+            self.media_registry.clone(),
         ))
     }
 

@@ -149,15 +149,19 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Input argument validator using ProfileSchemaRegistry
+/// Input argument validator using ProfileSchemaRegistry and MediaUrnRegistry
 pub struct InputValidator {
     schema_registry: Arc<ProfileSchemaRegistry>,
+    media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
 }
 
 impl InputValidator {
-    /// Create a new InputValidator with the given ProfileSchemaRegistry
-    pub fn new(schema_registry: Arc<ProfileSchemaRegistry>) -> Self {
-        Self { schema_registry }
+    /// Create a new InputValidator with the given registries
+    pub fn new(
+        schema_registry: Arc<ProfileSchemaRegistry>,
+        media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
+    ) -> Self {
+        Self { schema_registry, media_registry }
     }
 
     /// Validate arguments against cap input schema
@@ -291,10 +295,10 @@ impl InputValidator {
         value: &Value,
     ) -> Result<ResolvedMediaSpec, ValidationError> {
         let cap_urn = cap.urn_string();
-        let media_specs = cap.get_media_specs();
 
         // Resolve the spec ID from the argument definition
-        let resolved = resolve_media_urn(&arg_def.media_urn, media_specs)
+        let resolved = resolve_media_urn(&arg_def.media_urn, Some(cap.get_media_specs()), &self.media_registry)
+            .await
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
                 field_name: arg_def.media_urn.clone(),
@@ -503,15 +507,19 @@ impl InputValidator {
     }
 }
 
-/// Output validator using ProfileSchemaRegistry
+/// Output validator using ProfileSchemaRegistry and MediaUrnRegistry
 pub struct OutputValidator {
     schema_registry: Arc<ProfileSchemaRegistry>,
+    media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
 }
 
 impl OutputValidator {
-    /// Create a new OutputValidator with the given ProfileSchemaRegistry
-    pub fn new(schema_registry: Arc<ProfileSchemaRegistry>) -> Self {
-        Self { schema_registry }
+    /// Create a new OutputValidator with the given registries
+    pub fn new(
+        schema_registry: Arc<ProfileSchemaRegistry>,
+        media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
+    ) -> Self {
+        Self { schema_registry, media_registry }
     }
 
     /// Validate output against cap output schema
@@ -547,10 +555,10 @@ impl OutputValidator {
         value: &Value,
     ) -> Result<ResolvedMediaSpec, ValidationError> {
         let cap_urn = cap.urn_string();
-        let media_specs = cap.get_media_specs();
 
         // Resolve the spec ID from the output definition
-        let resolved = resolve_media_urn(&output_def.media_urn, media_specs)
+        let resolved = resolve_media_urn(&output_def.media_urn, Some(cap.get_media_specs()), &self.media_registry)
+            .await
             .map_err(|e| ValidationError::InvalidMediaSpec {
                 cap_urn: cap_urn.clone(),
                 field_name: "output".to_string(),
@@ -726,9 +734,11 @@ pub struct CapValidator;
 
 impl CapValidator {
     /// Validate a cap definition itself
-    pub fn validate_cap(cap: &Cap) -> Result<(), ValidationError> {
+    pub async fn validate_cap(
+        cap: &Cap,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<(), ValidationError> {
         let cap_urn = cap.urn_string();
-        let media_specs = cap.get_media_specs();
         let args = cap.get_args();
 
         // Validate that required arguments don't have default values
@@ -775,7 +785,8 @@ impl CapValidator {
 
         // Validate that all media_spec IDs can be resolved
         for arg in args {
-            resolve_media_urn(&arg.media_urn, media_specs)
+            resolve_media_urn(&arg.media_urn, Some(cap.get_media_specs()), registry)
+                .await
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
                     field_name: arg.media_urn.clone(),
@@ -784,7 +795,8 @@ impl CapValidator {
         }
 
         if let Some(output) = cap.get_output() {
-            resolve_media_urn(&output.media_urn, media_specs)
+            resolve_media_urn(&output.media_urn, Some(cap.get_media_specs()), registry)
+                .await
                 .map_err(|e| ValidationError::InvalidMediaSpec {
                     cap_urn: cap_urn.clone(),
                     field_name: "output".to_string(),
@@ -978,13 +990,14 @@ impl SchemaValidator {
         cap_urn: &str,
         arguments: &[serde_json::Value],
         schema_registry: Arc<ProfileSchemaRegistry>,
+        media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
     ) -> Result<(), ValidationError> {
         let cap = self.get_cap(cap_urn)
             .ok_or_else(|| ValidationError::UnknownCap {
                 cap_urn: cap_urn.to_string(),
             })?;
 
-        let validator = InputValidator::new(schema_registry);
+        let validator = InputValidator::new(schema_registry, media_registry);
         validator.validate_positional_arguments(cap, arguments).await
     }
 
@@ -994,22 +1007,24 @@ impl SchemaValidator {
         cap_urn: &str,
         output: &serde_json::Value,
         schema_registry: Arc<ProfileSchemaRegistry>,
+        media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
     ) -> Result<(), ValidationError> {
         let cap = self.get_cap(cap_urn)
             .ok_or_else(|| ValidationError::UnknownCap {
                 cap_urn: cap_urn.to_string(),
             })?;
 
-        let validator = OutputValidator::new(schema_registry);
+        let validator = OutputValidator::new(schema_registry, media_registry);
         validator.validate_output(cap, output).await
     }
 
     /// Validate a cap definition itself
-    pub fn validate_cap_schema(
+    pub async fn validate_cap_schema(
         &self,
         cap: &Cap,
+        media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
     ) -> Result<(), ValidationError> {
-        CapValidator::validate_cap(cap)
+        CapValidator::validate_cap(cap, &media_registry).await
     }
 }
 
@@ -1024,6 +1039,7 @@ mod tests {
     use super::*;
     use crate::CapUrn;
     use crate::standard::media::{MEDIA_STRING, MEDIA_INTEGER};
+    use crate::media_registry::MediaUrnRegistry;
     use serde_json::json;
 
     // Helper to create test URN with required in/out specs
@@ -1031,10 +1047,17 @@ mod tests {
         format!("cap:in=media:void;out=media:object;{}", tags)
     }
 
+    // Helper to create test registries
+    async fn test_registries() -> (Arc<ProfileSchemaRegistry>, Arc<MediaUrnRegistry>) {
+        let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.expect("Failed to create schema registry"));
+        let media_registry = Arc::new(MediaUrnRegistry::new().await.expect("Failed to create media registry"));
+        (schema_registry, media_registry)
+    }
+
     #[tokio::test]
     async fn test_input_validation_success() {
-        let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
-        let validator = InputValidator::new(schema_registry);
+        let (schema_registry, media_registry) = test_registries().await;
+        let validator = InputValidator::new(schema_registry, media_registry);
 
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
@@ -1053,8 +1076,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_input_validation_missing_required() {
-        let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
-        let validator = InputValidator::new(schema_registry);
+        let (schema_registry, media_registry) = test_registries().await;
+        let validator = InputValidator::new(schema_registry, media_registry);
 
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
@@ -1080,8 +1103,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_input_validation_wrong_type() {
-        let schema_registry = Arc::new(ProfileSchemaRegistry::new().await.unwrap());
-        let validator = InputValidator::new(schema_registry);
+        let (schema_registry, media_registry) = test_registries().await;
+        let validator = InputValidator::new(schema_registry, media_registry);
 
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
@@ -1110,12 +1133,13 @@ mod tests {
 pub async fn validate_cap_arguments(
     registry: &crate::registry::CapRegistry,
     schema_registry: Arc<ProfileSchemaRegistry>,
+    media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
     cap_urn: &str,
     arguments: &[Value],
 ) -> Result<(), ValidationError> {
     let canonical_cap = registry.get_cap(cap_urn).await
         .map_err(|_| ValidationError::UnknownCap { cap_urn: cap_urn.to_string() })?;
-    let validator = InputValidator::new(schema_registry);
+    let validator = InputValidator::new(schema_registry, media_registry);
     validator.validate_positional_arguments(&canonical_cap, arguments).await
 }
 
@@ -1123,12 +1147,13 @@ pub async fn validate_cap_arguments(
 pub async fn validate_cap_output(
     registry: &crate::registry::CapRegistry,
     schema_registry: Arc<ProfileSchemaRegistry>,
+    media_registry: Arc<crate::media_registry::MediaUrnRegistry>,
     cap_urn: &str,
     output: &Value,
 ) -> Result<(), ValidationError> {
     let canonical_cap = registry.get_cap(cap_urn).await
         .map_err(|_| ValidationError::UnknownCap { cap_urn: cap_urn.to_string() })?;
-    let validator = OutputValidator::new(schema_registry);
+    let validator = OutputValidator::new(schema_registry, media_registry);
     validator.validate_output(&canonical_cap, output).await
 }
 
@@ -1149,17 +1174,15 @@ pub async fn validate_cap_canonical(registry: &crate::registry::CapRegistry, cap
 /// - Every argument's media_urn
 /// - Every output's media_urn
 ///
-/// Resolution sources (in order):
-/// 1. Cap's local media_specs table
-/// 2. Built-in media URN constants
-/// 3. Registry cache (if registry provided)
-/// 4. Remote registry (if registry provided)
+/// Resolution order:
+/// 1. Cap's local media_specs table (cap-specific overrides)
+/// 2. Registry's local cache (bundled standard specs)
+/// 3. Online registry fetch (with graceful degradation if unreachable)
 pub async fn validate_media_urn_references(
     cap: &Cap,
-    registry: Option<&crate::media_registry::MediaUrnRegistry>,
+    registry: &crate::media_registry::MediaUrnRegistry,
 ) -> Result<(), ValidationError> {
     let cap_urn = cap.urn_string();
-    let media_specs = cap.get_media_specs();
 
     // Collect all media URNs to validate
     let mut urns_to_check: Vec<(String, String)> = Vec::new();
@@ -1185,78 +1208,17 @@ pub async fn validate_media_urn_references(
         urns_to_check.push(("output".to_string(), output.media_urn.clone()));
     }
 
-    // Validate each media URN
+    // Validate each media URN using the single resolution path
     for (location, media_urn) in urns_to_check {
-        // First try local media_specs and built-in resolution
-        if crate::media_spec::resolve_media_urn(&media_urn, media_specs).is_ok() {
-            continue;
+        if let Err(_) = crate::media_spec::resolve_media_urn(&media_urn, Some(cap.get_media_specs()), registry).await {
+            return Err(ValidationError::UnresolvableMediaUrn {
+                cap_urn: cap_urn.clone(),
+                media_urn,
+                location: location.to_string(),
+            });
         }
-
-        // If registry is available, try that
-        if let Some(registry) = registry {
-            if registry.get_media_spec(&media_urn).await.is_ok() {
-                continue;
-            }
-        }
-
-        // Media URN is unresolvable
-        return Err(ValidationError::UnresolvableMediaUrn {
-            cap_urn: cap_urn.clone(),
-            media_urn,
-            location: location.to_string(),
-        });
     }
 
     Ok(())
 }
 
-/// Validate media URN references synchronously (without registry)
-///
-/// Use this for validation when registry is not available.
-pub fn validate_media_urn_references_sync(cap: &Cap) -> Result<(), ValidationError> {
-    let cap_urn = cap.urn_string();
-    let media_specs = cap.get_media_specs();
-
-    // Check in/out tags from the cap URN
-    let in_spec = cap.urn.in_spec();
-    if in_spec != "*" {
-        crate::media_spec::resolve_media_urn(in_spec, media_specs)
-            .map_err(|_| ValidationError::UnresolvableMediaUrn {
-                cap_urn: cap_urn.clone(),
-                media_urn: in_spec.to_string(),
-                location: "in tag".to_string(),
-            })?;
-    }
-
-    let out_spec = cap.urn.out_spec();
-    if out_spec != "*" {
-        crate::media_spec::resolve_media_urn(out_spec, media_specs)
-            .map_err(|_| ValidationError::UnresolvableMediaUrn {
-                cap_urn: cap_urn.clone(),
-                media_urn: out_spec.to_string(),
-                location: "out tag".to_string(),
-            })?;
-    }
-
-    // Check all argument media URNs
-    for arg in cap.get_args() {
-        crate::media_spec::resolve_media_urn(&arg.media_urn, media_specs)
-            .map_err(|_| ValidationError::UnresolvableMediaUrn {
-                cap_urn: cap_urn.clone(),
-                media_urn: arg.media_urn.clone(),
-                location: format!("argument '{}'", arg.media_urn),
-            })?;
-    }
-
-    // Check output media URN
-    if let Some(output) = cap.get_output() {
-        crate::media_spec::resolve_media_urn(&output.media_urn, media_specs)
-            .map_err(|_| ValidationError::UnresolvableMediaUrn {
-                cap_urn: cap_urn.clone(),
-                media_urn: output.media_urn.clone(),
-                location: "output".to_string(),
-            })?;
-    }
-
-    Ok(())
-}
