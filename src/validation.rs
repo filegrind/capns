@@ -224,45 +224,43 @@ impl InputValidator {
         let cap_urn = cap.urn_string();
         let args = cap.get_args();
 
-        // Extract named argument values into a map (keyed by cli_flag)
+        // Extract named argument values into a map (keyed by media_urn)
         let mut provided_args = std::collections::HashMap::new();
         for arg in named_args {
             if let Value::Object(map) = arg {
-                if let (Some(Value::String(name)), Some(value)) = (map.get("name"), map.get("value")) {
-                    provided_args.insert(name.clone(), value.clone());
+                if let (Some(Value::String(media_urn)), Some(value)) = (map.get("name"), map.get("value")) {
+                    provided_args.insert(media_urn.clone(), value.clone());
                 }
             }
         }
 
-        // Check all cap args
+        // Check all cap args - match by media_urn
         for arg_def in args {
-            // Find cli_flag for this arg
-            let cli_flag = arg_def.sources.iter()
-                .find_map(|s| if let ArgSource::CliFlag { cli_flag } = s { Some(cli_flag.as_str()) } else { None });
-
-            if let Some(flag) = cli_flag {
-                if let Some(provided_value) = provided_args.get(flag) {
-                    self.validate_single_argument(cap, arg_def, provided_value).await?;
-                } else if arg_def.required {
+            if let Some(provided_value) = provided_args.get(&arg_def.media_urn) {
+                self.validate_single_argument(cap, arg_def, provided_value).await?;
+            } else if arg_def.required {
+                // Check if it has a cli_flag source (meaning it can be provided as named arg)
+                let has_cli_flag = arg_def.sources.iter()
+                    .any(|s| matches!(s, ArgSource::CliFlag { .. }));
+                if has_cli_flag {
                     return Err(ValidationError::MissingRequiredArgument {
                         cap_urn: cap_urn.clone(),
-                        argument_name: format!("{} (expected as named argument with flag {})", arg_def.media_urn, flag),
+                        argument_name: format!("{} (expected as named argument)", arg_def.media_urn),
                     });
                 }
             }
         }
 
-        // Check for unknown arguments
-        let known_flags: HashSet<String> = args.iter()
-            .flat_map(|arg| arg.sources.iter())
-            .filter_map(|s| if let ArgSource::CliFlag { cli_flag } = s { Some(cli_flag.clone()) } else { None })
+        // Check for unknown arguments - match by media_urn
+        let known_media_urns: HashSet<String> = args.iter()
+            .map(|arg| arg.media_urn.clone())
             .collect();
 
-        for provided_name in provided_args.keys() {
-            if !known_flags.contains(provided_name) {
+        for provided_media_urn in provided_args.keys() {
+            if !known_media_urns.contains(provided_media_urn) {
                 return Err(ValidationError::UnknownArgument {
                     cap_urn: cap_urn.clone(),
-                    argument_name: provided_name.clone(),
+                    argument_name: provided_media_urn.clone(),
                 });
             }
         }
