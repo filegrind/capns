@@ -232,7 +232,7 @@ impl CapRegistry {
                     cached_caps.insert(normalized_urn.clone(), cap);
                 }
 
-                eprintln!("Installed standard capability: {}", normalized_urn);
+                eprintln!("Standard: {}", normalized_urn);
             }
         }
 

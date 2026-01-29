@@ -252,7 +252,7 @@ impl MediaUrnRegistry {
                     cached_specs.insert(normalized_urn.clone(), spec);
                 }
 
-                eprintln!("Installed standard media spec: {}", normalized_urn);
+                eprintln!("Standard {}", normalized_urn);
             }
         }
 
