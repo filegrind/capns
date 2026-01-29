@@ -861,7 +861,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=media:void;out=media:object;{}", tags)
+        format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
     #[test]
@@ -870,8 +870,11 @@ mod tests {
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
         assert!(cap.urn_string().contains("op=transform"));
-        assert!(cap.urn_string().contains("in=media:void"));
-        assert!(cap.urn_string().contains("out=media:object"));
+        // Check that in/out specs are present (format may vary due to canonicalization)
+        assert!(cap.urn_string().contains("in="));
+        assert!(cap.urn_string().contains("media:void"));
+        assert!(cap.urn_string().contains("out="));
+        assert!(cap.urn_string().contains("form=map"));
         assert_eq!(cap.title, "Transform JSON Data");
         assert!(cap.metadata.is_empty());
     }
@@ -942,9 +945,9 @@ mod tests {
 
         // Enable stdin support by adding an arg with a stdin source
         let stdin_arg = CapArg {
-            media_urn: "media:text;textable".to_string(),
+            media_urn: "media:textable".to_string(),
             required: true,
-            sources: vec![ArgSource::Stdin { stdin: "media:text;textable".to_string() }],
+            sources: vec![ArgSource::Stdin { stdin: "media:textable".to_string() }],
             arg_description: Some("Input text".to_string()),
             default_value: None,
             metadata: None,
@@ -952,7 +955,7 @@ mod tests {
         cap.add_arg(stdin_arg);
 
         assert!(cap.accepts_stdin());
-        assert_eq!(cap.get_stdin_media_urn(), Some("media:text;textable"));
+        assert_eq!(cap.get_stdin_media_urn(), Some("media:textable"));
 
         // Test serialization/deserialization preserves the args
         let serialized = serde_json::to_string(&cap).unwrap();
@@ -960,7 +963,7 @@ mod tests {
         assert!(serialized.contains("\"stdin\""));
         let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
         assert!(deserialized.accepts_stdin());
-        assert_eq!(deserialized.get_stdin_media_urn(), Some("media:text;textable"));
+        assert_eq!(deserialized.get_stdin_media_urn(), Some("media:textable"));
     }
 
     #[test]

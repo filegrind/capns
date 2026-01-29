@@ -220,7 +220,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=media:void;out=media:object;{}", tags)
+        format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
     // Helper to create a test registry
@@ -250,8 +250,8 @@ mod tests {
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/user-data".to_string(),
+                title: "User Data".to_string(),
                 schema: Some(schema),
-                title: None,
                 description: None,
                 validation: None,
                 metadata: None,
@@ -289,8 +289,8 @@ mod tests {
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/user-data".to_string(),
+                title: "User Data".to_string(),
                 schema: Some(schema),
-                title: None,
                 description: None,
                 validation: None,
                 metadata: None,
@@ -329,8 +329,8 @@ mod tests {
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/query-result".to_string(),
+                title: "Query Result".to_string(),
                 schema: Some(schema),
-                title: None,
                 description: None,
                 validation: None,
                 metadata: None,

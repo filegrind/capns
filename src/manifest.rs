@@ -69,7 +69,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=media:void;out=media:object;{}", tags)
+        format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
     #[test]
@@ -115,9 +115,9 @@ mod tests {
 
         // Add stdin via args architecture
         let stdin_arg = CapArg::new(
-            "media:pdf;binary",
+            "media:pdf;bytes",
             true,
-            vec![ArgSource::Stdin { stdin: "media:pdf;binary".to_string() }],
+            vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
         );
         cap.add_arg(stdin_arg);
 
@@ -133,7 +133,7 @@ mod tests {
         assert!(json.contains("\"name\":\"TestComponent\""));
         assert!(json.contains("\"version\":\"0.1.0\""));
         assert!(json.contains("\"author\":\"Test Author\""));
-        assert!(json.contains("\"stdin\":\"media:pdf;binary\""));
+        assert!(json.contains("\"stdin\":\"media:pdf;bytes\""));
 
         // Test deserialization
         let deserialized: CapManifest = serde_json::from_str(&json).unwrap();

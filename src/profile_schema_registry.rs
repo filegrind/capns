@@ -397,7 +397,7 @@ impl ProfileSchemaRegistry {
     }
 
     /// Validate a value against a profile's schema.
-    /// Returns Ok(()) if valid or if schema not available (skip validation).
+    /// Returns Ok(()) if valid or if schema not available (logs warning and skips validation).
     /// Returns Err with validation errors if invalid.
     pub async fn validate(&self, profile_url: &str, value: &JsonValue) -> Result<(), Vec<String>> {
         match self.get_schema(profile_url).await {
@@ -412,7 +412,10 @@ impl ProfileSchemaRegistry {
                     }
                 }
             }
-            None => Ok(()), // Schema not available - skip validation
+            None => {
+                eprintln!("[WARN] Schema not available for profile '{}' - skipping validation", profile_url);
+                Ok(())
+            }
         }
     }
 

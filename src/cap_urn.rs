@@ -1094,7 +1094,7 @@ mod tests {
 
         // Different direction specs are incompatible
         let cap5 = CapUrn::from_string(&format!(
-            "cap:in=media:binary;out=\"{}\";op=generate",
+            "cap:in=media:bytes;out=\"{}\";op=generate",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1120,13 +1120,13 @@ mod tests {
     fn test_merge_and_subset() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
         let cap2 = CapUrn::from_string(&format!(
-            "cap:in=media:binary;out=media:integer;ext=pdf;output=binary"
+            "cap:in=media:bytes;out=media:integer;ext=pdf;output=binary"
         ))
         .unwrap();
 
         let merged = cap1.merge(&cap2);
         // Merged takes in/out from cap2
-        assert_eq!(merged.in_spec(), "media:binary");
+        assert_eq!(merged.in_spec(), "media:bytes");
         assert_eq!(merged.out_spec(), "media:integer");
         // Has tags from both
         assert_eq!(merged.get_tag("op"), Some(&"generate".to_string()));
@@ -1134,7 +1134,7 @@ mod tests {
 
         let subset = merged.subset(&["type", "ext"]);
         // subset keeps in/out from merged
-        assert_eq!(subset.in_spec(), "media:binary");
+        assert_eq!(subset.in_spec(), "media:bytes");
         assert_eq!(subset.get_tag("ext"), Some(&"pdf".to_string()));
         assert_eq!(subset.get_tag("type"), None);
     }
@@ -1434,7 +1434,7 @@ mod tests {
         ))
         .unwrap();
         let request = CapUrn::from_string(&format!(
-            "cap:in=media:binary;op=generate;out=\"{}\"",
+            "cap:in=media:bytes;op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();

@@ -8,25 +8,23 @@ use crate::{
     Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGES, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, MediaUrn, RegistryError
 };
 use crate::media_urn::{
+    // Primitives
     MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
     MEDIA_BOOLEAN_ARRAY,
-    MEDIA_PNG, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
-    // Document types (PRIMARY naming)
+    // Semantic media types
+    MEDIA_PNG, MEDIA_AUDIO_SPEECH,
+    // Document types
     MEDIA_PDF, MEDIA_EPUB,
-    // Text format types (PRIMARY naming)
+    // Text format types
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG,
-    // Semantic text input types
-    MEDIA_INPUT_TEXT, MEDIA_PROMPT_TEXT, MEDIA_QUERY_TEXT, MEDIA_CONTENT_TEXT, MEDIA_FRONTMATTER_TEXT,
-    MEDIA_MODEL_ID, MEDIA_MODEL_SPEC, MEDIA_HF_MODEL_NAME, MEDIA_MLX_MODEL_PATH, MEDIA_MANAGEMENT_OPERATION,
-    // Semantic AI input types
-    MEDIA_IMAGE_VISUAL_EMBEDDING, MEDIA_IMAGE_CAPTIONING, MEDIA_IMAGE_VISION_QUERY,
-    MEDIA_AUDIO_SPEECH, MEDIA_TEXT_EMBEDDING,
+    // Semantic input types
+    MEDIA_FRONTMATTER_TEXT, MEDIA_MODEL_SPEC, MEDIA_MLX_MODEL_PATH,
     // Semantic output types
     MEDIA_IMAGE_THUMBNAIL,
     // CAPNS output types
-    MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
+    MEDIA_DOWNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
-    MEDIA_GENERATE_OUTPUT, MEDIA_STRUCTURED_QUERY_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT,
+    MEDIA_EMBEDDING_VECTOR, MEDIA_JSON, MEDIA_LLM_INFERENCE_OUTPUT,
 };
 use std::sync::Arc;
 
@@ -51,8 +49,8 @@ pub fn input_media_urn_for_ext(ext: Option<&str>) -> &'static str {
         Some("txt") => MEDIA_TXT,
         Some("rst") => MEDIA_RST,
         Some("log") => MEDIA_LOG,
-        // Semantic types
-        Some("text") => MEDIA_TEXT,
+        // Generic text - uses string type
+        Some("text") => MEDIA_STRING,
         // Fallbacks
         None => MEDIA_BINARY,
         Some(_) => MEDIA_BINARY,
@@ -75,7 +73,7 @@ pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
         .tag("op", "conversation")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_PROMPT_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build conversation cap URN")
@@ -87,7 +85,7 @@ pub fn llm_multiplechoice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "multiplechoice")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_QUERY_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build multiplechoice cap URN")
@@ -99,7 +97,7 @@ pub fn llm_codegeneration_urn(lang_code: &str) -> CapUrn {
         .tag("op", "codegeneration")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_PROMPT_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build codegeneration cap URN")
@@ -111,7 +109,7 @@ pub fn llm_creative_urn(lang_code: &str) -> CapUrn {
         .tag("op", "creative")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_PROMPT_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build creative cap URN")
@@ -123,7 +121,7 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
         .tag("op", "summarization")
         .solo_tag("constrained")
         .tag("language", lang_code)
-        .in_spec(MEDIA_INPUT_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
         .build()
         .expect("Failed to build summarization cap URN")
@@ -147,8 +145,8 @@ pub fn embeddings_dimensions_urn() -> CapUrn {
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_embeddings")
-        .in_spec(MEDIA_TEXT_EMBEDDING)
-        .out_spec(MEDIA_GENERATE_OUTPUT)
+        .in_spec(MEDIA_STRING)
+        .out_spec(MEDIA_EMBEDDING_VECTOR)
         .build()
         .expect("Failed to build embeddings-generation cap URN")
 }
@@ -161,7 +159,7 @@ pub fn embeddings_generation_urn() -> CapUrn {
 pub fn model_download_urn() -> CapUrn {
 		CapUrnBuilder::new()
 		.tag("op", "download-model")
-        .in_spec(MEDIA_MODEL_ID)
+        .in_spec(MEDIA_MODEL_SPEC)
         .out_spec(MEDIA_DOWNLOAD_OUTPUT)
         .build()
         .expect("Failed to build model-download cap URN")
@@ -181,7 +179,7 @@ pub fn model_list_urn() -> CapUrn {
 pub fn model_status_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "model-status")
-        .in_spec(MEDIA_MODEL_ID)
+        .in_spec(MEDIA_MODEL_SPEC)
         .out_spec(MEDIA_STATUS_OUTPUT)
         .build()
         .expect("Failed to build model-status cap URN")
@@ -191,7 +189,7 @@ pub fn model_status_urn() -> CapUrn {
 pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
 		.tag("op", "model-contents")
-        .in_spec(MEDIA_MODEL_ID)
+        .in_spec(MEDIA_MODEL_SPEC)
         .out_spec(MEDIA_CONTENTS_OUTPUT)
         .build()
         .expect("Failed to build model-contents cap URN")
@@ -208,14 +206,14 @@ pub fn model_contents_urn() -> CapUrn {
 /// Output is always an image (PNG thumbnail).
 ///
 /// Input types by extension (PRIMARY type naming):
-/// - pdf: media:pdf;binary
-/// - epub: media:epub;binary
+/// - pdf: media:pdf;bytes
+/// - epub: media:epub;bytes
 /// - md: media:md;textable
 /// - txt: media:txt;textable
 /// - rst: media:rst;textable
 /// - log: media:log;textable
-/// - text: media:text;textable
-/// - None/other: media:raw;binary
+/// - text: media:textable
+/// - None/other: media:bytes
 pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
     let input_spec = input_media_urn_for_ext(ext);
 
@@ -280,7 +278,7 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
         .tag("language", lang_code)
         .solo_tag("constrained")
         .in_spec(MEDIA_OBJECT)
-        .out_spec(MEDIA_STRUCTURED_QUERY_OUTPUT)
+        .out_spec(MEDIA_JSON)
         .build()
         .expect("Failed to build structured-query cap URN")
 }
@@ -291,7 +289,7 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bit")
         .tag("language", lang_code)
         .solo_tag("constrained")
-        .in_spec(MEDIA_CONTENT_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_BOOLEAN)
         .build()
         .expect("Failed to build bit-choice cap URN")
@@ -303,7 +301,7 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
         .tag("op", "choose_bits")
         .tag("language", lang_code)
         .solo_tag("constrained")
-        .in_spec(MEDIA_CONTENT_TEXT)
+        .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_BOOLEAN_ARRAY)
         .build()
         .expect("Failed to build bit-choices cap URN")

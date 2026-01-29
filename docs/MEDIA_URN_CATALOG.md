@@ -17,12 +17,12 @@ These are the fundamental data types with defined constants in `capns::media_urn
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
 | `media:void` | `MEDIA_VOID` | No data / empty |
-| `media:string;textable;scalar` | `MEDIA_STRING` | UTF-8 text string |
-| `media:integer;textable;numeric;scalar` | `MEDIA_INTEGER` | Integer value |
-| `media:number;textable;numeric;scalar` | `MEDIA_NUMBER` | Floating-point number |
-| `media:boolean;textable;scalar` | `MEDIA_BOOLEAN` | Boolean value (true/false) |
-| `media:object;textable;keyed` | `MEDIA_OBJECT` | JSON object |
-| `media:raw;binary` | `MEDIA_BINARY` | Raw binary data |
+| `media:textable;form=scalar` | `MEDIA_STRING` | UTF-8 text string |
+| `media:integer` | `MEDIA_INTEGER` | Integer value |
+| `media:textable;numeric;form=scalar` | `MEDIA_NUMBER` | Floating-point number |
+| `media:bool;textable;form=scalar` | `MEDIA_BOOLEAN` | Boolean value (true/false) |
+| `media:textable;form=map` | `MEDIA_OBJECT` | JSON object |
+| `media:bytes` | `MEDIA_BINARY` | Raw binary data |
 
 ---
 
@@ -32,11 +32,11 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:string-array;textable;sequence` | `MEDIA_STRING_ARRAY` | Array of strings |
-| `media:integer-array;textable;numeric;sequence` | `MEDIA_INTEGER_ARRAY` | Array of integers |
-| `media:number-array;textable;numeric;sequence` | `MEDIA_NUMBER_ARRAY` | Array of numbers |
-| `media:boolean-array;textable;sequence` | `MEDIA_BOOLEAN_ARRAY` | Array of booleans |
-| `media:object-array;textable;keyed;sequence` | `MEDIA_OBJECT_ARRAY` | Array of objects |
+| `media:textable;form=list` | `MEDIA_STRING_ARRAY` | Array of strings |
+| `media:integer;textable;form=list` | `MEDIA_INTEGER_ARRAY` | Array of integers |
+| `media:textable;numeric;form=list` | `MEDIA_NUMBER_ARRAY` | Array of numbers |
+| `media:bool;textable;form=list` | `MEDIA_BOOLEAN_ARRAY` | Array of booleans |
+| `media:object-array;textable;form=list` | `MEDIA_OBJECT_ARRAY` | Array of objects |
 
 ---
 
@@ -46,56 +46,56 @@ Array variants of primitive types.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:listing-id;textable;scalar` | `MEDIA_LISTING_ID` | Reference to a listing UUID |
-| `media:task-id;textable;scalar` | `MEDIA_TASK_ID` | Reference to a task UUID |
-| `media:file-path-array;textable;sequence` | `MEDIA_FILE_PATH_ARRAY` | Array of file paths |
+| `media:listing-id;textable;form=scalar` | `MEDIA_LISTING_ID` | Reference to a listing UUID |
+| `media:task-id;textable;form=scalar` | `MEDIA_TASK_ID` | Reference to a task UUID |
+| `media:file-path-array;textable;form=list` | `MEDIA_FILE_PATH_ARRAY` | Array of file paths |
 
 ### Model Management Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:download-result;textable;keyed` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
-| `media:load-output;textable;keyed` | `MEDIA_LOAD_OUTPUT` | Model load result |
-| `media:unload-output;textable;keyed` | `MEDIA_UNLOAD_OUTPUT` | Model unload result |
-| `media:model-list;textable;keyed` | `MEDIA_LIST_OUTPUT` | Model listing result |
-| `media:status-output;textable;keyed` | `MEDIA_STATUS_OUTPUT` | Status query result |
-| `media:model-contents;textable;keyed` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
-| `media:embedding-vector;textable;keyed` | `MEDIA_GENERATE_OUTPUT` | Generation result |
-| `media:manage-output;textable;keyed` | `MEDIA_MANAGE_OUTPUT` | Model management result |
+| `media:download-result;textable;form=map` | `MEDIA_DOWNLOAD_OUTPUT` | Model download result |
+| `media:load-output;textable;form=map` | `MEDIA_LOAD_OUTPUT` | Model load result |
+| `media:unload-output;textable;form=map` | `MEDIA_UNLOAD_OUTPUT` | Model unload result |
+| `media:model-list;textable;form=map` | `MEDIA_LIST_OUTPUT` | Model listing result |
+| `media:model-status;textable;form=map` | `MEDIA_STATUS_OUTPUT` | Status query result |
+| `media:model-contents;textable;form=map` | `MEDIA_CONTENTS_OUTPUT` | Contents listing result |
+| `media:form=list;real;continuous;signed;numeric;textable;embedding` | `MEDIA_GENERATE_OUTPUT` | Generation result |
+| `media:manage-output;textable;form=map` | `MEDIA_MANAGE_OUTPUT` | Model management result |
 
 ### LLM & Inference Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:generated-text;textable;keyed` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
-| `media:vision-inference-output;textable;keyed` | - | Vision model analysis result |
-| `media:embedding-vector;textable;keyed` | - | Embedding generation result |
-| `media:json;textable;keyed` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
-| `media:string-array;textable;sequence` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
+| `media:generated-text;textable;form=map` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
+| `media:vision-inference-output;textable;form=map` | - | Vision model analysis result |
+| `media:form=list;real;continuous;signed;numeric;textable;embedding` | - | Embedding generation result |
+| `media:json;textable;form=map` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
+| `media:textable;form=list` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
 
 ### Document Processing Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:extract-metadata-output;textable;keyed` | - | Document metadata extraction result |
-| `media:extract-outline-output;textable;keyed` | - | Document outline extraction result |
-| `media:disbound-pages;textable;keyed;sequence` | - | Document grinding/chunking result |
-| `media:frontmatter-summary-output;textable;keyed` | - | Frontmatter summary result |
-| `media:thumbnail-output;binary;visual` | - | Thumbnail image output |
+| `media:extract-metadata-output;textable;form=map` | - | Document metadata extraction result |
+| `media:extract-outline-output;textable;form=map` | - | Document outline extraction result |
+| `media:disbound-pages;textable;form=list` | - | Document grinding/chunking result |
+| `media:frontmatter-summary-output;textable;form=map` | - | Frontmatter summary result |
+| `media:thumbnail-output;bytes;visual` | - | Thumbnail image output |
 
 ### Audio/Video Processing Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:transcription-output;textable;keyed` | - | Audio transcription result |
-| `media:image-caption;textable;keyed` | - | Image caption result |
+| `media:transcription;textable;form=map` | - | Audio transcription result |
+| `media:image-caption;textable;form=map` | - | Image caption result |
 
 ### Image Processing Outputs
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
-| `media:embedding-vector;textable;keyed` | - | Image embedding result |
-| `media:embedding-vector-batch;textable;keyed;sequence` | - | Batch image embedding result |
+| `media:form=list;real;continuous;signed;numeric;textable;embedding` | - | Image embedding result |
+| `media:embedding-vector;textable;form=list` | - | Batch image embedding result |
 
 ---
 
@@ -105,10 +105,10 @@ Image types use subtype to specify format.
 
 | Media URN | Description |
 |-----------|-------------|
-| `media:image;subtype=png;binary;visual` | PNG image |
-| `media:image;subtype=jpeg;binary;visual` | JPEG image |
-| `media:image;subtype=gif;binary;visual` | GIF image |
-| `media:image;subtype=webp;binary;visual` | WebP image |
+| `media:image;subtype=png;bytes;visual` | PNG image |
+| `media:image;subtype=jpeg;bytes;visual` | JPEG image |
+| `media:image;subtype=gif;bytes;visual` | GIF image |
+| `media:image;subtype=webp;bytes;visual` | WebP image |
 
 ---
 
@@ -118,10 +118,10 @@ Application-specific formats using subtype.
 
 | Media URN | Description |
 |-----------|-------------|
-| `media:application;subtype=pdf;binary;visual` | PDF document |
-| `media:application;subtype=json;textable;keyed` | JSON data |
-| `media:application;subtype=xml;textable;keyed` | XML data |
-| `media:application;subtype=epub+zip;binary` | EPUB e-book |
+| `media:application;subtype=pdf;bytes;visual` | PDF document |
+| `media:application;subtype=json;textable;form=map` | JSON data |
+| `media:application;subtype=xml;textable;form=map` | XML data |
+| `media:application;subtype=epub+zip;bytes` | EPUB e-book |
 
 ---
 
@@ -131,11 +131,11 @@ Text formats with subtype for specific languages/formats.
 
 | Media URN | Description |
 |-----------|-------------|
-| `media:text;subtype=plain;textable;scalar` | Plain text |
-| `media:text;subtype=html;textable;keyed` | HTML markup |
-| `media:text;subtype=markdown;textable` | Markdown |
-| `media:text;subtype=x-rust;textable` | Rust source code |
-| `media:text;subtype=x-rst;textable` | reStructuredText |
+| `media:subtype=plain;textable;form=scalar` | Plain text |
+| `media:subtype=html;textable;form=map` | HTML markup |
+| `media:subtype=markdown;textable` | Markdown |
+| `media:subtype=x-rust;textable` | Rust source code |
+| `media:subtype=x-rst;textable` | reStructuredText |
 
 ---
 
@@ -144,7 +144,7 @@ Text formats with subtype for specific languages/formats.
 | Media URN | Description |
 |-----------|-------------|
 | `media:unknown` | Unknown/unrecognized type |
-| `media:result;textable;keyed` | Generic result wrapper |
+| `media:result;textable;form=map` | Generic result wrapper |
 
 ---
 
@@ -156,7 +156,7 @@ Text formats with subtype for specific languages/formats.
    - Text content: `MEDIA_STRING`
    - JSON/structured data: `MEDIA_OBJECT`
    - Binary/embeddings: `MEDIA_BINARY`
-   - Images: `media:image;subtype=<format>;binary;visual`
+   - Images: `media:image;subtype=<format>;bytes;visual`
 
 2. **For cap arguments:**
    - Use primitive types (`string`, `integer`, `number`, `boolean`)
@@ -173,7 +173,7 @@ Text formats with subtype for specific languages/formats.
 The `MediaUrn` struct provides these detection methods:
 
 ```rust
-let urn = MediaUrn::from_string("media:string;textable;scalar")?;
+let urn = MediaUrn::from_string("media:textable;form=scalar")?;
 
 urn.is_text()    // true for string, text/*
 urn.is_json()    // true for object, object-array, *-array
@@ -206,7 +206,7 @@ Media URNs include coercion tags that enable type coercion and matching. Tags de
 | `numeric` | Numeric operations valid | integers, numbers (NOT numeric strings) |
 | `scalar` | Single atomic value | primitives, IDs (NOT arrays, NOT objects) |
 | `sequence` | Ordered collection of items | arrays of any type |
-| `keyed` | Key-value structure | objects, maps |
+| `map` | Key-value structure | objects, maps |
 | `visual` | Has visual rendering | images, PDFs (renderable) |
 
 ### Matching with Coercion Tags
@@ -214,20 +214,20 @@ Media URNs include coercion tags that enable type coercion and matching. Tags de
 A cap requiring textable input can specify `media:textable` and match ANY type reducible to text:
 
 ```
-cap:in=media:textable;op=prompt;out=media:object;textable;keyed
+cap:in=media:textable;op=prompt;out=media:textable;form=map
 ```
 
 This matches: string, integer, number, boolean, object, arrays - anything with `textable`.
 
 **A cap requiring numeric input:**
 ```
-cap:in=media:numeric;op=calculate;out=media:number;textable;numeric;scalar
+cap:in=media:numeric;op=calculate;out=media:textable;numeric;form=scalar
 ```
 Matches: integer, number, integer-array, number-array
 
-**A cap requiring keyed structure:**
+**A cap requiring map structure:**
 ```
-cap:in=media:keyed;op=transform;out=media:object;textable;keyed
+cap:in=media:form=map;op=transform;out=media:textable;form=map
 ```
 Matches: object, text/html (has DOM structure)
 

@@ -23,63 +23,53 @@ use tagged_urn::{TaggedUrn, TaggedUrnBuilder, TaggedUrnError};
 // STANDARD MEDIA URN CONSTANTS
 // =============================================================================
 
-// Primitive types
+// Primitive types - URNs must match base.toml definitions
 /// Media URN for void (no input/output) - no coercion tags
 pub const MEDIA_VOID: &str = "media:void";
 /// Media URN for string type - textable (can become text), scalar (single value)
-pub const MEDIA_STRING: &str = "media:string;textable;scalar";
+pub const MEDIA_STRING: &str = "media:textable;form=scalar";
 /// Media URN for integer type - textable, numeric (math ops valid), scalar
-pub const MEDIA_INTEGER: &str = "media:integer;textable;numeric;scalar";
-/// Media URN for number type - textable, numeric, scalar
-pub const MEDIA_NUMBER: &str = "media:number;textable;numeric;scalar";
-/// Media URN for boolean type - textable, scalar
-pub const MEDIA_BOOLEAN: &str = "media:boolean;textable;scalar";
-/// Media URN for JSON object type - textable (via JSON.stringify), keyed (key-value structure)
-pub const MEDIA_OBJECT: &str = "media:object;textable;keyed";
+pub const MEDIA_INTEGER: &str = "media:integer;textable;numeric;form=scalar";
+/// Media URN for number type - textable, numeric, scalar (no primary type prefix)
+pub const MEDIA_NUMBER: &str = "media:textable;numeric;form=scalar";
+/// Media URN for boolean type - uses "bool" not "boolean" per base.toml
+pub const MEDIA_BOOLEAN: &str = "media:bool;textable;form=scalar";
+/// Media URN for JSON object type - textable (via JSON.stringify), form=map (key-value structure)
+pub const MEDIA_OBJECT: &str = "media:form=map;textable";
 /// Media URN for binary data - binary (raw bytes)
-pub const MEDIA_BINARY: &str = "media:raw;binary";
+pub const MEDIA_BINARY: &str = "media:bytes";
 
-// Array types
-/// Media URN for string array type - textable, sequence (ordered collection)
-pub const MEDIA_STRING_ARRAY: &str = "media:string-array;textable;sequence";
-/// Media URN for integer array type - textable, numeric, sequence
-pub const MEDIA_INTEGER_ARRAY: &str = "media:integer-array;textable;numeric;sequence";
-/// Media URN for number array type - textable, numeric, sequence
-pub const MEDIA_NUMBER_ARRAY: &str = "media:number-array;textable;numeric;sequence";
-/// Media URN for boolean array type - textable, sequence
-pub const MEDIA_BOOLEAN_ARRAY: &str = "media:boolean-array;textable;sequence";
-/// Media URN for object array type - textable, keyed, sequence
-pub const MEDIA_OBJECT_ARRAY: &str = "media:object-array;textable;keyed;sequence";
+// Array types - URNs must match base.toml definitions
+/// Media URN for string array type - textable, list (no primary type prefix)
+pub const MEDIA_STRING_ARRAY: &str = "media:textable;form=list";
+/// Media URN for integer array type - textable, numeric, list (per base.toml:46)
+pub const MEDIA_INTEGER_ARRAY: &str = "media:integer;textable;numeric;form=list";
+/// Media URN for number array type - textable, numeric, list (no primary type prefix)
+pub const MEDIA_NUMBER_ARRAY: &str = "media:textable;numeric;form=list";
+/// Media URN for boolean array type - uses "bool" not "boolean" per base.toml
+pub const MEDIA_BOOLEAN_ARRAY: &str = "media:bool;textable;form=list";
+/// Media URN for object array type - generic list (item type defined in schema)
+pub const MEDIA_OBJECT_ARRAY: &str = "media:form=list;textable";
 
 // Semantic media types for specialized content
 /// Media URN for image data (png, jpg, gif, webp, etc.)
-pub const MEDIA_PNG: &str = "media:png;binary";
+pub const MEDIA_PNG: &str = "media:png;bytes";
 /// Media URN for audio data (wav, mp3, flac, etc.)
-pub const MEDIA_AUDIO: &str = "media:wav;audio;binary;";
+pub const MEDIA_AUDIO: &str = "media:wav;audio;bytes;";
 /// Media URN for video data (mp4, webm, mov, etc.)
-pub const MEDIA_VIDEO: &str = "media:video;binary";
-/// Media URN for generic text (semantic type)
-pub const MEDIA_TEXT: &str = "media:text;textable";
+pub const MEDIA_VIDEO: &str = "media:video;bytes";
 
 // Semantic AI input types - distinguished by their purpose/context
-/// Media URN for image input to visual embedding models (CLIP)
-pub const MEDIA_IMAGE_VISUAL_EMBEDDING: &str = "media:image;png;binary;visual-embedding-source";
-/// Media URN for image input to captioning models (BLIP)
-pub const MEDIA_IMAGE_CAPTIONING: &str = "media:image;png;binary;captioning-source";
-/// Media URN for image input to vision-language models (VLM Q&A)
-pub const MEDIA_IMAGE_VISION_QUERY: &str = "media:image;png;binary;vision-query-source";
 /// Media URN for audio input containing speech for transcription (Whisper)
-pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;binary;speech";
-/// Media URN for text input to embedding models
-pub const MEDIA_TEXT_EMBEDDING: &str = "media:text;textable;scalar;embedding-source";
+pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;bytes;speech";
 /// Media URN for thumbnail image output
-pub const MEDIA_IMAGE_THUMBNAIL: &str = "media:image;png;binary;thumbnail";
+pub const MEDIA_IMAGE_THUMBNAIL: &str = "media:image;png;bytes;thumbnail";
 
 // Document types (PRIMARY naming - type IS the format)
 /// Media URN for PDF documents
-pub const MEDIA_PDF: &str = "media:pdf;binary";
+pub const MEDIA_PDF: &str = "media:pdf;bytes";
 /// Media URN for EPUB documents
-pub const MEDIA_EPUB: &str = "media:epub;binary";
+pub const MEDIA_EPUB: &str = "media:epub;bytes";
 
 // Text format types (PRIMARY naming - type IS the format)
 /// Media URN for Markdown text
@@ -95,37 +85,23 @@ pub const MEDIA_HTML: &str = "media:html;textable";
 /// Media URN for XML documents
 pub const MEDIA_XML: &str = "media:xml;textable";
 /// Media URN for JSON data
-pub const MEDIA_JSON: &str = "media:json;textable;keyed";
+pub const MEDIA_JSON: &str = "media:json;textable;form=map";
 /// Media URN for YAML data
-pub const MEDIA_YAML: &str = "media:yaml;textable;keyed";
+pub const MEDIA_YAML: &str = "media:yaml;textable;form=map";
 
 // File path types - for arguments that represent filesystem paths
 /// Media URN for a single file path - textable, scalar, and marked as a file-path for special handling
-pub const MEDIA_FILE_PATH: &str = "media:file-path;textable;scalar";
-/// Media URN for an array of file paths - textable, sequence, marked as file-path for special handling
-pub const MEDIA_FILE_PATH_ARRAY: &str = "media:file-path-array;textable;sequence";
+pub const MEDIA_FILE_PATH: &str = "media:file-path;textable;form=scalar";
+/// Media URN for an array of file paths - textable, list (per file-path.toml)
+pub const MEDIA_FILE_PATH_ARRAY: &str = "media:file-path;textable;form=list";
 
 // Semantic text input types - distinguished by their purpose/context
-/// Media URN for input text to generate embeddings
-pub const MEDIA_INPUT_TEXT: &str = "media:input-text;textable;scalar";
-/// Media URN for prompt text for LLM inference
-pub const MEDIA_PROMPT_TEXT: &str = "media:prompt-text;textable;scalar";
-/// Media URN for query text for searches/questions
-pub const MEDIA_QUERY_TEXT: &str = "media:query-text;textable;scalar";
-/// Media URN for content text for summarization/analysis
-pub const MEDIA_CONTENT_TEXT: &str = "media:content-text;textable;scalar";
 /// Media URN for frontmatter text (book metadata)
-pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter-text;textable;scalar";
-/// Media URN for model identifier/name
-pub const MEDIA_MODEL_ID: &str = "media:model-spec;textable;scalar";
-/// Media URN for model spec (provider:model format)
-pub const MEDIA_MODEL_SPEC: &str = "media:model-spec;textable;scalar";
-/// Media URN for HuggingFace model name
-pub const MEDIA_HF_MODEL_NAME: &str = "media:model-spec;textable;scalar";
+pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter;textable;form=scalar";
+/// Media URN for model spec (provider:model format, HuggingFace name, etc.)
+pub const MEDIA_MODEL_SPEC: &str = "media:model-spec;textable;form=scalar";
 /// Media URN for MLX model path
-pub const MEDIA_MLX_MODEL_PATH: &str = "media:mlx-model-path;textable;scalar";
-/// Media URN for management operation type
-pub const MEDIA_MANAGEMENT_OPERATION: &str = "media:management-operation;textable;scalar";
+pub const MEDIA_MLX_MODEL_PATH: &str = "media:mlx-model-path;textable;form=scalar";
 
 /// Helper to build binary media URN with extension
 pub fn binary_media_urn_for_ext(ext: &str) -> String {
@@ -134,58 +110,44 @@ pub fn binary_media_urn_for_ext(ext: &str) -> String {
 
 /// Helper to build text media URN with extension
 pub fn text_media_urn_for_ext(ext: &str) -> String {
-    format!("media:text;ext={};textable", ext)
+    format!("media:ext={};textable", ext)
 }
 
 /// Helper to build image media URN with extension
 pub fn image_media_urn_for_ext(ext: &str) -> String {
-    format!("media:image;ext={};binary", ext)
+    format!("media:image;ext={};bytes", ext)
 }
 
 /// Helper to build audio media URN with extension
 pub fn audio_media_urn_for_ext(ext: &str) -> String {
-    format!("media:audio;ext={};binary", ext)
+    format!("media:audio;ext={};bytes", ext)
 }
 
-// CAPNS output types - all keyed structures (JSON objects)
-/// Media URN for model download output - textable, keyed
-pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:download-result;textable;keyed";
-/// Media URN for model load output - textable, keyed
-pub const MEDIA_LOAD_OUTPUT: &str = "media:load-output;textable;keyed";
-/// Media URN for model unload output - textable, keyed
-pub const MEDIA_UNLOAD_OUTPUT: &str = "media:unload-output;textable;keyed";
-/// Media URN for model list output - textable, keyed
-pub const MEDIA_LIST_OUTPUT: &str = "media:model-list;textable;keyed";
-/// Media URN for model status output - textable, keyed
-pub const MEDIA_STATUS_OUTPUT: &str = "media:status-output;textable;keyed";
-/// Media URN for model contents output - textable, keyed
-pub const MEDIA_CONTENTS_OUTPUT: &str = "media:model-contents;textable;keyed";
-/// Media URN for embeddings generate output - textable, keyed
-pub const MEDIA_GENERATE_OUTPUT: &str = "media:embedding-vector;textable;keyed";
-/// Media URN for structured query output - textable, keyed
-pub const MEDIA_STRUCTURED_QUERY_OUTPUT: &str = "media:json;textable;keyed";
-/// Media URN for questions array - textable, sequence
-pub const MEDIA_QUESTIONS_ARRAY: &str = "media:string-array;textable;sequence";
-/// Media URN for LLM inference output - textable, keyed
-pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:generated-text;textable;keyed";
-/// Media URN for extracted metadata - textable, keyed
-pub const MEDIA_FILE_METADATA: &str = "media:file-metadata;textable;keyed";
-/// Media URN for extracted outline - textable, keyed
-pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:document-outline;textable;keyed";
-/// Media URN for disbound pages - textable, keyed, sequence (array of chunks)
-pub const MEDIA_DISBOUND_PAGES: &str = "media:disbound-pages;textable;keyed;sequence";
-/// Media URN for embeddings output - textable, keyed
-pub const MEDIA_EMBEDDINGS_OUTPUT: &str = "media:embedding-vector;textable;keyed";
-/// Media URN for image embeddings output - textable, keyed
-pub const MEDIA_PNG_EMBEDDINGS_OUTPUT: &str = "media:embedding-vector;textable;keyed";
-/// Media URN for caption output - textable, keyed
-pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;keyed";
-/// Media URN for transcription output - textable, keyed
-pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:transcription-output;textable;keyed";
-/// Media URN for vision inference output - textable, keyed
-pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:vision-inference-output;textable;keyed";
-/// Media URN for model management output - textable, keyed
-pub const MEDIA_MANAGE_OUTPUT: &str = "media:manage-output;textable;keyed";
+// CAPNS output types - all form=map structures (JSON objects)
+/// Media URN for model download output - textable, form=map
+pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:download-result;textable;form=map";
+/// Media URN for model list output - textable, form=map
+pub const MEDIA_LIST_OUTPUT: &str = "media:model-list;textable;form=map";
+/// Media URN for model status output - textable, form=map
+pub const MEDIA_STATUS_OUTPUT: &str = "media:model-status;textable;form=map";
+/// Media URN for model contents output - textable, form=map
+pub const MEDIA_CONTENTS_OUTPUT: &str = "media:model-contents;textable;form=map";
+/// Media URN for embedding vector output - textable, form=map
+pub const MEDIA_EMBEDDING_VECTOR: &str = "media:embedding-vector;textable;form=map";
+/// Media URN for LLM inference output - textable, form=map
+pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:generated-text;textable;form=map";
+/// Media URN for extracted metadata - textable, form=map
+pub const MEDIA_FILE_METADATA: &str = "media:file-metadata;textable;form=map";
+/// Media URN for extracted outline - textable, form=map
+pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:document-outline;textable;form=map";
+/// Media URN for disbound pages - textable, form=list (array of chunks)
+pub const MEDIA_DISBOUND_PAGES: &str = "media:disbound-pages;textable;form=list";
+/// Media URN for caption output - textable, form=map
+pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;form=map";
+/// Media URN for transcription output - textable, form=map
+pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:transcription;textable;form=map";
+/// Media URN for vision inference output - textable, form=map
+pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:vision-inference-output;textable;form=map";
 
 // =============================================================================
 // MEDIA URN TYPE
@@ -337,15 +299,33 @@ impl MediaUrn {
     // =========================================================================
 
     /// Check if this represents binary data.
-    /// Returns true if the "binary" marker tag is present.
+    /// Returns true if the "bytes" marker tag is present.
     pub fn is_binary(&self) -> bool {
-        self.get_tag("binary").is_some()
+        self.get_tag("bytes").is_some()
     }
 
-    /// Check if this represents JSON/keyed data.
-    /// Returns true if the "keyed" marker tag is present.
+    /// Check if this represents a map/object structure (form=map).
+    /// This indicates a key-value structure, regardless of representation format.
+    pub fn is_map(&self) -> bool {
+        self.has_tag("form", "map")
+    }
+
+    /// Check if this represents a scalar value (form=scalar).
+    /// This indicates a single value, not a collection.
+    pub fn is_scalar(&self) -> bool {
+        self.has_tag("form", "scalar")
+    }
+
+    /// Check if this represents a list/array structure (form=list).
+    /// This indicates an ordered collection of values.
+    pub fn is_list(&self) -> bool {
+        self.has_tag("form", "list")
+    }
+
+    /// Check if this represents JSON representation specifically.
+    /// Returns true if the "json" marker tag is present.
     pub fn is_json(&self) -> bool {
-        self.get_tag("keyed").is_some()
+        self.get_tag("json").is_some()
     }
 
     /// Check if this represents text data.
@@ -385,10 +365,10 @@ impl MediaUrn {
     ///
     /// The check ensures that all marker tags (wildcard tags) in the requirement
     /// are also present in self. For example:
-    /// - `media:pdf;binary` can_provide_input_for `media:pdf;binary` -> TRUE
-    /// - `media:pdf;binary` can_provide_input_for `media:pdf` -> TRUE (has extra binary)
-    /// - `media:png;binary` can_provide_input_for `media:pdf;binary` -> FALSE (missing pdf)
-    /// - `media:binary` can_provide_input_for `media:pdf;binary` -> FALSE (missing pdf)
+    /// - `media:pdf;bytes` can_provide_input_for `media:pdf;bytes` -> TRUE
+    /// - `media:pdf;bytes` can_provide_input_for `media:pdf` -> TRUE (has extra binary)
+    /// - `media:png;bytes` can_provide_input_for `media:pdf;bytes` -> FALSE (missing pdf)
+    /// - `media:binary` can_provide_input_for `media:pdf;bytes` -> FALSE (missing pdf)
     ///
     /// Marker tags are tags with value "*" (wildcards). These represent type/format
     /// markers like "pdf", "png", "binary", "textable", etc.
@@ -556,38 +536,69 @@ mod tests {
 
     #[test]
     fn test_is_binary() {
-        // is_binary returns true only if "binary" marker tag is present
-        assert!(MediaUrn::from_string("media:raw;binary").unwrap().is_binary());
-        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:png;binary"
-        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:pdf;binary"
-        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:raw;binary"
+        // is_binary returns true only if "bytes" marker tag is present
+        assert!(MediaUrn::from_string("media:bytes").unwrap().is_binary());
+        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:png;bytes"
+        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:pdf;bytes"
+        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:bytes"
         // Without binary tag, is_binary is false
-        assert!(!MediaUrn::from_string("media:string;textable").unwrap().is_binary());
-        assert!(!MediaUrn::from_string("media:object;textable;keyed").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:textable").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:object;textable;form=map").unwrap().is_binary());
+    }
+
+    #[test]
+    fn test_is_map() {
+        // is_map returns true if form=map tag is present (key-value structure)
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_map()); // "media:form=map;textable"
+        assert!(MediaUrn::from_string("media:custom;form=map").unwrap().is_map());
+        // Without form=map tag, is_map is false
+        assert!(!MediaUrn::from_string("media:textable").unwrap().is_map());
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_map()); // form=scalar
+        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_map()); // form=list
+    }
+
+    #[test]
+    fn test_is_scalar() {
+        // is_scalar returns true if form=scalar tag is present (single value)
+        assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_scalar()); // "media:textable;form=scalar"
+        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_scalar()); // "media:integer;textable;numeric;form=scalar"
+        assert!(MediaUrn::from_string(MEDIA_NUMBER).unwrap().is_scalar()); // "media:textable;numeric;form=scalar"
+        assert!(MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_scalar()); // "media:bool;textable;form=scalar"
+        // Without form=scalar tag, is_scalar is false
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_scalar()); // form=map
+        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_scalar()); // form=list
+    }
+
+    #[test]
+    fn test_is_list() {
+        // is_list returns true if form=list tag is present (ordered collection)
+        assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_list()); // "media:textable;form=list"
+        assert!(MediaUrn::from_string(MEDIA_INTEGER_ARRAY).unwrap().is_list()); // "media:integer;textable;numeric;form=list"
+        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_list()); // "media:form=list;textable"
+        // Without form=list tag, is_list is false
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_list()); // form=scalar
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_list()); // form=map
     }
 
     #[test]
     fn test_is_json() {
-        // is_json returns true only if "keyed" marker tag is present
-        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_json()); // "media:object;textable;keyed"
-        assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:json;textable;keyed"
-        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_json()); // "media:object-array;textable;keyed;sequence"
-        assert!(MediaUrn::from_string("media:custom;keyed").unwrap().is_json());
-        // Without keyed tag, is_json is false
-        assert!(!MediaUrn::from_string("media:string;textable").unwrap().is_json());
-        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_json()); // string-array has textable;sequence but not keyed
+        // is_json returns true only if "json" marker tag is present (JSON representation)
+        assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:json;textable"
+        assert!(MediaUrn::from_string("media:custom;json").unwrap().is_json());
+        // form=map alone does not mean JSON representation
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_json()); // map structure, not necessarily JSON
+        assert!(!MediaUrn::from_string("media:textable").unwrap().is_json());
     }
 
     #[test]
     fn test_is_text() {
         // is_text returns true only if "textable" marker tag is present
-        assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:string;textable;scalar"
-        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:integer;textable;numeric;scalar"
-        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:object;textable;keyed"
-        assert!(MediaUrn::from_string(MEDIA_TEXT).unwrap().is_text()); // "media:text;textable"
+        assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:textable;form=scalar"
+        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:integer;textable;numeric;form=scalar"
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:form=map;textable"
         // Without textable tag, is_text is false
-        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:raw;binary"
-        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:png;binary"
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:bytes"
+        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:png;bytes"
     }
 
     #[test]
@@ -643,7 +654,6 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_PNG).is_ok());
         assert!(MediaUrn::from_string(MEDIA_AUDIO).is_ok());
         assert!(MediaUrn::from_string(MEDIA_VIDEO).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_TEXT).is_ok());
         // Document types (PRIMARY naming)
         assert!(MediaUrn::from_string(MEDIA_PDF).is_ok());
         assert!(MediaUrn::from_string(MEDIA_EPUB).is_ok());
@@ -678,8 +688,8 @@ mod tests {
     #[test]
     fn test_media_urn_matching() {
         // PDF listing matches PDF requirement (PRIMARY type naming)
-        // A more specific URN (media:pdf;binary) matches a less specific requirement (media:pdf)
-        let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf;binary"
+        // A more specific URN (media:pdf;bytes) matches a less specific requirement (media:pdf)
+        let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf;bytes"
         let pdf_requirement = MediaUrn::from_string("media:pdf").unwrap();
         assert!(pdf_listing.matches(&pdf_requirement).expect("MediaUrn prefix mismatch impossible"));
 
@@ -713,8 +723,8 @@ mod tests {
     fn test_specificity() {
         // More tags = higher specificity
         let urn1 = MediaUrn::from_string("media:string").unwrap();
-        let urn2 = MediaUrn::from_string("media:string;textable").unwrap();
-        let urn3 = MediaUrn::from_string("media:string;textable;scalar").unwrap();
+        let urn2 = MediaUrn::from_string("media:textable").unwrap();
+        let urn3 = MediaUrn::from_string("media:textable;form=scalar").unwrap();
 
         // Verify specificity increases with more tags
         // Note: The exact values may depend on implementation, but relative order should hold

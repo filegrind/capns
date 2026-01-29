@@ -60,7 +60,7 @@ pub struct Cap {
 - `command` - CLI command or method name for execution
 - `arguments` - Required and optional argument definitions with validation
 - `output` - Output schema and type information
-- `stdin` - If present, the media URN that stdin expects (e.g., "media:pdf;binary"). Absence means cap doesn't accept stdin.
+- `stdin` - If present, the media URN that stdin expects (e.g., "media:pdf;bytes"). Absence means cap doesn't accept stdin.
 
 ## Language Implementations
 

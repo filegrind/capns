@@ -23,11 +23,11 @@ use crate::media_urn::{
     // Text format types (PRIMARY naming)
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG, MEDIA_HTML, MEDIA_XML, MEDIA_JSON, MEDIA_YAML,
     // Semantic media types for specialized content
-    MEDIA_PNG, MEDIA_AUDIO, MEDIA_VIDEO, MEDIA_TEXT,
+    MEDIA_PNG, MEDIA_AUDIO, MEDIA_VIDEO,
     // CAPNS output types
-    MEDIA_DOWNLOAD_OUTPUT, MEDIA_LOAD_OUTPUT, MEDIA_UNLOAD_OUTPUT,
+    MEDIA_DOWNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
-    MEDIA_GENERATE_OUTPUT, MEDIA_STRUCTURED_QUERY_OUTPUT, MEDIA_QUESTIONS_ARRAY,
+    MEDIA_EMBEDDING_VECTOR,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -281,12 +281,11 @@ pub struct MediaSpecDefObject {
     pub media_type: String,
     /// Profile URI for schema reference
     pub profile_uri: String,
+    /// Human-readable title for the media type (required - MS1)
+    pub title: String,
     /// Optional local JSON Schema for validation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
-    /// Display-friendly title for the media type
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
     /// Optional description of the media type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -304,38 +303,8 @@ impl MediaSpecDef {
         MediaSpecDef::String(media_spec.into())
     }
 
-    /// Create a rich object form definition
-    pub fn object(media_type: impl Into<String>, profile_uri: impl Into<String>) -> Self {
-        MediaSpecDef::Object(MediaSpecDefObject {
-            media_type: media_type.into(),
-            profile_uri: profile_uri.into(),
-            schema: None,
-            title: None,
-            description: None,
-            validation: None,
-            metadata: None,
-        })
-    }
-
-    /// Create a rich object form definition with local schema
-    pub fn object_with_schema(
-        media_type: impl Into<String>,
-        profile_uri: impl Into<String>,
-        schema: serde_json::Value,
-    ) -> Self {
-        MediaSpecDef::Object(MediaSpecDefObject {
-            media_type: media_type.into(),
-            profile_uri: profile_uri.into(),
-            schema: Some(schema),
-            title: None,
-            description: None,
-            validation: None,
-            metadata: None,
-        })
-    }
-
-    /// Create a rich object form definition with title
-    pub fn object_with_title(
+    /// Create a rich object form definition (title required - MS1)
+    pub fn object(
         media_type: impl Into<String>,
         profile_uri: impl Into<String>,
         title: impl Into<String>,
@@ -343,44 +312,63 @@ impl MediaSpecDef {
         MediaSpecDef::Object(MediaSpecDefObject {
             media_type: media_type.into(),
             profile_uri: profile_uri.into(),
+            title: title.into(),
             schema: None,
-            title: Some(title.into()),
             description: None,
             validation: None,
             metadata: None,
         })
     }
 
-    /// Create a rich object form definition with all fields
+    /// Create a rich object form definition with local schema (title required - MS1)
+    pub fn object_with_schema(
+        media_type: impl Into<String>,
+        profile_uri: impl Into<String>,
+        title: impl Into<String>,
+        schema: serde_json::Value,
+    ) -> Self {
+        MediaSpecDef::Object(MediaSpecDefObject {
+            media_type: media_type.into(),
+            profile_uri: profile_uri.into(),
+            title: title.into(),
+            schema: Some(schema),
+            description: None,
+            validation: None,
+            metadata: None,
+        })
+    }
+
+    /// Create a rich object form definition with all fields (title required - MS1)
     pub fn object_full(
         media_type: impl Into<String>,
         profile_uri: impl Into<String>,
+        title: impl Into<String>,
         schema: Option<serde_json::Value>,
-        title: Option<String>,
         description: Option<String>,
     ) -> Self {
         MediaSpecDef::Object(MediaSpecDefObject {
             media_type: media_type.into(),
             profile_uri: profile_uri.into(),
+            title: title.into(),
             schema,
-            title,
             description,
             validation: None,
             metadata: None,
         })
     }
 
-    /// Create a rich object form definition with validation
+    /// Create a rich object form definition with validation (title required - MS1)
     pub fn object_with_validation(
         media_type: impl Into<String>,
         profile_uri: impl Into<String>,
+        title: impl Into<String>,
         validation: MediaValidation,
     ) -> Self {
         MediaSpecDef::Object(MediaSpecDefObject {
             media_type: media_type.into(),
             profile_uri: profile_uri.into(),
+            title: title.into(),
             schema: None,
-            title: None,
             description: None,
             validation: Some(validation),
             metadata: None,
@@ -418,15 +406,39 @@ pub struct ResolvedMediaSpec {
 
 impl ResolvedMediaSpec {
     /// Check if this represents binary data.
-    /// Returns true if the "binary" marker tag is present in the source media URN.
+    /// Returns true if the "bytes" marker tag is present in the source media URN.
     pub fn is_binary(&self) -> bool {
         crate::MediaUrn::from_string(&self.media_urn)
             .map(|urn| urn.is_binary())
             .unwrap_or(false)
     }
 
-    /// Check if this represents JSON/keyed data.
-    /// Returns true if the "keyed" marker tag is present in the source media URN.
+    /// Check if this represents a map/object structure (form=map).
+    /// This indicates a key-value structure, regardless of representation format.
+    pub fn is_map(&self) -> bool {
+        crate::MediaUrn::from_string(&self.media_urn)
+            .map(|urn| urn.is_map())
+            .unwrap_or(false)
+    }
+
+    /// Check if this represents a scalar value (form=scalar).
+    /// This indicates a single value, not a collection.
+    pub fn is_scalar(&self) -> bool {
+        crate::MediaUrn::from_string(&self.media_urn)
+            .map(|urn| urn.is_scalar())
+            .unwrap_or(false)
+    }
+
+    /// Check if this represents a list/array structure (form=list).
+    /// This indicates an ordered collection of values.
+    pub fn is_list(&self) -> bool {
+        crate::MediaUrn::from_string(&self.media_urn)
+            .map(|urn| urn.is_list())
+            .unwrap_or(false)
+    }
+
+    /// Check if this represents JSON representation specifically.
+    /// Returns true if the "json" marker tag is present in the source media URN.
     pub fn is_json(&self) -> bool {
         crate::MediaUrn::from_string(&self.media_urn)
             .map(|urn| urn.is_json())
@@ -457,7 +469,7 @@ impl ResolvedMediaSpec {
 /// 4. If none resolve → Error
 ///
 /// # Arguments
-/// * `media_urn` - The media URN to resolve (e.g., "media:string;textable;scalar")
+/// * `media_urn` - The media URN to resolve (e.g., "media:textable;form=scalar")
 /// * `media_specs` - Optional media_specs map from the cap definition
 /// * `registry` - The MediaUrnRegistry for cache and remote lookups
 ///
@@ -530,7 +542,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
             media_type: obj.media_type.clone(),
             profile_uri: Some(obj.profile_uri.clone()),
             schema: obj.schema.clone(),
-            title: obj.title.clone(),
+            title: Some(obj.title.clone()),
             description: obj.description.clone(),
             validation: obj.validation.clone(), // Propagate validation
             metadata: obj.metadata.clone(),     // Propagate metadata
@@ -873,8 +885,8 @@ mod tests {
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "application/json".to_string(),
                 profile_uri: "https://example.com/schema/output".to_string(),
+                title: "Output Spec".to_string(),
                 schema: Some(schema.clone()),
-                title: None,
                 description: None,
                 validation: None,
                 metadata: None,
@@ -939,8 +951,8 @@ mod tests {
         let def = MediaSpecDef::Object(MediaSpecDefObject {
             media_type: "application/json".to_string(),
             profile_uri: "https://example.com/profile".to_string(),
+            title: "Test Media".to_string(),
             schema: None,
-            title: None,
             description: None,
             validation: None,
             metadata: None,
@@ -948,10 +960,10 @@ mod tests {
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"media_type\":\"application/json\""));
         assert!(json.contains("\"profile_uri\":\"https://example.com/profile\""));
+        assert!(json.contains("\"title\":\"Test Media\""));
         // None schema is skipped - check it's not serialized as "schema":null or "schema":...
         assert!(!json.contains("\"schema\":"));
-        // None title/description are also skipped
-        assert!(!json.contains("\"title\":"));
+        // None description is also skipped
         assert!(!json.contains("\"description\":"));
         // None validation is also skipped
         assert!(!json.contains("\"validation\":"));
@@ -966,7 +978,7 @@ mod tests {
 
     #[test]
     fn test_media_spec_def_deserialize_object() {
-        let json = r#"{"media_type":"application/json","profile_uri":"https://example.com"}"#;
+        let json = r#"{"media_type":"application/json","profile_uri":"https://example.com","title":"Test"}"#;
         let def: MediaSpecDef = serde_json::from_str(json).unwrap();
         assert!(matches!(def, MediaSpecDef::Object(_)));
     }
@@ -978,7 +990,7 @@ mod tests {
     #[test]
     fn test_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:raw;binary".to_string(),
+            media_urn: "media:bytes".to_string(),
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
             schema: None,
@@ -988,13 +1000,67 @@ mod tests {
             metadata: None,
         };
         assert!(resolved.is_binary());
+        assert!(!resolved.is_map());
         assert!(!resolved.is_json());
     }
 
     #[test]
-    fn test_resolved_is_json() {
+    fn test_resolved_is_map() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:object;textable;keyed".to_string(),
+            media_urn: "media:textable;form=map".to_string(),
+            media_type: "application/json".to_string(),
+            profile_uri: None,
+            schema: None,
+            title: None,
+            description: None,
+            validation: None,
+            metadata: None,
+        };
+        assert!(resolved.is_map());
+        assert!(!resolved.is_binary());
+        assert!(!resolved.is_scalar());
+        assert!(!resolved.is_list());
+    }
+
+    #[test]
+    fn test_resolved_is_scalar() {
+        let resolved = ResolvedMediaSpec {
+            media_urn: "media:textable;form=scalar".to_string(),
+            media_type: "text/plain".to_string(),
+            profile_uri: None,
+            schema: None,
+            title: None,
+            description: None,
+            validation: None,
+            metadata: None,
+        };
+        assert!(resolved.is_scalar());
+        assert!(!resolved.is_map());
+        assert!(!resolved.is_list());
+    }
+
+    #[test]
+    fn test_resolved_is_list() {
+        let resolved = ResolvedMediaSpec {
+            media_urn: "media:textable;form=list".to_string(),
+            media_type: "application/json".to_string(),
+            profile_uri: None,
+            schema: None,
+            title: None,
+            description: None,
+            validation: None,
+            metadata: None,
+        };
+        assert!(resolved.is_list());
+        assert!(!resolved.is_map());
+        assert!(!resolved.is_scalar());
+    }
+
+    #[test]
+    fn test_resolved_is_json() {
+        // is_json checks for the "json" tag specifically, not form=map
+        let resolved = ResolvedMediaSpec {
+            media_urn: "media:json;textable;form=map".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
             schema: None,
@@ -1004,13 +1070,14 @@ mod tests {
             metadata: None,
         };
         assert!(resolved.is_json());
+        assert!(resolved.is_map()); // also a map
         assert!(!resolved.is_binary());
     }
 
     #[test]
     fn test_resolved_is_text() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:string;textable".to_string(),
+            media_urn: "media:textable".to_string(),
             media_type: "text/plain".to_string(),
             profile_uri: None,
             schema: None,
@@ -1038,8 +1105,8 @@ mod tests {
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "text/plain".to_string(),
                 profile_uri: "https://example.com/schema".to_string(),
+                title: "Custom Setting".to_string(),
                 schema: None,
-                title: Some("Custom Setting".to_string()),
                 description: Some("A custom setting".to_string()),
                 validation: None,
                 metadata: Some(serde_json::json!({
@@ -1085,8 +1152,8 @@ mod tests {
             MediaSpecDef::Object(MediaSpecDefObject {
                 media_type: "text/plain".to_string(),
                 profile_uri: "https://example.com/schema".to_string(),
+                title: "Bounded Number".to_string(),
                 schema: None,
-                title: Some("Bounded Number".to_string()),
                 description: None,
                 validation: Some(MediaValidation {
                     min: Some(0.0),

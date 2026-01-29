@@ -13,7 +13,7 @@
 //! ## Usage
 //! ```ignore
 //! let registry = MediaUrnRegistry::new().await?;
-//! let spec = registry.get_media_spec("media:pdf;binary").await?;
+//! let spec = registry.get_media_spec("media:pdf;bytes").await?;
 //! println!("Title: {:?}", spec.title);
 //! ```
 
@@ -65,8 +65,8 @@ impl StoredMediaSpec {
         MediaSpecDef::Object(MediaSpecDefObject {
             media_type: self.media_type.clone(),
             profile_uri: self.profile_uri.clone().unwrap_or_default(),
+            title: self.title.clone(),
             schema: self.schema.clone(),
-            title: Some(self.title.clone()),
             description: self.description.clone(),
             validation: self.validation.clone(),
             metadata: self.metadata.clone(),
@@ -161,6 +161,29 @@ impl MediaUrnRegistry {
     /// Get the current registry configuration
     pub fn config(&self) -> &RegistryConfig {
         &self.config
+    }
+
+    /// Create a lightweight MediaUrnRegistry for testing purposes.
+    /// This skips the standard spec installation and uses a provided cache directory.
+    #[cfg(test)]
+    pub fn for_testing(cache_dir: PathBuf) -> Result<Self, MediaRegistryError> {
+        fs::create_dir_all(&cache_dir).map_err(|e| {
+            MediaRegistryError::CacheError(format!("Failed to create cache directory: {}", e))
+        })?;
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| {
+                MediaRegistryError::HttpError(format!("Failed to create HTTP client: {}", e))
+            })?;
+
+        Ok(Self {
+            client,
+            cache_dir,
+            cached_specs: Arc::new(Mutex::new(HashMap::new())),
+            config: RegistryConfig::default(),
+        })
     }
 
     /// Install bundled standard media specs to cache if they don't exist
@@ -539,9 +562,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
-        let key1 = registry.cache_key("media:string;textable;scalar");
-        let key2 = registry.cache_key("media:string;textable;scalar");
-        let key3 = registry.cache_key("media:integer;textable;scalar");
+        let key1 = registry.cache_key("media:textable;form=scalar");
+        let key2 = registry.cache_key("media:textable;form=scalar");
+        let key3 = registry.cache_key("media:integer");
 
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);
@@ -550,7 +573,7 @@ mod tests {
     #[test]
     fn test_stored_media_spec_to_def() {
         let spec = StoredMediaSpec {
-            urn: "media:pdf;binary".to_string(),
+            urn: "media:pdf;bytes".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF Document".to_string(),
             profile_uri: Some("https://capns.org/schema/pdf".to_string()),
@@ -564,7 +587,7 @@ mod tests {
         match def {
             MediaSpecDef::Object(obj) => {
                 assert_eq!(obj.media_type, "application/pdf");
-                assert_eq!(obj.title, Some("PDF Document".to_string()));
+                assert_eq!(obj.title, "PDF Document".to_string());
                 assert_eq!(obj.description, Some("PDF document data".to_string()));
                 assert_eq!(obj.validation, None);
             }

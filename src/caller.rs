@@ -322,7 +322,7 @@ mod tests {
         let tracked_file_id = "tracked-file-123".to_string();
         let original_path = "/path/to/original.pdf".to_string();
         let security_bookmark = vec![0x62, 0x6f, 0x6f, 0x6b]; // "book"
-        let media_urn = "media:pdf;binary".to_string();
+        let media_urn = "media:pdf;bytes".to_string();
 
         let source = StdinSource::FileReference {
             tracked_file_id: tracked_file_id.clone(),

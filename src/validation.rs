@@ -224,7 +224,7 @@ impl InputValidator {
         let cap_urn = cap.urn_string();
         let args = cap.get_args();
 
-        // Extract named argument values into a map (keyed by media_urn)
+        // Extract named argument values into a map (map by media_urn)
         let mut provided_args = std::collections::HashMap::new();
         for arg in named_args {
             if let Value::Object(map) = arg {
@@ -1042,7 +1042,7 @@ mod tests {
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=media:void;out=media:object;{}", tags)
+        format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
     // Helper to create test registries
@@ -1106,6 +1106,20 @@ mod tests {
 
         let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
+
+        // Add local schema to media_specs so validation doesn't depend on network
+        let integer_spec = crate::media_spec::MediaSpecDef::Object(crate::media_spec::MediaSpecDefObject {
+            media_type: "text/plain".to_string(),
+            profile_uri: "https://capns.org/schema/integer".to_string(),
+            title: "Integer".to_string(),
+            schema: Some(json!({"type": "integer"})),
+            description: Some("Integer value".to_string()),
+            validation: None,
+            metadata: None,
+        });
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(MEDIA_INTEGER.to_string(), integer_spec);
+        cap.set_media_specs(media_specs);
 
         let arg = CapArg::new(
             MEDIA_INTEGER,

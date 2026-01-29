@@ -595,8 +595,8 @@ mod tests {
     async fn test_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         // Use URNs with required in/out (new media URN format)
-        let key1 = registry.cache_key("cap:in=media:void;op=extract;out=media:object;target=metadata");
-        let key2 = registry.cache_key("cap:in=media:void;op=extract;out=media:object;target=metadata");
+        let key1 = registry.cache_key("cap:in=media:void;op=extract;out=media:form=map;target=metadata");
+        let key2 = registry.cache_key("cap:in=media:void;op=extract;out=media:form=map;target=metadata");
         let key3 = registry.cache_key("cap:in=media:void;op=different;out=media:object");
 
         assert_eq!(key1, key2);
@@ -611,7 +611,7 @@ mod json_parse_tests {
     #[test]
     fn test_parse_registry_json() {
         // JSON without stdin args - means cap doesn't accept stdin
-        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:listing-id","out":"media:task-id"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:listing-id":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:task-id":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
+        let json = r#"{"urn":{"tags":{"op":"use_grinder","in":"media:listing-id","out":"media:task-id"}},"command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":{"media:listing-id":{"media_type":"text/plain","profile_uri":"https://filegrind.com/schema/listing-id","title":"Listing ID","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},"media:task-id":{"media_type":"application/json","profile_uri":"https://capns.org/schema/grinder_task-output","title":"Task ID","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}},"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Create Grinder Tool Task");
@@ -622,12 +622,12 @@ mod json_parse_tests {
     #[test]
     fn test_parse_registry_json_with_stdin() {
         // JSON with stdin args - means cap accepts stdin of specified media type
-        let json = r#"{"urn":{"tags":{"op":"extract_metadata","in":"media:pdf;binary","out":"media:file-metadata;textable;keyed"}},"command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:pdf;binary","required":true,"sources":[{"stdin":"media:pdf;binary"}]}]}"#;
+        let json = r#"{"urn":{"tags":{"op":"extract_metadata","in":"media:pdf;bytes","out":"media:file-metadata;textable;form=map"}},"command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:pdf;bytes","required":true,"sources":[{"stdin":"media:pdf;bytes"}]}]}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Extract Metadata");
         assert!(cap.accepts_stdin());
-        assert_eq!(cap.get_stdin_media_urn(), Some("media:pdf;binary"));
+        assert_eq!(cap.get_stdin_media_urn(), Some("media:pdf;bytes"));
     }
 }
 

@@ -141,7 +141,7 @@ impl CapGraph {
     ///
     /// Uses MediaUrn::satisfies() matching: returns edges where the provided spec
     /// satisfies the edge's from_spec requirement. This allows a specific media URN
-    /// like "media:pdf;binary" to match caps that accept "media:pdf".
+    /// like "media:pdf;bytes" to match caps that accept "media:pdf".
     pub fn get_outgoing(&self, spec: &str) -> Vec<&CapGraphEdge> {
         let provided_urn = match MediaUrn::from_string(spec) {
             Ok(urn) => urn,
@@ -942,13 +942,25 @@ mod tests {
     use super::*;
     use crate::CapOutput;
     use crate::standard::media::{MEDIA_STRING, MEDIA_OBJECT, MEDIA_BINARY};
+    use crate::media_registry::MediaUrnRegistry;
     use std::pin::Pin;
     use std::future::Future;
     use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    // Helper to create a test MediaUrnRegistry wrapped in Arc
+    fn test_media_registry() -> (std::sync::Arc<MediaUrnRegistry>, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("media");
+
+        let registry = MediaUrnRegistry::for_testing(cache_dir).unwrap();
+
+        (std::sync::Arc::new(registry), temp_dir)
+    }
 
     // Helper to create test URN with required in/out specs
     fn test_urn(tags: &str) -> String {
-        format!("cap:in=media:void;out=media:object;{}", tags)
+        format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
     // Mock CapSet for testing
@@ -973,7 +985,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_and_find_cap_set() {
-        let mut registry = CapMatrix::new();
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
 
         let host = Box::new(MockCapSet {
             name: "test-host".to_string(),
@@ -1008,7 +1021,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_best_cap_set_selection() {
-        let mut registry = CapMatrix::new();
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
 
         // Register general host
         let general_host = Box::new(MockCapSet {
@@ -1055,17 +1069,19 @@ mod tests {
         assert_eq!(all_sets.len(), 2);
     }
 
-    #[test]
-    fn test_invalid_urn_handling() {
-        let registry = CapMatrix::new();
+    #[tokio::test]
+    async fn test_invalid_urn_handling() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let registry = CapMatrix::new(media_registry);
 
         let result = registry.find_cap_sets("invalid-urn");
         assert!(matches!(result, Err(CapMatrixError::InvalidUrn(_))));
     }
 
-    #[test]
-    fn test_can_handle() {
-        let mut registry = CapMatrix::new();
+    #[tokio::test]
+    async fn test_can_handle() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
 
         // Empty registry - need valid URN with in/out
         assert!(!registry.can_handle(&test_urn("op=test")));
@@ -1087,9 +1103,7 @@ mod tests {
             registered_by: None,
         };
 
-        tokio::runtime::Runtime::new().unwrap().block_on(async {
-            registry.register_cap_set("test".to_string(), host, vec![cap]).unwrap();
-        });
+        registry.register_cap_set("test".to_string(), host, vec![cap]).unwrap();
 
         assert!(registry.can_handle(&test_urn("op=test")));
         assert!(registry.can_handle(&test_urn("op=test;extra=param")));
@@ -1121,9 +1135,10 @@ mod tests {
     async fn test_cap_cube_more_specific_wins() {
         // This is the key test: provider has less specific cap, plugin has more specific
         // The more specific one should win regardless of registry order
+        let (media_registry, _temp_dir) = test_media_registry();
 
-        let mut provider_registry = CapMatrix::new();
-        let mut plugin_registry = CapMatrix::new();
+        let mut provider_registry = CapMatrix::new(media_registry.clone());
+        let mut plugin_registry = CapMatrix::new(media_registry.clone());
 
         // Provider: less specific cap
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
@@ -1150,7 +1165,7 @@ mod tests {
         ).unwrap();
 
         // Create composite with provider first (normally would have priority on ties)
-        let mut composite = CapCube::new();
+        let mut composite = CapCube::new(media_registry.clone());
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
@@ -1169,9 +1184,10 @@ mod tests {
     #[tokio::test]
     async fn test_cap_cube_tie_goes_to_first() {
         // When specificity is equal, first registry wins
+        let (media_registry, _temp_dir) = test_media_registry();
 
-        let mut registry1 = CapMatrix::new();
-        let mut registry2 = CapMatrix::new();
+        let mut registry1 = CapMatrix::new(media_registry.clone());
+        let mut registry2 = CapMatrix::new(media_registry.clone());
 
         // Both have same specificity
         let host1 = Box::new(MockCapSet { name: "host1".to_string() });
@@ -1182,7 +1198,7 @@ mod tests {
         let cap2 = make_cap(&test_urn("op=generate;ext=pdf"), "Registry 2 Cap");
         registry2.register_cap_set("host2".to_string(), host2, vec![cap2]).unwrap();
 
-        let mut composite = CapCube::new();
+        let mut composite = CapCube::new(media_registry.clone());
         composite.add_registry("first".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("second".to_string(), Arc::new(RwLock::new(registry2)));
 
@@ -1196,10 +1212,11 @@ mod tests {
     #[tokio::test]
     async fn test_cap_cube_polls_all() {
         // Test that all registries are polled
+        let (media_registry, _temp_dir) = test_media_registry();
 
-        let mut registry1 = CapMatrix::new();
-        let mut registry2 = CapMatrix::new();
-        let mut registry3 = CapMatrix::new();
+        let mut registry1 = CapMatrix::new(media_registry.clone());
+        let mut registry2 = CapMatrix::new(media_registry.clone());
+        let mut registry3 = CapMatrix::new(media_registry.clone());
 
         // Registry 1: doesn't match
         let host1 = Box::new(MockCapSet { name: "host1".to_string() });
@@ -1216,7 +1233,7 @@ mod tests {
         let cap3 = make_cap(&test_urn("op=generate;ext=pdf;format=thumbnail"), "Registry 3");
         registry3.register_cap_set("host3".to_string(), host3, vec![cap3]).unwrap();
 
-        let mut composite = CapCube::new();
+        let mut composite = CapCube::new(media_registry.clone());
         composite.add_registry("r1".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("r2".to_string(), Arc::new(RwLock::new(registry2)));
         composite.add_registry("r3".to_string(), Arc::new(RwLock::new(registry3)));
@@ -1229,9 +1246,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cap_cube_no_match() {
-        let registry = CapMatrix::new();
+        let (media_registry, _temp_dir) = test_media_registry();
+        let registry = CapMatrix::new(media_registry.clone());
 
-        let mut composite = CapCube::new();
+        let mut composite = CapCube::new(media_registry.clone());
         composite.add_registry("empty".to_string(), Arc::new(RwLock::new(registry)));
 
         let result = composite.find_best_cap_set(&test_urn("op=nonexistent"));
@@ -1245,9 +1263,10 @@ mod tests {
         // Plugin:   PDF-specific handler
         // Request:  PDF thumbnail
         // Expected: Plugin wins (more specific)
+        let (media_registry, _temp_dir) = test_media_registry();
 
-        let mut provider_registry = CapMatrix::new();
-        let mut plugin_registry = CapMatrix::new();
+        let mut provider_registry = CapMatrix::new(media_registry.clone());
+        let mut plugin_registry = CapMatrix::new(media_registry.clone());
 
         // Provider with generic fallback (can handle any file type)
         let provider_host = Box::new(MockCapSet { name: "provider_fallback".to_string() });
@@ -1274,7 +1293,7 @@ mod tests {
         ).unwrap();
 
         // Providers first (would win on tie)
-        let mut composite = CapCube::new();
+        let mut composite = CapCube::new(media_registry.clone());
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
@@ -1299,8 +1318,9 @@ mod tests {
     #[tokio::test]
     async fn test_composite_can_method() {
         // Test the can() method that returns a CapCaller
+        let (media_registry, _temp_dir) = test_media_registry();
 
-        let mut provider_registry = CapMatrix::new();
+        let mut provider_registry = CapMatrix::new(media_registry.clone());
 
         let provider_host = Box::new(MockCapSet { name: "test_provider".to_string() });
         let provider_cap = make_cap(
@@ -1313,7 +1333,7 @@ mod tests {
             vec![provider_cap]
         ).unwrap();
 
-        let mut composite = CapCube::new();
+        let mut composite = CapCube::new(media_registry.clone());
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
 
         // Test can() returns a CapCaller
@@ -1335,7 +1355,7 @@ mod tests {
 
         // Create a cap that converts binary to str
         // Use full media URN strings for proper matching
-        let media_binary = "media:raw;binary";
+        let media_binary = "media:bytes";
         let cap = Cap {
             urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract_text;out="{}""#, media_binary, MEDIA_STRING)).unwrap(),
             title: "Text Extractor".to_string(),
@@ -1615,9 +1635,10 @@ mod tests {
     #[tokio::test]
     async fn test_cap_cube_graph_integration() {
         // Test that CapCube.graph() works correctly
+        let (media_registry, _temp_dir) = test_media_registry();
 
-        let mut provider_registry = CapMatrix::new();
-        let mut plugin_registry = CapMatrix::new();
+        let mut provider_registry = CapMatrix::new(media_registry.clone());
+        let mut plugin_registry = CapMatrix::new(media_registry.clone());
 
         // Provider: binary -> str
         let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
@@ -1659,7 +1680,7 @@ mod tests {
             vec![plugin_cap]
         ).unwrap();
 
-        let mut cube = CapCube::new();
+        let mut cube = CapCube::new(media_registry.clone());
         cube.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
         cube.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 

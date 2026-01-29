@@ -89,7 +89,7 @@ The object form allows embedding a JSON Schema for offline validation.
 Cap URNs use `in` and `out` tags to specify input and output types via spec IDs:
 
 ```
-cap:ext=pdf;in=media:binary;op=extract_metadata;out=media:extract-metadata-output
+cap:ext=pdf;in=media:bytes;op=extract_metadata;out=media:extract-metadata-output
 ```
 
 ### Tag Reference
@@ -124,7 +124,7 @@ let resolved = resolve_spec_id(spec_id, &cap.media_specs)?;
 title = "Extract Document Metadata"
 cap_description = "Extract metadata from PDF documents"
 command = "extract-metadata"
-stdin = "media:pdf;binary"  # Specifies the media type stdin expects
+stdin = "media:pdf;bytes"  # Specifies the media type stdin expects
 
 [media_specs."media:extract-metadata-output"]
 media_type = "application/json"
