@@ -675,6 +675,7 @@ mod tests {
         }
     }
 
+    // TEST001: Test that cap URN is created with tags parsed correctly and direction specs accessible
     #[test]
     fn test_cap_urn_creation() {
         let cap = CapUrn::from_string(&test_urn("op=generate;ext=pdf;target=thumbnail")).unwrap();
@@ -686,6 +687,7 @@ mod tests {
         assert_eq!(cap.out_spec(), MEDIA_OBJECT);
     }
 
+    // TEST002: Test that missing 'in' spec fails with MissingInSpec, missing 'out' fails with MissingOutSpec
     #[test]
     fn test_direction_specs_required() {
         // Missing 'in' should fail
@@ -703,6 +705,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
     #[test]
     fn test_direction_matching() {
         let in_str = "media:string";
@@ -729,6 +732,7 @@ mod tests {
         assert!(cap5.matches(&cap1));
     }
 
+    // TEST004: Test that unquoted keys and values are normalized to lowercase
     #[test]
     fn test_unquoted_values_lowercased() {
         // Unquoted values are normalized to lowercase
@@ -749,6 +753,7 @@ mod tests {
         assert_eq!(cap, cap2);
     }
 
+    // TEST005: Test that quoted values preserve case while unquoted are lowercased
     #[test]
     fn test_quoted_values_preserve_case() {
         // Quoted values preserve their case
@@ -767,6 +772,7 @@ mod tests {
         assert_ne!(unquoted, quoted); // NOT equal
     }
 
+    // TEST006: Test that quoted values can contain special characters (semicolons, equals, spaces)
     #[test]
     fn test_quoted_value_special_chars() {
         // Semicolons in quoted values
@@ -785,6 +791,7 @@ mod tests {
         assert_eq!(cap3.get_tag("key"), Some(&"hello world".to_string()));
     }
 
+    // TEST007: Test that escape sequences in quoted values (\" and \\) are parsed correctly
     #[test]
     fn test_quoted_value_escape_sequences() {
         // Escaped quotes
@@ -803,6 +810,7 @@ mod tests {
         );
     }
 
+    // TEST008: Test that mixed quoted and unquoted values in same URN parse correctly
     #[test]
     fn test_mixed_quoted_unquoted() {
         let cap = CapUrn::from_string(&test_urn(r#"a="Quoted";b=simple"#)).unwrap();
@@ -810,6 +818,7 @@ mod tests {
         assert_eq!(cap.get_tag("b"), Some(&"simple".to_string()));
     }
 
+    // TEST009: Test that unterminated quote produces UnterminatedQuote error
     #[test]
     fn test_unterminated_quote_error() {
         let result = CapUrn::from_string(&test_urn(r#"key="unterminated"#));
@@ -819,6 +828,7 @@ mod tests {
         }
     }
 
+    // TEST010: Test that invalid escape sequences (like \n, \x) produce InvalidEscapeSequence error
     #[test]
     fn test_invalid_escape_sequence_error() {
         let result = CapUrn::from_string(&test_urn(r#"key="bad\n""#));
@@ -835,6 +845,7 @@ mod tests {
         }
     }
 
+    // TEST011: Test that serialization uses smart quoting (no quotes for simple lowercase, quotes for special chars/uppercase)
     #[test]
     fn test_serialization_smart_quoting() {
         // Simple lowercase value - no quoting needed
@@ -869,6 +880,7 @@ mod tests {
         assert!(s4.contains(r#"key="HasUpper""#));
     }
 
+    // TEST012: Test that simple cap URN round-trips (parse -> serialize -> parse equals original)
     #[test]
     fn test_round_trip_simple() {
         let original = test_urn("op=generate;ext=pdf");
@@ -878,6 +890,7 @@ mod tests {
         assert_eq!(cap, reparsed);
     }
 
+    // TEST013: Test that quoted values round-trip preserving case and spaces
     #[test]
     fn test_round_trip_quoted() {
         let original = test_urn(r#"key="Value With Spaces""#);
@@ -891,6 +904,7 @@ mod tests {
         );
     }
 
+    // TEST014: Test that escape sequences round-trip correctly
     #[test]
     fn test_round_trip_escapes() {
         let original = test_urn(r#"key="value\"with\\escapes""#);
@@ -904,6 +918,7 @@ mod tests {
         assert_eq!(cap, reparsed);
     }
 
+    // TEST015: Test that cap: prefix is required and case-insensitive
     #[test]
     fn test_cap_prefix_required() {
         // Missing cap: prefix should fail
@@ -926,6 +941,7 @@ mod tests {
         assert_eq!(cap2.get_tag("op"), Some(&"generate".to_string()));
     }
 
+    // TEST016: Test that trailing semicolon is equivalent (same hash, same string, matches)
     #[test]
     fn test_trailing_semicolon_equivalence() {
         // Both with and without trailing semicolon should be equivalent
@@ -958,6 +974,7 @@ mod tests {
         assert!(cap2.matches(&cap1));
     }
 
+    // TEST017: Test tag matching: exact match, subset match, wildcard match, value mismatch
     #[test]
     fn test_tag_matching() {
         let cap = CapUrn::from_string(&test_urn("op=generate;ext=pdf;target=thumbnail")).unwrap();
@@ -980,6 +997,7 @@ mod tests {
         assert!(!cap.matches(&request4));
     }
 
+    // TEST018: Test that quoted values with different case do NOT match (case-sensitive)
     #[test]
     fn test_matching_case_sensitive_values() {
         // Values with different case should NOT match
@@ -993,6 +1011,7 @@ mod tests {
         assert!(cap1.matches(&cap3));
     }
 
+    // TEST019: Test that missing tags are treated as wildcards (cap without tag matches any value for that tag)
     #[test]
     fn test_missing_tag_handling() {
         let cap = CapUrn::from_string(&test_urn("op=generate")).unwrap();
@@ -1007,6 +1026,7 @@ mod tests {
         assert!(cap2.matches(&request2));
     }
 
+    // TEST020: Test specificity calculation (in/out base, wildcards don't count)
     #[test]
     fn test_specificity() {
         // Specificity now includes in/out (2 base) + other tags
@@ -1024,6 +1044,7 @@ mod tests {
         assert_eq!(cap4.specificity(), 2); // out + op (in wildcard doesn't count)
     }
 
+    // TEST021: Test builder creates cap URN with correct tags and direction specs
     #[test]
     fn test_builder() {
         let cap = CapUrnBuilder::new()
@@ -1040,6 +1061,7 @@ mod tests {
         assert_eq!(cap.out_spec(), MEDIA_OBJECT);
     }
 
+    // TEST022: Test builder requires both in_spec and out_spec
     #[test]
     fn test_builder_requires_direction() {
         // Missing in_spec should fail
@@ -1064,6 +1086,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // TEST023: Test builder lowercases keys but preserves value case
     #[test]
     fn test_builder_preserves_case() {
         let cap = CapUrnBuilder::new()
@@ -1077,6 +1100,7 @@ mod tests {
         assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
     }
 
+    // TEST024: Test compatibility checking (missing tags = wildcards, different directions = incompatible)
     #[test]
     fn test_compatibility() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate;ext=pdf")).unwrap();
@@ -1101,6 +1125,7 @@ mod tests {
         assert!(!cap1.is_compatible_with(&cap5));
     }
 
+    // TEST025: Test find_best_match returns most specific matching cap
     #[test]
     fn test_best_match() {
         let caps = vec![
@@ -1116,6 +1141,7 @@ mod tests {
         assert_eq!(best.get_tag("ext"), Some(&"pdf".to_string()));
     }
 
+    // TEST026: Test merge combines tags from both caps, subset keeps only specified tags
     #[test]
     fn test_merge_and_subset() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
@@ -1139,6 +1165,7 @@ mod tests {
         assert_eq!(subset.get_tag("type"), None);
     }
 
+    // TEST027: Test with_wildcard_tag sets tag to wildcard, including in/out
     #[test]
     fn test_wildcard_tag() {
         let cap = CapUrn::from_string(&test_urn("ext=pdf")).unwrap();
@@ -1154,6 +1181,7 @@ mod tests {
         assert_eq!(wildcard_out.out_spec(), "*");
     }
 
+    // TEST028: Test empty cap URN fails with MissingInSpec
     #[test]
     fn test_empty_cap_urn_not_allowed() {
         // Empty cap URN is no longer valid since in/out are required
@@ -1166,6 +1194,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // TEST029: Test minimal valid cap URN has just in and out, empty tags
     #[test]
     fn test_minimal_cap_urn() {
         // Minimal valid cap URN has just in and out
@@ -1176,6 +1205,7 @@ mod tests {
         assert!(cap.tags.is_empty());
     }
 
+    // TEST030: Test extended characters (forward slashes, colons) in tag values
     #[test]
     fn test_extended_character_support() {
         // Test forward slashes and colons in tag components
@@ -1188,6 +1218,7 @@ mod tests {
         assert_eq!(cap.get_tag("path"), Some(&"/some/file".to_string()));
     }
 
+    // TEST031: Test wildcard rejected in keys but accepted in values
     #[test]
     fn test_wildcard_restrictions() {
         // Wildcard should be rejected in keys
@@ -1198,6 +1229,7 @@ mod tests {
         assert_eq!(cap.get_tag("key"), Some(&"*".to_string()));
     }
 
+    // TEST032: Test duplicate keys are rejected with DuplicateKey error
     #[test]
     fn test_duplicate_key_rejection() {
         let result = CapUrn::from_string(&test_urn("key=value1;key=value2"));
@@ -1207,6 +1239,7 @@ mod tests {
         }
     }
 
+    // TEST033: Test pure numeric keys rejected, mixed alphanumeric allowed, numeric values allowed
     #[test]
     fn test_numeric_key_restriction() {
         // Pure numeric keys should be rejected
@@ -1220,12 +1253,14 @@ mod tests {
         assert!(CapUrn::from_string(&test_urn("key=123")).is_ok());
     }
 
+    // TEST034: Test empty values are rejected
     #[test]
     fn test_empty_value_error() {
         assert!(CapUrn::from_string(&test_urn("key=")).is_err());
         assert!(CapUrn::from_string(&test_urn("key=;other=value")).is_err());
     }
 
+    // TEST035: Test has_tag is case-sensitive for values, case-insensitive for keys, works for in/out
     #[test]
     fn test_has_tag_case_sensitive() {
         let cap = CapUrn::from_string(&test_urn(r#"key="Value""#)).unwrap();
@@ -1246,6 +1281,7 @@ mod tests {
         assert!(cap.has_tag("out", MEDIA_OBJECT));
     }
 
+    // TEST036: Test with_tag preserves value case
     #[test]
     fn test_with_tag_preserves_value() {
         let cap = CapUrn::new(MEDIA_VOID.to_string(), MEDIA_OBJECT.to_string(), BTreeMap::new())
@@ -1253,6 +1289,7 @@ mod tests {
         assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
     }
 
+    // TEST037: Test with_tag rejects empty value
     #[test]
     fn test_with_tag_rejects_empty_value() {
         let cap = CapUrn::new(MEDIA_VOID.to_string(), MEDIA_OBJECT.to_string(), BTreeMap::new());
@@ -1260,6 +1297,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // TEST038: Test semantic equivalence of unquoted and quoted simple lowercase values
     #[test]
     fn test_semantic_equivalence() {
         // Unquoted and quoted simple lowercase values are equivalent
@@ -1272,6 +1310,7 @@ mod tests {
         assert!(quoted.to_string().contains("key=simple"));
     }
 
+    // TEST039: Test get_tag returns direction specs (in/out) with case-insensitive lookup
     #[test]
     fn test_get_tag_returns_direction_specs() {
         let in_str = "media:string";
@@ -1299,6 +1338,7 @@ mod tests {
     // Note: All tests now require in/out direction specs using media URNs
     // ============================================================================
 
+    // TEST040: Matching semantics - exact match succeeds
     #[test]
     fn test_matching_semantics_test1_exact_match() {
         // Test 1: Exact match
@@ -1307,6 +1347,7 @@ mod tests {
         assert!(cap.matches(&request), "Test 1: Exact match should succeed");
     }
 
+    // TEST041: Matching semantics - cap missing tag matches (implicit wildcard)
     #[test]
     fn test_matching_semantics_test2_cap_missing_tag() {
         // Test 2: Cap missing tag (implicit wildcard for other tags, not direction)
@@ -1318,6 +1359,7 @@ mod tests {
         );
     }
 
+    // TEST042: Matching semantics - cap with extra tag matches
     #[test]
     fn test_matching_semantics_test3_cap_has_extra_tag() {
         // Test 3: Cap has extra tag
@@ -1329,6 +1371,7 @@ mod tests {
         );
     }
 
+    // TEST043: Matching semantics - request wildcard matches specific cap value
     #[test]
     fn test_matching_semantics_test4_request_has_wildcard() {
         // Test 4: Request has wildcard
@@ -1340,6 +1383,7 @@ mod tests {
         );
     }
 
+    // TEST044: Matching semantics - cap wildcard matches specific request value
     #[test]
     fn test_matching_semantics_test5_cap_has_wildcard() {
         // Test 5: Cap has wildcard
@@ -1348,6 +1392,7 @@ mod tests {
         assert!(cap.matches(&request), "Test 5: Cap wildcard should match");
     }
 
+    // TEST045: Matching semantics - value mismatch does not match
     #[test]
     fn test_matching_semantics_test6_value_mismatch() {
         // Test 6: Value mismatch
@@ -1359,6 +1404,7 @@ mod tests {
         );
     }
 
+    // TEST046: Matching semantics - fallback pattern (cap missing tag = implicit wildcard)
     #[test]
     fn test_matching_semantics_test7_fallback_pattern() {
         // Test 7: Fallback pattern
@@ -1379,6 +1425,7 @@ mod tests {
         );
     }
 
+    // TEST047: Matching semantics - thumbnail fallback with void input
     #[test]
     fn test_matching_semantics_test7b_thumbnail_void_input() {
         // Test 7b: Thumbnail fallback with void input (real-world scenario)
@@ -1399,6 +1446,7 @@ mod tests {
         );
     }
 
+    // TEST048: Matching semantics - wildcard direction matches anything
     #[test]
     fn test_matching_semantics_test8_wildcard_direction_matches_anything() {
         // Test 8: Wildcard direction matches anything
@@ -1414,6 +1462,7 @@ mod tests {
         );
     }
 
+    // TEST049: Matching semantics - cross-dimension independence
     #[test]
     fn test_matching_semantics_test9_cross_dimension_independence() {
         // Test 9: Cross-dimension independence (for other tags)
@@ -1425,6 +1474,7 @@ mod tests {
         );
     }
 
+    // TEST050: Matching semantics - direction mismatch prevents matching
     #[test]
     fn test_matching_semantics_test10_direction_mismatch() {
         // Test 10: Direction mismatch prevents matching

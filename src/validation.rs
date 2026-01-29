@@ -1060,6 +1060,7 @@ mod tests {
         (schema_registry, media_registry)
     }
 
+    // TEST051: Test input validation succeeds with valid positional argument
     #[tokio::test]
     async fn test_input_validation_success() {
         let (schema_registry, media_registry) = test_registries().await;
@@ -1080,6 +1081,7 @@ mod tests {
         assert!(validator.validate_positional_arguments(&cap, &input_args).await.is_ok());
     }
 
+    // TEST052: Test input validation fails with MissingRequiredArgument when required arg missing
     #[tokio::test]
     async fn test_input_validation_missing_required() {
         let (schema_registry, media_registry) = test_registries().await;
@@ -1107,6 +1109,7 @@ mod tests {
         }
     }
 
+    // TEST053: Test input validation fails with InvalidArgumentType when wrong type provided
     #[tokio::test]
     async fn test_input_validation_wrong_type() {
         let (schema_registry, media_registry) = test_registries().await;
@@ -1148,6 +1151,7 @@ mod tests {
         }
     }
 
+    // TEST054: XV5 - Test inline media spec redefinition of existing registry spec is detected and rejected
     #[tokio::test]
     async fn test_xv5_inline_spec_redefinition_detected() {
         // Create a cap that tries to redefine a standard media spec (MEDIA_STRING)
@@ -1181,6 +1185,7 @@ mod tests {
         }
     }
 
+    // TEST055: XV5 - Test new inline media spec (not in registry) is allowed
     #[tokio::test]
     async fn test_xv5_new_inline_spec_allowed() {
         // Create a cap with a new media spec that doesn't exist in the registry
@@ -1210,6 +1215,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // TEST056: XV5 - Test empty media_specs (no inline specs) passes XV5 validation
     #[tokio::test]
     async fn test_xv5_empty_media_specs_allowed() {
         // A cap without inline media_specs should pass XV5 validation
