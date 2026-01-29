@@ -293,6 +293,20 @@ These rules validate the `args` array in capability definitions.
 
 **Error**: `Inline media spec '<urn>' in <file> has no title`
 
+### XV5: No Redefinition of Registry Media Specs
+
+**Description**: Inline media specs in a capability's `media_specs` table MUST NOT redefine media specs that already exist in the global media registry.
+
+**Rationale**: The global registry is the canonical source for standard media specs. Redefining them inline creates confusion, inconsistency, and potential for conflicting definitions. If a media spec exists in the registry, capabilities should reference it, not redefine it.
+
+**Enforcement Behavior**:
+- **With network access**: Strictly enforce. If any inline media URN matches a URN in the global registry, validation FAILS.
+- **Without network access**: Check against cached/bundled specs only. If a conflict is found with cached specs, validation FAILS. If no conflict is found with cached specs but online registry is unreachable, log a warning and allow the operation to proceed (graceful degradation).
+
+**Error**: `XV5: Inline media spec '<urn>' redefines existing registry spec`
+
+**Warning (offline mode)**: `XV5: Could not verify inline spec '<urn>' against online registry (offline mode)`
+
 ---
 
 ## Implementation Requirements
@@ -338,6 +352,9 @@ All implementations (Rust capns, JavaScript capns-js, server functions) MUST enf
 
 ## Changelog
 
+- 2026-01-29: Added XV5 (No Redefinition of Registry Media Specs) validation
+  - Inline media specs must not redefine existing registry specs
+  - Strict enforcement with network, graceful degradation without
 - 2024-01-29: Added comprehensive validation rules documentation
 - Added RULE1-RULE12 for cap args validation
 - Added MS1-MS3 for media spec validation

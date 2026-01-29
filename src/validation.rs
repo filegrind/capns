@@ -94,6 +94,11 @@ pub enum ValidationError {
         media_urn: String,
         location: String,
     },
+    /// XV5: Inline media spec redefines an existing registry spec
+    InlineMediaSpecRedefinesRegistry {
+        cap_urn: String,
+        media_urn: String,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -142,6 +147,9 @@ impl fmt::Display for ValidationError {
             }
             ValidationError::UnresolvableMediaUrn { cap_urn, media_urn, location } => {
                 write!(f, "Cap '{}' references unresolvable media URN '{}' in {}", cap_urn, media_urn, location)
+            }
+            ValidationError::InlineMediaSpecRedefinesRegistry { cap_urn, media_urn } => {
+                write!(f, "XV5: Cap '{}' inline media spec '{}' redefines existing registry spec", cap_urn, media_urn)
             }
         }
     }
@@ -1139,6 +1147,80 @@ mod tests {
             panic!("Expected InvalidArgumentType error");
         }
     }
+
+    #[tokio::test]
+    async fn test_xv5_inline_spec_redefinition_detected() {
+        // Create a cap that tries to redefine a standard media spec (MEDIA_STRING)
+        let (_schema_registry, media_registry) = test_registries().await;
+
+        let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
+        let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
+
+        // Try to redefine MEDIA_STRING which exists in the registry
+        let string_spec = crate::media_spec::MediaSpecDef::Object(crate::media_spec::MediaSpecDefObject {
+            media_type: "text/plain".to_string(),
+            profile_uri: "https://example.com/my-string".to_string(),
+            title: "My Custom String".to_string(),
+            schema: None,
+            description: Some("Trying to redefine string".to_string()),
+            validation: None,
+            metadata: None,
+        });
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(MEDIA_STRING.to_string(), string_spec);
+        cap.set_media_specs(media_specs);
+
+        let result = validate_no_inline_media_spec_redefinition(&cap, &media_registry).await;
+
+        // Should fail because MEDIA_STRING is already in the registry
+        assert!(result.is_err());
+        if let Err(ValidationError::InlineMediaSpecRedefinesRegistry { media_urn, .. }) = result {
+            assert_eq!(media_urn, MEDIA_STRING);
+        } else {
+            panic!("Expected InlineMediaSpecRedefinesRegistry error");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_xv5_new_inline_spec_allowed() {
+        // Create a cap with a new media spec that doesn't exist in the registry
+        let (_schema_registry, media_registry) = test_registries().await;
+
+        let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
+        let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
+
+        // Define a completely new media spec that doesn't exist in registry
+        let custom_spec = crate::media_spec::MediaSpecDef::Object(crate::media_spec::MediaSpecDefObject {
+            media_type: "application/json".to_string(),
+            profile_uri: "https://example.com/my-custom-output".to_string(),
+            title: "My Custom Output".to_string(),
+            schema: Some(json!({"type": "object"})),
+            description: Some("A custom output type".to_string()),
+            validation: None,
+            metadata: None,
+        });
+        let mut media_specs = std::collections::HashMap::new();
+        // Use a URN that definitely doesn't exist in the standard registry
+        media_specs.insert("media:my-unique-custom-type-xyz123".to_string(), custom_spec);
+        cap.set_media_specs(media_specs);
+
+        let result = validate_no_inline_media_spec_redefinition(&cap, &media_registry).await;
+
+        // Should succeed because the spec doesn't exist in the registry
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_xv5_empty_media_specs_allowed() {
+        // A cap without inline media_specs should pass XV5 validation
+        let (_schema_registry, media_registry) = test_registries().await;
+
+        let urn = CapUrn::from_string(&test_urn("type=test;op=cap")).unwrap();
+        let cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
+
+        let result = validate_no_inline_media_spec_redefinition(&cap, &media_registry).await;
+        assert!(result.is_ok());
+    }
 }
 
 /// Validate cap arguments against canonical definition
@@ -1228,6 +1310,84 @@ pub async fn validate_media_urn_references(
                 media_urn,
                 location: location.to_string(),
             });
+        }
+    }
+
+    Ok(())
+}
+
+/// XV5: Validate that inline media_specs don't redefine existing registry specs.
+///
+/// Behavior:
+/// - With network access: strictly enforced - fail if any inline spec exists in registry
+/// - Without network access: check against cached/bundled specs only.
+///   If conflict found with cached specs: fail.
+///   If no conflict with cached but registry unreachable: log warning, allow operation.
+///
+/// Resolution order for checking:
+/// 1. Registry's in-memory cache (fast)
+/// 2. Registry's disk cache (bundled standard specs)
+/// 3. Online registry fetch (if reachable)
+pub async fn validate_no_inline_media_spec_redefinition(
+    cap: &Cap,
+    registry: &crate::media_registry::MediaUrnRegistry,
+) -> Result<(), ValidationError> {
+    use crate::media_registry::MediaRegistryError;
+
+    let cap_urn = cap.urn_string();
+    let inline_specs = cap.get_media_specs();
+
+    if inline_specs.is_empty() {
+        return Ok(());
+    }
+
+    for media_urn in inline_specs.keys() {
+        // Check if this media URN exists in the registry (without using cap's local specs)
+        match registry.get_media_spec(media_urn).await {
+            Ok(_) => {
+                // Found in registry - this is a redefinition, which is an error
+                return Err(ValidationError::InlineMediaSpecRedefinesRegistry {
+                    cap_urn: cap_urn.clone(),
+                    media_urn: media_urn.clone(),
+                });
+            }
+            Err(MediaRegistryError::NotFound(_)) => {
+                // Not found in registry (cache + online) - this is fine, it's a new spec
+                continue;
+            }
+            Err(MediaRegistryError::HttpError(e)) => {
+                // Network error - check if we can verify against cached/bundled specs
+                if let Some(_) = registry.get_cached_spec(media_urn) {
+                    // Found in cache - this is a redefinition, fail hard
+                    return Err(ValidationError::InlineMediaSpecRedefinesRegistry {
+                        cap_urn: cap_urn.clone(),
+                        media_urn: media_urn.clone(),
+                    });
+                }
+
+                // Not found in cache, and online registry unreachable
+                // Log warning and allow operation (graceful degradation)
+                eprintln!(
+                    "[WARN] XV5: Could not verify inline spec '{}' against online registry ({}). Allowing operation in offline mode.",
+                    media_urn, e
+                );
+                continue;
+            }
+            Err(e) => {
+                // Other errors (cache error, parse error) - treat as unable to verify
+                if let Some(_) = registry.get_cached_spec(media_urn) {
+                    return Err(ValidationError::InlineMediaSpecRedefinesRegistry {
+                        cap_urn: cap_urn.clone(),
+                        media_urn: media_urn.clone(),
+                    });
+                }
+
+                eprintln!(
+                    "[WARN] XV5: Could not verify inline spec '{}' against registry ({}). Allowing operation.",
+                    media_urn, e
+                );
+                continue;
+            }
         }
     }
 

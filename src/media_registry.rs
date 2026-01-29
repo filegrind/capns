@@ -344,6 +344,15 @@ impl MediaUrnRegistry {
         Ok(cached_specs.values().cloned().collect())
     }
 
+    /// Check if a media spec exists in the in-memory cache only (synchronous, no network).
+    /// Returns Some(spec) if found in cache, None otherwise.
+    /// This is useful for XV5 validation when network is unavailable.
+    pub fn get_cached_spec(&self, urn: &str) -> Option<StoredMediaSpec> {
+        let normalized_urn = normalize_media_urn(urn);
+        let cached_specs = self.cached_specs.lock().ok()?;
+        cached_specs.get(&normalized_urn).cloned()
+    }
+
     fn get_cache_dir() -> Result<PathBuf, MediaRegistryError> {
         let mut cache_dir = dirs::cache_dir().ok_or_else(|| {
             MediaRegistryError::CacheError("Could not determine cache directory".to_string())
