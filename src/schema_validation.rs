@@ -228,6 +228,7 @@ mod tests {
         MediaUrnRegistry::new().await.expect("Failed to create test registry")
     }
 
+    // TEST163: Test argument schema validation succeeds with valid JSON matching schema
     #[tokio::test]
     async fn test_argument_schema_validation_success() {
         let registry = test_registry().await;
@@ -268,6 +269,7 @@ mod tests {
         assert!(validator.validate_argument_with_cap(&cap, &arg, &valid_value, &registry).await.is_ok());
     }
 
+    // TEST164: Test argument schema validation fails with JSON missing required fields
     #[tokio::test]
     async fn test_argument_schema_validation_failure() {
         let registry = test_registry().await;
@@ -307,6 +309,7 @@ mod tests {
         assert!(validator.validate_argument_with_cap(&cap, &arg, &invalid_value, &registry).await.is_err());
     }
 
+    // TEST165: Test output schema validation succeeds with valid JSON matching schema
     #[tokio::test]
     async fn test_output_schema_validation_success() {
         let registry = test_registry().await;
@@ -343,6 +346,7 @@ mod tests {
         assert!(validator.validate_output_with_cap(&cap, &output, &valid_value, &registry).await.is_ok());
     }
 
+    // TEST166: Test validation skipped when resolved media spec has no schema
     #[tokio::test]
     async fn test_skip_validation_without_schema() {
         let registry = test_registry().await;
@@ -364,6 +368,7 @@ mod tests {
         assert!(validator.validate_argument_with_cap(&cap, &arg, &value, &registry).await.is_ok());
     }
 
+    // TEST167: Test validation fails hard when media URN cannot be resolved from any source
     #[tokio::test]
     async fn test_unresolvable_media_urn_fails_hard() {
         let registry = test_registry().await;

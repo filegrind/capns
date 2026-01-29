@@ -983,6 +983,7 @@ mod tests {
         }
     }
 
+    // TEST117: Test registering cap set and finding by exact and subset matching
     #[tokio::test]
     async fn test_register_and_find_cap_set() {
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1019,6 +1020,7 @@ mod tests {
         assert!(registry.find_cap_sets(&test_urn("op=different")).is_err());
     }
 
+    // TEST118: Test selecting best cap set based on specificity ranking
     #[tokio::test]
     async fn test_best_cap_set_selection() {
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1069,6 +1071,7 @@ mod tests {
         assert_eq!(all_sets.len(), 2);
     }
 
+    // TEST119: Test invalid URN returns InvalidUrn error
     #[tokio::test]
     async fn test_invalid_urn_handling() {
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1078,6 +1081,7 @@ mod tests {
         assert!(matches!(result, Err(CapMatrixError::InvalidUrn(_))));
     }
 
+    // TEST120: Test can_handle checks if registry can handle a capability request
     #[tokio::test]
     async fn test_can_handle() {
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1131,6 +1135,7 @@ mod tests {
         }
     }
 
+    // TEST121: Test CapCube selects more specific cap over less specific regardless of registry order
     #[tokio::test]
     async fn test_cap_cube_more_specific_wins() {
         // This is the key test: provider has less specific cap, plugin has more specific
@@ -1181,6 +1186,7 @@ mod tests {
         assert_eq!(best.cap.title, "Plugin PDF Thumbnail Generator (specific)");
     }
 
+    // TEST122: Test CapCube breaks specificity ties by first registered registry
     #[tokio::test]
     async fn test_cap_cube_tie_goes_to_first() {
         // When specificity is equal, first registry wins
@@ -1209,6 +1215,7 @@ mod tests {
         assert_eq!(best.cap.title, "Registry 1 Cap");
     }
 
+    // TEST123: Test CapCube polls all registries to find most specific match
     #[tokio::test]
     async fn test_cap_cube_polls_all() {
         // Test that all registries are polled
@@ -1244,6 +1251,7 @@ mod tests {
         assert_eq!(best.registry_name, "r3", "Most specific registry should win");
     }
 
+    // TEST124: Test CapCube returns error when no registries match the request
     #[tokio::test]
     async fn test_cap_cube_no_match() {
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1256,6 +1264,7 @@ mod tests {
         assert!(matches!(result, Err(CapMatrixError::NoSetsFound(_))));
     }
 
+    // TEST125: Test CapCube prefers specific plugin over generic provider fallback
     #[tokio::test]
     async fn test_cap_cube_fallback_scenario() {
         // Test the exact scenario from the user's issue:
@@ -1315,6 +1324,7 @@ mod tests {
         assert_eq!(best_wav.cap.title, "Generic Thumbnail Provider");
     }
 
+    // TEST126: Test composite can method returns CapCaller for capability execution
     #[tokio::test]
     async fn test_composite_can_method() {
         // Test the can() method that returns a CapCaller
@@ -1349,6 +1359,7 @@ mod tests {
     // CapGraph Tests
     // ============================================================================
 
+    // TEST127: Test CapGraph adds nodes and edges from capability definitions
     #[test]
     fn test_cap_graph_basic_construction() {
         let mut graph = CapGraph::new();
@@ -1379,6 +1390,7 @@ mod tests {
         assert!(graph.has_direct_edge(media_binary, MEDIA_STRING), "Should have edge from binary to string");
     }
 
+    // TEST128: Test CapGraph tracks outgoing and incoming edges for spec conversions
     #[test]
     fn test_cap_graph_outgoing_incoming() {
         let mut graph = CapGraph::new();
@@ -1427,6 +1439,7 @@ mod tests {
         assert_eq!(incoming_obj.len(), 1);
     }
 
+    // TEST129: Test CapGraph detects direct and indirect conversion paths between specs
     #[test]
     fn test_cap_graph_can_convert() {
         let mut graph = CapGraph::new();
@@ -1479,6 +1492,7 @@ mod tests {
         assert!(!graph.can_convert(MEDIA_BINARY, "unknown:spec.v1"));
     }
 
+    // TEST130: Test CapGraph finds shortest path for spec conversion chain
     #[test]
     fn test_cap_graph_find_path() {
         let mut graph = CapGraph::new();
@@ -1534,6 +1548,7 @@ mod tests {
         assert!(same.is_empty());
     }
 
+    // TEST131: Test CapGraph finds all conversion paths sorted by length
     #[test]
     fn test_cap_graph_find_all_paths() {
         let mut graph = CapGraph::new();
@@ -1591,6 +1606,7 @@ mod tests {
         assert_eq!(all_paths[1].len(), 2); // Through intermediate
     }
 
+    // TEST132: Test CapGraph returns direct edges sorted by specificity
     #[test]
     fn test_cap_graph_get_direct_edges_sorted() {
         let mut graph = CapGraph::new();
@@ -1632,6 +1648,7 @@ mod tests {
         assert_eq!(edges[1].cap.title, "Generic"); // Lower specificity
     }
 
+    // TEST133: Test CapCube graph integration with multiple registries and conversion paths
     #[tokio::test]
     async fn test_cap_cube_graph_integration() {
         // Test that CapCube.graph() works correctly
@@ -1716,6 +1733,7 @@ mod tests {
         assert_eq!(plugin_edges.len(), 1);
     }
 
+    // TEST134: Test CapGraph stats provides counts of nodes and edges
     #[test]
     fn test_cap_graph_stats() {
         let mut graph = CapGraph::new();

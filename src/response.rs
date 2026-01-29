@@ -248,6 +248,7 @@ mod tests {
         value: i32,
     }
 
+    // TEST168: Test ResponseWrapper from JSON deserializes to correct structured type
     #[test]
     fn test_json_response() {
         let test_data = TestStruct {
@@ -261,6 +262,7 @@ mod tests {
         assert_eq!(parsed, test_data);
     }
 
+    // TEST169: Test ResponseWrapper converts to primitive types integer, float, boolean, string
     #[test]
     fn test_primitive_types() {
         // Test integer
@@ -280,6 +282,7 @@ mod tests {
         assert_eq!(response.as_string().unwrap(), "hello world");
     }
 
+    // TEST170: Test ResponseWrapper from binary stores and retrieves raw bytes correctly
     #[test]
     fn test_binary_response() {
         let binary_data = vec![0x89, 0x50, 0x4E, 0x47]; // PNG header

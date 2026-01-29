@@ -72,6 +72,7 @@ mod tests {
         format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
+    // TEST148: Test creating cap manifest with name, version, description, and caps
     #[test]
     fn test_cap_manifest_creation() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
@@ -91,6 +92,7 @@ mod tests {
         assert!(manifest.author.is_none());
     }
 
+    // TEST149: Test cap manifest with author field sets author correctly
     #[test]
     fn test_cap_manifest_with_author() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
@@ -106,6 +108,7 @@ mod tests {
         assert_eq!(manifest.author, Some("Test Author".to_string()));
     }
 
+    // TEST150: Test cap manifest JSON serialization and deserialization roundtrip
     #[test]
     fn test_cap_manifest_json_serialization() {
         use crate::{CapArg, ArgSource};
@@ -145,6 +148,7 @@ mod tests {
         assert_eq!(deserialized.caps[0].get_stdin_media_urn(), manifest.caps[0].get_stdin_media_urn());
     }
 
+    // TEST151: Test cap manifest deserialization fails when required fields are missing
     #[test]
     fn test_cap_manifest_required_fields() {
         // Test that deserialization fails when required fields are missing
@@ -157,6 +161,7 @@ mod tests {
         assert!(result2.is_err());
     }
 
+    // TEST152: Test cap manifest with multiple caps stores and retrieves all capabilities
     #[test]
     fn test_cap_manifest_with_multiple_caps() {
         let id1 = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
@@ -183,6 +188,7 @@ mod tests {
         assert!(manifest.caps[1].has_metadata("supports_outline"));
     }
 
+    // TEST153: Test cap manifest with empty caps list serializes and deserializes correctly
     #[test]
     fn test_cap_manifest_empty_caps() {
         let manifest = CapManifest::new(
@@ -200,6 +206,7 @@ mod tests {
         assert_eq!(deserialized.caps.len(), 0);
     }
 
+    // TEST154: Test cap manifest optional author field skipped in serialization when None
     #[test]
     fn test_cap_manifest_optional_author_field() {
         let urn = CapUrn::from_string(&test_urn("op=validate;file")).unwrap();
@@ -221,6 +228,7 @@ mod tests {
         assert!(deserialized.author.is_none());
     }
 
+    // TEST155: Test ComponentMetadata trait provides manifest and caps accessor methods
     #[test]
     fn test_component_metadata_trait() {
         struct TestComponent {

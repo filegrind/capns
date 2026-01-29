@@ -307,6 +307,7 @@ impl CapCaller {
 mod tests {
     use super::*;
 
+    // TEST156: Test creating StdinSource Data variant with byte vector
     #[test]
     fn test_stdin_source_data_creation() {
         let data = vec![0x48, 0x65, 0x6c, 0x6c, 0x6f]; // "Hello"
@@ -318,6 +319,7 @@ mod tests {
         }
     }
 
+    // TEST157: Test creating StdinSource FileReference variant with all required fields
     #[test]
     fn test_stdin_source_file_reference_creation() {
         let tracked_file_id = "tracked-file-123".to_string();
@@ -348,6 +350,7 @@ mod tests {
         }
     }
 
+    // TEST158: Test StdinSource Data with empty vector stores and retrieves correctly
     #[test]
     fn test_stdin_source_empty_data() {
         let source = StdinSource::Data(vec![]);
@@ -358,6 +361,7 @@ mod tests {
         }
     }
 
+    // TEST159: Test StdinSource Data with binary content like PNG header bytes
     #[test]
     fn test_stdin_source_binary_content() {
         // PNG header bytes
@@ -375,6 +379,7 @@ mod tests {
         }
     }
 
+    // TEST160: Test StdinSource Data clone creates independent copy with same data
     #[test]
     fn test_stdin_source_clone() {
         let data = vec![1, 2, 3, 4, 5];
@@ -387,6 +392,7 @@ mod tests {
         }
     }
 
+    // TEST161: Test StdinSource FileReference clone creates independent copy with same fields
     #[test]
     fn test_stdin_source_file_reference_clone() {
         let source = StdinSource::FileReference {
@@ -421,6 +427,7 @@ mod tests {
         }
     }
 
+    // TEST162: Test StdinSource Debug format displays variant type and relevant fields
     #[test]
     fn test_stdin_source_debug() {
         let data_source = StdinSource::Data(vec![1, 2, 3]);

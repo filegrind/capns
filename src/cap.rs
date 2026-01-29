@@ -886,6 +886,7 @@ mod tests {
         format!(r#"cap:in="media:void";out="media:form=map";{}"#, tags)
     }
 
+    // TEST108: Test creating new cap with URN, title, and command verifies correct initialization
     #[test]
     fn test_cap_creation() {
         let urn = CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
@@ -901,6 +902,7 @@ mod tests {
         assert!(cap.metadata.is_empty());
     }
 
+    // TEST109: Test creating cap with metadata initializes and retrieves metadata correctly
     #[test]
     fn test_cap_with_metadata() {
         let urn = CapUrn::from_string(&test_urn("op=arithmetic;compute;subtype=math")).unwrap();
@@ -917,6 +919,7 @@ mod tests {
         assert!(!cap.has_metadata("nonexistent"));
     }
 
+    // TEST110: Test cap matching with subset semantics for request fulfillment
     #[test]
     fn test_cap_matching() {
         // Use type=data_processing key-value instead of flag for proper matching
@@ -929,6 +932,7 @@ mod tests {
         assert!(!cap.matches_request(&test_urn("type=compute")));
     }
 
+    // TEST111: Test getting and setting cap title updates correctly
     #[test]
     fn test_cap_title() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
@@ -942,6 +946,7 @@ mod tests {
         assert_eq!(cap.title, "Extract File Metadata");
     }
 
+    // TEST112: Test cap equality based on URN and title matching
     #[test]
     fn test_cap_definition_equality() {
         let urn1 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
@@ -956,6 +961,7 @@ mod tests {
         assert_ne!(cap2, cap3);
     }
 
+    // TEST113: Test cap stdin support via args with stdin source and serialization roundtrip
     #[test]
     fn test_cap_stdin() {
         let urn = CapUrn::from_string(&test_urn("op=generate;target=embeddings")).unwrap();
@@ -988,6 +994,7 @@ mod tests {
         assert_eq!(deserialized.get_stdin_media_urn(), Some("media:textable"));
     }
 
+    // TEST114: Test ArgSource type variants stdin, position, and cli_flag with their accessors
     #[test]
     fn test_arg_source_types() {
         // Test stdin source
@@ -1012,6 +1019,7 @@ mod tests {
         assert_eq!(cli_flag_source.cli_flag(), Some("--input"));
     }
 
+    // TEST115: Test CapArg serialization and deserialization with multiple sources
     #[test]
     fn test_cap_arg_serialization() {
         let arg = CapArg {
@@ -1036,6 +1044,7 @@ mod tests {
         assert_eq!(arg, deserialized);
     }
 
+    // TEST116: Test CapArg constructor methods basic and with_description create args correctly
     #[test]
     fn test_cap_arg_constructors() {
         // Test basic constructor

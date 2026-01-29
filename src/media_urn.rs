@@ -501,6 +501,7 @@ impl<'de> serde::Deserialize<'de> for MediaUrn {
 mod tests {
     use super::*;
 
+    // TEST057: Test parsing simple media URN verifies correct structure with no version, subtype, or profile
     #[test]
     fn test_parse_simple() {
         let urn = MediaUrn::from_string("media:string").unwrap();
@@ -512,6 +513,7 @@ mod tests {
         assert!(urn.profile().is_none());
     }
 
+    // TEST058: Test parsing media URN with subtype extracts subtype tag correctly
     #[test]
     fn test_parse_with_subtype() {
         // Subtype is extracted from subtype= tag
@@ -520,6 +522,7 @@ mod tests {
         assert!(urn.to_string().contains("application"));
     }
 
+    // TEST059: Test parsing media URN with profile extracts profile URL correctly
     #[test]
     fn test_parse_with_profile() {
         // Profile is extracted from profile= tag
@@ -531,6 +534,7 @@ mod tests {
         assert!(urn.to_string().contains("object"));
     }
 
+    // TEST060: Test wrong prefix fails with InvalidPrefix error showing expected and actual prefix
     #[test]
     fn test_wrong_prefix_fails() {
         let result = MediaUrn::from_string("cap:string");
@@ -543,6 +547,7 @@ mod tests {
         }
     }
 
+    // TEST061: Test is_binary returns true only when bytes marker tag is present
     #[test]
     fn test_is_binary() {
         // is_binary returns true only if "bytes" marker tag is present
@@ -555,6 +560,7 @@ mod tests {
         assert!(!MediaUrn::from_string("media:object;textable;form=map").unwrap().is_binary());
     }
 
+    // TEST062: Test is_map returns true when form=map tag is present indicating key-value structure
     #[test]
     fn test_is_map() {
         // is_map returns true if form=map tag is present (key-value structure)
@@ -566,6 +572,7 @@ mod tests {
         assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_map()); // form=list
     }
 
+    // TEST063: Test is_scalar returns true when form=scalar tag is present indicating single value
     #[test]
     fn test_is_scalar() {
         // is_scalar returns true if form=scalar tag is present (single value)
@@ -578,6 +585,7 @@ mod tests {
         assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_scalar()); // form=list
     }
 
+    // TEST064: Test is_list returns true when form=list tag is present indicating ordered collection
     #[test]
     fn test_is_list() {
         // is_list returns true if form=list tag is present (ordered collection)
@@ -589,6 +597,7 @@ mod tests {
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_list()); // form=map
     }
 
+    // TEST065: Test is_structured returns true for map or list forms indicating structured data types
     #[test]
     fn test_is_structured() {
         // is_structured returns true if form=map OR form=list (structured data types)
@@ -602,6 +611,7 @@ mod tests {
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_structured());
     }
 
+    // TEST066: Test is_json returns true only when json marker tag is present for JSON representation
     #[test]
     fn test_is_json() {
         // is_json returns true only if "json" marker tag is present (JSON representation)
@@ -612,6 +622,7 @@ mod tests {
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_json());
     }
 
+    // TEST067: Test is_text returns true only when textable marker tag is present
     #[test]
     fn test_is_text() {
         // is_text returns true only if "textable" marker tag is present
@@ -623,12 +634,14 @@ mod tests {
         assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:png;bytes"
     }
 
+    // TEST068: Test is_void returns true when void flag or type=void tag is present
     #[test]
     fn test_is_void() {
         assert!(MediaUrn::from_string("media:void").unwrap().is_void());
         assert!(!MediaUrn::from_string("media:string").unwrap().is_void());
     }
 
+    // TEST069: Test simple constructor creates media URN with type and version tags
     #[test]
     fn test_simple_constructor() {
         let urn = MediaUrn::simple("string", 1);
@@ -638,6 +651,7 @@ mod tests {
         assert_eq!(urn.version(), Some(1));
     }
 
+    // TEST070: Test with_subtype constructor creates media URN with type, subtype, and optional version
     #[test]
     fn test_with_subtype_constructor() {
         let urn = MediaUrn::with_subtype("application", "json", Some(1));
@@ -648,6 +662,7 @@ mod tests {
         assert_eq!(urn.version(), Some(1));
     }
 
+    // TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure
     #[test]
     fn test_to_string_roundtrip() {
         let original = "media:string";
@@ -657,6 +672,7 @@ mod tests {
         assert_eq!(urn, urn2);
     }
 
+    // TEST072: Test all media URN constants parse successfully as valid media URNs
     #[test]
     fn test_constants_parse() {
         // Verify all constants are valid media URNs
@@ -690,6 +706,7 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_YAML).is_ok());
     }
 
+    // TEST073: Test extension helper functions create media URNs with ext tag and correct format
     #[test]
     fn test_extension_helpers() {
         // Test binary_media_urn_for_ext
@@ -707,6 +724,7 @@ mod tests {
         assert_eq!(parsed.extension(), Some("md"));
     }
 
+    // TEST074: Test media URN matching using tagged URN semantics with specific and generic requirements
     #[test]
     fn test_media_urn_matching() {
         // PDF listing matches PDF requirement (PRIMARY type naming)
@@ -726,6 +744,7 @@ mod tests {
         assert!(string_urn.matches(&string_req).expect("MediaUrn prefix mismatch impossible"));
     }
 
+    // TEST075: Test matching with implicit wildcards where handlers with fewer tags can handle more requests
     #[test]
     fn test_matching() {
         let handler = MediaUrn::from_string("media:string").unwrap();
@@ -741,6 +760,7 @@ mod tests {
         assert!(handler.matches(&same).unwrap());
     }
 
+    // TEST076: Test specificity increases with more tags for ranking matches
     #[test]
     fn test_specificity() {
         // More tags = higher specificity
@@ -759,6 +779,7 @@ mod tests {
         assert!(s3 >= s2, "urn3 ({}) should have >= specificity than urn2 ({})", s3, s2);
     }
 
+    // TEST077: Test serde roundtrip serializes to JSON string and deserializes back correctly
     #[test]
     fn test_serde_roundtrip() {
         let urn = MediaUrn::from_string("media:string").unwrap();
@@ -774,6 +795,7 @@ mod debug_tests {
     use super::*;
     use crate::standard::media::{MEDIA_BINARY, MEDIA_STRING, MEDIA_OBJECT};
 
+    // TEST078: Debug test for matching behavior between different media URN types
     #[test]
     fn debug_matching_behavior() {
         println!("MEDIA_BINARY = {}", MEDIA_BINARY);

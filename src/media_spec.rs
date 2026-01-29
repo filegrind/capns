@@ -742,6 +742,7 @@ mod tests {
     // MediaSpec parsing tests
     // -------------------------------------------------------------------------
 
+    // TEST079: Test parsing JSON media spec with profile extracts media type and profile URL correctly
     #[test]
     fn test_parse_json_with_profile() {
         let spec =
@@ -753,6 +754,7 @@ mod tests {
         );
     }
 
+    // TEST080: Test parsing text media spec with profile extracts media type and profile URL correctly
     #[test]
     fn test_parse_text_with_profile() {
         let spec = MediaSpec::parse("text/plain; profile=https://capns.org/schema/str").unwrap();
@@ -763,6 +765,7 @@ mod tests {
         );
     }
 
+    // TEST081: Test parsing binary media spec without profile extracts media type only
     #[test]
     fn test_parse_binary() {
         let spec = MediaSpec::parse("application/octet-stream").unwrap();
@@ -770,12 +773,14 @@ mod tests {
         assert!(spec.profile.is_none());
     }
 
+    // TEST082: Test parsing image media spec with profile extracts media type correctly
     #[test]
     fn test_parse_image() {
         let spec = MediaSpec::parse("image/png; profile=https://example.com/thumbnail").unwrap();
         assert_eq!(spec.media_type, "image/png");
     }
 
+    // TEST083: Test parsing media spec without profile returns None for profile field
     #[test]
     fn test_parse_no_profile() {
         let spec = MediaSpec::parse("text/html").unwrap();
@@ -783,6 +788,7 @@ mod tests {
         assert!(spec.profile.is_none());
     }
 
+    // TEST084: Test parsing media spec with quoted profile URL extracts profile without quotes
     #[test]
     fn test_parse_quoted_profile() {
         let spec =
@@ -793,6 +799,7 @@ mod tests {
         );
     }
 
+    // TEST085: Test invalid media type without slash returns InvalidMediaType error
     #[test]
     fn test_invalid_media_type() {
         let result = MediaSpec::parse("invalid");
@@ -804,6 +811,7 @@ mod tests {
         }
     }
 
+    // TEST086: Test display format outputs media type with profile in canonical format
     #[test]
     fn test_display() {
         let spec = MediaSpec {
@@ -816,6 +824,7 @@ mod tests {
         );
     }
 
+    // TEST087: Test display format outputs media type only when profile is None
     #[test]
     fn test_display_no_profile() {
         let spec = MediaSpec {
@@ -834,6 +843,7 @@ mod tests {
         crate::media_registry::MediaUrnRegistry::new().await.expect("Failed to create test registry")
     }
 
+    // TEST088: Test resolving string media URN from registry returns correct media type and profile
     #[tokio::test]
     async fn test_resolve_from_registry_str() {
         let registry = test_registry().await;
@@ -844,6 +854,7 @@ mod tests {
         assert!(resolved.profile_uri.is_some());
     }
 
+    // TEST089: Test resolving object media URN from registry returns JSON media type
     #[tokio::test]
     async fn test_resolve_from_registry_obj() {
         let registry = test_registry().await;
@@ -851,6 +862,7 @@ mod tests {
         assert_eq!(resolved.media_type, "application/json");
     }
 
+    // TEST090: Test resolving binary media URN from registry returns octet-stream and is_binary true
     #[tokio::test]
     async fn test_resolve_from_registry_binary() {
         let registry = test_registry().await;
@@ -859,6 +871,7 @@ mod tests {
         assert!(resolved.is_binary());
     }
 
+    // TEST091: Test resolving custom media URN from local media_specs takes precedence over registry
     #[tokio::test]
     async fn test_resolve_custom_string_form() {
         let registry = test_registry().await;
@@ -879,6 +892,7 @@ mod tests {
         assert!(resolved.schema.is_none());
     }
 
+    // TEST092: Test resolving custom object form media spec with schema from local media_specs
     #[tokio::test]
     async fn test_resolve_custom_object_form() {
         let registry = test_registry().await;
@@ -912,6 +926,7 @@ mod tests {
         assert_eq!(resolved.schema, Some(schema));
     }
 
+    // TEST093: Test resolving unknown media URN fails with UnresolvableMediaUrn error
     #[tokio::test]
     async fn test_resolve_unresolvable_fails_hard() {
         let registry = test_registry().await;
@@ -925,6 +940,7 @@ mod tests {
         }
     }
 
+    // TEST094: Test local media_specs definition overrides registry definition for same URN
     #[tokio::test]
     async fn test_local_overrides_registry() {
         let registry = test_registry().await;
@@ -948,6 +964,7 @@ mod tests {
     // MediaSpecDef serialization tests
     // -------------------------------------------------------------------------
 
+    // TEST095: Test MediaSpecDef string form serializes as JSON string
     #[test]
     fn test_media_spec_def_string_serialize() {
         let def = MediaSpecDef::String("text/plain; profile=https://example.com".to_string());
@@ -955,6 +972,7 @@ mod tests {
         assert_eq!(json, "\"text/plain; profile=https://example.com\"");
     }
 
+    // TEST096: Test MediaSpecDef object form serializes with required fields and skips None fields
     #[test]
     fn test_media_spec_def_object_serialize() {
         let def = MediaSpecDef::Object(MediaSpecDefObject {
@@ -978,6 +996,7 @@ mod tests {
         assert!(!json.contains("\"validation\":"));
     }
 
+    // TEST097: Test deserializing MediaSpecDef string form from JSON string
     #[test]
     fn test_media_spec_def_deserialize_string() {
         let json = "\"text/plain; profile=https://example.com\"";
@@ -985,6 +1004,7 @@ mod tests {
         assert!(matches!(def, MediaSpecDef::String(_)));
     }
 
+    // TEST098: Test deserializing MediaSpecDef object form from JSON object
     #[test]
     fn test_media_spec_def_deserialize_object() {
         let json = r#"{"media_type":"application/json","profile_uri":"https://example.com","title":"Test"}"#;
@@ -996,6 +1016,7 @@ mod tests {
     // ResolvedMediaSpec tests
     // -------------------------------------------------------------------------
 
+    // TEST099: Test ResolvedMediaSpec is_binary returns true for bytes media URN
     #[test]
     fn test_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
@@ -1013,6 +1034,7 @@ mod tests {
         assert!(!resolved.is_json());
     }
 
+    // TEST100: Test ResolvedMediaSpec is_map returns true for form=map media URN
     #[test]
     fn test_resolved_is_map() {
         let resolved = ResolvedMediaSpec {
@@ -1031,6 +1053,7 @@ mod tests {
         assert!(!resolved.is_list());
     }
 
+    // TEST101: Test ResolvedMediaSpec is_scalar returns true for form=scalar media URN
     #[test]
     fn test_resolved_is_scalar() {
         let resolved = ResolvedMediaSpec {
@@ -1048,6 +1071,7 @@ mod tests {
         assert!(!resolved.is_list());
     }
 
+    // TEST102: Test ResolvedMediaSpec is_list returns true for form=list media URN
     #[test]
     fn test_resolved_is_list() {
         let resolved = ResolvedMediaSpec {
@@ -1065,6 +1089,7 @@ mod tests {
         assert!(!resolved.is_scalar());
     }
 
+    // TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present
     #[test]
     fn test_resolved_is_json() {
         // is_json checks for the "json" tag specifically, not form=map
@@ -1083,6 +1108,7 @@ mod tests {
         assert!(!resolved.is_binary());
     }
 
+    // TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present
     #[test]
     fn test_resolved_is_text() {
         let resolved = ResolvedMediaSpec {
@@ -1104,6 +1130,7 @@ mod tests {
     // Metadata propagation tests
     // -------------------------------------------------------------------------
 
+    // TEST105: Test metadata propagates from object def to resolved media spec
     #[tokio::test]
     async fn test_metadata_propagation_from_object_def() {
         let registry = test_registry().await;
@@ -1137,6 +1164,7 @@ mod tests {
         assert_eq!(metadata.get("display_index").unwrap(), 5);
     }
 
+    // TEST106: Test metadata is None for string form media spec definitions
     #[tokio::test]
     async fn test_metadata_none_for_string_def() {
         let registry = test_registry().await;
@@ -1151,6 +1179,7 @@ mod tests {
         assert!(resolved.metadata.is_none());
     }
 
+    // TEST107: Test metadata and validation can coexist in media spec definition
     #[tokio::test]
     async fn test_metadata_with_validation() {
         let registry = test_registry().await;

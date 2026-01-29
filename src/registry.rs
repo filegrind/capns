@@ -585,12 +585,14 @@ mod tests {
         (registry, temp_dir)
     }
 
+    // TEST135: Test registry creation with temporary cache directory succeeds
     #[tokio::test]
     async fn test_registry_creation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         assert!(registry.cache_dir.exists());
     }
 
+    // TEST136: Test cache key generation produces consistent hashes for same URN
     #[tokio::test]
     async fn test_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
@@ -608,6 +610,7 @@ mod tests {
 mod json_parse_tests {
     use crate::Cap;
 
+    // TEST137: Test parsing registry JSON without stdin args verifies cap structure
     #[test]
     fn test_parse_registry_json() {
         // JSON without stdin args - means cap doesn't accept stdin
@@ -619,6 +622,7 @@ mod json_parse_tests {
         assert!(cap.get_stdin_media_urn().is_none()); // No stdin source in args means no stdin support
     }
 
+    // TEST138: Test parsing registry JSON with stdin args verifies stdin media URN extraction
     #[test]
     fn test_parse_registry_json_with_stdin() {
         // JSON with stdin args - means cap accepts stdin of specified media type
@@ -637,6 +641,7 @@ mod url_encoding_tests {
 
     /// Test that URL construction keeps "cap:" literal and only encodes the tags part
     /// This guards against the bug where encoding "cap:" as "cap%3A" causes 404s
+    // TEST139: Test URL construction keeps cap prefix literal and only encodes tags part
     #[test]
     fn test_url_keeps_cap_prefix_literal() {
         let config = RegistryConfig::default();
@@ -652,6 +657,7 @@ mod url_encoding_tests {
     }
 
     /// Test that media URNs in cap URNs are properly URL-encoded
+    // TEST140: Test URL encodes media URNs with proper percent encoding for special characters
     #[test]
     fn test_url_encodes_quoted_media_urns() {
         let config = RegistryConfig::default();
@@ -671,6 +677,7 @@ mod url_encoding_tests {
     }
 
     /// Test the URL format for a simple cap URN
+    // TEST141: Test exact URL format contains properly encoded media URN components
     #[test]
     fn test_exact_url_format() {
         let config = RegistryConfig::default();
@@ -687,6 +694,7 @@ mod url_encoding_tests {
     }
 
     /// Test that normalization handles various input formats
+    // TEST142: Test normalize handles different tag orders producing same canonical form
     #[test]
     fn test_normalize_handles_different_tag_orders() {
         // Different tag orders should normalize to the same canonical form
@@ -704,6 +712,7 @@ mod url_encoding_tests {
 mod config_tests {
     use super::*;
 
+    // TEST143: Test default config uses capns.org or environment variable values
     #[test]
     fn test_default_config() {
         let config = RegistryConfig::default();
@@ -715,6 +724,7 @@ mod config_tests {
                 "Schema URL should contain /schema");
     }
 
+    // TEST144: Test custom registry URL updates both registry and schema base URLs
     #[test]
     fn test_custom_registry_url() {
         let config = RegistryConfig::new()
@@ -723,6 +733,7 @@ mod config_tests {
         assert_eq!(config.schema_base_url, "https://localhost:8888/schema");
     }
 
+    // TEST145: Test custom registry and schema URLs set independently
     #[test]
     fn test_custom_registry_and_schema_url() {
         let config = RegistryConfig::new()
@@ -732,6 +743,7 @@ mod config_tests {
         assert_eq!(config.schema_base_url, "https://schemas.example.com");
     }
 
+    // TEST146: Test schema URL not overwritten when set explicitly before registry URL
     #[test]
     fn test_schema_url_not_overwritten_when_explicit() {
         // If schema URL is set explicitly first, changing registry URL shouldn't change it
@@ -742,6 +754,7 @@ mod config_tests {
         assert_eq!(config.schema_base_url, "https://schemas.example.com");
     }
 
+    // TEST147: Test registry for test with custom config creates registry with specified URLs
     #[test]
     fn test_registry_for_test_with_config() {
         let config = RegistryConfig::new()
