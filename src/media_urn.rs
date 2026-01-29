@@ -52,8 +52,8 @@ pub const MEDIA_BOOLEAN_ARRAY: &str = "media:bool;textable;form=list";
 pub const MEDIA_OBJECT_ARRAY: &str = "media:form=list;textable";
 
 // Semantic media types for specialized content
-/// Media URN for image data (png, jpg, gif, webp, etc.)
-pub const MEDIA_PNG: &str = "media:png;bytes";
+/// Media URN for PNG image data - matches CATALOG: media:image;png;bytes
+pub const MEDIA_PNG: &str = "media:image;png;bytes";
 /// Media URN for audio data (wav, mp3, flac, etc.)
 pub const MEDIA_AUDIO: &str = "media:wav;audio;bytes;";
 /// Media URN for video data (mp4, webm, mov, etc.)
@@ -86,6 +86,8 @@ pub const MEDIA_HTML: &str = "media:html;textable";
 pub const MEDIA_XML: &str = "media:xml;textable";
 /// Media URN for JSON data
 pub const MEDIA_JSON: &str = "media:json;textable;form=map";
+/// Media URN for JSON with schema constraint (input for structured queries) - matches CATALOG: media:json;json-schema;textable;form=map
+pub const MEDIA_JSON_SCHEMA: &str = "media:json;json-schema;textable;form=map";
 /// Media URN for YAML data
 pub const MEDIA_YAML: &str = "media:yaml;textable;form=map";
 
@@ -102,6 +104,8 @@ pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter;textable;form=scalar
 pub const MEDIA_MODEL_SPEC: &str = "media:model-spec;textable;form=scalar";
 /// Media URN for MLX model path
 pub const MEDIA_MLX_MODEL_PATH: &str = "media:mlx-model-path;textable;form=scalar";
+/// Media URN for model repository (input for list-models) - matches CATALOG: media:model-repo;textable;form=map
+pub const MEDIA_MODEL_REPO: &str = "media:model-repo;textable;form=map";
 
 /// Helper to build binary media URN with extension
 pub fn binary_media_urn_for_ext(ext: &str) -> String {
@@ -124,6 +128,8 @@ pub fn audio_media_urn_for_ext(ext: &str) -> String {
 }
 
 // CAPNS output types - all form=map structures (JSON objects)
+/// Media URN for model dimension output - matches CATALOG: media:model-dim;integer;textable;numeric;form=scalar
+pub const MEDIA_MODEL_DIM: &str = "media:model-dim;integer;textable;numeric;form=scalar";
 /// Media URN for model download output - textable, form=map
 pub const MEDIA_DOWNLOAD_OUTPUT: &str = "media:download-result;textable;form=map";
 /// Media URN for model list output - textable, form=map
@@ -148,6 +154,10 @@ pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;form=map";
 pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:transcription;textable;form=map";
 /// Media URN for vision inference output - textable, form=map
 pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:vision-inference-output;textable;form=map";
+/// Media URN for decision output (bit choice) - matches CATALOG: media:decision;bool;textable;form=scalar
+pub const MEDIA_DECISION: &str = "media:decision;bool;textable;form=scalar";
+/// Media URN for decision array output (bit choices) - matches CATALOG: media:decision;bool;textable;form=list
+pub const MEDIA_DECISION_ARRAY: &str = "media:decision;bool;textable;form=list";
 
 // =============================================================================
 // MEDIA URN TYPE

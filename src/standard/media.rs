@@ -33,8 +33,10 @@ pub use crate::media_urn::{
     MEDIA_BINARY, MEDIA_FILE_PATH, MEDIA_FILE_PATH_ARRAY,
     // Semantic AI input types
     MEDIA_PNG, MEDIA_AUDIO_SPEECH,
+    MEDIA_MODEL_SPEC, MEDIA_MODEL_REPO, MEDIA_JSON_SCHEMA,
     // Semantic output types
     MEDIA_IMAGE_THUMBNAIL,
+    MEDIA_MODEL_DIM, MEDIA_DECISION, MEDIA_DECISION_ARRAY,
 };
 
 // Re-export profile URLs from media_spec

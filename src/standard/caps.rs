@@ -8,23 +8,24 @@ use crate::{
     Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGES, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, MediaUrn, RegistryError
 };
 use crate::media_urn::{
-    // Primitives
-    MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
-    MEDIA_BOOLEAN_ARRAY,
+    // Primitives (needed for coercion functions)
+    MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
     // Semantic media types
-    MEDIA_PNG, MEDIA_AUDIO_SPEECH,
+    MEDIA_PNG,
     // Document types
     MEDIA_PDF, MEDIA_EPUB,
     // Text format types
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG,
     // Semantic input types
-    MEDIA_FRONTMATTER_TEXT, MEDIA_MODEL_SPEC, MEDIA_MLX_MODEL_PATH,
+    MEDIA_FRONTMATTER_TEXT, MEDIA_MODEL_SPEC,
+    MEDIA_MODEL_REPO, MEDIA_JSON_SCHEMA,
     // Semantic output types
     MEDIA_IMAGE_THUMBNAIL,
     // CAPNS output types
-    MEDIA_DOWNLOAD_OUTPUT,
+    MEDIA_MODEL_DIM, MEDIA_DOWNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
     MEDIA_EMBEDDING_VECTOR, MEDIA_JSON, MEDIA_LLM_INFERENCE_OUTPUT,
+    MEDIA_DECISION, MEDIA_DECISION_ARRAY,
 };
 use std::sync::Arc;
 
@@ -132,16 +133,19 @@ pub fn llm_summarization_urn(lang_code: &str) -> CapUrn {
 // -----------------------------------------------------------------------------
 
 /// Build URN for embeddings-dimensions capability
+/// Output uses MEDIA_MODEL_DIM per CATALOG: media:model-dim;integer;textable;numeric;form=scalar
 pub fn embeddings_dimensions_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "embeddings_dimensions")
         .in_spec(MEDIA_MODEL_SPEC)
-        .out_spec(MEDIA_INTEGER)
+        .out_spec(MEDIA_MODEL_DIM)
         .build()
         .expect("Failed to build embeddings-dimensions cap URN")
 }
 
-/// Build URN for embeddings-generation capability
+/// Build URN for text embeddings-generation capability
+/// Input: media:textable;form=scalar (text)
+/// Output: media:embedding-vector;textable;form=map
 pub fn embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_embeddings")
@@ -149,6 +153,20 @@ pub fn embeddings_generation_urn() -> CapUrn {
         .out_spec(MEDIA_EMBEDDING_VECTOR)
         .build()
         .expect("Failed to build embeddings-generation cap URN")
+}
+
+/// Build URN for image embeddings-generation capability
+/// Input: media:image;png;bytes
+/// Output: media:embedding-vector;textable;form=map
+pub fn image_embeddings_generation_urn() -> CapUrn {
+    CapUrnBuilder::new()
+        .tag("op", "generate_image_embeddings")
+        .solo_tag("ml-model")
+        .solo_tag("candle")
+        .in_spec(MEDIA_PNG)
+        .out_spec(MEDIA_EMBEDDING_VECTOR)
+        .build()
+        .expect("Failed to build image-embeddings-generation cap URN")
 }
 
 // -----------------------------------------------------------------------------
@@ -166,10 +184,11 @@ pub fn model_download_urn() -> CapUrn {
 }
 
 /// Build URN for model-list capability
+/// Input uses MEDIA_MODEL_REPO per CATALOG: media:model-repo;textable;form=map
 pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "list-models")
-        .in_spec(MEDIA_VOID)
+        .in_spec(MEDIA_MODEL_REPO)
         .out_spec(MEDIA_LIST_OUTPUT)
         .build()
         .expect("Failed to build model-list cap URN")
@@ -272,37 +291,40 @@ pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
 }
 
 /// Build URN for structured-query capability
+/// Input uses MEDIA_JSON_SCHEMA per CATALOG: media:json;json-schema;textable;form=map
 pub fn structured_query_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "query_structured")
         .tag("language", lang_code)
         .solo_tag("constrained")
-        .in_spec(MEDIA_OBJECT)
+        .in_spec(MEDIA_JSON_SCHEMA)
         .out_spec(MEDIA_JSON)
         .build()
         .expect("Failed to build structured-query cap URN")
 }
 
 /// Build URN for bit-choice capability
+/// Output uses MEDIA_DECISION per CATALOG: media:decision;bool;textable;form=scalar
 pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "choose_bit")
         .tag("language", lang_code)
         .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
-        .out_spec(MEDIA_BOOLEAN)
+        .out_spec(MEDIA_DECISION)
         .build()
         .expect("Failed to build bit-choice cap URN")
 }
 
 /// Build URN for bit-choices capability
+/// Output uses MEDIA_DECISION_ARRAY per CATALOG: media:decision;bool;textable;form=list
 pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "choose_bits")
         .tag("language", lang_code)
         .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
-        .out_spec(MEDIA_BOOLEAN_ARRAY)
+        .out_spec(MEDIA_DECISION_ARRAY)
         .build()
         .expect("Failed to build bit-choices cap URN")
 }
@@ -484,9 +506,15 @@ pub async fn embeddings_dimensions_cap(registry: Arc<CapRegistry>) -> Result<Cap
     registry.get_cap(&urn.to_string()).await
 }
 
-/// Get embeddings-generation cap from registry
+/// Get text embeddings-generation cap from registry
 pub async fn embeddings_generation_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
     let urn = embeddings_generation_urn();
+    registry.get_cap(&urn.to_string()).await
+}
+
+/// Get image embeddings-generation cap from registry
+pub async fn image_embeddings_generation_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
+    let urn = image_embeddings_generation_urn();
     registry.get_cap(&urn.to_string()).await
 }
 
