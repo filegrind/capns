@@ -198,12 +198,23 @@ impl CapArg {
     }
 
     /// Check if argument is JSON based on resolved media spec
+    /// Note: This checks for explicit JSON format marker only.
     pub async fn is_json(
         &self,
         media_specs: Option<&HashMap<String, MediaSpecDef>>,
         registry: &crate::media_registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
+    }
+
+    /// Check if argument is structured (map or list) based on resolved media spec
+    /// Structured data can be serialized as JSON when transmitted as text.
+    pub async fn is_structured(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.is_structured())
     }
 
     /// Get the media type from resolved spec
@@ -330,12 +341,23 @@ impl CapOutput {
     }
 
     /// Check if output is JSON based on resolved media spec
+    /// Note: This checks for explicit JSON format marker only.
     pub async fn is_json(
         &self,
         media_specs: Option<&HashMap<String, MediaSpecDef>>,
         registry: &crate::media_registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
+    }
+
+    /// Check if output is structured (map or list) based on resolved media spec
+    /// Structured data can be serialized as JSON when transmitted as text.
+    pub async fn is_structured(
+        &self,
+        media_specs: Option<&HashMap<String, MediaSpecDef>>,
+        registry: &crate::media_registry::MediaUrnRegistry,
+    ) -> Result<bool, MediaSpecError> {
+        self.resolve(media_specs, registry).await.map(|ms| ms.is_structured())
     }
 
     /// Get the media type from resolved spec

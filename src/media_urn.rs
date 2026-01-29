@@ -322,8 +322,17 @@ impl MediaUrn {
         self.has_tag("form", "list")
     }
 
+    /// Check if this represents structured data (map or list).
+    /// Structured data can be serialized as JSON when transmitted as text.
+    /// Note: This does NOT check for the explicit `json` tag - use is_json() for that.
+    pub fn is_structured(&self) -> bool {
+        self.is_map() || self.is_list()
+    }
+
     /// Check if this represents JSON representation specifically.
     /// Returns true if the "json" marker tag is present.
+    /// Note: This only checks for explicit JSON format marker.
+    /// For checking if data is structured (map/list), use is_structured().
     pub fn is_json(&self) -> bool {
         self.get_tag("json").is_some()
     }
@@ -578,6 +587,19 @@ mod tests {
         // Without form=list tag, is_list is false
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_list()); // form=scalar
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_list()); // form=map
+    }
+
+    #[test]
+    fn test_is_structured() {
+        // is_structured returns true if form=map OR form=list (structured data types)
+        assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_structured()); // form=map
+        assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_structured()); // form=list
+        assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_structured()); // "media:json;textable;form=map" - has form=map
+        // Scalars are NOT structured
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_structured()); // form=scalar
+        assert!(!MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_structured()); // form=scalar
+        // Pure textable without form tag is NOT structured
+        assert!(!MediaUrn::from_string("media:textable").unwrap().is_structured());
     }
 
     #[test]

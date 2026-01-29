@@ -224,11 +224,14 @@ impl ResponseWrapper {
 
         let media_specs = cap.get_media_specs();
         let is_output_binary = output_def.is_binary(Some(media_specs), registry).await?;
-        let is_output_json = output_def.is_json(Some(media_specs), registry).await?;
+        let is_output_structured = output_def.is_structured(Some(media_specs), registry).await?;
 
         Ok(match &self.content_type {
-            ResponseContentType::Json => is_output_json || !is_output_binary,
-            ResponseContentType::Text => !is_output_binary && !is_output_json,
+            // JSON response matches structured outputs (map/list)
+            ResponseContentType::Json => is_output_structured,
+            // Text response matches non-binary, non-structured outputs (scalars)
+            ResponseContentType::Text => !is_output_binary && !is_output_structured,
+            // Binary response matches binary outputs
             ResponseContentType::Binary => is_output_binary,
         })
     }

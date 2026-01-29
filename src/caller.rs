@@ -150,7 +150,8 @@ impl CapCaller {
                 return Err(anyhow!("Cap {} returned text data but output spec '{}' expects binary",
                     self.cap, output_spec.media_urn));
             }
-            if output_spec.is_json() {
+            // Structured data (map/list) is serialized as JSON
+            if output_spec.is_structured() {
                 ResponseWrapper::from_json(text_data.into_bytes())
             } else {
                 ResponseWrapper::from_text(text_data.into_bytes())
@@ -288,10 +289,10 @@ impl CapCaller {
     async fn validate_output_basic(&self, response: &ResponseWrapper) -> Result<()> {
         let output_spec = self.resolve_output_spec().await?;
 
-        // For text/JSON outputs, check it's parseable if JSON expected
+        // For structured outputs (map/list), verify it's valid JSON
         if let Ok(text) = response.as_string() {
-            if output_spec.is_json() {
-                // Verify it's valid JSON
+            if output_spec.is_structured() {
+                // Structured data must be valid JSON
                 let _: JsonValue = serde_json::from_str(&text)
                     .map_err(|e| anyhow!("Output is not valid JSON for cap {}: {}", self.cap, e))?;
             }

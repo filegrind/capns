@@ -437,8 +437,17 @@ impl ResolvedMediaSpec {
             .unwrap_or(false)
     }
 
+    /// Check if this represents structured data (map or list).
+    /// Structured data can be serialized as JSON when transmitted as text.
+    /// Note: This does NOT check for the explicit `json` tag - use is_json() for that.
+    pub fn is_structured(&self) -> bool {
+        self.is_map() || self.is_list()
+    }
+
     /// Check if this represents JSON representation specifically.
     /// Returns true if the "json" marker tag is present in the source media URN.
+    /// Note: This only checks for explicit JSON format marker.
+    /// For checking if data is structured (map/list), use is_structured().
     pub fn is_json(&self) -> bool {
         crate::MediaUrn::from_string(&self.media_urn)
             .map(|urn| urn.is_json())
