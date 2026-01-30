@@ -5,7 +5,7 @@
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{
-    Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGES, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, MediaUrn, RegistryError
+    Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGE, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, MediaUrn, RegistryError
 };
 use crate::media_urn::{
     // Primitives (needed for coercion functions)
@@ -249,7 +249,7 @@ pub fn disbind_urn(ext: Option<&str>) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "disbind")
         .in_spec(input_media_urn_for_ext(ext))
-        .out_spec(MEDIA_DISBOUND_PAGES)
+        .out_spec(MEDIA_DISBOUND_PAGE)
         .build()
         .expect("Failed to build disbind cap URN")
 }

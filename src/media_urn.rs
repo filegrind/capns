@@ -146,8 +146,8 @@ pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:generated-text;textable;form
 pub const MEDIA_FILE_METADATA: &str = "media:file-metadata;textable;form=map";
 /// Media URN for extracted outline - textable, form=map
 pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:document-outline;textable;form=map";
-/// Media URN for disbound pages - textable, form=list (array of chunks)
-pub const MEDIA_DISBOUND_PAGES: &str = "media:disbound-pages;textable;form=list";
+/// Media URN for disbound page - textable, form=list (array of page objects)
+pub const MEDIA_DISBOUND_PAGE: &str = "media:disbound-page;textable;form=list";
 /// Media URN for caption output - textable, form=map
 pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;form=map";
 /// Media URN for transcription output - textable, form=map
