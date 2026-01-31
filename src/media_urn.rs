@@ -353,6 +353,36 @@ impl MediaUrn {
         self.get_tag("textable").is_some()
     }
 
+    /// Check if this represents image data.
+    /// Returns true if the "image" marker tag is present.
+    pub fn is_image(&self) -> bool {
+        self.get_tag("image").is_some()
+    }
+
+    /// Check if this represents audio data.
+    /// Returns true if the "audio" marker tag is present.
+    pub fn is_audio(&self) -> bool {
+        self.get_tag("audio").is_some()
+    }
+
+    /// Check if this represents video data.
+    /// Returns true if the "video" marker tag is present.
+    pub fn is_video(&self) -> bool {
+        self.get_tag("video").is_some()
+    }
+
+    /// Check if this represents numeric data.
+    /// Returns true if the "numeric" marker tag is present.
+    pub fn is_numeric(&self) -> bool {
+        self.get_tag("numeric").is_some()
+    }
+
+    /// Check if this represents boolean data.
+    /// Returns true if the "bool" marker tag is present.
+    pub fn is_bool(&self) -> bool {
+        self.get_tag("bool").is_some()
+    }
+
     /// Check if this represents a void (no data) type
     pub fn is_void(&self) -> bool {
         // Check for "void" flag (solo tag) or type=void

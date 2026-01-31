@@ -414,36 +414,34 @@ pub struct ResolvedMediaSpec {
 }
 
 impl ResolvedMediaSpec {
+    /// Parse the media URN, panicking if invalid (should never happen for resolved specs)
+    fn parse_media_urn(&self) -> crate::MediaUrn {
+        crate::MediaUrn::from_string(&self.media_urn)
+            .expect("ResolvedMediaSpec has invalid media_urn - this indicates a bug in resolution")
+    }
+
     /// Check if this represents binary data.
     /// Returns true if the "bytes" marker tag is present in the source media URN.
     pub fn is_binary(&self) -> bool {
-        crate::MediaUrn::from_string(&self.media_urn)
-            .map(|urn| urn.is_binary())
-            .unwrap_or(false)
+        self.parse_media_urn().is_binary()
     }
 
     /// Check if this represents a map/object structure (form=map).
     /// This indicates a key-value structure, regardless of representation format.
     pub fn is_map(&self) -> bool {
-        crate::MediaUrn::from_string(&self.media_urn)
-            .map(|urn| urn.is_map())
-            .unwrap_or(false)
+        self.parse_media_urn().is_map()
     }
 
     /// Check if this represents a scalar value (form=scalar).
     /// This indicates a single value, not a collection.
     pub fn is_scalar(&self) -> bool {
-        crate::MediaUrn::from_string(&self.media_urn)
-            .map(|urn| urn.is_scalar())
-            .unwrap_or(false)
+        self.parse_media_urn().is_scalar()
     }
 
     /// Check if this represents a list/array structure (form=list).
     /// This indicates an ordered collection of values.
     pub fn is_list(&self) -> bool {
-        crate::MediaUrn::from_string(&self.media_urn)
-            .map(|urn| urn.is_list())
-            .unwrap_or(false)
+        self.parse_media_urn().is_list()
     }
 
     /// Check if this represents structured data (map or list).
@@ -458,17 +456,43 @@ impl ResolvedMediaSpec {
     /// Note: This only checks for explicit JSON format marker.
     /// For checking if data is structured (map/list), use is_structured().
     pub fn is_json(&self) -> bool {
-        crate::MediaUrn::from_string(&self.media_urn)
-            .map(|urn| urn.is_json())
-            .unwrap_or(false)
+        self.parse_media_urn().is_json()
     }
 
     /// Check if this represents text data.
     /// Returns true if the "textable" marker tag is present in the source media URN.
     pub fn is_text(&self) -> bool {
-        crate::MediaUrn::from_string(&self.media_urn)
-            .map(|urn| urn.is_text())
-            .unwrap_or(false)
+        self.parse_media_urn().is_text()
+    }
+
+    /// Check if this represents image data.
+    /// Returns true if the "image" marker tag is present in the source media URN.
+    pub fn is_image(&self) -> bool {
+        self.parse_media_urn().is_image()
+    }
+
+    /// Check if this represents audio data.
+    /// Returns true if the "audio" marker tag is present in the source media URN.
+    pub fn is_audio(&self) -> bool {
+        self.parse_media_urn().is_audio()
+    }
+
+    /// Check if this represents video data.
+    /// Returns true if the "video" marker tag is present in the source media URN.
+    pub fn is_video(&self) -> bool {
+        self.parse_media_urn().is_video()
+    }
+
+    /// Check if this represents numeric data.
+    /// Returns true if the "numeric" marker tag is present in the source media URN.
+    pub fn is_numeric(&self) -> bool {
+        self.parse_media_urn().is_numeric()
+    }
+
+    /// Check if this represents boolean data.
+    /// Returns true if the "bool" marker tag is present in the source media URN.
+    pub fn is_bool(&self) -> bool {
+        self.parse_media_urn().is_bool()
     }
 }
 
