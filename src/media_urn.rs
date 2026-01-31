@@ -193,6 +193,7 @@ impl MediaUrn {
     /// Create a MediaUrn from a string representation
     ///
     /// The string must be a valid tagged URN with the "media" prefix.
+    /// Whitespace and empty input validation is handled by TaggedUrn::from_string.
     pub fn from_string(s: &str) -> Result<Self, MediaUrnError> {
         let urn = TaggedUrn::from_string(s).map_err(MediaUrnError::Parse)?;
         Self::new(urn)
@@ -480,7 +481,7 @@ impl FromStr for MediaUrn {
 pub enum MediaUrnError {
     /// The URN doesn't have the required "media" prefix
     InvalidPrefix { expected: String, actual: String },
-    /// Error parsing the underlying tagged URN
+    /// Error parsing the underlying tagged URN (includes whitespace/empty validation)
     Parse(TaggedUrnError),
     /// Error during matching operation
     Match(TaggedUrnError),

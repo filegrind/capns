@@ -1119,19 +1119,18 @@ mod tests {
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         // Add local schema to media_specs so validation doesn't depend on network
-        let integer_spec = crate::media_spec::MediaSpecDef::Object(crate::media_spec::MediaSpecDefObject {
+        let integer_spec = crate::media_spec::MediaSpecDef {
+            urn: MEDIA_INTEGER.to_string(),
             media_type: "text/plain".to_string(),
-            profile_uri: "https://capns.org/schema/integer".to_string(),
             title: "Integer".to_string(),
+            profile_uri: Some("https://capns.org/schema/integer".to_string()),
             schema: Some(json!({"type": "integer"})),
             description: Some("Integer value".to_string()),
             validation: None,
             metadata: None,
             extension: None,
-        });
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(MEDIA_INTEGER.to_string(), integer_spec);
-        cap.set_media_specs(media_specs);
+        };
+        cap.set_media_specs(vec![integer_spec]);
 
         let arg = CapArg::new(
             MEDIA_INTEGER,
@@ -1162,19 +1161,18 @@ mod tests {
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         // Try to redefine MEDIA_STRING which exists in the registry
-        let string_spec = crate::media_spec::MediaSpecDef::Object(crate::media_spec::MediaSpecDefObject {
+        let string_spec = crate::media_spec::MediaSpecDef {
+            urn: MEDIA_STRING.to_string(),
             media_type: "text/plain".to_string(),
-            profile_uri: "https://example.com/my-string".to_string(),
             title: "My Custom String".to_string(),
+            profile_uri: Some("https://example.com/my-string".to_string()),
             schema: None,
             description: Some("Trying to redefine string".to_string()),
             validation: None,
             metadata: None,
             extension: None,
-        });
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(MEDIA_STRING.to_string(), string_spec);
-        cap.set_media_specs(media_specs);
+        };
+        cap.set_media_specs(vec![string_spec]);
 
         let result = validate_no_inline_media_spec_redefinition(&cap, &media_registry).await;
 
@@ -1197,20 +1195,19 @@ mod tests {
         let mut cap = Cap::new(urn, "Test Capability".to_string(), "test-command".to_string());
 
         // Define a completely new media spec that doesn't exist in registry
-        let custom_spec = crate::media_spec::MediaSpecDef::Object(crate::media_spec::MediaSpecDefObject {
+        let custom_spec = crate::media_spec::MediaSpecDef {
+            // Use a URN that definitely doesn't exist in the standard registry
+            urn: "media:my-unique-custom-type-xyz123".to_string(),
             media_type: "application/json".to_string(),
-            profile_uri: "https://example.com/my-custom-output".to_string(),
             title: "My Custom Output".to_string(),
+            profile_uri: Some("https://example.com/my-custom-output".to_string()),
             schema: Some(json!({"type": "object"})),
             description: Some("A custom output type".to_string()),
             validation: None,
             metadata: None,
             extension: None,
-        });
-        let mut media_specs = std::collections::HashMap::new();
-        // Use a URN that definitely doesn't exist in the standard registry
-        media_specs.insert("media:my-unique-custom-type-xyz123".to_string(), custom_spec);
-        cap.set_media_specs(media_specs);
+        };
+        cap.set_media_specs(vec![custom_spec]);
 
         let result = validate_no_inline_media_spec_redefinition(&cap, &media_registry).await;
 
@@ -1350,7 +1347,8 @@ pub async fn validate_no_inline_media_spec_redefinition(
         return Ok(());
     }
 
-    for media_urn in inline_specs.keys() {
+    for spec in inline_specs {
+        let media_urn = &spec.urn;
         // Check if this media URN exists in the registry (without using cap's local specs)
         match registry.get_media_spec(media_urn).await {
             Ok(_) => {

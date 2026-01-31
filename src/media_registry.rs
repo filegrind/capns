@@ -17,7 +17,7 @@
 //! println!("Title: {:?}", spec.title);
 //! ```
 
-use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
+use crate::media_spec::MediaSpecDef;
 use crate::registry::RegistryConfig;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
@@ -65,16 +65,17 @@ pub struct StoredMediaSpec {
 impl StoredMediaSpec {
     /// Convert to MediaSpecDef
     pub fn to_media_spec_def(&self) -> MediaSpecDef {
-        MediaSpecDef::Object(MediaSpecDefObject {
+        MediaSpecDef {
+            urn: self.urn.clone(),
             media_type: self.media_type.clone(),
-            profile_uri: self.profile_uri.clone().unwrap_or_default(),
             title: self.title.clone(),
+            profile_uri: self.profile_uri.clone(),
             schema: self.schema.clone(),
             description: self.description.clone(),
             validation: self.validation.clone(),
             metadata: self.metadata.clone(),
             extension: self.extension.clone(),
-        })
+        }
     }
 }
 
@@ -598,16 +599,12 @@ mod tests {
         };
 
         let def = spec.to_media_spec_def();
-        match def {
-            MediaSpecDef::Object(obj) => {
-                assert_eq!(obj.media_type, "application/pdf");
-                assert_eq!(obj.title, "PDF Document".to_string());
-                assert_eq!(obj.description, Some("PDF document data".to_string()));
-                assert_eq!(obj.validation, None);
-                assert_eq!(obj.extension, Some("pdf".to_string()));
-            }
-            _ => panic!("Expected Object variant"),
-        }
+        assert_eq!(def.urn, "media:pdf;bytes");
+        assert_eq!(def.media_type, "application/pdf");
+        assert_eq!(def.title, "PDF Document".to_string());
+        assert_eq!(def.description, Some("PDF document data".to_string()));
+        assert_eq!(def.validation, None);
+        assert_eq!(def.extension, Some("pdf".to_string()));
     }
 
     #[test]

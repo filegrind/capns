@@ -214,7 +214,7 @@ impl SchemaResolver for FileSchemaResolver {
 mod tests {
     use super::*;
     use crate::standard::media::MEDIA_STRING;
-    use crate::media_spec::{MediaSpecDef, MediaSpecDefObject};
+    use crate::media_spec::MediaSpecDef;
     use crate::{CapUrn, CapArg, ArgSource};
     use serde_json::json;
 
@@ -246,19 +246,17 @@ mod tests {
         // Create cap with media_specs containing the schema
         let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
-        cap.add_media_spec(
-            "my:user-data.v1",
-            MediaSpecDef::Object(MediaSpecDefObject {
-                media_type: "application/json".to_string(),
-                profile_uri: "https://example.com/schema/user-data".to_string(),
-                title: "User Data".to_string(),
-                schema: Some(schema),
-                description: None,
-                validation: None,
-                metadata: None,
-                extension: None,
-            }),
-        );
+        cap.add_media_spec(MediaSpecDef {
+            urn: "my:user-data.v1".to_string(),
+            media_type: "application/json".to_string(),
+            title: "User Data".to_string(),
+            profile_uri: Some("https://example.com/schema/user-data".to_string()),
+            schema: Some(schema),
+            description: None,
+            validation: None,
+            metadata: None,
+            extension: None,
+        });
 
         let arg = CapArg::new(
             "my:user-data.v1",
@@ -287,19 +285,17 @@ mod tests {
         // Create cap with media_specs containing the schema
         let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
-        cap.add_media_spec(
-            "my:user-data.v1",
-            MediaSpecDef::Object(MediaSpecDefObject {
-                media_type: "application/json".to_string(),
-                profile_uri: "https://example.com/schema/user-data".to_string(),
-                title: "User Data".to_string(),
-                schema: Some(schema),
-                description: None,
-                validation: None,
-                metadata: None,
-                extension: None,
-            }),
-        );
+        cap.add_media_spec(MediaSpecDef {
+            urn: "my:user-data.v1".to_string(),
+            media_type: "application/json".to_string(),
+            title: "User Data".to_string(),
+            profile_uri: Some("https://example.com/schema/user-data".to_string()),
+            schema: Some(schema),
+            description: None,
+            validation: None,
+            metadata: None,
+            extension: None,
+        });
 
         let arg = CapArg::new(
             "my:user-data.v1",
@@ -329,19 +325,17 @@ mod tests {
         // Create cap with media_specs containing the schema
         let urn = CapUrn::from_string(&test_urn("type=test;op=validate")).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "test".to_string());
-        cap.add_media_spec(
-            "my:query-result.v1",
-            MediaSpecDef::Object(MediaSpecDefObject {
-                media_type: "application/json".to_string(),
-                profile_uri: "https://example.com/schema/query-result".to_string(),
-                title: "Query Result".to_string(),
-                schema: Some(schema),
-                description: None,
-                validation: None,
-                metadata: None,
-                extension: None,
-            }),
-        );
+        cap.add_media_spec(MediaSpecDef {
+            urn: "my:query-result.v1".to_string(),
+            media_type: "application/json".to_string(),
+            title: "Query Result".to_string(),
+            profile_uri: Some("https://example.com/schema/query-result".to_string()),
+            schema: Some(schema),
+            description: None,
+            validation: None,
+            metadata: None,
+            extension: None,
+        });
 
         let output = CapOutput::new("my:query-result.v1", "Query result");
 

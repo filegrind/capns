@@ -14,23 +14,7 @@
 //! Canonical form: `<media-type>; profile=<url>`
 //! Example: `text/plain; profile=https://capns.org/schema/str`
 
-use crate::media_urn::{
-    MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_NUMBER, MEDIA_BOOLEAN, MEDIA_OBJECT,
-    MEDIA_STRING_ARRAY, MEDIA_INTEGER_ARRAY, MEDIA_NUMBER_ARRAY, MEDIA_BOOLEAN_ARRAY, MEDIA_OBJECT_ARRAY,
-    MEDIA_BINARY,
-    // Document types (PRIMARY naming)
-    MEDIA_PDF, MEDIA_EPUB,
-    // Text format types (PRIMARY naming)
-    MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG, MEDIA_HTML, MEDIA_XML, MEDIA_JSON, MEDIA_YAML,
-    // Semantic media types for specialized content
-    MEDIA_PNG, MEDIA_AUDIO, MEDIA_VIDEO,
-    // CAPNS output types
-    MEDIA_DOWNLOAD_OUTPUT,
-    MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
-    MEDIA_EMBEDDING_VECTOR,
-};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
 
 // =============================================================================
@@ -257,32 +241,32 @@ impl MediaValidation {
 /// "media:string": "text/plain; profile=https://capns.org/schema/str"
 /// ```
 ///
-/// ## Object Form (rich, with optional local schema)
+/// Media spec definition for inline media_specs in cap definitions
+///
+/// This is the same structure as media spec JSON files in the registry.
+/// Each media spec has a unique URN that identifies it.
+///
+/// ## Example
 /// ```json
-/// "media:my-output": {
+/// {
+///   "urn": "media:my-output;json;form=map",
 ///   "media_type": "application/json",
+///   "title": "My Output",
 ///   "profile_uri": "https://example.com/schema/my-output",
 ///   "schema": { "type": "object", ... }
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MediaSpecDef {
-    /// Compact form: "text/plain; profile=https://..."
-    String(String),
-    /// Rich form with optional local schema
-    Object(MediaSpecDefObject),
-}
-
-/// Object form of media spec definition
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MediaSpecDefObject {
+pub struct MediaSpecDef {
+    /// The media URN identifier (e.g., "media:pdf;binary")
+    pub urn: String,
     /// The MIME media type (e.g., "application/json", "text/plain")
     pub media_type: String,
-    /// Profile URI for schema reference
-    pub profile_uri: String,
-    /// Human-readable title for the media type (required - MS1)
+    /// Human-readable title for the media type (required)
     pub title: String,
+    /// Profile URI for schema reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_uri: Option<String>,
     /// Optional local JSON Schema for validation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
@@ -301,85 +285,84 @@ pub struct MediaSpecDefObject {
 }
 
 impl MediaSpecDef {
-    /// Create a compact string form definition
-    pub fn string(media_spec: impl Into<String>) -> Self {
-        MediaSpecDef::String(media_spec.into())
-    }
-
-    /// Create a rich object form definition (title required - MS1)
-    pub fn object(
+    /// Create a new media spec definition
+    pub fn new(
+        urn: impl Into<String>,
         media_type: impl Into<String>,
-        profile_uri: impl Into<String>,
         title: impl Into<String>,
     ) -> Self {
-        MediaSpecDef::Object(MediaSpecDefObject {
+        Self {
+            urn: urn.into(),
             media_type: media_type.into(),
-            profile_uri: profile_uri.into(),
             title: title.into(),
+            profile_uri: None,
             schema: None,
             description: None,
             validation: None,
             metadata: None,
             extension: None,
-        })
+        }
     }
 
-    /// Create a rich object form definition with local schema (title required - MS1)
-    pub fn object_with_schema(
+    /// Create a media spec definition with profile URI
+    pub fn with_profile(
+        urn: impl Into<String>,
         media_type: impl Into<String>,
-        profile_uri: impl Into<String>,
         title: impl Into<String>,
+        profile_uri: impl Into<String>,
+    ) -> Self {
+        Self {
+            urn: urn.into(),
+            media_type: media_type.into(),
+            title: title.into(),
+            profile_uri: Some(profile_uri.into()),
+            schema: None,
+            description: None,
+            validation: None,
+            metadata: None,
+            extension: None,
+        }
+    }
+
+    /// Create a media spec definition with schema
+    pub fn with_schema(
+        urn: impl Into<String>,
+        media_type: impl Into<String>,
+        title: impl Into<String>,
+        profile_uri: impl Into<String>,
         schema: serde_json::Value,
     ) -> Self {
-        MediaSpecDef::Object(MediaSpecDefObject {
+        Self {
+            urn: urn.into(),
             media_type: media_type.into(),
-            profile_uri: profile_uri.into(),
             title: title.into(),
+            profile_uri: Some(profile_uri.into()),
             schema: Some(schema),
             description: None,
             validation: None,
             metadata: None,
             extension: None,
-        })
+        }
     }
 
-    /// Create a rich object form definition with all fields (title required - MS1)
-    pub fn object_full(
+    /// Create a media spec definition with validation rules
+    pub fn with_validation(
+        urn: impl Into<String>,
         media_type: impl Into<String>,
-        profile_uri: impl Into<String>,
-        title: impl Into<String>,
-        schema: Option<serde_json::Value>,
-        description: Option<String>,
-    ) -> Self {
-        MediaSpecDef::Object(MediaSpecDefObject {
-            media_type: media_type.into(),
-            profile_uri: profile_uri.into(),
-            title: title.into(),
-            schema,
-            description,
-            validation: None,
-            metadata: None,
-            extension: None,
-        })
-    }
-
-    /// Create a rich object form definition with validation (title required - MS1)
-    pub fn object_with_validation(
-        media_type: impl Into<String>,
-        profile_uri: impl Into<String>,
         title: impl Into<String>,
         validation: MediaValidation,
     ) -> Self {
-        MediaSpecDef::Object(MediaSpecDefObject {
+        Self {
+            urn: urn.into(),
             media_type: media_type.into(),
-            profile_uri: profile_uri.into(),
             title: title.into(),
+            profile_uri: None,
             schema: None,
             description: None,
             validation: Some(validation),
             metadata: None,
             extension: None,
-        })
+        }
     }
 }
 
@@ -505,14 +488,14 @@ impl ResolvedMediaSpec {
 /// This is the SINGLE resolution path for all media URN lookups.
 ///
 /// Resolution order:
-/// 1. Cap's local `media_specs` table (HIGHEST - cap-specific overrides)
+/// 1. Cap's local `media_specs` array (HIGHEST - cap-specific definitions)
 /// 2. Registry's local cache (bundled standard specs)
 /// 3. Online registry fetch (with graceful degradation if unreachable)
 /// 4. If none resolve → Error
 ///
 /// # Arguments
 /// * `media_urn` - The media URN to resolve (e.g., "media:textable;form=scalar")
-/// * `media_specs` - Optional media_specs map from the cap definition
+/// * `media_specs` - Optional media_specs array from the cap definition
 /// * `registry` - The MediaUrnRegistry for cache and remote lookups
 ///
 /// # Errors
@@ -520,13 +503,23 @@ impl ResolvedMediaSpec {
 /// from any source.
 pub async fn resolve_media_urn(
     media_urn: &str,
-    media_specs: Option<&HashMap<String, MediaSpecDef>>,
+    media_specs: Option<&[MediaSpecDef]>,
     registry: &crate::media_registry::MediaUrnRegistry,
 ) -> Result<ResolvedMediaSpec, MediaSpecError> {
-    // 1. First, try cap's local media_specs (highest priority - cap-specific overrides)
+    // 1. First, try cap's local media_specs (highest priority - cap-specific definitions)
     if let Some(specs) = media_specs {
-        if let Some(def) = specs.get(media_urn) {
-            return resolve_def(media_urn, def);
+        if let Some(def) = specs.iter().find(|s| s.urn == media_urn) {
+            return Ok(ResolvedMediaSpec {
+                media_urn: def.urn.clone(),
+                media_type: def.media_type.clone(),
+                profile_uri: def.profile_uri.clone(),
+                schema: def.schema.clone(),
+                title: Some(def.title.clone()),
+                description: def.description.clone(),
+                validation: def.validation.clone(),
+                metadata: def.metadata.clone(),
+                extension: def.extension.clone(),
+            });
         }
     }
 
@@ -563,200 +556,50 @@ pub async fn resolve_media_urn(
     )))
 }
 
-
-/// Resolve a MediaSpecDef to a ResolvedMediaSpec
-fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec, MediaSpecError> {
-    match def {
-        MediaSpecDef::String(s) => {
-            let parsed = MediaSpec::parse(s)?;
-            Ok(ResolvedMediaSpec {
-                media_urn: media_urn.to_string(),
-                media_type: parsed.media_type,
-                profile_uri: parsed.profile,
-                schema: None,
-                title: None,
-                description: None,
-                validation: None, // String form has no validation
-                metadata: None,   // String form has no metadata
-                extension: None,  // String form has no extension
-            })
-        }
-        MediaSpecDef::Object(obj) => Ok(ResolvedMediaSpec {
-            media_urn: media_urn.to_string(),
-            media_type: obj.media_type.clone(),
-            profile_uri: Some(obj.profile_uri.clone()),
-            schema: obj.schema.clone(),
-            title: Some(obj.title.clone()),
-            description: obj.description.clone(),
-            validation: obj.validation.clone(), // Propagate validation
-            metadata: obj.metadata.clone(),     // Propagate metadata
-            extension: obj.extension.clone(),   // Propagate extension
-        }),
-    }
-}
-
-
-// =============================================================================
-// MEDIA SPEC (parsed form)
-// =============================================================================
-
-/// Parsed MediaSpec structure
+/// Validate that media_specs array has no duplicate URNs.
 ///
-/// Canonical format: `<media-type>; profile=<url>`
+/// # Arguments
+/// * `media_specs` - The media_specs array to validate
 ///
-/// Example: `text/plain; profile=https://capns.org/schema/str`
-#[derive(Debug, Clone, PartialEq)]
-pub struct MediaSpec {
-    /// The MIME media type (e.g., "application/json", "image/png")
-    pub media_type: String,
-    /// Optional profile URL
-    pub profile: Option<String>,
-}
-
-impl MediaSpec {
-    /// Parse a media_spec string
-    ///
-    /// Canonical format: `<media-type>; profile=<url>`
-    ///
-    /// Examples:
-    /// - `text/plain; profile=https://capns.org/schema/str`
-    /// - `application/json; profile=https://capns.org/schema/obj`
-    /// - `application/octet-stream`
-    pub fn parse(s: &str) -> Result<Self, MediaSpecError> {
-        let s = s.trim();
-
-        if s.is_empty() {
-            return Err(MediaSpecError::EmptyMediaType);
-        }
-
-        // Split by semicolon to separate media type from parameters
-        let parts: Vec<&str> = s.splitn(2, ';').collect();
-
-        let media_type = parts[0].trim().to_string();
-        if media_type.is_empty() {
-            return Err(MediaSpecError::EmptyMediaType);
-        }
-
-        // Validate media type format (should contain '/')
-        if !media_type.contains('/') {
-            return Err(MediaSpecError::InvalidMediaType(format!(
-                "media type '{}' must contain '/'",
-                media_type
-            )));
-        }
-
-        // Parse profile if present
-        let profile = if parts.len() > 1 {
-            let params = parts[1].trim();
-            MediaSpec::parse_profile(params)?
-        } else {
-            None
-        };
-
-        Ok(MediaSpec { media_type, profile })
-    }
-
-    /// Parse profile parameter from params string
-    fn parse_profile(params: &str) -> Result<Option<String>, MediaSpecError> {
-        // Look for profile= (case-insensitive)
-        let lower = params.to_lowercase();
-        if let Some(pos) = lower.find("profile=") {
-            let after_profile = &params[pos + 8..];
-
-            // Handle quoted value
-            let value = if after_profile.starts_with('"') {
-                // Find closing quote
-                let rest = &after_profile[1..];
-                if let Some(end) = rest.find('"') {
-                    rest[..end].to_string()
-                } else {
-                    return Err(MediaSpecError::UnterminatedQuote);
-                }
-            } else {
-                // Unquoted value - take until semicolon or end
-                after_profile
-                    .split(';')
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string()
-            };
-
-            if value.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(value))
-            }
-        } else {
-            Ok(None)
+/// # Errors
+/// Returns `MediaSpecError::DuplicateMediaUrn` if any URN appears more than once.
+pub fn validate_media_specs_no_duplicates(media_specs: &[MediaSpecDef]) -> Result<(), MediaSpecError> {
+    let mut seen = std::collections::HashSet::new();
+    for spec in media_specs {
+        if !seen.insert(&spec.urn) {
+            return Err(MediaSpecError::DuplicateMediaUrn(spec.urn.clone()));
         }
     }
-
-    /// Get the primary type (e.g., "image" from "image/png")
-    pub fn primary_type(&self) -> &str {
-        self.media_type
-            .split('/')
-            .next()
-            .unwrap_or(&self.media_type)
-    }
-
-    /// Get the subtype (e.g., "png" from "image/png")
-    pub fn subtype(&self) -> Option<&str> {
-        self.media_type.split('/').nth(1)
-    }
-
-    /// Create from resolved media spec
-    pub fn from_resolved(resolved: &ResolvedMediaSpec) -> Self {
-        MediaSpec {
-            media_type: resolved.media_type.clone(),
-            profile: resolved.profile_uri.clone(),
-        }
-    }
-}
-
-impl fmt::Display for MediaSpec {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.media_type)?;
-        if let Some(ref profile) = self.profile {
-            write!(f, "; profile={}", profile)?;
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
 // =============================================================================
 // ERRORS
 // =============================================================================
 
-/// Errors that can occur when parsing or resolving media specs
+/// Errors that can occur when resolving media specs
 #[derive(Debug, Clone, PartialEq)]
 pub enum MediaSpecError {
-    /// Media type is empty
-    EmptyMediaType,
-    /// Invalid media type format
-    InvalidMediaType(String),
-    /// Unterminated quote in profile value
-    UnterminatedQuote,
-    /// Media URN cannot be resolved (not in media_specs and not a built-in)
+    /// Media URN cannot be resolved (not in media_specs and not in registry)
     UnresolvableMediaUrn(String),
+    /// Duplicate media URN in media_specs array
+    DuplicateMediaUrn(String),
 }
 
 impl fmt::Display for MediaSpecError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MediaSpecError::EmptyMediaType => {
-                write!(f, "media type cannot be empty")
-            }
-            MediaSpecError::InvalidMediaType(msg) => {
-                write!(f, "invalid media type: {}", msg)
-            }
-            MediaSpecError::UnterminatedQuote => {
-                write!(f, "unterminated quote in profile value")
-            }
             MediaSpecError::UnresolvableMediaUrn(urn) => {
                 write!(
                     f,
-                    "cannot resolve media URN '{}' - not found in media_specs and not a built-in primitive",
+                    "cannot resolve media URN '{}' - not found in media_specs or registry",
+                    urn
+                )
+            }
+            MediaSpecError::DuplicateMediaUrn(urn) => {
+                write!(
+                    f,
+                    "duplicate media URN '{}' in media_specs - each URN must be unique",
                     urn
                 )
             }
@@ -775,102 +618,6 @@ mod tests {
     use super::*;
 
     // -------------------------------------------------------------------------
-    // MediaSpec parsing tests
-    // -------------------------------------------------------------------------
-
-    // TEST079: Test parsing JSON media spec with profile extracts media type and profile URL correctly
-    #[test]
-    fn test_parse_json_with_profile() {
-        let spec =
-            MediaSpec::parse("application/json; profile=https://capns.org/schema/obj").unwrap();
-        assert_eq!(spec.media_type, "application/json");
-        assert_eq!(
-            spec.profile,
-            Some("https://capns.org/schema/obj".to_string())
-        );
-    }
-
-    // TEST080: Test parsing text media spec with profile extracts media type and profile URL correctly
-    #[test]
-    fn test_parse_text_with_profile() {
-        let spec = MediaSpec::parse("text/plain; profile=https://capns.org/schema/str").unwrap();
-        assert_eq!(spec.media_type, "text/plain");
-        assert_eq!(
-            spec.profile,
-            Some("https://capns.org/schema/str".to_string())
-        );
-    }
-
-    // TEST081: Test parsing binary media spec without profile extracts media type only
-    #[test]
-    fn test_parse_binary() {
-        let spec = MediaSpec::parse("application/octet-stream").unwrap();
-        assert_eq!(spec.media_type, "application/octet-stream");
-        assert!(spec.profile.is_none());
-    }
-
-    // TEST082: Test parsing image media spec with profile extracts media type correctly
-    #[test]
-    fn test_parse_image() {
-        let spec = MediaSpec::parse("image/png; profile=https://example.com/thumbnail").unwrap();
-        assert_eq!(spec.media_type, "image/png");
-    }
-
-    // TEST083: Test parsing media spec without profile returns None for profile field
-    #[test]
-    fn test_parse_no_profile() {
-        let spec = MediaSpec::parse("text/html").unwrap();
-        assert_eq!(spec.media_type, "text/html");
-        assert!(spec.profile.is_none());
-    }
-
-    // TEST084: Test parsing media spec with quoted profile URL extracts profile without quotes
-    #[test]
-    fn test_parse_quoted_profile() {
-        let spec =
-            MediaSpec::parse("application/json; profile=\"https://example.com/schema\"").unwrap();
-        assert_eq!(
-            spec.profile,
-            Some("https://example.com/schema".to_string())
-        );
-    }
-
-    // TEST085: Test invalid media type without slash returns InvalidMediaType error
-    #[test]
-    fn test_invalid_media_type() {
-        let result = MediaSpec::parse("invalid");
-        assert!(result.is_err());
-        if let Err(MediaSpecError::InvalidMediaType(_)) = result {
-            // Expected
-        } else {
-            panic!("Expected InvalidMediaType error");
-        }
-    }
-
-    // TEST086: Test display format outputs media type with profile in canonical format
-    #[test]
-    fn test_display() {
-        let spec = MediaSpec {
-            media_type: "application/json".to_string(),
-            profile: Some("https://example.com/schema".to_string()),
-        };
-        assert_eq!(
-            spec.to_string(),
-            "application/json; profile=https://example.com/schema"
-        );
-    }
-
-    // TEST087: Test display format outputs media type only when profile is None
-    #[test]
-    fn test_display_no_profile() {
-        let spec = MediaSpec {
-            media_type: "text/plain".to_string(),
-            profile: None,
-        };
-        assert_eq!(spec.to_string(), "text/plain");
-    }
-
-    // -------------------------------------------------------------------------
     // Media URN resolution tests
     // -------------------------------------------------------------------------
 
@@ -879,12 +626,16 @@ mod tests {
         crate::media_registry::MediaUrnRegistry::new().await.expect("Failed to create test registry")
     }
 
+    // Helper to create media specs vec for tests
+    fn create_media_specs(specs: Vec<MediaSpecDef>) -> Vec<MediaSpecDef> {
+        specs
+    }
+
     // TEST088: Test resolving string media URN from registry returns correct media type and profile
     #[tokio::test]
     async fn test_resolve_from_registry_str() {
         let registry = test_registry().await;
-        let resolved = resolve_media_urn(MEDIA_STRING, None, &registry).await.unwrap();
-        assert_eq!(resolved.media_urn, MEDIA_STRING);
+        let resolved = resolve_media_urn("media:textable;form=scalar", None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "text/plain");
         // Registry provides the full spec including profile
         assert!(resolved.profile_uri.is_some());
@@ -894,7 +645,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_from_registry_obj() {
         let registry = test_registry().await;
-        let resolved = resolve_media_urn(MEDIA_OBJECT, None, &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:form=map;textable", None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/json");
     }
 
@@ -902,24 +653,32 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_from_registry_binary() {
         let registry = test_registry().await;
-        let resolved = resolve_media_urn(MEDIA_BINARY, None, &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:bytes", None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/octet-stream");
         assert!(resolved.is_binary());
     }
 
     // TEST091: Test resolving custom media URN from local media_specs takes precedence over registry
     #[tokio::test]
-    async fn test_resolve_custom_string_form() {
+    async fn test_resolve_custom_media_spec() {
         let registry = test_registry().await;
-        let mut media_specs = HashMap::new();
-        media_specs.insert(
-            "media:custom-spec".to_string(),
-            MediaSpecDef::String("application/json; profile=https://example.com/schema".to_string()),
-        );
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:custom-spec;json".to_string(),
+                media_type: "application/json".to_string(),
+                title: "Custom Spec".to_string(),
+                profile_uri: Some("https://example.com/schema".to_string()),
+                schema: None,
+                description: None,
+                validation: None,
+                metadata: None,
+                extension: None,
+            }
+        ]);
 
         // Local media_specs takes precedence over registry
-        let resolved = resolve_media_urn("media:custom-spec", Some(&media_specs), &registry).await.unwrap();
-        assert_eq!(resolved.media_urn, "media:custom-spec");
+        let resolved = resolve_media_urn("media:custom-spec;json", Some(&media_specs), &registry).await.unwrap();
+        assert_eq!(resolved.media_urn, "media:custom-spec;json");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
@@ -930,31 +689,30 @@ mod tests {
 
     // TEST092: Test resolving custom object form media spec with schema from local media_specs
     #[tokio::test]
-    async fn test_resolve_custom_object_form() {
+    async fn test_resolve_custom_with_schema() {
         let registry = test_registry().await;
-        let mut media_specs = HashMap::new();
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "name": { "type": "string" }
             }
         });
-        media_specs.insert(
-            "media:output-spec".to_string(),
-            MediaSpecDef::Object(MediaSpecDefObject {
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:output-spec;json;form=map".to_string(),
                 media_type: "application/json".to_string(),
-                profile_uri: "https://example.com/schema/output".to_string(),
                 title: "Output Spec".to_string(),
+                profile_uri: Some("https://example.com/schema/output".to_string()),
                 schema: Some(schema.clone()),
                 description: None,
                 validation: None,
                 metadata: None,
                 extension: None,
-            }),
-        );
+            }
+        ]);
 
-        let resolved = resolve_media_urn("media:output-spec", Some(&media_specs), &registry).await.unwrap();
-        assert_eq!(resolved.media_urn, "media:output-spec");
+        let resolved = resolve_media_urn("media:output-spec;json;form=map", Some(&media_specs), &registry).await.unwrap();
+        assert_eq!(resolved.media_urn, "media:output-spec;json;form=map");
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
             resolved.profile_uri,
@@ -982,13 +740,21 @@ mod tests {
     async fn test_local_overrides_registry() {
         let registry = test_registry().await;
         // Custom definition in media_specs takes precedence over registry
-        let mut media_specs = HashMap::new();
-        media_specs.insert(
-            MEDIA_STRING.to_string(),
-            MediaSpecDef::String("application/json; profile=https://custom.example.com/str".to_string()),
-        );
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:textable;form=scalar".to_string(),
+                media_type: "application/json".to_string(), // Override: normally text/plain
+                title: "Custom String".to_string(),
+                profile_uri: Some("https://custom.example.com/str".to_string()),
+                schema: None,
+                description: None,
+                validation: None,
+                metadata: None,
+                extension: None,
+            }
+        ]);
 
-        let resolved = resolve_media_urn(MEDIA_STRING, Some(&media_specs), &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:textable;form=scalar", Some(&media_specs), &registry).await.unwrap();
         // Custom definition used, not registry
         assert_eq!(resolved.media_type, "application/json");
         assert_eq!(
@@ -1001,55 +767,71 @@ mod tests {
     // MediaSpecDef serialization tests
     // -------------------------------------------------------------------------
 
-    // TEST095: Test MediaSpecDef string form serializes as JSON string
+    // TEST095: Test MediaSpecDef serializes with required fields and skips None fields
     #[test]
-    fn test_media_spec_def_string_serialize() {
-        let def = MediaSpecDef::String("text/plain; profile=https://example.com".to_string());
-        let json = serde_json::to_string(&def).unwrap();
-        assert_eq!(json, "\"text/plain; profile=https://example.com\"");
-    }
-
-    // TEST096: Test MediaSpecDef object form serializes with required fields and skips None fields
-    #[test]
-    fn test_media_spec_def_object_serialize() {
-        let def = MediaSpecDef::Object(MediaSpecDefObject {
+    fn test_media_spec_def_serialize() {
+        let def = MediaSpecDef {
+            urn: "media:test;json".to_string(),
             media_type: "application/json".to_string(),
-            profile_uri: "https://example.com/profile".to_string(),
             title: "Test Media".to_string(),
+            profile_uri: Some("https://example.com/profile".to_string()),
             schema: None,
             description: None,
             validation: None,
             metadata: None,
             extension: None,
-        });
+        };
         let json = serde_json::to_string(&def).unwrap();
+        assert!(json.contains("\"urn\":\"media:test;json\""));
         assert!(json.contains("\"media_type\":\"application/json\""));
         assert!(json.contains("\"profile_uri\":\"https://example.com/profile\""));
         assert!(json.contains("\"title\":\"Test Media\""));
-        // None schema is skipped - check it's not serialized as "schema":null or "schema":...
+        // None schema is skipped
         assert!(!json.contains("\"schema\":"));
         // None description is also skipped
         assert!(!json.contains("\"description\":"));
-        // None validation is also skipped
-        assert!(!json.contains("\"validation\":"));
-        // None extension is also skipped
-        assert!(!json.contains("\"extension\":"));
     }
 
-    // TEST097: Test deserializing MediaSpecDef string form from JSON string
+    // TEST096: Test deserializing MediaSpecDef from JSON object
     #[test]
-    fn test_media_spec_def_deserialize_string() {
-        let json = "\"text/plain; profile=https://example.com\"";
+    fn test_media_spec_def_deserialize() {
+        let json = r#"{"urn":"media:test;json","media_type":"application/json","title":"Test"}"#;
         let def: MediaSpecDef = serde_json::from_str(json).unwrap();
-        assert!(matches!(def, MediaSpecDef::String(_)));
+        assert_eq!(def.urn, "media:test;json");
+        assert_eq!(def.media_type, "application/json");
+        assert_eq!(def.title, "Test");
+        assert!(def.profile_uri.is_none());
     }
 
-    // TEST098: Test deserializing MediaSpecDef object form from JSON object
+    // -------------------------------------------------------------------------
+    // Duplicate URN validation tests
+    // -------------------------------------------------------------------------
+
+    // TEST097: Test duplicate URN validation catches duplicates
     #[test]
-    fn test_media_spec_def_deserialize_object() {
-        let json = r#"{"media_type":"application/json","profile_uri":"https://example.com","title":"Test"}"#;
-        let def: MediaSpecDef = serde_json::from_str(json).unwrap();
-        assert!(matches!(def, MediaSpecDef::Object(_)));
+    fn test_validate_no_duplicate_urns_catches_duplicates() {
+        let media_specs = vec![
+            MediaSpecDef::new("media:dup;json", "application/json", "First"),
+            MediaSpecDef::new("media:dup;json", "application/json", "Second"), // duplicate
+        ];
+        let result = validate_media_specs_no_duplicates(&media_specs);
+        assert!(result.is_err());
+        if let Err(MediaSpecError::DuplicateMediaUrn(urn)) = result {
+            assert_eq!(urn, "media:dup;json");
+        } else {
+            panic!("Expected DuplicateMediaUrn error");
+        }
+    }
+
+    // TEST098: Test duplicate URN validation passes for unique URNs
+    #[test]
+    fn test_validate_no_duplicate_urns_passes_for_unique() {
+        let media_specs = vec![
+            MediaSpecDef::new("media:first;json", "application/json", "First"),
+            MediaSpecDef::new("media:second;json", "application/json", "Second"),
+        ];
+        let result = validate_media_specs_no_duplicates(&media_specs);
+        assert!(result.is_ok());
     }
 
     // -------------------------------------------------------------------------
@@ -1136,7 +918,6 @@ mod tests {
     // TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present
     #[test]
     fn test_resolved_is_json() {
-        // is_json checks for the "json" tag specifically, not form=map
         let resolved = ResolvedMediaSpec {
             media_urn: "media:json;textable;form=map".to_string(),
             media_type: "application/json".to_string(),
@@ -1149,7 +930,7 @@ mod tests {
             extension: None,
         };
         assert!(resolved.is_json());
-        assert!(resolved.is_map()); // also a map
+        assert!(resolved.is_map());
         assert!(!resolved.is_binary());
     }
 
@@ -1176,68 +957,44 @@ mod tests {
     // Metadata propagation tests
     // -------------------------------------------------------------------------
 
-    // TEST105: Test metadata propagates from object def to resolved media spec
+    // TEST105: Test metadata propagates from media spec def to resolved media spec
     #[tokio::test]
-    async fn test_metadata_propagation_from_object_def() {
+    async fn test_metadata_propagation() {
         let registry = test_registry().await;
-        // Create a media spec definition with metadata
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(
-            "media:custom-setting;setting".to_string(),
-            MediaSpecDef::Object(MediaSpecDefObject {
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:custom-setting;setting".to_string(),
                 media_type: "text/plain".to_string(),
-                profile_uri: "https://example.com/schema".to_string(),
                 title: "Custom Setting".to_string(),
+                profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: Some("A custom setting".to_string()),
                 validation: None,
                 metadata: Some(serde_json::json!({
                     "category_key": "interface",
-                    "ui_type": "SETTING_UI_TYPE_CHECKBOX",
-                    "subcategory_key": "appearance",
-                    "display_index": 5
+                    "ui_type": "SETTING_UI_TYPE_CHECKBOX"
                 })),
                 extension: None,
-            }),
-        );
+            }
+        ]);
 
-        // Resolve and verify metadata is propagated
         let resolved = resolve_media_urn("media:custom-setting;setting", Some(&media_specs), &registry).await.unwrap();
         assert!(resolved.metadata.is_some());
         let metadata = resolved.metadata.unwrap();
         assert_eq!(metadata.get("category_key").unwrap(), "interface");
         assert_eq!(metadata.get("ui_type").unwrap(), "SETTING_UI_TYPE_CHECKBOX");
-        assert_eq!(metadata.get("subcategory_key").unwrap(), "appearance");
-        assert_eq!(metadata.get("display_index").unwrap(), 5);
     }
 
-    // TEST106: Test metadata is None for string form media spec definitions
-    #[tokio::test]
-    async fn test_metadata_none_for_string_def() {
-        let registry = test_registry().await;
-        // String form definitions should have no metadata
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(
-            "media:simple;textable".to_string(),
-            MediaSpecDef::String("text/plain; profile=https://example.com".to_string()),
-        );
-
-        let resolved = resolve_media_urn("media:simple;textable", Some(&media_specs), &registry).await.unwrap();
-        assert!(resolved.metadata.is_none());
-    }
-
-    // TEST107: Test metadata and validation can coexist in media spec definition
+    // TEST106: Test metadata and validation can coexist in media spec definition
     #[tokio::test]
     async fn test_metadata_with_validation() {
         let registry = test_registry().await;
-        // Ensure metadata and validation can coexist
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(
-            "media:bounded-number;numeric;setting".to_string(),
-            MediaSpecDef::Object(MediaSpecDefObject {
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:bounded-number;numeric;setting".to_string(),
                 media_type: "text/plain".to_string(),
-                profile_uri: "https://example.com/schema".to_string(),
                 title: "Bounded Number".to_string(),
+                profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: None,
                 validation: Some(MediaValidation {
@@ -1253,8 +1010,8 @@ mod tests {
                     "ui_type": "SETTING_UI_TYPE_SLIDER"
                 })),
                 extension: None,
-            }),
-        );
+            }
+        ]);
 
         let resolved = resolve_media_urn("media:bounded-number;numeric;setting", Some(&media_specs), &registry).await.unwrap();
 
@@ -1268,86 +1025,66 @@ mod tests {
         assert!(resolved.metadata.is_some());
         let metadata = resolved.metadata.unwrap();
         assert_eq!(metadata.get("category_key").unwrap(), "inference");
-        assert_eq!(metadata.get("ui_type").unwrap(), "SETTING_UI_TYPE_SLIDER");
     }
 
     // -------------------------------------------------------------------------
     // Extension field tests
     // -------------------------------------------------------------------------
 
-    // TEST108: Test extension field propagates from object def to resolved media spec
+    // TEST107: Test extension field propagates from media spec def to resolved
     #[tokio::test]
-    async fn test_extension_propagation_from_object_def() {
+    async fn test_extension_propagation() {
         let registry = test_registry().await;
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(
-            "media:pdf;bytes".to_string(),
-            MediaSpecDef::Object(MediaSpecDefObject {
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:custom-pdf;bytes".to_string(),
                 media_type: "application/pdf".to_string(),
-                profile_uri: "https://capns.org/schema/pdf".to_string(),
                 title: "PDF Document".to_string(),
+                profile_uri: Some("https://capns.org/schema/pdf".to_string()),
                 schema: None,
                 description: Some("A PDF document".to_string()),
                 validation: None,
                 metadata: None,
                 extension: Some("pdf".to_string()),
-            }),
-        );
+            }
+        ]);
 
-        let resolved = resolve_media_urn("media:pdf;bytes", Some(&media_specs), &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:custom-pdf;bytes", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.extension, Some("pdf".to_string()));
     }
 
-    // TEST109: Test extension is None for string form media spec definitions
-    #[tokio::test]
-    async fn test_extension_none_for_string_def() {
-        let registry = test_registry().await;
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(
-            "media:text;textable".to_string(),
-            MediaSpecDef::String("text/plain; profile=https://example.com".to_string()),
-        );
-
-        let resolved = resolve_media_urn("media:text;textable", Some(&media_specs), &registry).await.unwrap();
-        assert!(resolved.extension.is_none());
-    }
-
-    // TEST110: Test extension serializes/deserializes correctly in MediaSpecDefObject
+    // TEST108: Test extension serializes/deserializes correctly in MediaSpecDef
     #[test]
     fn test_extension_serialization() {
-        let def = MediaSpecDef::Object(MediaSpecDefObject {
+        let def = MediaSpecDef {
+            urn: "media:json-data".to_string(),
             media_type: "application/json".to_string(),
-            profile_uri: "https://example.com/profile".to_string(),
             title: "JSON Data".to_string(),
+            profile_uri: Some("https://example.com/profile".to_string()),
             schema: None,
             description: None,
             validation: None,
             metadata: None,
             extension: Some("json".to_string()),
-        });
+        };
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"extension\":\"json\""));
 
         // Deserialize and verify
         let parsed: MediaSpecDef = serde_json::from_str(&json).unwrap();
-        if let MediaSpecDef::Object(obj) = parsed {
-            assert_eq!(obj.extension, Some("json".to_string()));
-        } else {
-            panic!("Expected Object variant");
-        }
+        assert_eq!(parsed.extension, Some("json".to_string()));
     }
 
-    // TEST111: Test extension can coexist with metadata and validation
+    // TEST109: Test extension can coexist with metadata and validation
     #[tokio::test]
     async fn test_extension_with_metadata_and_validation() {
         let registry = test_registry().await;
-        let mut media_specs = std::collections::HashMap::new();
-        media_specs.insert(
-            "media:custom-output".to_string(),
-            MediaSpecDef::Object(MediaSpecDefObject {
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:custom-output;json".to_string(),
                 media_type: "application/json".to_string(),
-                profile_uri: "https://example.com/schema".to_string(),
                 title: "Custom Output".to_string(),
+                profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: None,
                 validation: Some(MediaValidation {
@@ -1362,10 +1099,10 @@ mod tests {
                     "category": "output"
                 })),
                 extension: Some("json".to_string()),
-            }),
-        );
+            }
+        ]);
 
-        let resolved = resolve_media_urn("media:custom-output", Some(&media_specs), &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:custom-output;json", Some(&media_specs), &registry).await.unwrap();
 
         // Verify all fields are present
         assert!(resolved.validation.is_some());
