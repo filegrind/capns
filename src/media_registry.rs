@@ -57,6 +57,9 @@ pub struct StoredMediaSpec {
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    /// Optional file extension for storing this media type (e.g., "pdf", "json", "txt")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<String>,
 }
 
 impl StoredMediaSpec {
@@ -70,6 +73,7 @@ impl StoredMediaSpec {
             description: self.description.clone(),
             validation: self.validation.clone(),
             metadata: self.metadata.clone(),
+            extension: self.extension.clone(),
         })
     }
 }
@@ -590,6 +594,7 @@ mod tests {
             description: Some("PDF document data".to_string()),
             validation: None,
             metadata: None,
+            extension: Some("pdf".to_string()),
         };
 
         let def = spec.to_media_spec_def();
@@ -599,6 +604,7 @@ mod tests {
                 assert_eq!(obj.title, "PDF Document".to_string());
                 assert_eq!(obj.description, Some("PDF document data".to_string()));
                 assert_eq!(obj.validation, None);
+                assert_eq!(obj.extension, Some("pdf".to_string()));
             }
             _ => panic!("Expected Object variant"),
         }

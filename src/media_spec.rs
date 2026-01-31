@@ -295,6 +295,9 @@ pub struct MediaSpecDefObject {
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    /// Optional file extension for storing this media type (e.g., "pdf", "json", "txt")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<String>,
 }
 
 impl MediaSpecDef {
@@ -317,6 +320,7 @@ impl MediaSpecDef {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         })
     }
 
@@ -335,6 +339,7 @@ impl MediaSpecDef {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         })
     }
 
@@ -354,6 +359,7 @@ impl MediaSpecDef {
             description,
             validation: None,
             metadata: None,
+            extension: None,
         })
     }
 
@@ -372,6 +378,7 @@ impl MediaSpecDef {
             description: None,
             validation: Some(validation),
             metadata: None,
+            extension: None,
         })
     }
 }
@@ -402,6 +409,8 @@ pub struct ResolvedMediaSpec {
     pub validation: Option<MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     pub metadata: Option<serde_json::Value>,
+    /// Optional file extension for storing this media type (e.g., "pdf", "json", "txt")
+    pub extension: Option<String>,
 }
 
 impl ResolvedMediaSpec {
@@ -509,6 +518,7 @@ pub async fn resolve_media_urn(
                 description: stored_spec.description,
                 validation: stored_spec.validation,
                 metadata: stored_spec.metadata,
+                extension: stored_spec.extension,
             });
         }
         Err(e) => {
@@ -544,6 +554,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
                 description: None,
                 validation: None, // String form has no validation
                 metadata: None,   // String form has no metadata
+                extension: None,  // String form has no extension
             })
         }
         MediaSpecDef::Object(obj) => Ok(ResolvedMediaSpec {
@@ -555,6 +566,7 @@ fn resolve_def(media_urn: &str, def: &MediaSpecDef) -> Result<ResolvedMediaSpec,
             description: obj.description.clone(),
             validation: obj.validation.clone(), // Propagate validation
             metadata: obj.metadata.clone(),     // Propagate metadata
+            extension: obj.extension.clone(),   // Propagate extension
         }),
     }
 }
@@ -913,6 +925,7 @@ mod tests {
                 description: None,
                 validation: None,
                 metadata: None,
+                extension: None,
             }),
         );
 
@@ -983,6 +996,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         });
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"media_type\":\"application/json\""));
@@ -994,6 +1008,8 @@ mod tests {
         assert!(!json.contains("\"description\":"));
         // None validation is also skipped
         assert!(!json.contains("\"validation\":"));
+        // None extension is also skipped
+        assert!(!json.contains("\"extension\":"));
     }
 
     // TEST097: Test deserializing MediaSpecDef string form from JSON string
@@ -1028,6 +1044,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         };
         assert!(resolved.is_binary());
         assert!(!resolved.is_map());
@@ -1046,6 +1063,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         };
         assert!(resolved.is_map());
         assert!(!resolved.is_binary());
@@ -1065,6 +1083,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         };
         assert!(resolved.is_scalar());
         assert!(!resolved.is_map());
@@ -1083,6 +1102,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         };
         assert!(resolved.is_list());
         assert!(!resolved.is_map());
@@ -1102,6 +1122,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         };
         assert!(resolved.is_json());
         assert!(resolved.is_map()); // also a map
@@ -1120,6 +1141,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
+            extension: None,
         };
         assert!(resolved.is_text());
         assert!(!resolved.is_binary());
@@ -1151,6 +1173,7 @@ mod tests {
                     "subcategory_key": "appearance",
                     "display_index": 5
                 })),
+                extension: None,
             }),
         );
 
@@ -1205,6 +1228,7 @@ mod tests {
                     "category_key": "inference",
                     "ui_type": "SETTING_UI_TYPE_SLIDER"
                 })),
+                extension: None,
             }),
         );
 
@@ -1221,5 +1245,107 @@ mod tests {
         let metadata = resolved.metadata.unwrap();
         assert_eq!(metadata.get("category_key").unwrap(), "inference");
         assert_eq!(metadata.get("ui_type").unwrap(), "SETTING_UI_TYPE_SLIDER");
+    }
+
+    // -------------------------------------------------------------------------
+    // Extension field tests
+    // -------------------------------------------------------------------------
+
+    // TEST108: Test extension field propagates from object def to resolved media spec
+    #[tokio::test]
+    async fn test_extension_propagation_from_object_def() {
+        let registry = test_registry().await;
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(
+            "media:pdf;bytes".to_string(),
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "application/pdf".to_string(),
+                profile_uri: "https://capns.org/schema/pdf".to_string(),
+                title: "PDF Document".to_string(),
+                schema: None,
+                description: Some("A PDF document".to_string()),
+                validation: None,
+                metadata: None,
+                extension: Some("pdf".to_string()),
+            }),
+        );
+
+        let resolved = resolve_media_urn("media:pdf;bytes", Some(&media_specs), &registry).await.unwrap();
+        assert_eq!(resolved.extension, Some("pdf".to_string()));
+    }
+
+    // TEST109: Test extension is None for string form media spec definitions
+    #[tokio::test]
+    async fn test_extension_none_for_string_def() {
+        let registry = test_registry().await;
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(
+            "media:text;textable".to_string(),
+            MediaSpecDef::String("text/plain; profile=https://example.com".to_string()),
+        );
+
+        let resolved = resolve_media_urn("media:text;textable", Some(&media_specs), &registry).await.unwrap();
+        assert!(resolved.extension.is_none());
+    }
+
+    // TEST110: Test extension serializes/deserializes correctly in MediaSpecDefObject
+    #[test]
+    fn test_extension_serialization() {
+        let def = MediaSpecDef::Object(MediaSpecDefObject {
+            media_type: "application/json".to_string(),
+            profile_uri: "https://example.com/profile".to_string(),
+            title: "JSON Data".to_string(),
+            schema: None,
+            description: None,
+            validation: None,
+            metadata: None,
+            extension: Some("json".to_string()),
+        });
+        let json = serde_json::to_string(&def).unwrap();
+        assert!(json.contains("\"extension\":\"json\""));
+
+        // Deserialize and verify
+        let parsed: MediaSpecDef = serde_json::from_str(&json).unwrap();
+        if let MediaSpecDef::Object(obj) = parsed {
+            assert_eq!(obj.extension, Some("json".to_string()));
+        } else {
+            panic!("Expected Object variant");
+        }
+    }
+
+    // TEST111: Test extension can coexist with metadata and validation
+    #[tokio::test]
+    async fn test_extension_with_metadata_and_validation() {
+        let registry = test_registry().await;
+        let mut media_specs = std::collections::HashMap::new();
+        media_specs.insert(
+            "media:custom-output".to_string(),
+            MediaSpecDef::Object(MediaSpecDefObject {
+                media_type: "application/json".to_string(),
+                profile_uri: "https://example.com/schema".to_string(),
+                title: "Custom Output".to_string(),
+                schema: None,
+                description: None,
+                validation: Some(MediaValidation {
+                    min: None,
+                    max: None,
+                    min_length: Some(1),
+                    max_length: Some(1000),
+                    pattern: None,
+                    allowed_values: None,
+                }),
+                metadata: Some(serde_json::json!({
+                    "category": "output"
+                })),
+                extension: Some("json".to_string()),
+            }),
+        );
+
+        let resolved = resolve_media_urn("media:custom-output", Some(&media_specs), &registry).await.unwrap();
+
+        // Verify all fields are present
+        assert!(resolved.validation.is_some());
+        assert!(resolved.metadata.is_some());
+        assert_eq!(resolved.extension, Some("json".to_string()));
     }
 }

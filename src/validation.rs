@@ -1127,6 +1127,7 @@ mod tests {
             description: Some("Integer value".to_string()),
             validation: None,
             metadata: None,
+            extension: None,
         });
         let mut media_specs = std::collections::HashMap::new();
         media_specs.insert(MEDIA_INTEGER.to_string(), integer_spec);
@@ -1169,6 +1170,7 @@ mod tests {
             description: Some("Trying to redefine string".to_string()),
             validation: None,
             metadata: None,
+            extension: None,
         });
         let mut media_specs = std::collections::HashMap::new();
         media_specs.insert(MEDIA_STRING.to_string(), string_spec);
@@ -1203,6 +1205,7 @@ mod tests {
             description: Some("A custom output type".to_string()),
             validation: None,
             metadata: None,
+            extension: None,
         });
         let mut media_specs = std::collections::HashMap::new();
         // Use a URN that definitely doesn't exist in the standard registry
