@@ -65,6 +65,12 @@ pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;bytes;speech";
 /// Media URN for thumbnail image output
 pub const MEDIA_IMAGE_THUMBNAIL: &str = "media:image;png;bytes;thumbnail";
 
+// Collection types for folder hierarchies
+/// Media URN for a collection (folder with nested structure as form=map)
+pub const MEDIA_COLLECTION: &str = "media:collection;form=map";
+/// Media URN for a flat collection (folder contents as form=list)
+pub const MEDIA_COLLECTION_LIST: &str = "media:collection;form=list";
+
 // Document types (PRIMARY naming - type IS the format)
 /// Media URN for PDF documents
 pub const MEDIA_PDF: &str = "media:pdf;bytes";
@@ -406,6 +412,12 @@ impl MediaUrn {
     /// Returns true if either "file-path" or "file-path-array" marker tag is present.
     pub fn is_any_file_path(&self) -> bool {
         self.is_file_path() || self.is_file_path_array()
+    }
+
+    /// Check if this represents a collection type (folder structure).
+    /// Returns true if the "collection" marker tag is present.
+    pub fn is_collection(&self) -> bool {
+        self.0.tags.get("collection").map_or(false, |v| v == "*")
     }
 
     /// Check if this media URN can provide input for a cap with the given requirement.
