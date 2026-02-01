@@ -170,8 +170,8 @@ impl MediaUrnRegistry {
 
     /// Create a lightweight MediaUrnRegistry for testing purposes.
     /// This skips the standard spec installation and uses a provided cache directory.
-    #[cfg(test)]
-    pub fn for_testing(cache_dir: PathBuf) -> Result<Self, MediaRegistryError> {
+    /// Available for downstream crate tests as well.
+    pub fn new_for_test(cache_dir: PathBuf) -> Result<Self, MediaRegistryError> {
         fs::create_dir_all(&cache_dir).map_err(|e| {
             MediaRegistryError::CacheError(format!("Failed to create cache directory: {}", e))
         })?;

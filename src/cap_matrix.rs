@@ -953,7 +953,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("media");
 
-        let registry = MediaUrnRegistry::for_testing(cache_dir).unwrap();
+        let registry = MediaUrnRegistry::new_for_test(cache_dir).unwrap();
 
         (std::sync::Arc::new(registry), temp_dir)
     }

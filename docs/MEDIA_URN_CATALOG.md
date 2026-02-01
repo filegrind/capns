@@ -48,7 +48,7 @@ Array variants of primitive types.
 |-----------|----------|-------------|
 | `media:listing-id;textable;form=scalar` | `MEDIA_LISTING_ID` | Reference to a listing UUID |
 | `media:task-id;textable;form=scalar` | `MEDIA_TASK_ID` | Reference to a task UUID |
-| `media:file-path-array;textable;form=list` | `MEDIA_FILE_PATH_ARRAY` | Array of file paths |
+| `media:file-path;textable;form=list` | `MEDIA_FILE_PATH_ARRAY` | Array of file paths |
 
 ### Model Management Outputs
 
