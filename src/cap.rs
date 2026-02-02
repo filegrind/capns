@@ -14,7 +14,7 @@
 //!
 //! ```json
 //! {
-//!   "urn": { "tags": { "op": "conversation", "in": "media:string", "out": "media:my-output;json;form=map" } },
+//!   "urn": "cap:in=\"media:string\";op=conversation;out=\"media:my-output;json;form=map\"",
 //!   "media_specs": [
 //!     {
 //!       "urn": "media:my-output;json;form=map",
@@ -479,16 +479,8 @@ impl Serialize for Cap {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("Cap", 10)?;
 
-        // Serialize urn as tags object (including in/out direction specs)
-        let mut all_tags = serde_json::Map::new();
-        all_tags.insert("in".to_string(), serde_json::Value::String(self.urn.in_spec().to_string()));
-        all_tags.insert("out".to_string(), serde_json::Value::String(self.urn.out_spec().to_string()));
-        for (k, v) in &self.urn.tags {
-            all_tags.insert(k.clone(), serde_json::Value::String(v.clone()));
-        }
-        state.serialize_field("urn", &serde_json::json!({
-            "tags": all_tags
-        }))?;
+        // Serialize urn as canonical string format
+        state.serialize_field("urn", &self.urn.to_string())?;
 
         state.serialize_field("title", &self.title)?;
         state.serialize_field("command", &self.command)?;
@@ -549,42 +541,12 @@ impl<'de> Deserialize<'de> for Cap {
 
         let registry_cap = CapRegistry::deserialize(deserializer)?;
 
-        // Handle urn field - can be string or object with tags
+        // URN must be a string in canonical format
         let urn = match registry_cap.urn {
             serde_json::Value::String(urn_str) => {
                 CapUrn::from_string(&urn_str).map_err(serde::de::Error::custom)?
             },
-            serde_json::Value::Object(urn_obj) => {
-                if let Some(tags) = urn_obj.get("tags").and_then(|t| t.as_object()) {
-                    // Extract required in/out specs first
-                    let in_spec = tags.get("in")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| serde::de::Error::custom("Missing required 'in' tag in urn - caps must declare their input type (use media:void for no input)"))?
-                        .to_string();
-                    let out_spec = tags.get("out")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| serde::de::Error::custom("Missing required 'out' tag in urn - caps must declare their output type"))?
-                        .to_string();
-
-                    // Build CapUrn with direction specs and other tags
-                    let mut urn_builder = crate::cap_urn::CapUrnBuilder::new()
-                        .in_spec(&in_spec)
-                        .out_spec(&out_spec);
-                    for (key, value) in tags {
-                        // Skip in/out as they're handled via in_spec/out_spec
-                        if key == "in" || key == "out" {
-                            continue;
-                        }
-                        if let Some(val_str) = value.as_str() {
-                            urn_builder = urn_builder.tag(key, val_str);
-                        }
-                    }
-                    urn_builder.build().map_err(serde::de::Error::custom)?
-                } else {
-                    return Err(serde::de::Error::custom("Invalid urn object format"));
-                }
-            },
-            _ => return Err(serde::de::Error::custom("urn must be string or object")),
+            _ => return Err(serde::de::Error::custom("urn must be a string in canonical format (e.g., 'cap:in=\"media:...\";op=...;out=\"media:...\"')")),
         };
 
         Ok(Cap {

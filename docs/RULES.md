@@ -277,8 +277,8 @@ These rules validate the `args` array in capability definitions.
 **No Fallbacks**: If a media URN cannot be resolved, validation FAILS. No auto-generation of specs.
 
 **Checked Locations**:
-- `urn.tags.in` (unless wildcard `*`)
-- `urn.tags.out` (unless wildcard `*`)
+- The `in` spec from the URN string (unless wildcard `*`)
+- The `out` spec from the URN string (unless wildcard `*`)
 - Every `args[].media_urn`
 - `output.media_urn`
 - Every `args[].sources[].stdin` (media URN in stdin source)

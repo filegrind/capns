@@ -126,6 +126,8 @@ cap_description = "Extract metadata from PDF documents"
 command = "extract-metadata"
 stdin = "media:pdf;bytes"  # Specifies the media type stdin expects
 
+urn = 'cap:ext=pdf;in="media:binary";op=extract_metadata;out="media:extract-metadata-output"'
+
 [media_specs."media:extract-metadata-output"]
 media_type = "application/json"
 profile_uri = "https://capns.org/schema/extract-metadata-output"
@@ -137,12 +139,6 @@ properties.title = { type = "string" }
 properties.author = { type = "string" }
 properties.page_count = { type = "integer", minimum = 0 }
 required = ["title", "page_count"]
-
-[urn.tags]
-op = "extract_metadata"
-ext = "pdf"
-in = "media:binary"
-out = "media:extract-metadata-output"
 
 [[arguments.required]]
 name = "file_path"
