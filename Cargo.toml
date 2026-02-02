@@ -28,7 +28,7 @@ version = "1.0"
 tempfile = "3.10"
 
 [package]
-authors = ["FileGrind"]
+authors = ["https://github.com/jowharshamshiri"]
 description = "Core cap URN and definition system for FGND plugins"
 edition = "2021"
 license = "MIT"

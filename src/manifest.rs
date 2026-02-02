@@ -11,19 +11,23 @@ use serde::{Deserialize, Serialize};
 pub struct CapManifest {
     /// Component name
     pub name: String,
-    
+
     /// Component version
     pub version: String,
-    
+
     /// Component description
     pub description: String,
-    
+
     /// Component caps with formal definitions
     pub caps: Vec<Cap>,
-    
+
     /// Component author/maintainer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+
+    /// Human-readable page URL for the plugin (e.g., repository page, documentation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_url: Option<String>,
 }
 
 impl CapManifest {
@@ -40,12 +44,19 @@ impl CapManifest {
             description,
             caps,
             author: None,
+            page_url: None,
         }
     }
-    
+
     /// Set the author of the component
     pub fn with_author(mut self, author: String) -> Self {
         self.author = Some(author);
+        self
+    }
+
+    /// Set the page URL for the plugin (human-readable page, e.g., repository)
+    pub fn with_page_url(mut self, page_url: String) -> Self {
+        self.page_url = Some(page_url);
         self
     }
 }
