@@ -1128,7 +1128,7 @@ mod tests {
             description: Some("Integer value".to_string()),
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         cap.set_media_specs(vec![integer_spec]);
 
@@ -1170,7 +1170,7 @@ mod tests {
             description: Some("Trying to redefine string".to_string()),
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         cap.set_media_specs(vec![string_spec]);
 
@@ -1205,7 +1205,7 @@ mod tests {
             description: Some("A custom output type".to_string()),
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         cap.set_media_specs(vec![custom_spec]);
 

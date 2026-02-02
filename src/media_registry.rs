@@ -57,9 +57,9 @@ pub struct StoredMediaSpec {
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
-    /// Optional file extension for storing this media type (e.g., "pdf", "json", "txt")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension: Option<String>,
+    /// File extensions for storing this media type (e.g., ["pdf"], ["jpg", "jpeg"])
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
 }
 
 impl StoredMediaSpec {
@@ -74,7 +74,7 @@ impl StoredMediaSpec {
             description: self.description.clone(),
             validation: self.validation.clone(),
             metadata: self.metadata.clone(),
-            extension: self.extension.clone(),
+            extensions: self.extensions.clone(),
         }
     }
 }
@@ -110,6 +110,8 @@ pub struct MediaUrnRegistry {
     client: reqwest::Client,
     cache_dir: PathBuf,
     cached_specs: Arc<Mutex<HashMap<String, StoredMediaSpec>>>,
+    /// Extension to media URNs index for fast lookups (lowercase extension -> list of URNs)
+    extension_index: Arc<Mutex<HashMap<String, Vec<String>>>>,
     config: RegistryConfig,
 }
 
@@ -148,19 +150,50 @@ impl MediaUrnRegistry {
 
         // Load all cached specs into memory
         let cached_specs_map = Self::load_all_cached_specs(&cache_dir)?;
+
+        // Build extension index from loaded specs
+        let extension_index_map = Self::build_extension_index(&cached_specs_map);
+
         let cached_specs = Arc::new(Mutex::new(cached_specs_map));
+        let extension_index = Arc::new(Mutex::new(extension_index_map));
 
         let registry = Self {
             client,
             cache_dir,
             cached_specs,
+            extension_index,
             config,
         };
 
-        // Install bundled standard media specs
+        // Install bundled standard media specs (also updates extension index)
         registry.install_standard_specs().await?;
 
         Ok(registry)
+    }
+
+    /// Build extension index from a map of specs
+    fn build_extension_index(specs: &HashMap<String, StoredMediaSpec>) -> HashMap<String, Vec<String>> {
+        let mut index: HashMap<String, Vec<String>> = HashMap::new();
+        for spec in specs.values() {
+            for ext in &spec.extensions {
+                let ext_lower = ext.to_lowercase();
+                index.entry(ext_lower).or_default().push(spec.urn.clone());
+            }
+        }
+        index
+    }
+
+    /// Update the extension index with a single spec
+    fn update_extension_index(&self, spec: &StoredMediaSpec) {
+        for ext in &spec.extensions {
+            let ext_lower = ext.to_lowercase();
+            if let Ok(mut index) = self.extension_index.lock() {
+                let urns = index.entry(ext_lower).or_default();
+                if !urns.contains(&spec.urn) {
+                    urns.push(spec.urn.clone());
+                }
+            }
+        }
     }
 
     /// Get the current registry configuration
@@ -187,6 +220,7 @@ impl MediaUrnRegistry {
             client,
             cache_dir,
             cached_specs: Arc::new(Mutex::new(HashMap::new())),
+            extension_index: Arc::new(Mutex::new(HashMap::new())),
             config: RegistryConfig::default(),
         })
     }
@@ -252,12 +286,22 @@ impl MediaUrnRegistry {
                     continue;
                 }
 
+                // Update extension index
+                self.update_extension_index(&spec);
+
                 // Add to in-memory cache
                 if let Ok(mut cached_specs) = self.cached_specs.lock() {
                     cached_specs.insert(normalized_urn.clone(), spec);
                 }
 
                 eprintln!("Standard {}", normalized_urn);
+            } else {
+                // Spec already cached, but still need to ensure extension index is up to date
+                if let Ok(cached_specs) = self.cached_specs.lock() {
+                    if let Some(cached_spec) = cached_specs.get(&normalized_urn) {
+                        self.update_extension_index(cached_spec);
+                    }
+                }
             }
         }
 
@@ -318,6 +362,9 @@ impl MediaUrnRegistry {
         // Not in cache, fetch from registry and update cache
         let spec = self.fetch_from_registry(urn).await?;
 
+        // Update extension index
+        self.update_extension_index(&spec);
+
         // Update in-memory cache
         {
             let mut cached_specs = self.cached_specs.lock().map_err(|e| {
@@ -356,6 +403,48 @@ impl MediaUrnRegistry {
         let normalized_urn = normalize_media_urn(urn);
         let cached_specs = self.cached_specs.lock().ok()?;
         cached_specs.get(&normalized_urn).cloned()
+    }
+
+    /// Look up all media URNs that match a file extension (synchronous, no network).
+    ///
+    /// Returns all media URNs registered for the given file extension.
+    /// Multiple URNs may match the same extension (e.g., with different form= parameters).
+    ///
+    /// The extension should NOT include the leading dot (e.g., "pdf" not ".pdf").
+    /// Lookup is case-insensitive.
+    ///
+    /// # Errors
+    /// Returns `MediaRegistryError::ExtensionNotFound` if no media spec is registered
+    /// for the given extension.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let urns = registry.media_urns_for_extension("pdf")?;
+    /// // May return ["media:pdf;bytes", "media:pdf;bytes;form=list"]
+    /// ```
+    pub fn media_urns_for_extension(&self, extension: &str) -> Result<Vec<String>, MediaRegistryError> {
+        let ext_lower = extension.to_lowercase();
+        let index = self.extension_index.lock().map_err(|e| {
+            MediaRegistryError::CacheError(format!("Failed to lock extension index: {}", e))
+        })?;
+
+        index.get(&ext_lower).cloned().ok_or_else(|| {
+            MediaRegistryError::ExtensionNotFound(format!(
+                "No media spec registered for extension '{}'. \
+                Ensure the media spec is defined in capns_dot_org/standard/media/ with an 'extension' field.",
+                extension
+            ))
+        })
+    }
+
+    /// Get all registered extensions and their corresponding media URNs (synchronous).
+    ///
+    /// Returns a vector of (extension, urns) pairs for debugging and introspection.
+    pub fn get_extension_mappings(&self) -> Result<Vec<(String, Vec<String>)>, MediaRegistryError> {
+        let index = self.extension_index.lock().map_err(|e| {
+            MediaRegistryError::CacheError(format!("Failed to lock extension index: {}", e))
+        })?;
+        Ok(index.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
 
     fn get_cache_dir() -> Result<PathBuf, MediaRegistryError> {
@@ -498,7 +587,7 @@ impl MediaUrnRegistry {
         self.get_media_spec(urn).await.is_ok()
     }
 
-    /// Clear all cached media specs
+    /// Clear all cached media specs and extension index
     pub fn clear_cache(&self) -> Result<(), MediaRegistryError> {
         // Clear in-memory cache
         {
@@ -506,6 +595,14 @@ impl MediaUrnRegistry {
                 MediaRegistryError::CacheError(format!("Failed to lock cache for clearing: {}", e))
             })?;
             cached_specs.clear();
+        }
+
+        // Clear extension index
+        {
+            let mut extension_index = self.extension_index.lock().map_err(|e| {
+                MediaRegistryError::CacheError(format!("Failed to lock extension index for clearing: {}", e))
+            })?;
+            extension_index.clear();
         }
 
         // Clear filesystem cache
@@ -538,6 +635,9 @@ pub enum MediaRegistryError {
 
     #[error("Cache error: {0}")]
     CacheError(String),
+
+    #[error("No media spec registered for extension: {0}")]
+    ExtensionNotFound(String),
 }
 
 #[cfg(test)]
@@ -561,6 +661,7 @@ mod tests {
             client,
             cache_dir,
             cached_specs: Arc::new(Mutex::new(HashMap::new())),
+            extension_index: Arc::new(Mutex::new(HashMap::new())),
             config: RegistryConfig::default(),
         };
 
@@ -595,7 +696,7 @@ mod tests {
             description: Some("PDF document data".to_string()),
             validation: None,
             metadata: None,
-            extension: Some("pdf".to_string()),
+            extensions: vec!["pdf".to_string()],
         };
 
         let def = spec.to_media_spec_def();
@@ -604,7 +705,7 @@ mod tests {
         assert_eq!(def.title, "PDF Document".to_string());
         assert_eq!(def.description, Some("PDF document data".to_string()));
         assert_eq!(def.validation, None);
-        assert_eq!(def.extension, Some("pdf".to_string()));
+        assert_eq!(def.extensions, vec!["pdf".to_string()]);
     }
 
     #[test]

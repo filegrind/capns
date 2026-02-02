@@ -255,7 +255,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         });
 
         let arg = CapArg::new(
@@ -294,7 +294,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         });
 
         let arg = CapArg::new(
@@ -334,7 +334,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         });
 
         let output = CapOutput::new("my:query-result.v1", "Query result");

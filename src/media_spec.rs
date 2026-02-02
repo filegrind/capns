@@ -279,9 +279,9 @@ pub struct MediaSpecDef {
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
-    /// Optional file extension for storing this media type (e.g., "pdf", "json", "txt")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension: Option<String>,
+    /// File extensions for storing this media type (e.g., ["pdf"], ["jpg", "jpeg"])
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
 }
 
 impl MediaSpecDef {
@@ -300,7 +300,7 @@ impl MediaSpecDef {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         }
     }
 
@@ -320,7 +320,7 @@ impl MediaSpecDef {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         }
     }
 
@@ -341,7 +341,7 @@ impl MediaSpecDef {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         }
     }
 
@@ -361,7 +361,7 @@ impl MediaSpecDef {
             description: None,
             validation: Some(validation),
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         }
     }
 }
@@ -392,8 +392,8 @@ pub struct ResolvedMediaSpec {
     pub validation: Option<MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     pub metadata: Option<serde_json::Value>,
-    /// Optional file extension for storing this media type (e.g., "pdf", "json", "txt")
-    pub extension: Option<String>,
+    /// File extensions for storing this media type (e.g., ["pdf"], ["jpg", "jpeg"])
+    pub extensions: Vec<String>,
 }
 
 impl ResolvedMediaSpec {
@@ -518,7 +518,7 @@ pub async fn resolve_media_urn(
                 description: def.description.clone(),
                 validation: def.validation.clone(),
                 metadata: def.metadata.clone(),
-                extension: def.extension.clone(),
+                extensions: def.extensions.clone(),
             });
         }
     }
@@ -535,7 +535,7 @@ pub async fn resolve_media_urn(
                 description: stored_spec.description,
                 validation: stored_spec.validation,
                 metadata: stored_spec.metadata,
-                extension: stored_spec.extension,
+                extensions: stored_spec.extensions,
             });
         }
         Err(e) => {
@@ -672,7 +672,7 @@ mod tests {
                 description: None,
                 validation: None,
                 metadata: None,
-                extension: None,
+                extensions: Vec::new(),
             }
         ]);
 
@@ -707,7 +707,7 @@ mod tests {
                 description: None,
                 validation: None,
                 metadata: None,
-                extension: None,
+                extensions: Vec::new(),
             }
         ]);
 
@@ -750,7 +750,7 @@ mod tests {
                 description: None,
                 validation: None,
                 metadata: None,
-                extension: None,
+                extensions: Vec::new(),
             }
         ]);
 
@@ -779,7 +779,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         let json = serde_json::to_string(&def).unwrap();
         assert!(json.contains("\"urn\":\"media:test;json\""));
@@ -850,7 +850,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         assert!(resolved.is_binary());
         assert!(!resolved.is_map());
@@ -869,7 +869,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         assert!(resolved.is_map());
         assert!(!resolved.is_binary());
@@ -889,7 +889,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         assert!(resolved.is_scalar());
         assert!(!resolved.is_map());
@@ -908,7 +908,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         assert!(resolved.is_list());
         assert!(!resolved.is_map());
@@ -927,7 +927,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         assert!(resolved.is_json());
         assert!(resolved.is_map());
@@ -946,7 +946,7 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: None,
+            extensions: Vec::new(),
         };
         assert!(resolved.is_text());
         assert!(!resolved.is_binary());
@@ -974,7 +974,7 @@ mod tests {
                     "category_key": "interface",
                     "ui_type": "SETTING_UI_TYPE_CHECKBOX"
                 })),
-                extension: None,
+                extensions: Vec::new(),
             }
         ]);
 
@@ -1009,7 +1009,7 @@ mod tests {
                     "category_key": "inference",
                     "ui_type": "SETTING_UI_TYPE_SLIDER"
                 })),
-                extension: None,
+                extensions: Vec::new(),
             }
         ]);
 
@@ -1031,9 +1031,9 @@ mod tests {
     // Extension field tests
     // -------------------------------------------------------------------------
 
-    // TEST107: Test extension field propagates from media spec def to resolved
+    // TEST107: Test extensions field propagates from media spec def to resolved
     #[tokio::test]
-    async fn test_extension_propagation() {
+    async fn test_extensions_propagation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -1045,17 +1045,17 @@ mod tests {
                 description: Some("A PDF document".to_string()),
                 validation: None,
                 metadata: None,
-                extension: Some("pdf".to_string()),
+                extensions: vec!["pdf".to_string()],
             }
         ]);
 
         let resolved = resolve_media_urn("media:custom-pdf;bytes", Some(&media_specs), &registry).await.unwrap();
-        assert_eq!(resolved.extension, Some("pdf".to_string()));
+        assert_eq!(resolved.extensions, vec!["pdf".to_string()]);
     }
 
-    // TEST108: Test extension serializes/deserializes correctly in MediaSpecDef
+    // TEST108: Test extensions serializes/deserializes correctly in MediaSpecDef
     #[test]
-    fn test_extension_serialization() {
+    fn test_extensions_serialization() {
         let def = MediaSpecDef {
             urn: "media:json-data".to_string(),
             media_type: "application/json".to_string(),
@@ -1065,19 +1065,19 @@ mod tests {
             description: None,
             validation: None,
             metadata: None,
-            extension: Some("json".to_string()),
+            extensions: vec!["json".to_string()],
         };
         let json = serde_json::to_string(&def).unwrap();
-        assert!(json.contains("\"extension\":\"json\""));
+        assert!(json.contains("\"extensions\":[\"json\"]"));
 
         // Deserialize and verify
         let parsed: MediaSpecDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.extension, Some("json".to_string()));
+        assert_eq!(parsed.extensions, vec!["json".to_string()]);
     }
 
-    // TEST109: Test extension can coexist with metadata and validation
+    // TEST109: Test extensions can coexist with metadata and validation
     #[tokio::test]
-    async fn test_extension_with_metadata_and_validation() {
+    async fn test_extensions_with_metadata_and_validation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -1098,7 +1098,7 @@ mod tests {
                 metadata: Some(serde_json::json!({
                     "category": "output"
                 })),
-                extension: Some("json".to_string()),
+                extensions: vec!["json".to_string()],
             }
         ]);
 
@@ -1107,6 +1107,29 @@ mod tests {
         // Verify all fields are present
         assert!(resolved.validation.is_some());
         assert!(resolved.metadata.is_some());
-        assert_eq!(resolved.extension, Some("json".to_string()));
+        assert_eq!(resolved.extensions, vec!["json".to_string()]);
+    }
+
+    // TEST110: Test multiple extensions in a media spec
+    #[tokio::test]
+    async fn test_multiple_extensions() {
+        let registry = test_registry().await;
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:image;jpeg;bytes".to_string(),
+                media_type: "image/jpeg".to_string(),
+                title: "JPEG Image".to_string(),
+                profile_uri: Some("https://capns.org/schema/jpeg".to_string()),
+                schema: None,
+                description: Some("JPEG image data".to_string()),
+                validation: None,
+                metadata: None,
+                extensions: vec!["jpg".to_string(), "jpeg".to_string()],
+            }
+        ]);
+
+        let resolved = resolve_media_urn("media:image;jpeg;bytes", Some(&media_specs), &registry).await.unwrap();
+        assert_eq!(resolved.extensions, vec!["jpg".to_string(), "jpeg".to_string()]);
+        assert_eq!(resolved.extensions.len(), 2);
     }
 }
