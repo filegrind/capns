@@ -72,7 +72,7 @@ pub fn input_media_urn_for_ext(ext: Option<&str>) -> &'static str {
 pub fn llm_conversation_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "conversation")
-        .solo_tag("constrained")
+        .solo_tag("unconstrained")
         .tag("language", lang_code)
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_LLM_INFERENCE_OUTPUT)
