@@ -47,7 +47,7 @@
 
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
 use crate::cbor_io::{handshake, CborError, FrameReader, FrameWriter};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -143,6 +143,8 @@ impl PluginResponse {
 struct HostState {
     /// Pending requests waiting for responses
     pending: HashMap<MessageId, Sender<Result<ResponseChunk, HostError>>>,
+    /// Pending heartbeat IDs we've sent (to avoid responding to our own heartbeat responses)
+    pending_heartbeats: HashSet<MessageId>,
     /// Whether the host is closed
     closed: bool,
 }
@@ -185,6 +187,7 @@ impl<W: Write + Send + 'static> PluginHost<W> {
         let writer = Arc::new(Mutex::new(writer));
         let state = Arc::new(Mutex::new(HostState {
             pending: HashMap::new(),
+            pending_heartbeats: HashSet::new(),
             closed: false,
         }));
 
@@ -237,8 +240,20 @@ impl<W: Write + Send + 'static> PluginHost<W> {
                 }
             };
 
-            // Handle heartbeats transparently - respond immediately
+            // Handle heartbeats transparently - before ID check
             if frame.frame_type == FrameType::Heartbeat {
+                // Check if this is a response to a heartbeat we sent
+                let is_our_heartbeat = {
+                    let mut state_guard = state.lock().unwrap();
+                    state_guard.pending_heartbeats.remove(&frame.id)
+                };
+
+                if is_our_heartbeat {
+                    // This is a response to our heartbeat - don't respond
+                    continue;
+                }
+
+                // This is a heartbeat request from the plugin - respond
                 let response = Frame::heartbeat(frame.id.clone());
                 if let Ok(mut w) = writer.lock() {
                     let _ = w.write(&response);
@@ -383,22 +398,33 @@ impl<W: Write + Send + 'static> PluginHost<W> {
         }
     }
 
-    /// Send a heartbeat to the plugin and wait for response.
+    /// Send a heartbeat to the plugin.
+    ///
+    /// Note: Heartbeat response is handled by reader loop transparently.
+    /// This method returns immediately after sending.
     pub fn send_heartbeat(&self) -> Result<(), HostError> {
-        let state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
         if state.closed {
             return Err(HostError::Closed);
         }
-        drop(state);
 
         let heartbeat_id = MessageId::new_uuid();
-        let heartbeat = Frame::heartbeat(heartbeat_id);
+
+        // Track this heartbeat so we don't respond to the response
+        state.pending_heartbeats.insert(heartbeat_id.clone());
+        drop(state);
+
+        let heartbeat = Frame::heartbeat(heartbeat_id.clone());
 
         let mut writer = self.writer.lock().unwrap();
-        writer.write(&heartbeat)?;
+        if let Err(e) = writer.write(&heartbeat) {
+            // Remove from tracking on failure
+            let mut state = self.state.lock().unwrap();
+            state.pending_heartbeats.remove(&heartbeat_id);
+            return Err(e.into());
+        }
         drop(writer);
 
-        // Note: Heartbeat response is handled by reader loop, we don't wait for it
         Ok(())
     }
 
