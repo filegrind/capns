@@ -83,7 +83,7 @@ impl FrameType {
 }
 
 /// Message ID - either a 16-byte UUID or a simple integer
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MessageId {
     /// 16-byte UUID
     Uuid([u8; 16]),

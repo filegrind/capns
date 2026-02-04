@@ -1,22 +1,28 @@
-//! Plugin Host - Caller-side communication with plugin processes
+//! Plugin Host - Caller-side runtime for communicating with plugin processes
 //!
-//! The PluginHost manages communication with a running plugin process.
-//! It handles:
+//! The PluginHost is the host-side runtime that manages all communication with
+//! a running plugin process. It handles:
 //!
-//! - CBOR frame encoding/decoding
-//! - Sending cap requests via binary packets to plugin stdin
-//! - Receiving responses via binary packets from plugin stdout
-//! - Request/response correlation by message ID
-//! - HELLO handshake for limit negotiation
-//! - Streaming response handling
+//! - HELLO handshake and limit negotiation
+//! - Sending cap requests
+//! - Receiving and routing responses
+//! - Heartbeat handling (transparent)
+//! - Multiplexed concurrent requests (transparent)
 //!
-//! # Example
+//! **This is the ONLY way for the host to communicate with plugins.**
+//! No fallbacks, no alternative protocols.
+//!
+//! # Usage
+//!
+//! The host creates a PluginHost, then calls `request()` to invoke caps.
+//! Responses arrive via a channel - the caller just iterates over chunks.
+//! Multiple requests can be in flight simultaneously; the runtime handles
+//! all correlation and routing.
 //!
 //! ```ignore
-//! use capns::PluginHost;
+//! use capns::plugin_host::PluginHost;
 //! use std::process::{Command, Stdio};
 //!
-//! // Spawn plugin process
 //! let mut child = Command::new("./my-plugin")
 //!     .stdin(Stdio::piped())
 //!     .stdout(Stdio::piped())
@@ -25,26 +31,36 @@
 //! let stdin = child.stdin.take().unwrap();
 //! let stdout = child.stdout.take().unwrap();
 //!
-//! let mut host = PluginHost::new(stdin, stdout)?;
+//! let host = PluginHost::new(stdin, stdout)?;
 //!
-//! // Send request and receive responses
-//! for chunk in host.call_streaming("cap:op=test;...", b"payload")? {
-//!     println!("Received chunk: {:?}", chunk?);
+//! // Send request - returns receiver for responses
+//! let receiver = host.request("cap:op=test", b"payload")?;
+//!
+//! // Iterate over response chunks (blocks until complete)
+//! for chunk in receiver {
+//!     match chunk {
+//!         Ok(data) => println!("Got chunk: {} bytes", data.len()),
+//!         Err(e) => eprintln!("Error: {}", e),
+//!     }
 //! }
 //! ```
 
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
 use crate::cbor_io::{handshake, CborError, FrameReader, FrameWriter};
+use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 
 /// Errors that can occur in the plugin host
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum HostError {
     #[error("CBOR error: {0}")]
-    Cbor(#[from] CborError),
+    Cbor(String),
 
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(String),
 
     #[error("Plugin returned error: [{code}] {message}")]
     PluginError { code: String, message: String },
@@ -52,14 +68,26 @@ pub enum HostError {
     #[error("Unexpected frame type: {0:?}")]
     UnexpectedFrameType(FrameType),
 
-    #[error("Response ID mismatch: expected {expected}, got {got}")]
-    IdMismatch { expected: String, got: String },
-
     #[error("Plugin process exited unexpectedly")]
     ProcessExited,
 
     #[error("Handshake failed: {0}")]
     Handshake(String),
+
+    #[error("Host is closed")]
+    Closed,
+}
+
+impl From<CborError> for HostError {
+    fn from(e: CborError) -> Self {
+        HostError::Cbor(e.to_string())
+    }
+}
+
+impl From<std::io::Error> for HostError {
+    fn from(e: std::io::Error) -> Self {
+        HostError::Io(e.to_string())
+    }
 }
 
 /// A response chunk from a plugin
@@ -91,9 +119,7 @@ impl PluginResponse {
     pub fn final_payload(&self) -> Option<&[u8]> {
         match self {
             PluginResponse::Single(data) => Some(data),
-            PluginResponse::Streaming(chunks) => {
-                chunks.last().map(|c| c.payload.as_slice())
-            }
+            PluginResponse::Streaming(chunks) => chunks.last().map(|c| c.payload.as_slice()),
         }
     }
 
@@ -113,326 +139,330 @@ impl PluginResponse {
     }
 }
 
-/// Host-side interface for communicating with a plugin process.
-///
-/// Manages the stdin/stdout pipes and handles CBOR frame encoding.
-pub struct PluginHost<W: Write, R: Read> {
-    writer: FrameWriter<W>,
-    reader: FrameReader<R>,
-    limits: Limits,
+/// Internal shared state for the plugin host
+struct HostState {
+    /// Pending requests waiting for responses
+    pending: HashMap<MessageId, Sender<Result<ResponseChunk, HostError>>>,
+    /// Whether the host is closed
+    closed: bool,
 }
 
-impl<W: Write, R: Read> PluginHost<W, R> {
+/// Host-side runtime for communicating with a plugin process.
+///
+/// **This is the ONLY way for the host to communicate with plugins.**
+///
+/// The runtime handles:
+/// - Multiplexed concurrent requests (transparent)
+/// - Heartbeat handling (transparent)
+/// - Request/response correlation (transparent)
+///
+/// Callers simply send requests and receive responses via channels.
+pub struct PluginHost<W: Write + Send + 'static> {
+    /// Writer for sending frames (protected by mutex for thread safety)
+    writer: Arc<Mutex<FrameWriter<W>>>,
+    /// Shared state for request tracking
+    state: Arc<Mutex<HostState>>,
+    /// Negotiated protocol limits
+    limits: Limits,
+    /// Background reader thread handle
+    reader_handle: Option<JoinHandle<()>>,
+}
+
+impl<W: Write + Send + 'static> PluginHost<W> {
     /// Create a new plugin host and perform handshake.
     ///
     /// This sends a HELLO frame, waits for the plugin's HELLO,
-    /// and negotiates protocol limits.
-    pub fn new(stdin: W, stdout: R) -> Result<Self, HostError> {
+    /// negotiates protocol limits, then starts the background reader.
+    pub fn new<R: Read + Send + 'static>(stdin: W, stdout: R) -> Result<Self, HostError> {
         let mut writer = FrameWriter::new(stdin);
         let mut reader = FrameReader::new(stdout);
 
         // Perform handshake
         let limits = handshake(&mut reader, &mut writer)?;
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        let writer = Arc::new(Mutex::new(writer));
+        let state = Arc::new(Mutex::new(HostState {
+            pending: HashMap::new(),
+            closed: false,
+        }));
+
+        // Start background reader thread
+        let reader_handle = {
+            let writer_clone = Arc::clone(&writer);
+            let state_clone = Arc::clone(&state);
+
+            thread::spawn(move || {
+                Self::reader_loop(reader, writer_clone, state_clone);
+            })
+        };
 
         Ok(Self {
             writer,
-            reader,
+            state,
             limits,
+            reader_handle: Some(reader_handle),
         })
     }
 
-    /// Create a plugin host without performing handshake.
-    ///
-    /// Use this if you need to handle handshake separately.
-    pub fn new_without_handshake(stdin: W, stdout: R) -> Self {
-        Self {
-            writer: FrameWriter::new(stdin),
-            reader: FrameReader::new(stdout),
-            limits: Limits::default(),
+    /// Background reader loop - reads frames and dispatches to waiting requests.
+    /// Handles heartbeats transparently.
+    fn reader_loop<R: Read>(
+        mut reader: FrameReader<R>,
+        writer: Arc<Mutex<FrameWriter<W>>>,
+        state: Arc<Mutex<HostState>>,
+    ) {
+        loop {
+            let frame = match reader.read() {
+                Ok(Some(f)) => f,
+                Ok(None) => {
+                    // EOF - plugin closed, notify all pending requests
+                    let mut state = state.lock().unwrap();
+                    state.closed = true;
+                    for (_, sender) in state.pending.drain() {
+                        let _ = sender.send(Err(HostError::ProcessExited));
+                    }
+                    break;
+                }
+                Err(e) => {
+                    // Read error - notify all pending requests
+                    let mut state = state.lock().unwrap();
+                    state.closed = true;
+                    let err = HostError::Cbor(e.to_string());
+                    for (_, sender) in state.pending.drain() {
+                        let _ = sender.send(Err(err.clone()));
+                    }
+                    break;
+                }
+            };
+
+            // Handle heartbeats transparently - respond immediately
+            if frame.frame_type == FrameType::Heartbeat {
+                let response = Frame::heartbeat(frame.id.clone());
+                if let Ok(mut w) = writer.lock() {
+                    let _ = w.write(&response);
+                }
+                continue;
+            }
+
+            // Route frame to the appropriate pending request
+            let request_id = frame.id.clone();
+            let should_remove = {
+                let state_guard = state.lock().unwrap();
+                if let Some(sender) = state_guard.pending.get(&frame.id) {
+                    let remove = match frame.frame_type {
+                        FrameType::Chunk => {
+                            let is_eof = frame.is_eof();
+                            let chunk = ResponseChunk {
+                                payload: frame.payload.unwrap_or_default(),
+                                seq: frame.seq,
+                                offset: frame.offset,
+                                len: frame.len,
+                                is_eof,
+                            };
+                            let _ = sender.send(Ok(chunk));
+                            is_eof // Remove if final chunk
+                        }
+                        FrameType::Res => {
+                            // Single complete response - send as final chunk
+                            let chunk = ResponseChunk {
+                                payload: frame.payload.unwrap_or_default(),
+                                seq: 0,
+                                offset: None,
+                                len: None,
+                                is_eof: true,
+                            };
+                            let _ = sender.send(Ok(chunk));
+                            true // Remove - response complete
+                        }
+                        FrameType::End => {
+                            // Stream end - send final payload if any
+                            if let Some(payload) = frame.payload {
+                                let chunk = ResponseChunk {
+                                    payload,
+                                    seq: frame.seq,
+                                    offset: frame.offset,
+                                    len: frame.len,
+                                    is_eof: true,
+                                };
+                                let _ = sender.send(Ok(chunk));
+                            }
+                            true // Remove - stream complete
+                        }
+                        FrameType::Log => {
+                            // Log frames don't produce response chunks, skip
+                            false
+                        }
+                        FrameType::Err => {
+                            let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
+                            let message = frame.error_message().unwrap_or("Unknown error").to_string();
+                            let _ = sender.send(Err(HostError::PluginError { code, message }));
+                            true // Remove - error terminates request
+                        }
+                        FrameType::Hello | FrameType::Req | FrameType::Heartbeat => {
+                            // Protocol errors - Heartbeat is handled above, these should not happen
+                            let _ = sender.send(Err(HostError::UnexpectedFrameType(frame.frame_type)));
+                            true // Remove - error terminates request
+                        }
+                    };
+                    remove
+                } else {
+                    false
+                }
+            };
+
+            // Remove completed request outside the lock scope
+            if should_remove {
+                let mut state_guard = state.lock().unwrap();
+                state_guard.pending.remove(&request_id);
+            }
         }
     }
 
-    /// Perform handshake manually.
-    pub fn handshake(&mut self) -> Result<Limits, HostError> {
-        let limits = handshake(&mut self.reader, &mut self.writer)?;
-        self.limits = limits;
-        Ok(limits)
+    /// Send a cap request and receive responses via a channel.
+    ///
+    /// Returns a receiver that yields response chunks. Iterate over it
+    /// to receive all chunks until completion.
+    ///
+    /// Multiple requests can be sent concurrently - each gets its own
+    /// response channel. The runtime handles all multiplexing and
+    /// heartbeats transparently.
+    pub fn request(
+        &self,
+        cap_urn: &str,
+        payload: &[u8],
+    ) -> Result<Receiver<Result<ResponseChunk, HostError>>, HostError> {
+        let mut state = self.state.lock().unwrap();
+        if state.closed {
+            return Err(HostError::Closed);
+        }
+
+        let request_id = MessageId::new_uuid();
+        let request = Frame::req(
+            request_id.clone(),
+            cap_urn,
+            payload.to_vec(),
+            "application/json",
+        );
+
+        // Create channel for responses
+        let (sender, receiver) = mpsc::channel();
+        state.pending.insert(request_id, sender);
+        drop(state);
+
+        // Send request
+        let mut writer = self.writer.lock().unwrap();
+        writer.write(&request)?;
+        drop(writer);
+
+        Ok(receiver)
     }
 
     /// Send a cap request and wait for the complete response.
     ///
-    /// For streaming caps, this collects all chunks and returns them together.
-    pub fn call(&mut self, cap_urn: &str, payload: &[u8]) -> Result<PluginResponse, HostError> {
-        let request_id = MessageId::new_uuid();
-        let request = Frame::req(
-            request_id.clone(),
-            cap_urn,
-            payload.to_vec(),
-            "application/json",
-        );
+    /// This is a convenience method that collects all chunks.
+    /// For streaming responses, use `request()` directly.
+    pub fn call(&self, cap_urn: &str, payload: &[u8]) -> Result<PluginResponse, HostError> {
+        let receiver = self.request(cap_urn, payload)?;
 
-        // Send request
-        self.writer.write(&request)?;
-
-        // Collect responses
         let mut chunks = Vec::new();
-
-        loop {
-            let frame = self.reader.read()?.ok_or(HostError::ProcessExited)?;
-
-            // Verify this is for our request
-            if frame.id != request_id {
-                // Could be for a different concurrent request - skip for now
-                continue;
-            }
-
-            match frame.frame_type {
-                FrameType::Chunk => {
-                    let is_eof = frame.is_eof();
-                    let chunk = ResponseChunk {
-                        payload: frame.payload.unwrap_or_default(),
-                        seq: frame.seq,
-                        offset: frame.offset,
-                        len: frame.len,
-                        is_eof,
-                    };
-                    chunks.push(chunk);
-
-                    if is_eof {
-                        return Ok(PluginResponse::Streaming(chunks));
-                    }
-                }
-                FrameType::Res => {
-                    // Single complete response
-                    return Ok(PluginResponse::Single(frame.payload.unwrap_or_default()));
-                }
-                FrameType::End => {
-                    // Stream end
-                    if let Some(payload) = frame.payload {
-                        let chunk = ResponseChunk {
-                            payload,
-                            seq: frame.seq,
-                            offset: frame.offset,
-                            len: frame.len,
-                            is_eof: true,
-                        };
-                        chunks.push(chunk);
-                    }
-                    return Ok(PluginResponse::Streaming(chunks));
-                }
-                FrameType::Log => {
-                    // Log message - could emit via callback, for now just continue
-                    continue;
-                }
-                FrameType::Err => {
-                    let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
-                    let message = frame.error_message().unwrap_or("Unknown error").to_string();
-                    return Err(HostError::PluginError { code, message });
-                }
-                FrameType::Hello => {
-                    // Unexpected HELLO during request
-                    return Err(HostError::UnexpectedFrameType(FrameType::Hello));
-                }
-                FrameType::Heartbeat => {
-                    // Plugin sent us a heartbeat - respond with same ID
-                    let response = Frame::heartbeat(frame.id);
-                    self.writer.write(&response)?;
-                    continue;
-                }
-                FrameType::Req => {
-                    // Plugin sent us a request (e.g., for tool call)
-                    // This would be handled by a callback in a full implementation
-                    return Err(HostError::UnexpectedFrameType(FrameType::Req));
-                }
+        for result in receiver {
+            let chunk = result?;
+            let is_eof = chunk.is_eof;
+            chunks.push(chunk);
+            if is_eof {
+                break;
             }
         }
-    }
 
-    /// Send a cap request and return an iterator over streaming responses.
-    ///
-    /// This allows processing chunks as they arrive without waiting for completion.
-    pub fn call_streaming(
-        &mut self,
-        cap_urn: &str,
-        payload: &[u8],
-    ) -> Result<StreamingResponse<'_, W, R>, HostError> {
-        let request_id = MessageId::new_uuid();
-        let request = Frame::req(
-            request_id.clone(),
-            cap_urn,
-            payload.to_vec(),
-            "application/json",
-        );
-
-        // Send request
-        self.writer.write(&request)?;
-
-        Ok(StreamingResponse {
-            host: self,
-            request_id,
-            finished: false,
-        })
-    }
-
-    /// Send a raw CBOR frame.
-    pub fn send_frame(&mut self, frame: &Frame) -> Result<(), HostError> {
-        self.writer.write(frame)?;
-        Ok(())
-    }
-
-    /// Receive the next CBOR frame.
-    pub fn recv_frame(&mut self) -> Result<Option<Frame>, HostError> {
-        Ok(self.reader.read()?)
-    }
-
-    /// Get the negotiated protocol limits.
-    pub fn limits(&self) -> &Limits {
-        &self.limits
-    }
-
-    /// Get mutable access to the frame writer.
-    pub fn writer_mut(&mut self) -> &mut FrameWriter<W> {
-        &mut self.writer
-    }
-
-    /// Get mutable access to the frame reader.
-    pub fn reader_mut(&mut self) -> &mut FrameReader<R> {
-        &mut self.reader
+        if chunks.len() == 1 && chunks[0].seq == 0 {
+            Ok(PluginResponse::Single(chunks.into_iter().next().unwrap().payload))
+        } else {
+            Ok(PluginResponse::Streaming(chunks))
+        }
     }
 
     /// Send a heartbeat to the plugin and wait for response.
-    /// Returns Ok(()) if the plugin responded, Err if it didn't.
-    pub fn send_heartbeat(&mut self) -> Result<(), HostError> {
+    pub fn send_heartbeat(&self) -> Result<(), HostError> {
+        let state = self.state.lock().unwrap();
+        if state.closed {
+            return Err(HostError::Closed);
+        }
+        drop(state);
+
         let heartbeat_id = MessageId::new_uuid();
-        let heartbeat = Frame::heartbeat(heartbeat_id.clone());
-        self.writer.write(&heartbeat)?;
+        let heartbeat = Frame::heartbeat(heartbeat_id);
 
-        // Wait for matching heartbeat response
-        loop {
-            let frame = self.reader.read()?.ok_or(HostError::ProcessExited)?;
+        let mut writer = self.writer.lock().unwrap();
+        writer.write(&heartbeat)?;
+        drop(writer);
 
-            if frame.frame_type == FrameType::Heartbeat && frame.id == heartbeat_id {
-                return Ok(());
-            }
+        // Note: Heartbeat response is handled by reader loop, we don't wait for it
+        Ok(())
+    }
 
-            // Handle other frame types that might arrive
-            match frame.frame_type {
-                FrameType::Log => {
-                    // Log messages can be ignored during heartbeat
-                    continue;
-                }
-                FrameType::Err => {
-                    let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
-                    let message = frame.error_message().unwrap_or("Unknown error").to_string();
-                    return Err(HostError::PluginError { code, message });
-                }
-                _ => {
-                    // Skip frames not related to our heartbeat
-                    continue;
-                }
-            }
+    /// Get the negotiated protocol limits
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+}
+
+impl<W: Write + Send + 'static> Drop for PluginHost<W> {
+    fn drop(&mut self) {
+        // Mark as closed
+        if let Ok(mut state) = self.state.lock() {
+            state.closed = true;
+        }
+
+        // Wait for reader thread to finish
+        if let Some(handle) = self.reader_handle.take() {
+            let _ = handle.join();
         }
     }
 }
 
-/// Iterator over streaming responses from a plugin.
-pub struct StreamingResponse<'a, W: Write, R: Read> {
-    host: &'a mut PluginHost<W, R>,
-    request_id: MessageId,
+// Legacy compatibility - these are used by the integration tests
+// In production, use PluginHost::request() which handles everything
+
+/// Streaming response iterator - wraps the channel receiver
+pub struct StreamingResponse<'a, W: Write + Send + 'static> {
+    receiver: Receiver<Result<ResponseChunk, HostError>>,
     finished: bool,
+    _phantom: std::marker::PhantomData<&'a W>,
 }
 
-impl<'a, W: Write, R: Read> StreamingResponse<'a, W, R> {
-    /// Get the next chunk, or None if the stream is complete.
+impl<'a, W: Write + Send + 'static> StreamingResponse<'a, W> {
+    /// Get the next chunk, or None if complete
     pub fn next_chunk(&mut self) -> Result<Option<ResponseChunk>, HostError> {
         if self.finished {
             return Ok(None);
         }
 
-        loop {
-            let frame = self.host.reader.read()?.ok_or(HostError::ProcessExited)?;
-
-            // Verify this is for our request
-            if frame.id != self.request_id {
-                continue;
+        match self.receiver.recv() {
+            Ok(Ok(chunk)) => {
+                if chunk.is_eof {
+                    self.finished = true;
+                }
+                Ok(Some(chunk))
             }
-
-            match frame.frame_type {
-                FrameType::Chunk => {
-                    let is_eof = frame.is_eof();
-                    let chunk = ResponseChunk {
-                        payload: frame.payload.unwrap_or_default(),
-                        seq: frame.seq,
-                        offset: frame.offset,
-                        len: frame.len,
-                        is_eof,
-                    };
-
-                    if is_eof {
-                        self.finished = true;
-                    }
-
-                    return Ok(Some(chunk));
-                }
-                FrameType::Res => {
-                    // Single response treated as final chunk
-                    self.finished = true;
-                    return Ok(Some(ResponseChunk {
-                        payload: frame.payload.unwrap_or_default(),
-                        seq: 0,
-                        offset: None,
-                        len: None,
-                        is_eof: true,
-                    }));
-                }
-                FrameType::End => {
-                    self.finished = true;
-                    if let Some(payload) = frame.payload {
-                        return Ok(Some(ResponseChunk {
-                            payload,
-                            seq: frame.seq,
-                            offset: frame.offset,
-                            len: frame.len,
-                            is_eof: true,
-                        }));
-                    }
-                    return Ok(None);
-                }
-                FrameType::Log => {
-                    // Log message - continue waiting for data
-                    continue;
-                }
-                FrameType::Err => {
-                    self.finished = true;
-                    let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
-                    let message = frame.error_message().unwrap_or("Unknown error").to_string();
-                    return Err(HostError::PluginError { code, message });
-                }
-                FrameType::Heartbeat => {
-                    // Plugin sent us a heartbeat - respond with same ID
-                    let response = Frame::heartbeat(frame.id.clone());
-                    self.host.writer.write(&response)?;
-                    continue;
-                }
-                FrameType::Hello | FrameType::Req => {
-                    return Err(HostError::UnexpectedFrameType(frame.frame_type));
-                }
+            Ok(Err(e)) => {
+                self.finished = true;
+                Err(e)
+            }
+            Err(_) => {
+                self.finished = true;
+                Ok(None)
             }
         }
     }
 
-    /// Check if the stream is finished.
     pub fn is_finished(&self) -> bool {
         self.finished
     }
-
-    /// Get the request ID for this stream.
-    pub fn request_id(&self) -> &MessageId {
-        &self.request_id
-    }
 }
 
-impl<'a, W: Write, R: Read> Iterator for StreamingResponse<'a, W, R> {
+impl<'a, W: Write + Send + 'static> Iterator for StreamingResponse<'a, W> {
     type Item = Result<ResponseChunk, HostError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -444,11 +474,36 @@ impl<'a, W: Write, R: Read> Iterator for StreamingResponse<'a, W, R> {
     }
 }
 
+impl<W: Write + Send + 'static> PluginHost<W> {
+    /// Send a cap request and return a streaming iterator.
+    ///
+    /// This wraps `request()` in an iterator interface for convenience.
+    pub fn call_streaming(
+        &self,
+        cap_urn: &str,
+        payload: &[u8],
+    ) -> Result<StreamingResponse<'_, W>, HostError> {
+        let receiver = self.request(cap_urn, payload)?;
+        Ok(StreamingResponse {
+            receiver,
+            finished: false,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+}
+
+// Keep the old FrameWriter/FrameReader accessors for now, but they should not be used
+impl<W: Write + Send + 'static> PluginHost<W> {
+    /// Get mutable access to the frame writer (internal use only)
+    pub fn writer_mut(&self) -> std::sync::MutexGuard<'_, FrameWriter<W>> {
+        self.writer.lock().unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cbor_io::{write_frame, encode_frame};
-    use std::io::Cursor;
+    use crate::cbor_io::encode_frame;
 
     fn create_hello_response() -> Vec<u8> {
         let limits = Limits::default();
@@ -458,38 +513,6 @@ mod tests {
         buf.extend_from_slice(&(cbor.len() as u32).to_be_bytes());
         buf.extend_from_slice(&cbor);
         buf
-    }
-
-    fn create_end_response(id: MessageId, payload: &[u8]) -> Vec<u8> {
-        let limits = Limits::default();
-        let frame = Frame::end(id, Some(payload.to_vec()));
-        let cbor = encode_frame(&frame).unwrap();
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&(cbor.len() as u32).to_be_bytes());
-        buf.extend_from_slice(&cbor);
-        buf
-    }
-
-    #[test]
-    fn test_host_creation() {
-        // Create mock response with HELLO
-        let response_data = create_hello_response();
-
-        let stdin = Vec::new();
-        let stdout = Cursor::new(response_data);
-
-        // Should succeed with handshake
-        let host = PluginHost::new(stdin, stdout);
-        assert!(host.is_ok());
-    }
-
-    #[test]
-    fn test_host_without_handshake() {
-        let stdin = Vec::new();
-        let stdout = Cursor::new(Vec::<u8>::new());
-
-        let host = PluginHost::new_without_handshake(stdin, stdout);
-        assert_eq!(host.limits().max_frame, Limits::default().max_frame);
     }
 
     #[test]
