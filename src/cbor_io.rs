@@ -473,18 +473,28 @@ impl<W: Write> FrameWriter<W> {
     }
 }
 
-/// Perform HELLO handshake
-///
-/// Sends our HELLO, reads their HELLO, returns negotiated limits.
+/// Handshake result including manifest (host side - receives plugin's HELLO with manifest)
+#[derive(Debug, Clone)]
+pub struct HandshakeResult {
+    /// Negotiated protocol limits
+    pub limits: Limits,
+    /// Plugin manifest JSON data (from plugin's HELLO response).
+    /// This is REQUIRED - plugins MUST include their manifest in HELLO.
+    pub manifest: Vec<u8>,
+}
+
+/// Perform HELLO handshake and extract plugin manifest (host side - sends first).
+/// Returns HandshakeResult containing negotiated limits and plugin manifest.
+/// Fails if plugin HELLO is missing the required manifest.
 pub fn handshake<R: Read, W: Write>(
     reader: &mut FrameReader<R>,
     writer: &mut FrameWriter<W>,
-) -> Result<Limits, CborError> {
+) -> Result<HandshakeResult, CborError> {
     // Send our HELLO
     let our_hello = Frame::hello(DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK);
     writer.write(&our_hello)?;
 
-    // Read their HELLO
+    // Read their HELLO (should include manifest)
     let their_frame = reader.read()?.ok_or_else(|| {
         CborError::Handshake("connection closed before receiving HELLO".to_string())
     })?;
@@ -495,6 +505,12 @@ pub fn handshake<R: Read, W: Write>(
             their_frame.frame_type
         )));
     }
+
+    // Extract manifest - REQUIRED for plugins
+    let manifest = their_frame
+        .hello_manifest()
+        .ok_or_else(|| CborError::Handshake("Plugin HELLO missing required manifest".to_string()))?
+        .to_vec();
 
     // Negotiate minimum of both
     let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
@@ -509,15 +525,17 @@ pub fn handshake<R: Read, W: Write>(
     reader.set_limits(limits);
     writer.set_limits(limits);
 
-    Ok(limits)
+    Ok(HandshakeResult { limits, manifest })
 }
 
-/// Wait for and respond to HELLO handshake (plugin side)
+/// Accept HELLO handshake with manifest (plugin side - receives first, sends manifest in response).
 ///
-/// Reads their HELLO, sends our HELLO, returns negotiated limits.
+/// Reads host's HELLO, sends our HELLO with manifest, returns negotiated limits.
+/// The manifest is REQUIRED - plugins MUST provide their manifest.
 pub fn handshake_accept<R: Read, W: Write>(
     reader: &mut FrameReader<R>,
     writer: &mut FrameWriter<W>,
+    manifest: &[u8],
 ) -> Result<Limits, CborError> {
     // Read their HELLO first (host initiates)
     let their_frame = reader.read()?.ok_or_else(|| {
@@ -540,8 +558,8 @@ pub fn handshake_accept<R: Read, W: Write>(
         max_chunk: DEFAULT_MAX_CHUNK.min(their_max_chunk),
     };
 
-    // Send our HELLO
-    let our_hello = Frame::hello(limits.max_frame, limits.max_chunk);
+    // Send our HELLO with manifest
+    let our_hello = Frame::hello_with_manifest(limits.max_frame, limits.max_chunk, manifest);
     writer.write(&our_hello)?;
 
     // Update both reader and writer with negotiated limits

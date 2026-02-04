@@ -16,6 +16,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
 
+    /// Test manifest JSON - plugins MUST include manifest in HELLO response
+    const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
+
     /// Create a pair of connected pipes for testing.
     /// Returns (host_write, plugin_read, plugin_write, host_read)
     fn create_pipe_pair() -> (
@@ -45,8 +48,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Accept handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer)
+            // Accept handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes())
                 .expect("Plugin handshake failed");
 
             assert!(limits.max_frame > 0);
@@ -60,15 +63,56 @@ mod tests {
         let mut frame_reader = FrameReader::new(reader);
         let mut frame_writer = FrameWriter::new(writer);
 
-        // Initiate handshake
-        let host_limits =
+        // Initiate handshake - returns result with limits and manifest
+        let handshake_result =
             handshake(&mut frame_reader, &mut frame_writer).expect("Host handshake failed");
 
         let plugin_limits = plugin_handle.join().expect("Plugin thread panicked");
 
         // Both should have negotiated the same limits
-        assert_eq!(host_limits.max_frame, plugin_limits.max_frame);
-        assert_eq!(host_limits.max_chunk, plugin_limits.max_chunk);
+        assert_eq!(handshake_result.limits.max_frame, plugin_limits.max_frame);
+        assert_eq!(handshake_result.limits.max_chunk, plugin_limits.max_chunk);
+
+        // Verify manifest was received
+        assert_eq!(handshake_result.manifest, TEST_MANIFEST.as_bytes());
+    }
+
+    #[test]
+    fn test_handshake_fails_without_manifest() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+
+        // Plugin side: send HELLO without manifest (should cause host to fail)
+        let plugin_handle = thread::spawn(move || {
+            let reader = BufReader::new(plugin_read);
+            let writer = BufWriter::new(plugin_write);
+            let mut frame_reader = FrameReader::new(reader);
+            let mut frame_writer = FrameWriter::new(writer);
+
+            // Read host's HELLO
+            let _ = frame_reader.read().expect("Should receive host HELLO");
+
+            // Send HELLO WITHOUT manifest - this is a protocol violation
+            let bad_hello = Frame::hello(1_000_000, 100_000);
+            frame_writer.write(&bad_hello).expect("Should write HELLO");
+        });
+
+        // Host side - should fail due to missing manifest
+        let reader = BufReader::new(host_read);
+        let writer = BufWriter::new(host_write);
+        let mut frame_reader = FrameReader::new(reader);
+        let mut frame_writer = FrameWriter::new(writer);
+
+        let result = handshake(&mut frame_reader, &mut frame_writer);
+        assert!(result.is_err(), "Handshake should fail when plugin HELLO is missing manifest");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("missing required manifest"),
+            "Error should mention missing manifest: {}",
+            err
+        );
+
+        plugin_handle.join().expect("Plugin thread panicked");
     }
 
     #[test]
@@ -82,8 +126,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -102,7 +146,9 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
+
+        // Verify manifest was received
+        assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
 
         // Send request
         let response = host.call("cap:op=echo", b"hello").expect("Call failed");
@@ -123,8 +169,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -149,7 +195,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Call and collect streaming response
         let response = host
@@ -182,8 +227,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -198,7 +243,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Send heartbeat
         host.send_heartbeat().expect("Heartbeat failed");
@@ -217,8 +261,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -232,7 +276,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Call should fail with plugin error
         let result = host.call("cap:op=missing", b"");
@@ -261,8 +304,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -284,7 +327,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Call should succeed despite log frames
         let response = host.call("cap:op=test", b"").expect("Call failed");
@@ -308,12 +350,16 @@ mod tests {
             let host_hello = frame_reader.read().unwrap().expect("Expected HELLO");
             assert_eq!(host_hello.frame_type, FrameType::Hello);
 
-            // Send our HELLO with smaller limits
+            // Send our HELLO with smaller limits AND manifest (required)
             let small_limits = Limits {
                 max_frame: 500_000,
                 max_chunk: 50_000,
             };
-            let our_hello = Frame::hello(small_limits.max_frame, small_limits.max_chunk);
+            let our_hello = Frame::hello_with_manifest(
+                small_limits.max_frame,
+                small_limits.max_chunk,
+                TEST_MANIFEST.as_bytes(),
+            );
             frame_writer.write(&our_hello).unwrap();
 
             small_limits
@@ -350,8 +396,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -372,7 +418,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Send binary data
         let response = host.call("cap:op=binary", &binary_clone).expect("Call failed");
@@ -401,8 +446,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -418,7 +463,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Send requests one by one
         for i in 0..3 {
@@ -442,7 +486,7 @@ mod tests {
     #[test]
     fn test_plugin_runtime_handler_registration() {
         // Test that handler registration and lookup works
-        let mut runtime = PluginRuntime::new();
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register::<serde_json::Value, _>("cap:op=echo", |req, _emitter| {
             // Serialize back to bytes
@@ -472,8 +516,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -503,7 +547,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         // Call streaming - should handle heartbeat mid-stream
         let response = host.call_streaming("cap:op=stream", b"").expect("Call streaming failed");
@@ -527,8 +570,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -542,7 +585,6 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
-        let mut host = host;
 
         let response = host.call("cap:op=single", b"").expect("Call failed");
         assert_eq!(response.concatenated(), b"single response");
@@ -563,8 +605,8 @@ mod tests {
             let mut frame_reader = FrameReader::new(reader);
             let mut frame_writer = FrameWriter::new(writer);
 
-            // Handshake
-            let limits = handshake_accept(&mut frame_reader, &mut frame_writer).unwrap();
+            // Handshake with manifest
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
@@ -601,6 +643,9 @@ mod tests {
 
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+
+        // Verify manifest was received
+        assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
 
         // Start a request (non-blocking via request())
         let receiver = host.request("cap:op=test", b"").expect("Request failed");

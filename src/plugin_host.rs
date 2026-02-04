@@ -166,6 +166,9 @@ pub struct PluginHost<W: Write + Send + 'static> {
     state: Arc<Mutex<HostState>>,
     /// Negotiated protocol limits
     limits: Limits,
+    /// Plugin manifest extracted from HELLO response.
+    /// This is JSON-encoded plugin metadata including name, version, and caps.
+    plugin_manifest: Vec<u8>,
     /// Background reader thread handle
     reader_handle: Option<JoinHandle<()>>,
 }
@@ -173,14 +176,19 @@ pub struct PluginHost<W: Write + Send + 'static> {
 impl<W: Write + Send + 'static> PluginHost<W> {
     /// Create a new plugin host and perform handshake.
     ///
-    /// This sends a HELLO frame, waits for the plugin's HELLO,
+    /// This sends a HELLO frame, waits for the plugin's HELLO (which MUST include manifest),
     /// negotiates protocol limits, then starts the background reader.
+    ///
+    /// Fails if the plugin's HELLO is missing the required manifest.
     pub fn new<R: Read + Send + 'static>(stdin: W, stdout: R) -> Result<Self, HostError> {
         let mut writer = FrameWriter::new(stdin);
         let mut reader = FrameReader::new(stdout);
 
-        // Perform handshake
-        let limits = handshake(&mut reader, &mut writer)?;
+        // Perform handshake - requires plugin to send manifest
+        let handshake_result = handshake(&mut reader, &mut writer)?;
+        let limits = handshake_result.limits;
+        let plugin_manifest = handshake_result.manifest;
+
         reader.set_limits(limits);
         writer.set_limits(limits);
 
@@ -205,6 +213,7 @@ impl<W: Write + Send + 'static> PluginHost<W> {
             writer,
             state,
             limits,
+            plugin_manifest,
             reader_handle: Some(reader_handle),
         })
     }
@@ -432,6 +441,12 @@ impl<W: Write + Send + 'static> PluginHost<W> {
     pub fn limits(&self) -> Limits {
         self.limits
     }
+
+    /// Get the plugin manifest extracted from HELLO handshake.
+    /// This is JSON-encoded plugin metadata including name, version, and caps.
+    pub fn plugin_manifest(&self) -> &[u8] {
+        &self.plugin_manifest
+    }
 }
 
 impl<W: Write + Send + 'static> Drop for PluginHost<W> {
@@ -529,17 +544,6 @@ impl<W: Write + Send + 'static> PluginHost<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cbor_io::encode_frame;
-
-    fn create_hello_response() -> Vec<u8> {
-        let limits = Limits::default();
-        let frame = Frame::hello(limits.max_frame, limits.max_chunk);
-        let cbor = encode_frame(&frame).unwrap();
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&(cbor.len() as u32).to_be_bytes());
-        buf.extend_from_slice(&cbor);
-        buf
-    }
 
     #[test]
     fn test_response_chunk() {

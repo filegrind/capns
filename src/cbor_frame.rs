@@ -195,7 +195,7 @@ impl Frame {
         }
     }
 
-    /// Create a HELLO frame for handshake
+    /// Create a HELLO frame for handshake (host side - no manifest)
     pub fn hello(max_frame: usize, max_chunk: usize) -> Self {
         let mut meta = BTreeMap::new();
         meta.insert(
@@ -209,6 +209,33 @@ impl Frame {
         meta.insert(
             "version".to_string(),
             ciborium::Value::Integer((PROTOCOL_VERSION as i64).into()),
+        );
+
+        let mut frame = Self::new(FrameType::Hello, MessageId::Uint(0));
+        frame.meta = Some(meta);
+        frame
+    }
+
+    /// Create a HELLO frame for handshake with manifest (plugin side).
+    /// The manifest is JSON-encoded plugin metadata including name, version, and caps.
+    /// This is the ONLY way for plugins to communicate their capabilities.
+    pub fn hello_with_manifest(max_frame: usize, max_chunk: usize, manifest: &[u8]) -> Self {
+        let mut meta = BTreeMap::new();
+        meta.insert(
+            "max_frame".to_string(),
+            ciborium::Value::Integer((max_frame as i64).into()),
+        );
+        meta.insert(
+            "max_chunk".to_string(),
+            ciborium::Value::Integer((max_chunk as i64).into()),
+        );
+        meta.insert(
+            "version".to_string(),
+            ciborium::Value::Integer((PROTOCOL_VERSION as i64).into()),
+        );
+        meta.insert(
+            "manifest".to_string(),
+            ciborium::Value::Bytes(manifest.to_vec()),
         );
 
         let mut frame = Self::new(FrameType::Hello, MessageId::Uint(0));
@@ -409,6 +436,24 @@ impl Frame {
             })
         })
     }
+
+    /// Extract manifest from HELLO metadata (plugin side sends this).
+    /// Returns None if no manifest present (host HELLO) or not a HELLO frame.
+    /// The manifest is JSON-encoded plugin metadata.
+    pub fn hello_manifest(&self) -> Option<&[u8]> {
+        if self.frame_type != FrameType::Hello {
+            return None;
+        }
+        self.meta.as_ref().and_then(|m| {
+            m.get("manifest").and_then(|v| {
+                if let ciborium::Value::Bytes(bytes) = v {
+                    Some(bytes.as_slice())
+                } else {
+                    None
+                }
+            })
+        })
+    }
 }
 
 impl Default for Frame {
@@ -473,6 +518,18 @@ mod tests {
         assert_eq!(frame.frame_type, FrameType::Hello);
         assert_eq!(frame.hello_max_frame(), Some(1_000_000));
         assert_eq!(frame.hello_max_chunk(), Some(100_000));
+        assert!(frame.hello_manifest().is_none(), "Host HELLO should not include manifest");
+    }
+
+    #[test]
+    fn test_hello_frame_with_manifest() {
+        let manifest_json = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test","caps":[]}"#;
+        let frame = Frame::hello_with_manifest(1_000_000, 100_000, manifest_json.as_bytes());
+        assert_eq!(frame.frame_type, FrameType::Hello);
+        assert_eq!(frame.hello_max_frame(), Some(1_000_000));
+        assert_eq!(frame.hello_max_chunk(), Some(100_000));
+        assert!(frame.hello_manifest().is_some(), "Plugin HELLO must include manifest");
+        assert_eq!(frame.hello_manifest().unwrap(), manifest_json.as_bytes());
     }
 
     #[test]

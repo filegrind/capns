@@ -33,7 +33,7 @@
 
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
 use crate::cbor_io::{handshake_accept, CborError, FrameReader, FrameWriter};
-use crate::{CapManifest, CapUrn};
+use crate::CapUrn;
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Write};
 use std::sync::{Arc, Mutex};
@@ -137,8 +137,12 @@ pub type HandlerFn = Arc<
 
 /// The plugin runtime that handles all I/O for plugin binaries.
 ///
-/// Plugins create a runtime, register handlers for their caps,
+/// Plugins create a runtime with their manifest, register handlers for their caps,
 /// then call `run()` to process requests.
+///
+/// The manifest is REQUIRED - plugins MUST provide their manifest which is sent
+/// in the HELLO response during handshake. This is the ONLY way for plugins to
+/// communicate their capabilities to the host.
 ///
 /// **Multiplexed execution**: Multiple requests can be processed concurrently.
 /// Each request handler runs in its own thread, allowing the runtime to:
@@ -149,27 +153,35 @@ pub struct PluginRuntime {
     /// Registered handlers by cap URN pattern (Arc for thread-safe sharing)
     handlers: HashMap<String, HandlerFn>,
 
-    /// Plugin manifest (caps this plugin provides)
-    manifest: Option<CapManifest>,
+    /// Plugin manifest JSON data - sent in HELLO response.
+    /// This is REQUIRED - plugins must provide their manifest.
+    manifest_data: Vec<u8>,
 
     /// Negotiated protocol limits
     limits: Limits,
 }
 
 impl PluginRuntime {
-    /// Create a new plugin runtime.
-    pub fn new() -> Self {
+    /// Create a new plugin runtime with the required manifest.
+    ///
+    /// The manifest is JSON-encoded plugin metadata including:
+    /// - name: Plugin name
+    /// - version: Plugin version
+    /// - caps: Array of capability definitions
+    ///
+    /// This manifest is sent in the HELLO response to the host.
+    /// **Plugins MUST provide a manifest - there is no fallback.**
+    pub fn new(manifest: &[u8]) -> Self {
         Self {
             handlers: HashMap::new(),
-            manifest: None,
+            manifest_data: manifest.to_vec(),
             limits: Limits::default(),
         }
     }
 
-    /// Set the plugin manifest.
-    pub fn with_manifest(mut self, manifest: CapManifest) -> Self {
-        self.manifest = Some(manifest);
-        self
+    /// Create a new plugin runtime with manifest JSON string.
+    pub fn with_manifest_json(manifest_json: &str) -> Self {
+        Self::new(manifest_json.as_bytes())
     }
 
     /// Register a handler for a cap URN.
@@ -237,7 +249,7 @@ impl PluginRuntime {
     ///
     /// Protocol lifecycle:
     /// 1. Receive HELLO from host
-    /// 2. Send HELLO back (handshake)
+    /// 2. Send HELLO back with manifest (handshake)
     /// 3. Main loop reads frames:
     ///    - REQ frames: spawn handler thread, continue reading
     ///    - HEARTBEAT frames: respond immediately
@@ -260,10 +272,10 @@ impl PluginRuntime {
         let mut frame_reader = FrameReader::new(reader);
         let frame_writer = Arc::new(Mutex::new(FrameWriter::new(writer)));
 
-        // Perform handshake
+        // Perform handshake - send our manifest in the HELLO response
         {
             let mut writer_guard = frame_writer.lock().unwrap();
-            let limits = handshake_accept(&mut frame_reader, &mut writer_guard)?;
+            let limits = handshake_accept(&mut frame_reader, &mut writer_guard, &self.manifest_data)?;
             frame_reader.set_limits(limits);
             writer_guard.set_limits(limits);
         }
@@ -379,19 +391,17 @@ impl PluginRuntime {
     }
 }
 
-impl Default for PluginRuntime {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Test manifest JSON - plugins MUST include manifest
+    const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
+
     #[test]
     fn test_register_and_find_handler() {
-        let mut runtime = PluginRuntime::new();
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, _emitter| {
             Ok(b"result".to_vec())
@@ -402,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_raw_handler() {
-        let mut runtime = PluginRuntime::new();
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register_raw("cap:op=raw", |payload, _emitter| {
             // Echo the payload back
@@ -415,7 +425,7 @@ mod tests {
     #[test]
     fn test_handler_streaming() {
         // Create runtime with handler
-        let mut runtime = PluginRuntime::new();
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         runtime.register::<serde_json::Value, _>("cap:op=test", |req, emitter| {
             emitter.emit_status("processing", "Starting...");
             emitter.emit_bytes(b"chunk1");
@@ -436,7 +446,7 @@ mod tests {
     #[test]
     fn test_handler_is_send_sync() {
         // This test verifies at compile time that handlers can be shared across threads
-        let mut runtime = PluginRuntime::new();
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register::<serde_json::Value, _>("cap:op=threaded", |_req, emitter| {
             // Emitter must be usable from handler thread
@@ -455,5 +465,12 @@ mod tests {
         });
 
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_with_manifest_json() {
+        let runtime = PluginRuntime::with_manifest_json(TEST_MANIFEST);
+        // Verify it was created and manifest is stored
+        assert!(!runtime.manifest_data.is_empty());
     }
 }
