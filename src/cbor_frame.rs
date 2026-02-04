@@ -62,6 +62,8 @@ pub enum FrameType {
     Log = 5,
     /// Error message
     Err = 6,
+    /// Health monitoring ping/pong - either side can send, receiver must respond with same ID
+    Heartbeat = 7,
 }
 
 impl FrameType {
@@ -74,6 +76,7 @@ impl FrameType {
             4 => Some(FrameType::End),
             5 => Some(FrameType::Log),
             6 => Some(FrameType::Err),
+            7 => Some(FrameType::Heartbeat),
             _ => None,
         }
     }
@@ -290,6 +293,12 @@ impl Frame {
         frame
     }
 
+    /// Create a HEARTBEAT frame for health monitoring.
+    /// Either side can send; receiver must respond with HEARTBEAT using the same ID.
+    pub fn heartbeat(id: MessageId) -> Self {
+        Self::new(FrameType::Heartbeat, id)
+    }
+
     /// Check if this is the final frame in a stream
     pub fn is_eof(&self) -> bool {
         self.eof.unwrap_or(false)
@@ -437,6 +446,7 @@ mod tests {
             FrameType::End,
             FrameType::Log,
             FrameType::Err,
+            FrameType::Heartbeat,
         ] {
             let v = t as u8;
             let recovered = FrameType::from_u8(v).expect("should recover frame type");
@@ -497,5 +507,15 @@ mod tests {
         let last = Frame::chunk_with_offset(id2, 5, b"last".to_vec(), 900, None, true);
         assert!(last.is_eof());
         assert!(last.len.is_none()); // len only on first chunk
+    }
+
+    #[test]
+    fn test_heartbeat_frame() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::heartbeat(id.clone());
+        assert_eq!(frame.frame_type, FrameType::Heartbeat);
+        assert_eq!(frame.id, id);
+        assert!(frame.payload.is_none());
+        assert!(frame.meta.is_none());
     }
 }

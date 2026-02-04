@@ -233,6 +233,12 @@ impl<W: Write, R: Read> PluginHost<W, R> {
                     // Unexpected HELLO during request
                     return Err(HostError::UnexpectedFrameType(FrameType::Hello));
                 }
+                FrameType::Heartbeat => {
+                    // Plugin sent us a heartbeat - respond with same ID
+                    let response = Frame::heartbeat(frame.id);
+                    self.writer.write(&response)?;
+                    continue;
+                }
                 FrameType::Req => {
                     // Plugin sent us a request (e.g., for tool call)
                     // This would be handled by a callback in a full implementation
@@ -292,6 +298,40 @@ impl<W: Write, R: Read> PluginHost<W, R> {
     /// Get mutable access to the frame reader.
     pub fn reader_mut(&mut self) -> &mut FrameReader<R> {
         &mut self.reader
+    }
+
+    /// Send a heartbeat to the plugin and wait for response.
+    /// Returns Ok(()) if the plugin responded, Err if it didn't.
+    pub fn send_heartbeat(&mut self) -> Result<(), HostError> {
+        let heartbeat_id = MessageId::new_uuid();
+        let heartbeat = Frame::heartbeat(heartbeat_id.clone());
+        self.writer.write(&heartbeat)?;
+
+        // Wait for matching heartbeat response
+        loop {
+            let frame = self.reader.read()?.ok_or(HostError::ProcessExited)?;
+
+            if frame.frame_type == FrameType::Heartbeat && frame.id == heartbeat_id {
+                return Ok(());
+            }
+
+            // Handle other frame types that might arrive
+            match frame.frame_type {
+                FrameType::Log => {
+                    // Log messages can be ignored during heartbeat
+                    continue;
+                }
+                FrameType::Err => {
+                    let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
+                    let message = frame.error_message().unwrap_or("Unknown error").to_string();
+                    return Err(HostError::PluginError { code, message });
+                }
+                _ => {
+                    // Skip frames not related to our heartbeat
+                    continue;
+                }
+            }
+        }
     }
 }
 
@@ -367,6 +407,12 @@ impl<'a, W: Write, R: Read> StreamingResponse<'a, W, R> {
                     let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
                     let message = frame.error_message().unwrap_or("Unknown error").to_string();
                     return Err(HostError::PluginError { code, message });
+                }
+                FrameType::Heartbeat => {
+                    // Plugin sent us a heartbeat - respond with same ID
+                    let response = Frame::heartbeat(frame.id.clone());
+                    self.host.writer.write(&response)?;
+                    continue;
                 }
                 FrameType::Hello | FrameType::Req => {
                     return Err(HostError::UnexpectedFrameType(frame.frame_type));

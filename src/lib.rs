@@ -44,6 +44,10 @@ pub mod cbor_io;
 pub mod plugin_runtime;
 pub mod plugin_host;
 
+// Integration tests for CBOR protocol
+#[cfg(test)]
+mod cbor_integration_tests;
+
 pub use cap_urn::*;
 pub use media_urn::*;
 pub use cap::*;
