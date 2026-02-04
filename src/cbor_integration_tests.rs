@@ -488,12 +488,12 @@ mod tests {
         // Test that handler registration and lookup works
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:op=echo", |req, _emitter| {
+        runtime.register::<serde_json::Value, _>("cap:op=echo", |req, _emitter, _peer| {
             // Serialize back to bytes
             Ok(serde_json::to_vec(&req).unwrap_or_default())
         });
 
-        runtime.register::<serde_json::Value, _>("cap:op=transform", |_req, _emitter| {
+        runtime.register::<serde_json::Value, _>("cap:op=transform", |_req, _emitter, _peer| {
             Ok(b"transformed".to_vec())
         });
 

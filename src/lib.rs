@@ -70,5 +70,5 @@ pub use cbor_io::{
     encode_frame, decode_frame, read_frame, write_frame,
     handshake, handshake_accept,
 };
-pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter};
+pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter, PeerInvoker, NoPeerInvoker};
 pub use plugin_host::{PluginHost, PluginResponse, ResponseChunk, StreamingResponse, HostError};

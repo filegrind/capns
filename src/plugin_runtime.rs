@@ -34,6 +34,7 @@
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
 use crate::cbor_io::{handshake_accept, CborError, FrameReader, FrameWriter};
 use crate::CapUrn;
+use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Write};
 use std::sync::{Arc, Mutex};
@@ -62,6 +63,12 @@ pub enum RuntimeError {
 
     #[error("Serialization error: {0}")]
     Serialize(String),
+
+    #[error("Peer request error: {0}")]
+    PeerRequest(String),
+
+    #[error("Peer response error: {0}")]
+    PeerResponse(String),
 }
 
 /// A streaming emitter that writes chunks immediately to the output.
@@ -92,6 +99,62 @@ pub trait StreamEmitter: Send + Sync {
 
     /// Emit a log message at the given level.
     fn log(&self, level: &str, message: &str);
+}
+
+/// Allows handlers to invoke caps on the peer (host).
+///
+/// This trait enables bidirectional communication where a plugin handler can
+/// invoke caps on the host while processing a request. This is essential for
+/// sandboxed plugins that need to delegate certain operations (like model
+/// downloading) to the host.
+///
+/// The `invoke` method sends a REQ frame to the host and returns a receiver
+/// that yields response chunks as they arrive. The caller can iterate over
+/// the receiver to collect all response data.
+pub trait PeerInvoker: Send + Sync {
+    /// Invoke a cap on the host.
+    ///
+    /// Sends a REQ frame to the host with the specified cap URN and payload.
+    /// Returns a receiver that yields response chunks (Vec<u8>) or errors.
+    /// The receiver will be closed when the response is complete (END frame received).
+    ///
+    /// # Arguments
+    /// * `cap_urn` - The cap URN to invoke on the host
+    /// * `payload` - The request payload (typically JSON-encoded)
+    ///
+    /// # Returns
+    /// A receiver that yields `Result<Vec<u8>, RuntimeError>` for each chunk.
+    /// Iterate over it to collect all response data.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let rx = peer.invoke("cap:op=model_path", json_payload.as_slice())?;
+    /// let mut response_data = Vec::new();
+    /// for chunk_result in rx {
+    ///     response_data.extend(chunk_result?);
+    /// }
+    /// ```
+    fn invoke(
+        &self,
+        cap_urn: &str,
+        payload: &[u8],
+    ) -> Result<Receiver<Result<Vec<u8>, RuntimeError>>, RuntimeError>;
+}
+
+/// A no-op PeerInvoker that always returns an error.
+/// Used when peer invocation is not supported.
+pub struct NoPeerInvoker;
+
+impl PeerInvoker for NoPeerInvoker {
+    fn invoke(
+        &self,
+        _cap_urn: &str,
+        _payload: &[u8],
+    ) -> Result<Receiver<Result<Vec<u8>, RuntimeError>>, RuntimeError> {
+        Err(RuntimeError::PeerRequest(
+            "Peer invocation not supported in this context".to_string(),
+        ))
+    }
 }
 
 /// Thread-safe implementation of StreamEmitter that writes CBOR frames.
@@ -130,10 +193,64 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
 }
 
 /// Handler function type - must be Send + Sync for concurrent execution.
-/// Receives request payload bytes and emitter, returns response payload bytes.
+/// Receives request payload bytes, emitter, and peer invoker; returns response payload bytes.
+///
+/// The `PeerInvoker` allows the handler to invoke caps on the host (peer) during
+/// request processing. This enables bidirectional communication for operations
+/// like model downloading that sandboxed plugins cannot perform directly.
 pub type HandlerFn = Arc<
-    dyn Fn(&[u8], &dyn StreamEmitter) -> Result<Vec<u8>, RuntimeError> + Send + Sync,
+    dyn Fn(&[u8], &dyn StreamEmitter, &dyn PeerInvoker) -> Result<Vec<u8>, RuntimeError> + Send + Sync,
 >;
+
+/// Internal struct to track pending peer requests (plugin invoking host caps).
+struct PendingPeerRequest {
+    sender: Sender<Result<Vec<u8>, RuntimeError>>,
+}
+
+/// Implementation of PeerInvoker that sends REQ frames to the host.
+struct PeerInvokerImpl<W: Write + Send> {
+    writer: Arc<Mutex<FrameWriter<W>>>,
+    pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
+}
+
+impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
+    fn invoke(
+        &self,
+        cap_urn: &str,
+        payload: &[u8],
+    ) -> Result<Receiver<Result<Vec<u8>, RuntimeError>>, RuntimeError> {
+        // Generate a new message ID for this request
+        let request_id = MessageId::new_uuid();
+
+        // Create a bounded channel for responses (buffer up to 64 chunks)
+        let (sender, receiver) = bounded(64);
+
+        // Register the pending request before sending
+        {
+            let mut pending = self.pending_requests.lock().unwrap();
+            pending.insert(request_id.clone(), PendingPeerRequest { sender });
+        }
+
+        // Create and send the REQ frame
+        let frame = Frame::req(
+            request_id.clone(),
+            cap_urn,
+            payload.to_vec(),
+            "application/json",
+        );
+
+        {
+            let mut writer = self.writer.lock().unwrap();
+            writer.write(&frame).map_err(|e| {
+                // Remove the pending request on send failure
+                self.pending_requests.lock().unwrap().remove(&request_id);
+                RuntimeError::PeerRequest(format!("Failed to send REQ frame: {}", e))
+            })?;
+        }
+
+        Ok(receiver)
+    }
+}
 
 /// The plugin runtime that handles all I/O for plugin binaries.
 ///
@@ -186,25 +303,33 @@ impl PluginRuntime {
 
     /// Register a handler for a cap URN.
     ///
-    /// The handler receives the request payload as bytes (typically JSON or CBOR)
-    /// and an emitter for streaming output. It returns the final response payload bytes.
+    /// The handler receives:
+    /// - The request payload as bytes (typically JSON or CBOR)
+    /// - An emitter for streaming output
+    /// - A peer invoker for calling caps on the host
+    ///
+    /// It returns the final response payload bytes.
     ///
     /// Chunks emitted by the handler are written immediately to stdout.
     /// This is essential for progress updates and real-time token streaming.
     ///
     /// **Thread safety**: Handlers run in separate threads, so they must be
-    /// Send + Sync. The emitter is thread-safe and can be used freely.
+    /// Send + Sync. The emitter and peer invoker are thread-safe and can be used freely.
+    ///
+    /// **Peer invocation**: Use the `peer` parameter to invoke caps on the host.
+    /// This is useful for sandboxed plugins that need to delegate operations
+    /// (like network access) to the host.
     pub fn register<Req, F>(&mut self, cap_urn: &str, handler: F)
     where
         Req: serde::de::DeserializeOwned + 'static,
-        F: Fn(Req, &dyn StreamEmitter) -> Result<Vec<u8>, RuntimeError> + Send + Sync + 'static,
+        F: Fn(Req, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<Vec<u8>, RuntimeError> + Send + Sync + 'static,
     {
-        let handler = move |payload: &[u8], emitter: &dyn StreamEmitter| -> Result<Vec<u8>, RuntimeError> {
+        let handler = move |payload: &[u8], emitter: &dyn StreamEmitter, peer: &dyn PeerInvoker| -> Result<Vec<u8>, RuntimeError> {
             // Deserialize request from payload bytes (JSON format for now)
             let request: Req = serde_json::from_slice(payload)
                 .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse request: {}", e)))?;
 
-            handler(request, emitter)
+            handler(request, emitter, peer)
         };
 
         self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
@@ -213,9 +338,10 @@ impl PluginRuntime {
     /// Register a raw handler that works with bytes directly.
     ///
     /// Use this when you need full control over serialization.
+    /// The handler receives the emitter and peer invoker in addition to the raw payload.
     pub fn register_raw<F>(&mut self, cap_urn: &str, handler: F)
     where
-        F: Fn(&[u8], &dyn StreamEmitter) -> Result<Vec<u8>, RuntimeError> + Send + Sync + 'static,
+        F: Fn(&[u8], &dyn StreamEmitter, &dyn PeerInvoker) -> Result<Vec<u8>, RuntimeError> + Send + Sync + 'static,
     {
         self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
     }
@@ -253,12 +379,17 @@ impl PluginRuntime {
     /// 3. Main loop reads frames:
     ///    - REQ frames: spawn handler thread, continue reading
     ///    - HEARTBEAT frames: respond immediately
+    ///    - RES/CHUNK/END frames: route to pending peer requests
     ///    - Other frames: ignore
     /// 4. Exit when stdin closes, wait for active handlers to complete
     ///
     /// **Multiplexing**: The main loop never blocks on handler execution.
     /// Handlers run in separate threads, allowing concurrent processing
     /// of multiple requests and immediate heartbeat responses.
+    ///
+    /// **Bidirectional communication**: Handlers can invoke caps on the host
+    /// using the `PeerInvoker` parameter. Response frames from the host are
+    /// routed to the appropriate pending request by MessageId.
     pub fn run(&self) -> Result<(), RuntimeError> {
         let stdin = io::stdin();
         let stdout = io::stdout();
@@ -279,6 +410,10 @@ impl PluginRuntime {
             frame_reader.set_limits(limits);
             writer_guard.set_limits(limits);
         }
+
+        // Track pending peer requests (plugin invoking host caps)
+        let pending_peer_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>> =
+            Arc::new(Mutex::new(HashMap::new()));
 
         // Track active handler threads for cleanup
         let mut active_handlers: Vec<JoinHandle<()>> = Vec::new();
@@ -325,6 +460,7 @@ impl PluginRuntime {
 
                     // Clone what we need for the handler thread
                     let writer_clone = Arc::clone(&frame_writer);
+                    let pending_clone = Arc::clone(&pending_peer_requests);
                     let request_id = frame.id.clone();
                     let payload = frame.payload.clone().unwrap_or_default();
 
@@ -336,7 +472,13 @@ impl PluginRuntime {
                             seq: Mutex::new(0),
                         };
 
-                        let result = handler(&payload, &emitter);
+                        // Create peer invoker for this handler
+                        let peer_invoker = PeerInvokerImpl {
+                            writer: Arc::clone(&writer_clone),
+                            pending_requests: Arc::clone(&pending_clone),
+                        };
+
+                        let result = handler(&payload, &emitter, &peer_invoker);
 
                         // Write final response (END or ERR)
                         let response_frame = match result {
@@ -365,13 +507,35 @@ impl PluginRuntime {
                     writer.write(&err_frame)?;
                 }
                 FrameType::Res | FrameType::Chunk | FrameType::End => {
-                    // These would be responses to plugin-initiated requests (cap invocation)
-                    // For now, ignore - full cap invocation support would route these
-                    // to waiting request handlers
-                    continue;
+                    // Response frames from host - route to pending peer request by frame.id
+                    let pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending.get(&frame.id) {
+                        // Send the payload to the waiting receiver
+                        let payload = frame.payload.clone().unwrap_or_default();
+                        let _ = pending_req.sender.send(Ok(payload));
+                    }
+                    drop(pending);
+
+                    // Remove completed requests (RES or END frame marks completion)
+                    if frame.frame_type == FrameType::Res || frame.frame_type == FrameType::End {
+                        pending_peer_requests.lock().unwrap().remove(&frame.id);
+                    }
                 }
-                FrameType::Log | FrameType::Err => {
-                    // Shouldn't receive these from host, ignore
+                FrameType::Err => {
+                    // Error frame from host - could be response to peer request
+                    let pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending.get(&frame.id) {
+                        let code = frame.error_code().unwrap_or("UNKNOWN");
+                        let message = frame.error_message().unwrap_or("Unknown error");
+                        let _ = pending_req.sender.send(Err(RuntimeError::PeerResponse(
+                            format!("[{}] {}", code, message),
+                        )));
+                    }
+                    drop(pending);
+                    pending_peer_requests.lock().unwrap().remove(&frame.id);
+                }
+                FrameType::Log => {
+                    // Log frames from host - shouldn't normally receive these, ignore
                     continue;
                 }
             }
@@ -403,7 +567,7 @@ mod tests {
     fn test_register_and_find_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, _emitter| {
+        runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, _emitter, _peer| {
             Ok(b"result".to_vec())
         });
 
@@ -414,7 +578,7 @@ mod tests {
     fn test_raw_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_raw("cap:op=raw", |payload, _emitter| {
+        runtime.register_raw("cap:op=raw", |payload, _emitter, _peer| {
             // Echo the payload back
             Ok(payload.to_vec())
         });
@@ -426,7 +590,7 @@ mod tests {
     fn test_handler_streaming() {
         // Create runtime with handler
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-        runtime.register::<serde_json::Value, _>("cap:op=test", |req, emitter| {
+        runtime.register::<serde_json::Value, _>("cap:op=test", |req, emitter, _peer| {
             emitter.emit_status("processing", "Starting...");
             emitter.emit_bytes(b"chunk1");
             emitter.emit_bytes(b"chunk2");
@@ -448,7 +612,7 @@ mod tests {
         // This test verifies at compile time that handlers can be shared across threads
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:op=threaded", |_req, emitter| {
+        runtime.register::<serde_json::Value, _>("cap:op=threaded", |_req, emitter, _peer| {
             // Emitter must be usable from handler thread
             emitter.emit_status("in_thread", "Processing in separate thread");
             Ok(b"done".to_vec())
@@ -465,6 +629,17 @@ mod tests {
         });
 
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_no_peer_invoker() {
+        let no_peer = NoPeerInvoker;
+        let result = no_peer.invoke("cap:op=test", b"payload");
+        assert!(result.is_err());
+        match result {
+            Err(RuntimeError::PeerRequest(_)) => {}
+            _ => panic!("Expected PeerRequest error"),
+        }
     }
 
     #[test]
