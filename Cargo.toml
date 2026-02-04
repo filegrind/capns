@@ -1,5 +1,6 @@
 [dependencies]
 anyhow = "1.0"
+ciborium = "0.2"
 dirs = "5.0"
 include_dir = "0.7"
 jsonschema = "0.17"
