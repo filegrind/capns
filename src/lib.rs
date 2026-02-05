@@ -57,7 +57,7 @@ pub use schema_validation::{SchemaValidator as JsonSchemaValidator, SchemaValida
 pub use registry::*;
 pub use media_registry::{MediaUrnRegistry, MediaRegistryError, StoredMediaSpec};
 pub use standard::*;
-pub use caller::{CapCaller, CapSet, StdinSource};
+pub use caller::{CapArgumentValue, CapCaller, CapSet, StdinSource};
 pub use response::*;
 pub use cap_matrix::*;
 pub use media_spec::*;

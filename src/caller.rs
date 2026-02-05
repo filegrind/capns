@@ -25,6 +25,39 @@ pub enum StdinSource {
     },
 }
 
+/// Unified argument type - arguments are identified by media_urn.
+/// The cap definition's sources specify how to extract values (stdin, position, cli_flag).
+#[derive(Debug, Clone)]
+pub struct CapArgumentValue {
+    /// Semantic identifier, e.g., "media:model-spec;textable;form=scalar"
+    pub media_urn: String,
+    /// Value bytes (UTF-8 for text, raw for binary)
+    pub value: Vec<u8>,
+}
+
+impl CapArgumentValue {
+    /// Create a new CapArgumentValue
+    pub fn new(media_urn: impl Into<String>, value: Vec<u8>) -> Self {
+        Self {
+            media_urn: media_urn.into(),
+            value,
+        }
+    }
+
+    /// Create a new CapArgumentValue from a string value
+    pub fn from_str(media_urn: impl Into<String>, value: &str) -> Self {
+        Self {
+            media_urn: media_urn.into(),
+            value: value.as_bytes().to_vec(),
+        }
+    }
+
+    /// Get the value as a UTF-8 string (may fail for binary data)
+    pub fn value_as_str(&self) -> Result<&str, std::str::Utf8Error> {
+        std::str::from_utf8(&self.value)
+    }
+}
+
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
     cap: String,
@@ -35,12 +68,12 @@ pub struct CapCaller {
 
 /// Trait for Cap Host communication
 pub trait CapSet: Send + Sync + std::fmt::Debug {
+    /// Execute a cap with unified arguments identified by media_urn.
+    /// The cap definition's sources specify how to extract values (stdin, position, cli_flag).
     fn execute_cap(
         &self,
         cap_urn: &str,
-        positional_args: &[String],
-        named_args: &[(String, String)],
-        stdin_source: Option<StdinSource>
+        arguments: &[CapArgumentValue],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>>;
 }
 
@@ -81,58 +114,16 @@ impl CapCaller {
         positions
     }
 
-    /// Call the cap with structured arguments and optional stdin source
-    /// Validates inputs against cap definition before execution
-    pub async fn call(
-        &self,
-        positional_args: Vec<JsonValue>,
-        named_args: Vec<JsonValue>,
-        stdin_source: Option<StdinSource>
-    ) -> Result<ResponseWrapper> {
-        // Note: Full async validation with ProfileSchemaRegistry would be done at a higher level
-        // Here we do basic structural validation synchronously
-        self.validate_inputs_basic(&positional_args, &named_args)?;
+    /// Call the cap with unified arguments identified by media_urn.
+    /// Validates arguments against cap definition before execution.
+    pub async fn call(&self, arguments: Vec<CapArgumentValue>) -> Result<ResponseWrapper> {
+        // Validate arguments against cap definition
+        self.validate_arguments(&arguments)?;
 
-        // Convert JsonValue positional args to strings
-        let string_positional_args: Vec<String> = positional_args
-            .into_iter()
-            .map(|arg| match arg {
-                JsonValue::String(s) => s,
-                JsonValue::Number(n) => n.to_string(),
-                JsonValue::Bool(b) => b.to_string(),
-                JsonValue::Array(_) | JsonValue::Object(_) => {
-                    serde_json::to_string(&arg).unwrap_or_default()
-                }
-                JsonValue::Null => String::new(),
-            })
-            .collect();
-
-        // Convert JsonValue named args to (String, String) tuples
-        let string_named_args: Vec<(String, String)> = named_args
-            .into_iter()
-            .filter_map(|arg| {
-                if let JsonValue::Object(map) = arg {
-                    if let (Some(JsonValue::String(name)), Some(value)) =
-                        (map.get("name"), map.get("value")) {
-                        let value_str = match value {
-                            JsonValue::String(s) => s.clone(),
-                            JsonValue::Number(n) => n.to_string(),
-                            JsonValue::Bool(b) => b.to_string(),
-                            _ => serde_json::to_string(value).unwrap_or_default(),
-                        };
-                        return Some((name.clone(), value_str));
-                    }
-                }
-                None
-            })
-            .collect();
-
-        // Execute via cap host method with stdin support
+        // Execute via cap host method
         let (binary_output, text_output) = self.cap_set.execute_cap(
             &self.cap,
-            &string_positional_args,
-            &string_named_args,
-            stdin_source
+            &arguments,
         ).await?;
 
         // Resolve output spec to determine response type
@@ -199,85 +190,41 @@ impl CapCaller {
             ))
     }
 
-    /// Basic input validation (argument count, required args present)
-    /// Full async validation with ProfileSchemaRegistry should be done at a higher level
-    fn validate_inputs_basic(
-        &self,
-        positional_args: &[JsonValue],
-        named_args: &[JsonValue],
-    ) -> Result<()> {
-        use crate::ArgSource;
-        let args = self.cap_definition.get_args();
+    /// Validate unified arguments against cap definition.
+    /// Checks that all required arguments are provided (by media_urn).
+    fn validate_arguments(&self, arguments: &[CapArgumentValue]) -> Result<()> {
+        let arg_defs = self.cap_definition.get_args();
 
-        // Get positional args sorted by position
-        let mut positional_arg_defs: Vec<_> = args.iter()
-            .filter_map(|arg| {
-                arg.sources.iter()
-                    .find_map(|s| if let ArgSource::Position { position } = s {
-                        Some((arg, *position))
-                    } else {
-                        None
-                    })
-            })
+        // Build set of provided media_urns
+        let provided_urns: std::collections::HashSet<_> = arguments
+            .iter()
+            .map(|a| a.media_urn.as_str())
             .collect();
-        positional_arg_defs.sort_by_key(|(_, pos)| *pos);
 
-        // Check if positional arguments are being used
-        let using_positional = !positional_args.is_empty() || !positional_arg_defs.is_empty();
-
-        if using_positional {
-            // Validate positional arguments
-            let max_args = positional_arg_defs.len();
-            if positional_args.len() > max_args {
-                return Err(anyhow::anyhow!(
-                    "Too many arguments: expected at most {}, got {}",
-                    max_args, positional_args.len()
+        // Check all required arguments are provided
+        for arg_def in arg_defs {
+            if arg_def.required && !provided_urns.contains(arg_def.media_urn.as_str()) {
+                return Err(anyhow!(
+                    "Missing required argument: {}",
+                    arg_def.media_urn
                 ));
             }
+        }
 
-            // Check required arguments are present
-            let required_count = positional_arg_defs.iter()
-                .filter(|(arg, _)| arg.required)
-                .count();
-            if positional_args.len() < required_count {
-                if let Some((missing_arg, _)) = positional_arg_defs.get(positional_args.len()) {
-                    return Err(anyhow::anyhow!(
-                        "Missing required argument: {}",
-                        missing_arg.media_urn
-                    ));
-                }
-            }
-        } else {
-            // Validate named arguments
-            let mut provided_names = std::collections::HashSet::new();
-            for arg in named_args {
-                if let JsonValue::Object(map) = arg {
-                    if let Some(JsonValue::String(name)) = map.get("name") {
-                        provided_names.insert(name.clone());
-                    }
-                }
-            }
+        // Check for unknown arguments
+        let known_urns: std::collections::HashSet<_> = arg_defs
+            .iter()
+            .map(|a| a.media_urn.as_str())
+            .collect();
 
-            // Check all required arguments are provided
-            for arg in args {
-                if arg.required {
-                    // Find cli_flag for this arg
-                    let cli_flag = arg.sources.iter()
-                        .find_map(|s| if let ArgSource::CliFlag { cli_flag } = s {
-                            Some(cli_flag.as_str())
-                        } else {
-                            None
-                        });
-
-                    if let Some(flag) = cli_flag {
-                        if !provided_names.contains(flag) {
-                            return Err(anyhow::anyhow!(
-                                "Missing required argument: {}",
-                                arg.media_urn
-                            ));
-                        }
-                    }
-                }
+        for arg in arguments {
+            if !known_urns.contains(arg.media_urn.as_str()) {
+                return Err(anyhow!(
+                    "Unknown argument media_urn: {} (cap {} accepts: {:?})",
+                    arg.media_urn,
+                    self.cap,
+                    known_urns
+                ));
             }
         }
 

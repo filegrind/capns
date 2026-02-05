@@ -7,7 +7,7 @@
 //! where nodes are MediaSpec IDs and edges are capabilities that convert
 //! from one spec to another.
 
-use crate::{Cap, CapUrn, CapSet, StdinSource};
+use crate::{Cap, CapArgumentValue, CapUrn, CapSet, StdinSource};
 use crate::media_urn::MediaUrn;
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -710,13 +710,10 @@ impl CapSet for CompositeCapSet {
     fn execute_cap(
         &self,
         cap_urn: &str,
-        positional_args: &[String],
-        named_args: &[(String, String)],
-        stdin_source: Option<StdinSource>
+        arguments: &[CapArgumentValue],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
         let cap_urn = cap_urn.to_string();
-        let positional_args = positional_args.to_vec();
-        let named_args = named_args.to_vec();
+        let arguments = arguments.to_vec();
 
         // Find the best matching cap_set BEFORE entering async block
         // Clone the Arc<dyn CapSet> so we don't hold the lock across await
@@ -773,7 +770,7 @@ impl CapSet for CompositeCapSet {
 
         // Now we have an owned Arc<dyn CapSet> - no locks held
         Box::pin(async move {
-            best_cap_set.execute_cap(&cap_urn, &positional_args, &named_args, stdin_source).await
+            best_cap_set.execute_cap(&cap_urn, &arguments).await
         })
     }
 }

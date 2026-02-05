@@ -33,6 +33,7 @@
 
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
 use crate::cbor_io::{handshake_accept, CborError, FrameReader, FrameWriter};
+use crate::caller::CapArgumentValue;
 use crate::CapUrn;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
@@ -112,15 +113,16 @@ pub trait StreamEmitter: Send + Sync {
 /// that yields response chunks as they arrive. The caller can iterate over
 /// the receiver to collect all response data.
 pub trait PeerInvoker: Send + Sync {
-    /// Invoke a cap on the host.
+    /// Invoke a cap on the host with unified arguments.
     ///
-    /// Sends a REQ frame to the host with the specified cap URN and payload.
+    /// Sends a REQ frame to the host with the specified cap URN and arguments.
+    /// Arguments are serialized as CBOR with native binary values.
     /// Returns a receiver that yields response chunks (Vec<u8>) or errors.
     /// The receiver will be closed when the response is complete (END frame received).
     ///
     /// # Arguments
     /// * `cap_urn` - The cap URN to invoke on the host
-    /// * `payload` - The request payload (typically JSON-encoded)
+    /// * `arguments` - Arguments identified by media_urn
     ///
     /// # Returns
     /// A receiver that yields `Result<Vec<u8>, RuntimeError>` for each chunk.
@@ -128,7 +130,8 @@ pub trait PeerInvoker: Send + Sync {
     ///
     /// # Example
     /// ```ignore
-    /// let rx = peer.invoke("cap:op=model_path", json_payload.as_slice())?;
+    /// let args = vec![CapArgumentValue::from_str("media:model-spec;textable;form=scalar", model_spec)];
+    /// let rx = peer.invoke("cap:op=model_path;...", &args)?;
     /// let mut response_data = Vec::new();
     /// for chunk_result in rx {
     ///     response_data.extend(chunk_result?);
@@ -137,7 +140,7 @@ pub trait PeerInvoker: Send + Sync {
     fn invoke(
         &self,
         cap_urn: &str,
-        payload: &[u8],
+        arguments: &[CapArgumentValue],
     ) -> Result<Receiver<Result<Vec<u8>, RuntimeError>>, RuntimeError>;
 }
 
@@ -149,7 +152,7 @@ impl PeerInvoker for NoPeerInvoker {
     fn invoke(
         &self,
         _cap_urn: &str,
-        _payload: &[u8],
+        _arguments: &[CapArgumentValue],
     ) -> Result<Receiver<Result<Vec<u8>, RuntimeError>>, RuntimeError> {
         Err(RuntimeError::PeerRequest(
             "Peer invocation not supported in this context".to_string(),
@@ -213,11 +216,100 @@ struct PeerInvokerImpl<W: Write + Send> {
     pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
 }
 
+/// Extract the effective payload from a REQ frame.
+///
+/// If the content_type is "application/cbor", the payload is expected to be
+/// CBOR unified arguments: `[{media_urn: string, value: bytes}, ...]`
+/// The function extracts the value whose media_urn matches the cap's input type.
+///
+/// For other content types (or if content_type is None), returns the raw payload.
+fn extract_effective_payload(
+    payload: &[u8],
+    content_type: Option<&str>,
+    cap_urn: &str,
+) -> Result<Vec<u8>, RuntimeError> {
+    // Check if this is CBOR unified arguments
+    if content_type != Some("application/cbor") {
+        // Not CBOR unified arguments - return raw payload
+        return Ok(payload.to_vec());
+    }
+
+    // Parse the cap URN to get the expected input media type
+    let expected_input = match CapUrn::from_string(cap_urn) {
+        Ok(urn) => urn.in_spec().to_string(),
+        Err(e) => {
+            return Err(RuntimeError::CapUrn(format!(
+                "Failed to parse cap URN '{}': {}",
+                cap_urn, e
+            )));
+        }
+    };
+
+    // Parse the CBOR payload as an array of argument maps
+    let cbor_value: ciborium::Value = ciborium::from_reader(payload).map_err(|e| {
+        RuntimeError::Deserialize(format!("Failed to parse CBOR unified arguments: {}", e))
+    })?;
+
+    let arguments = match cbor_value {
+        ciborium::Value::Array(arr) => arr,
+        _ => {
+            return Err(RuntimeError::Deserialize(
+                "CBOR unified arguments must be an array".to_string(),
+            ));
+        }
+    };
+
+    // Find the argument with matching media_urn
+    for arg in arguments {
+        let arg_map = match arg {
+            ciborium::Value::Map(m) => m,
+            _ => continue,
+        };
+
+        let mut media_urn: Option<String> = None;
+        let mut value: Option<Vec<u8>> = None;
+
+        for (k, v) in arg_map {
+            if let ciborium::Value::Text(key) = k {
+                match key.as_str() {
+                    "media_urn" => {
+                        if let ciborium::Value::Text(s) = v {
+                            media_urn = Some(s);
+                        }
+                    }
+                    "value" => {
+                        if let ciborium::Value::Bytes(b) = v {
+                            value = Some(b);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Check if this argument matches the expected input
+        if let (Some(urn), Some(val)) = (media_urn, value) {
+            // Match if the media_urn contains the expected input or vice versa
+            // This allows for flexible matching (e.g., "media:llm-generation-request;json;form=map"
+            // matches "media:llm-generation-request")
+            if urn.contains(&expected_input) || expected_input.contains(&urn) {
+                return Ok(val);
+            }
+        }
+    }
+
+    // No matching argument found - this is an error, no fallbacks
+    Err(RuntimeError::Deserialize(format!(
+        "No argument found matching expected input media type '{}' in CBOR unified arguments",
+        expected_input
+    )))
+}
+
 impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
     fn invoke(
         &self,
         cap_urn: &str,
-        payload: &[u8],
+        arguments: &[CapArgumentValue],
     ) -> Result<Receiver<Result<Vec<u8>, RuntimeError>>, RuntimeError> {
         // Generate a new message ID for this request
         let request_id = MessageId::new_uuid();
@@ -231,12 +323,36 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
             pending.insert(request_id.clone(), PendingPeerRequest { sender });
         }
 
-        // Create and send the REQ frame
+        // Serialize arguments as CBOR - binary values stay binary (no base64 needed)
+        let payload = ciborium::Value::Array(
+            arguments
+                .iter()
+                .map(|a| {
+                    ciborium::Value::Map(vec![
+                        (
+                            ciborium::Value::Text("media_urn".to_string()),
+                            ciborium::Value::Text(a.media_urn.clone()),
+                        ),
+                        (
+                            ciborium::Value::Text("value".to_string()),
+                            ciborium::Value::Bytes(a.value.clone()),
+                        ),
+                    ])
+                })
+                .collect(),
+        );
+        let mut payload_bytes = Vec::new();
+        ciborium::into_writer(&payload, &mut payload_bytes).map_err(|e| {
+            self.pending_requests.lock().unwrap().remove(&request_id);
+            RuntimeError::Serialize(format!("Failed to serialize arguments: {}", e))
+        })?;
+
+        // Create and send the REQ frame with CBOR payload
         let frame = Frame::req(
             request_id.clone(),
             cap_urn,
-            payload.to_vec(),
-            "application/json",
+            payload_bytes,
+            "application/cbor",
         );
 
         {
@@ -462,7 +578,9 @@ impl PluginRuntime {
                     let writer_clone = Arc::clone(&frame_writer);
                     let pending_clone = Arc::clone(&pending_peer_requests);
                     let request_id = frame.id.clone();
-                    let payload = frame.payload.clone().unwrap_or_default();
+                    let raw_payload = frame.payload.clone().unwrap_or_default();
+                    let content_type = frame.content_type.clone();
+                    let cap_urn_clone = cap_urn.clone();
 
                     // Spawn handler in separate thread - main loop continues immediately
                     let handle = thread::spawn(move || {
@@ -476,6 +594,24 @@ impl PluginRuntime {
                         let peer_invoker = PeerInvokerImpl {
                             writer: Arc::clone(&writer_clone),
                             pending_requests: Arc::clone(&pending_clone),
+                        };
+
+                        // Extract effective payload from unified arguments if content_type is CBOR
+                        let payload = match extract_effective_payload(
+                            &raw_payload,
+                            content_type.as_deref(),
+                            &cap_urn_clone,
+                        ) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                // Failed to extract payload - send error response
+                                let err_frame = Frame::err(request_id, "PAYLOAD_ERROR", &e.to_string());
+                                let mut writer = writer_clone.lock().unwrap();
+                                if let Err(write_err) = writer.write(&err_frame) {
+                                    eprintln!("[PluginRuntime] Failed to write error response: {}", write_err);
+                                }
+                                return;
+                            }
                         };
 
                         let result = handler(&payload, &emitter, &peer_invoker);

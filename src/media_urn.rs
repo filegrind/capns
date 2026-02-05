@@ -144,6 +144,10 @@ pub const MEDIA_LIST_OUTPUT: &str = "media:model-list;textable;form=map";
 pub const MEDIA_STATUS_OUTPUT: &str = "media:model-status;textable;form=map";
 /// Media URN for model contents output - textable, form=map
 pub const MEDIA_CONTENTS_OUTPUT: &str = "media:model-contents;textable;form=map";
+/// Media URN for model availability output - textable, form=map
+pub const MEDIA_AVAILABILITY_OUTPUT: &str = "media:model-availability;textable;form=map";
+/// Media URN for model path output - textable, form=map
+pub const MEDIA_PATH_OUTPUT: &str = "media:model-path;textable;form=map";
 /// Media URN for embedding vector output - textable, form=map
 pub const MEDIA_EMBEDDING_VECTOR: &str = "media:embedding-vector;textable;form=map";
 /// Media URN for LLM inference output - textable, form=map

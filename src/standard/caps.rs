@@ -24,6 +24,7 @@ use crate::media_urn::{
     // CAPNS output types
     MEDIA_MODEL_DIM, MEDIA_DOWNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
+    MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
     MEDIA_EMBEDDING_VECTOR, MEDIA_JSON, MEDIA_LLM_INFERENCE_OUTPUT,
     MEDIA_DECISION, MEDIA_DECISION_ARRAY,
 };
@@ -212,6 +213,26 @@ pub fn model_contents_urn() -> CapUrn {
         .out_spec(MEDIA_CONTENTS_OUTPUT)
         .build()
         .expect("Failed to build model-contents cap URN")
+}
+
+/// Build URN for model-availability capability
+pub fn model_availability_urn() -> CapUrn {
+    CapUrnBuilder::new()
+        .tag("op", "model-availability")
+        .in_spec(MEDIA_MODEL_SPEC)
+        .out_spec(MEDIA_AVAILABILITY_OUTPUT)
+        .build()
+        .expect("Failed to build model-availability cap URN")
+}
+
+/// Build URN for model-path capability
+pub fn model_path_urn() -> CapUrn {
+    CapUrnBuilder::new()
+        .tag("op", "model-path")
+        .in_spec(MEDIA_MODEL_SPEC)
+        .out_spec(MEDIA_PATH_OUTPUT)
+        .build()
+        .expect("Failed to build model-path cap URN")
 }
 
 // -----------------------------------------------------------------------------
@@ -543,6 +564,18 @@ pub async fn model_status_cap(registry: Arc<CapRegistry>) -> Result<Cap, Registr
 /// Get model contents cap from registry
 pub async fn model_contents_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
     let urn = model_contents_urn();
+    registry.get_cap(&urn.to_string()).await
+}
+
+/// Get model availability cap from registry
+pub async fn model_availability_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
+    let urn = model_availability_urn();
+    registry.get_cap(&urn.to_string()).await
+}
+
+/// Get model path cap from registry
+pub async fn model_path_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
+    let urn = model_path_urn();
     registry.get_cap(&urn.to_string()).await
 }
 
