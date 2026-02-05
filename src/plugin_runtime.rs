@@ -253,6 +253,19 @@ impl StreamEmitter for CliStreamEmitter {
         let _ = handle.flush();
     }
 
+    /// In CLI mode, status messages go to stderr so only the final response is on stdout.
+    /// This allows external callers to parse stdout as a single JSON response.
+    fn emit_status(&self, operation: &str, details: &str) {
+        let status = serde_json::json!({
+            "type": "status",
+            "operation": operation,
+            "details": details
+        });
+        if let Ok(json) = serde_json::to_string(&status) {
+            eprintln!("{}", json);
+        }
+    }
+
     fn log(&self, level: &str, message: &str) {
         // In CLI mode, logs go to stderr
         eprintln!("[{}] {}", level.to_uppercase(), message);
