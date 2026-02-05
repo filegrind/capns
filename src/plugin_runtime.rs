@@ -4,22 +4,29 @@
 //! cap invocations. Plugins register handlers for caps they provide, and the
 //! runtime handles all I/O mechanics:
 //!
-//! - CBOR frame encoding/decoding
-//! - Binary packet framing on stdin/stdout
+//! - **Automatic mode detection**: CLI mode vs Plugin CBOR mode
+//! - CBOR frame encoding/decoding (Plugin mode)
+//! - CLI argument parsing from cap definitions (CLI mode)
 //! - Handler routing by cap URN
 //! - Real-time streaming response support
 //! - HELLO handshake for limit negotiation
 //! - **Multiplexed concurrent request handling**
 //!
+//! # Invocation Modes
+//!
+//! - **No CLI arguments**: Plugin CBOR mode - HELLO handshake, REQ/RES frames via stdin/stdout
+//! - **Any CLI arguments**: CLI mode - parse args based on cap definitions
+//!
 //! # Example
 //!
 //! ```ignore
-//! use capns::{PluginRuntime, StreamEmitter};
+//! use capns::{PluginRuntime, StreamEmitter, CapManifest};
 //!
 //! fn main() {
-//!     let mut runtime = PluginRuntime::new();
+//!     let manifest = build_manifest(); // Your manifest with caps
+//!     let mut runtime = PluginRuntime::new(manifest);
 //!
-//!     runtime.register::<MyRequest, _>("cap:op=my_op;...", |request, emitter| {
+//!     runtime.register::<MyRequest, _>("cap:op=my_op;...", |request, emitter, peer| {
 //!         emitter.emit_status("processing", "Starting work...");
 //!         // Do work, emit chunks in real-time
 //!         emitter.emit_bytes(b"partial result");
@@ -27,6 +34,7 @@
 //!         Ok(b"final result".to_vec())
 //!     });
 //!
+//!     // runtime.run() automatically detects CLI vs Plugin CBOR mode
 //!     runtime.run().unwrap();
 //! }
 //! ```
@@ -34,10 +42,12 @@
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
 use crate::cbor_io::{handshake_accept, CborError, FrameReader, FrameWriter};
 use crate::caller::CapArgumentValue;
-use crate::CapUrn;
+use crate::cap::{ArgSource, Cap, CapArg};
+use crate::cap_urn::CapUrn;
+use crate::manifest::CapManifest;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -70,6 +80,18 @@ pub enum RuntimeError {
 
     #[error("Peer response error: {0}")]
     PeerResponse(String),
+
+    #[error("CLI error: {0}")]
+    Cli(String),
+
+    #[error("Missing required argument: {0}")]
+    MissingArgument(String),
+
+    #[error("Unknown subcommand: {0}")]
+    UnknownSubcommand(String),
+
+    #[error("Manifest error: {0}")]
+    Manifest(String),
 }
 
 /// A streaming emitter that writes chunks immediately to the output.
@@ -192,6 +214,48 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
         if let Err(e) = writer.write(&frame) {
             eprintln!("[PluginRuntime] Failed to write log: {}", e);
         }
+    }
+}
+
+/// CLI-mode emitter that writes directly to stdout.
+/// Used when the plugin is invoked via CLI (with arguments).
+pub struct CliStreamEmitter {
+    /// Whether to add newlines after each emit (NDJSON style)
+    ndjson: bool,
+}
+
+impl CliStreamEmitter {
+    /// Create a new CLI emitter with NDJSON formatting (newline after each emit)
+    pub fn new() -> Self {
+        Self { ndjson: true }
+    }
+
+    /// Create a CLI emitter without NDJSON formatting
+    pub fn without_ndjson() -> Self {
+        Self { ndjson: false }
+    }
+}
+
+impl Default for CliStreamEmitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StreamEmitter for CliStreamEmitter {
+    fn emit_bytes(&self, payload: &[u8]) {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        let _ = handle.write_all(payload);
+        if self.ndjson {
+            let _ = handle.write_all(b"\n");
+        }
+        let _ = handle.flush();
+    }
+
+    fn log(&self, level: &str, message: &str) {
+        // In CLI mode, logs go to stderr
+        eprintln!("[{}] {}", level.to_uppercase(), message);
     }
 }
 
@@ -377,7 +441,11 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
 /// in the HELLO response during handshake. This is the ONLY way for plugins to
 /// communicate their capabilities to the host.
 ///
-/// **Multiplexed execution**: Multiple requests can be processed concurrently.
+/// **Invocation Modes**:
+/// - No CLI args: Plugin CBOR mode (stdin/stdout binary frames)
+/// - Any CLI args: CLI mode (parse args from cap definitions)
+///
+/// **Multiplexed execution** (CBOR mode): Multiple requests can be processed concurrently.
 /// Each request handler runs in its own thread, allowing the runtime to:
 /// - Respond to heartbeats while handlers are running
 /// - Accept new requests while previous ones are still processing
@@ -390,6 +458,9 @@ pub struct PluginRuntime {
     /// This is REQUIRED - plugins must provide their manifest.
     manifest_data: Vec<u8>,
 
+    /// Parsed manifest for CLI mode processing
+    manifest: Option<CapManifest>,
+
     /// Negotiated protocol limits
     limits: Limits,
 }
@@ -400,14 +471,31 @@ impl PluginRuntime {
     /// The manifest is JSON-encoded plugin metadata including:
     /// - name: Plugin name
     /// - version: Plugin version
-    /// - caps: Array of capability definitions
+    /// - caps: Array of capability definitions with args and sources
     ///
-    /// This manifest is sent in the HELLO response to the host.
+    /// This manifest is sent in the HELLO response to the host (CBOR mode)
+    /// and used for CLI argument parsing (CLI mode).
     /// **Plugins MUST provide a manifest - there is no fallback.**
     pub fn new(manifest: &[u8]) -> Self {
+        // Try to parse the manifest for CLI mode support
+        let parsed_manifest = serde_json::from_slice::<CapManifest>(manifest).ok();
+
         Self {
             handlers: HashMap::new(),
             manifest_data: manifest.to_vec(),
+            manifest: parsed_manifest,
+            limits: Limits::default(),
+        }
+    }
+
+    /// Create a new plugin runtime with a pre-built CapManifest.
+    /// This is the preferred method as it ensures the manifest is valid.
+    pub fn with_manifest(manifest: CapManifest) -> Self {
+        let manifest_data = serde_json::to_vec(&manifest).unwrap_or_default();
+        Self {
+            handlers: HashMap::new(),
+            manifest_data,
+            manifest: Some(manifest),
             limits: Limits::default(),
         }
     }
@@ -487,9 +575,18 @@ impl PluginRuntime {
         None
     }
 
-    /// Run the plugin runtime, processing requests until stdin closes.
+    /// Run the plugin runtime.
     ///
-    /// Protocol lifecycle:
+    /// **Mode Detection**:
+    /// - No CLI arguments: Plugin CBOR mode (stdin/stdout binary frames)
+    /// - Any CLI arguments: CLI mode (parse args from cap definitions)
+    ///
+    /// **CLI Mode**:
+    /// - `manifest` subcommand: output manifest JSON
+    /// - `<op>` subcommand: find cap by op tag, parse args, invoke handler
+    /// - `--help`: show available subcommands
+    ///
+    /// **Plugin CBOR Mode** (no CLI args):
     /// 1. Receive HELLO from host
     /// 2. Send HELLO back with manifest (handshake)
     /// 3. Main loop reads frames:
@@ -499,14 +596,337 @@ impl PluginRuntime {
     ///    - Other frames: ignore
     /// 4. Exit when stdin closes, wait for active handlers to complete
     ///
-    /// **Multiplexing**: The main loop never blocks on handler execution.
+    /// **Multiplexing** (CBOR mode): The main loop never blocks on handler execution.
     /// Handlers run in separate threads, allowing concurrent processing
     /// of multiple requests and immediate heartbeat responses.
     ///
-    /// **Bidirectional communication**: Handlers can invoke caps on the host
+    /// **Bidirectional communication** (CBOR mode): Handlers can invoke caps on the host
     /// using the `PeerInvoker` parameter. Response frames from the host are
     /// routed to the appropriate pending request by MessageId.
     pub fn run(&self) -> Result<(), RuntimeError> {
+        let args: Vec<String> = std::env::args().collect();
+
+        // No CLI arguments at all → Plugin CBOR mode
+        if args.len() == 1 {
+            return self.run_cbor_mode();
+        }
+
+        // Any CLI arguments → CLI mode
+        self.run_cli_mode(&args)
+    }
+
+    /// Run in CLI mode - parse arguments and invoke handler.
+    fn run_cli_mode(&self, args: &[String]) -> Result<(), RuntimeError> {
+        let manifest = self.manifest.as_ref().ok_or_else(|| {
+            RuntimeError::Manifest("Failed to parse manifest for CLI mode".to_string())
+        })?;
+
+        // Handle --help at top level
+        if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
+            self.print_help(manifest);
+            return Ok(());
+        }
+
+        let subcommand = &args[1];
+
+        // Handle manifest subcommand (always provided by runtime)
+        if subcommand == "manifest" {
+            let json = serde_json::to_string_pretty(manifest)
+                .map_err(|e| RuntimeError::Serialize(e.to_string()))?;
+            println!("{}", json);
+            return Ok(());
+        }
+
+        // Handle subcommand --help
+        if args.len() == 3 && (args[2] == "--help" || args[2] == "-h") {
+            if let Some(cap) = self.find_cap_by_command(manifest, subcommand) {
+                self.print_cap_help(&cap);
+                return Ok(());
+            }
+        }
+
+        // Find cap by command name
+        let cap = self.find_cap_by_command(manifest, subcommand).ok_or_else(|| {
+            RuntimeError::UnknownSubcommand(format!(
+                "Unknown subcommand '{}'. Run with --help to see available commands.",
+                subcommand
+            ))
+        })?;
+
+        // Find handler
+        let handler = self.find_handler(&cap.urn_string()).ok_or_else(|| {
+            RuntimeError::NoHandler(format!(
+                "No handler registered for cap '{}'",
+                cap.urn_string()
+            ))
+        })?;
+
+        // Build arguments from CLI
+        let cli_args = &args[2..];
+        let payload = self.build_payload_from_cli(&cap, cli_args)?;
+
+        // Create CLI-mode emitter and no-op peer invoker
+        let emitter = CliStreamEmitter::new();
+        let peer = NoPeerInvoker;
+
+        // Invoke handler
+        let result = handler(&payload, &emitter, &peer);
+
+        match result {
+            Ok(response) => {
+                // Output final response if not empty
+                if !response.is_empty() {
+                    let stdout = io::stdout();
+                    let mut handle = stdout.lock();
+                    let _ = handle.write_all(&response);
+                    let _ = handle.write_all(b"\n");
+                    let _ = handle.flush();
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // Output error as JSON to stderr
+                let error_json = serde_json::json!({
+                    "error": e.to_string(),
+                    "code": "HANDLER_ERROR"
+                });
+                eprintln!("{}", serde_json::to_string(&error_json).unwrap_or_default());
+                Err(e)
+            }
+        }
+    }
+
+    /// Find a cap by its command name (the CLI subcommand).
+    fn find_cap_by_command<'a>(&self, manifest: &'a CapManifest, command_name: &str) -> Option<&'a Cap> {
+        manifest.caps.iter().find(|cap| cap.command == command_name)
+    }
+
+    /// Build payload from CLI arguments based on cap's arg definitions.
+    fn build_payload_from_cli(&self, cap: &Cap, cli_args: &[String]) -> Result<Vec<u8>, RuntimeError> {
+        let mut arguments: Vec<CapArgumentValue> = Vec::new();
+
+        // Check for stdin data if cap accepts stdin
+        let stdin_data = if cap.accepts_stdin() {
+            self.read_stdin_if_available()?
+        } else {
+            None
+        };
+
+        // Process each cap argument
+        for arg_def in cap.get_args() {
+            let value = self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
+
+            if let Some(val) = value {
+                arguments.push(CapArgumentValue {
+                    media_urn: arg_def.media_urn.clone(),
+                    value: val,
+                });
+            } else if arg_def.required {
+                return Err(RuntimeError::MissingArgument(format!(
+                    "Required argument '{}' not provided",
+                    arg_def.media_urn
+                )));
+            }
+        }
+
+        // If no arguments are defined but stdin data exists, use it as raw payload
+        if cap.get_args().is_empty() {
+            if let Some(data) = stdin_data {
+                return Ok(data);
+            }
+        }
+
+        // If we have structured arguments, serialize as JSON
+        if !arguments.is_empty() {
+            // Build a JSON object from the arguments
+            let mut json_obj = serde_json::Map::new();
+            for arg in &arguments {
+                // Try to parse value as JSON first, fall back to string
+                let value = if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(&arg.value) {
+                    parsed
+                } else if let Ok(s) = String::from_utf8(arg.value.clone()) {
+                    serde_json::Value::String(s)
+                } else {
+                    // Binary data - keep as raw bytes (the handler will deal with it)
+                    // For JSON serialization, we need a string representation
+                    // If it's truly binary and can't be represented as UTF-8,
+                    // the handler should use a different approach (like stdin)
+                    return Err(RuntimeError::Cli(
+                        "Binary data cannot be passed via CLI flags. Use stdin instead.".to_string()
+                    ));
+                };
+                // Use the last part of media_urn as key (e.g., "model-spec" from "media:model-spec;...")
+                let key = arg.media_urn
+                    .strip_prefix("media:")
+                    .unwrap_or(&arg.media_urn)
+                    .split(';')
+                    .next()
+                    .unwrap_or(&arg.media_urn)
+                    .replace('-', "_");
+                json_obj.insert(key, value);
+            }
+            serde_json::to_vec(&json_obj)
+                .map_err(|e| RuntimeError::Serialize(e.to_string()))
+        } else {
+            // No arguments, no stdin - return empty object
+            Ok(b"{}".to_vec())
+        }
+    }
+
+    /// Extract a single argument value from CLI args or stdin.
+    fn extract_arg_value(
+        &self,
+        arg_def: &CapArg,
+        cli_args: &[String],
+        stdin_data: Option<&[u8]>,
+    ) -> Result<Option<Vec<u8>>, RuntimeError> {
+        // Try each source in order
+        for source in &arg_def.sources {
+            match source {
+                ArgSource::CliFlag { cli_flag } => {
+                    if let Some(value) = self.get_cli_flag_value(cli_args, cli_flag) {
+                        return Ok(Some(value.into_bytes()));
+                    }
+                }
+                ArgSource::Position { position } => {
+                    // Positional args: filter out flags and their values
+                    let positional: Vec<_> = self.get_positional_args(cli_args);
+                    if let Some(value) = positional.get(*position) {
+                        return Ok(Some(value.clone().into_bytes()));
+                    }
+                }
+                ArgSource::Stdin { .. } => {
+                    if let Some(data) = stdin_data {
+                        return Ok(Some(data.to_vec()));
+                    }
+                }
+            }
+        }
+
+        // Try default value
+        if let Some(default) = &arg_def.default_value {
+            let bytes = serde_json::to_vec(default)
+                .map_err(|e| RuntimeError::Serialize(e.to_string()))?;
+            return Ok(Some(bytes));
+        }
+
+        Ok(None)
+    }
+
+    /// Get value for a CLI flag (e.g., --model "value")
+    fn get_cli_flag_value(&self, args: &[String], flag: &str) -> Option<String> {
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            if arg == flag {
+                return iter.next().cloned();
+            }
+            // Handle --flag=value format
+            if let Some(stripped) = arg.strip_prefix(&format!("{}=", flag)) {
+                return Some(stripped.to_string());
+            }
+        }
+        None
+    }
+
+    /// Get positional arguments (non-flag arguments)
+    fn get_positional_args(&self, args: &[String]) -> Vec<String> {
+        let mut positional = Vec::new();
+        let mut skip_next = false;
+
+        for arg in args {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+            if arg.starts_with('-') {
+                // This is a flag - skip its value too
+                if !arg.contains('=') {
+                    skip_next = true;
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        positional
+    }
+
+    /// Read stdin if data is available (non-blocking check).
+    fn read_stdin_if_available(&self) -> Result<Option<Vec<u8>>, RuntimeError> {
+        use std::io::IsTerminal;
+
+        let stdin = io::stdin();
+        // Don't read from stdin if it's a terminal (interactive)
+        if stdin.is_terminal() {
+            return Ok(None);
+        }
+
+        let mut data = Vec::new();
+        stdin.lock().read_to_end(&mut data)?;
+
+        if data.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(data))
+        }
+    }
+
+    /// Print help message showing all available subcommands.
+    fn print_help(&self, manifest: &CapManifest) {
+        eprintln!("{} v{}", manifest.name, manifest.version);
+        eprintln!("{}", manifest.description);
+        eprintln!();
+        eprintln!("USAGE:");
+        eprintln!("    {} <COMMAND> [OPTIONS]", manifest.name.to_lowercase());
+        eprintln!();
+        eprintln!("COMMANDS:");
+        eprintln!("    manifest    Output the plugin manifest as JSON");
+
+        for cap in &manifest.caps {
+            let desc = cap.cap_description.as_deref().unwrap_or(&cap.title);
+            eprintln!("    {:<12} {}", cap.command, desc);
+        }
+
+        eprintln!();
+        eprintln!("Run '{} <COMMAND> --help' for more information on a command.", manifest.name.to_lowercase());
+    }
+
+    /// Print help for a specific cap.
+    fn print_cap_help(&self, cap: &Cap) {
+        eprintln!("{}", cap.title);
+        if let Some(desc) = &cap.cap_description {
+            eprintln!("{}", desc);
+        }
+        eprintln!();
+        eprintln!("USAGE:");
+        eprintln!("    plugin {} [OPTIONS]", cap.command);
+        eprintln!();
+
+        let args = cap.get_args();
+        if !args.is_empty() {
+            eprintln!("OPTIONS:");
+            for arg in args {
+                let required = if arg.required { " (required)" } else { "" };
+                let desc = arg.arg_description.as_deref().unwrap_or("");
+
+                for source in &arg.sources {
+                    match source {
+                        ArgSource::CliFlag { cli_flag } => {
+                            eprintln!("    {:<16} {}{}", cli_flag, desc, required);
+                        }
+                        ArgSource::Position { position } => {
+                            eprintln!("    <arg{}>          {}{}", position, desc, required);
+                        }
+                        ArgSource::Stdin { stdin } => {
+                            eprintln!("    (stdin: {}) {}{}", stdin, desc, required);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Run in Plugin CBOR mode - binary frame protocol via stdin/stdout.
+    fn run_cbor_mode(&self) -> Result<(), RuntimeError> {
         let stdin = io::stdin();
         let stdout = io::stdout();
 
