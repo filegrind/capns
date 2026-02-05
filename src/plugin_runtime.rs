@@ -215,6 +215,19 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
             eprintln!("[PluginRuntime] Failed to write log: {}", e);
         }
     }
+
+    /// Override emit_status to send LOG frames, not CHUNK frames.
+    /// Status messages are progress/status updates, not response data.
+    fn emit_status(&self, operation: &str, details: &str) {
+        // Use LOG frame for status updates - they should not be part of response data
+        let message = format!("{}: {}", operation, details);
+        let frame = Frame::log(self.request_id.clone(), "status", &message);
+
+        let mut writer = self.writer.lock().unwrap();
+        if let Err(e) = writer.write(&frame) {
+            eprintln!("[PluginRuntime] Failed to write status: {}", e);
+        }
+    }
 }
 
 /// CLI-mode emitter that writes directly to stdout.

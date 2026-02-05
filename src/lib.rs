@@ -11,7 +11,26 @@
 //! - **CBOR Frame Types** (`cbor_frame`): Frame definitions with integer keys
 //! - **CBOR I/O** (`cbor_io`): Streaming CBOR read/write with handshake
 //! - **Plugin Runtime** (`plugin_runtime`): For plugin binaries - handles all I/O
-//! - **Plugin Host** (`plugin_host`): For callers - communicates with plugin processes
+//! - **PluginHost** (`async_plugin_host`): For host callers - async communication with plugins
+//!
+//! ## Usage
+//!
+//! ```ignore
+//! use capns::PluginHost;
+//! use tokio::process::Command;
+//!
+//! let mut child = Command::new("./my-plugin")
+//!     .stdin(Stdio::piped())
+//!     .stdout(Stdio::piped())
+//!     .spawn()?;
+//!
+//! let stdin = child.stdin.take().unwrap();
+//! let stdout = child.stdout.take().unwrap();
+//!
+//! let host = PluginHost::new(stdin, stdout).await?;
+//! let response = host.call("cap:op=test", b"payload", "application/json").await?;
+//! host.shutdown().await;
+//! ```
 //!
 //! ## Protocol Overview
 //!
@@ -42,7 +61,7 @@ pub mod profile_schema_registry;
 pub mod cbor_frame;
 pub mod cbor_io;
 pub mod plugin_runtime;
-pub mod plugin_host;
+pub mod async_plugin_host;
 
 // Integration tests for CBOR protocol
 #[cfg(test)]
@@ -69,6 +88,20 @@ pub use cbor_io::{
     CborError, FrameReader, FrameWriter, HandshakeResult,
     encode_frame, decode_frame, read_frame, write_frame,
     handshake, handshake_accept,
+    AsyncFrameReader, AsyncFrameWriter, handshake_async,
+    read_frame_async, write_frame_async,
 };
 pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter, PeerInvoker, NoPeerInvoker, CliStreamEmitter};
-pub use plugin_host::{PluginHost, PluginResponse, ResponseChunk, StreamingResponse, HostError};
+
+// PluginHost is the primary API for host-side plugin communication (async/tokio-native)
+pub use async_plugin_host::{
+    AsyncPluginHost as PluginHost,
+    AsyncHostError as HostError,
+    PluginResponse,
+    ResponseChunk,
+    StreamingResponse,
+};
+
+// Also export with explicit Async prefix for clarity when needed
+pub use async_plugin_host::AsyncPluginHost;
+pub use async_plugin_host::AsyncHostError;

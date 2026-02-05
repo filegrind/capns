@@ -19,6 +19,7 @@ use crate::cbor_frame::{keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_C
 use ciborium::Value;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Maximum frame size (16 MB) - hard limit to prevent memory exhaustion
 const MAX_FRAME_HARD_LIMIT: usize = 16 * 1024 * 1024;
@@ -301,6 +302,75 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame, limits: &Limits) -> 
     Ok(())
 }
 
+/// Write a length-prefixed CBOR frame to an async writer
+pub async fn write_frame_async<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    frame: &Frame,
+    limits: &Limits,
+) -> Result<(), CborError> {
+    let bytes = encode_frame(frame)?;
+
+    if bytes.len() > limits.max_frame {
+        return Err(CborError::FrameTooLarge {
+            size: bytes.len(),
+            max: limits.max_frame,
+        });
+    }
+
+    if bytes.len() > MAX_FRAME_HARD_LIMIT {
+        return Err(CborError::FrameTooLarge {
+            size: bytes.len(),
+            max: MAX_FRAME_HARD_LIMIT,
+        });
+    }
+
+    let len = bytes.len() as u32;
+    writer.write_all(&len.to_be_bytes()).await?;
+    writer.write_all(&bytes).await?;
+    writer.flush().await?;
+
+    Ok(())
+}
+
+/// Read a length-prefixed CBOR frame from an async reader
+///
+/// Returns Ok(None) on clean EOF, Err(UnexpectedEof) on partial read.
+pub async fn read_frame_async<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    limits: &Limits,
+) -> Result<Option<Frame>, CborError> {
+    // Read 4-byte length prefix
+    let mut len_buf = [0u8; 4];
+    match reader.read_exact(&mut len_buf).await {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(e) => return Err(CborError::Io(e)),
+    }
+
+    let length = u32::from_be_bytes(len_buf) as usize;
+
+    // Validate length
+    if length > limits.max_frame || length > MAX_FRAME_HARD_LIMIT {
+        return Err(CborError::FrameTooLarge {
+            size: length,
+            max: limits.max_frame.min(MAX_FRAME_HARD_LIMIT),
+        });
+    }
+
+    // Read payload
+    let mut payload = vec![0u8; length];
+    if let Err(e) = reader.read_exact(&mut payload).await {
+        if e.kind() == io::ErrorKind::UnexpectedEof {
+            return Err(CborError::UnexpectedEof);
+        } else {
+            return Err(CborError::Io(e));
+        }
+    }
+
+    let frame = decode_frame(&payload)?;
+    Ok(Some(frame))
+}
+
 /// Read a length-prefixed CBOR frame from a reader
 ///
 /// Returns Ok(None) on clean EOF, Err(UnexpectedEof) on partial read.
@@ -567,6 +637,117 @@ pub fn handshake_accept<R: Read, W: Write>(
     writer.set_limits(limits);
 
     Ok(limits)
+}
+
+// =============================================================================
+// ASYNC I/O TYPES
+// =============================================================================
+
+/// Async CBOR frame reader
+pub struct AsyncFrameReader<R: AsyncRead + Unpin> {
+    reader: R,
+    limits: Limits,
+}
+
+impl<R: AsyncRead + Unpin> AsyncFrameReader<R> {
+    /// Create a new async frame reader with default limits
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader,
+            limits: Limits::default(),
+        }
+    }
+
+    /// Update limits (after handshake)
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
+    }
+
+    /// Read the next frame
+    pub async fn read(&mut self) -> Result<Option<Frame>, CborError> {
+        read_frame_async(&mut self.reader, &self.limits).await
+    }
+
+    /// Get the current limits
+    pub fn limits(&self) -> &Limits {
+        &self.limits
+    }
+}
+
+/// Async CBOR frame writer
+pub struct AsyncFrameWriter<W: AsyncWrite + Unpin> {
+    writer: W,
+    limits: Limits,
+}
+
+impl<W: AsyncWrite + Unpin> AsyncFrameWriter<W> {
+    /// Create a new async frame writer with default limits
+    pub fn new(writer: W) -> Self {
+        Self {
+            writer,
+            limits: Limits::default(),
+        }
+    }
+
+    /// Update limits (after handshake)
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
+    }
+
+    /// Write a frame
+    pub async fn write(&mut self, frame: &Frame) -> Result<(), CborError> {
+        write_frame_async(&mut self.writer, frame, &self.limits).await
+    }
+
+    /// Get the current limits
+    pub fn limits(&self) -> &Limits {
+        &self.limits
+    }
+}
+
+/// Perform async HELLO handshake and extract plugin manifest (host side - sends first).
+/// Returns HandshakeResult containing negotiated limits and plugin manifest.
+/// Fails if plugin HELLO is missing the required manifest.
+pub async fn handshake_async<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+    reader: &mut AsyncFrameReader<R>,
+    writer: &mut AsyncFrameWriter<W>,
+) -> Result<HandshakeResult, CborError> {
+    // Send our HELLO
+    let our_hello = Frame::hello(DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK);
+    writer.write(&our_hello).await?;
+
+    // Read their HELLO (should include manifest)
+    let their_frame = reader.read().await?.ok_or_else(|| {
+        CborError::Handshake("connection closed before receiving HELLO".to_string())
+    })?;
+
+    if their_frame.frame_type != FrameType::Hello {
+        return Err(CborError::Handshake(format!(
+            "expected HELLO, got {:?}",
+            their_frame.frame_type
+        )));
+    }
+
+    // Extract manifest - REQUIRED for plugins
+    let manifest = their_frame
+        .hello_manifest()
+        .ok_or_else(|| CborError::Handshake("Plugin HELLO missing required manifest".to_string()))?
+        .to_vec();
+
+    // Negotiate minimum of both
+    let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
+    let their_max_chunk = their_frame.hello_max_chunk().unwrap_or(DEFAULT_MAX_CHUNK);
+
+    let limits = Limits {
+        max_frame: DEFAULT_MAX_FRAME.min(their_max_frame),
+        max_chunk: DEFAULT_MAX_CHUNK.min(their_max_chunk),
+    };
+
+    // Update both reader and writer with negotiated limits
+    reader.set_limits(limits);
+    writer.set_limits(limits);
+
+    Ok(HandshakeResult { limits, manifest })
 }
 
 #[cfg(test)]

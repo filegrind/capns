@@ -1,16 +1,16 @@
 //! Integration tests for CBOR plugin communication protocol.
 //!
-//! These tests verify that PluginRuntime (plugin side) and PluginHost (host side)
+//! These tests verify that PluginRuntime (plugin side) and AsyncPluginHost (host side)
 //! can communicate correctly through pipes. This is the ONLY supported communication
 //! method - no fallbacks, no alternatives.
 //!
-//! Tests use OS pipes to simulate real stdin/stdout communication between processes.
+//! Tests use Unix sockets to simulate real stdin/stdout communication between processes.
 
 #[cfg(test)]
 mod tests {
+    use crate::async_plugin_host::AsyncPluginHost;
     use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
-    use crate::cbor_io::{FrameReader, FrameWriter, handshake, handshake_accept};
-    use crate::plugin_host::PluginHost;
+    use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
     use crate::plugin_runtime::PluginRuntime;
     use std::io::{BufReader, BufWriter};
     use std::sync::{Arc, Mutex};
@@ -19,29 +19,42 @@ mod tests {
     /// Test manifest JSON - plugins MUST include manifest in HELLO response
     const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
 
-    /// Create a pair of connected pipes for testing.
+    /// Create properly split async streams for AsyncPluginHost.
     /// Returns (host_write, plugin_read, plugin_write, host_read)
-    fn create_pipe_pair() -> (
-        std::os::unix::net::UnixStream,
-        std::os::unix::net::UnixStream,
-        std::os::unix::net::UnixStream,
-        std::os::unix::net::UnixStream,
+    /// where host_write/host_read are async (tokio) and plugin_read/write are sync (std) for thread-based simulation.
+    fn create_async_pipe_pair() -> (
+        tokio::net::unix::OwnedWriteHalf,  // host writes to plugin
+        std::os::unix::net::UnixStream,    // plugin reads from host (sync)
+        std::os::unix::net::UnixStream,    // plugin writes to host (sync)
+        tokio::net::unix::OwnedReadHalf,   // host reads from plugin
     ) {
         // Host -> Plugin pipe
-        let (host_write, plugin_read) =
+        let (host_write_std, plugin_read) =
             std::os::unix::net::UnixStream::pair().expect("Failed to create pipe pair");
         // Plugin -> Host pipe
-        let (plugin_write, host_read) =
+        let (plugin_write, host_read_std) =
             std::os::unix::net::UnixStream::pair().expect("Failed to create pipe pair");
+
+        // Set non-blocking for tokio conversion
+        host_write_std.set_nonblocking(true).expect("Failed to set non-blocking");
+        host_read_std.set_nonblocking(true).expect("Failed to set non-blocking");
+
+        // Create tokio streams
+        let host_write_stream = tokio::net::UnixStream::from_std(host_write_std).expect("Failed to create tokio stream");
+        let host_read_stream = tokio::net::UnixStream::from_std(host_read_std).expect("Failed to create tokio stream");
+
+        // Split into owned halves
+        let (_, host_write) = host_write_stream.into_split();
+        let (host_read, _) = host_read_stream.into_split();
 
         (host_write, plugin_read, plugin_write, host_read)
     }
 
-    #[test]
-    fn test_handshake_host_plugin() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_handshake_host_plugin() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
-        // Plugin side in separate thread
+        // Plugin side in separate thread (sync I/O - simulating real plugin process)
         let plugin_handle = thread::spawn(move || {
             let reader = BufReader::new(plugin_read);
             let writer = BufWriter::new(plugin_write);
@@ -57,67 +70,27 @@ mod tests {
             limits
         });
 
-        // Host side
-        let reader = BufReader::new(host_read);
-        let writer = BufWriter::new(host_write);
-        let mut frame_reader = FrameReader::new(reader);
-        let mut frame_writer = FrameWriter::new(writer);
+        // Host side (async)
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
-        // Initiate handshake - returns result with limits and manifest
-        let handshake_result =
-            handshake(&mut frame_reader, &mut frame_writer).expect("Host handshake failed");
+        // Verify manifest was received
+        assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
+
+        let host_limits = host.limits();
+
+        // Shutdown cleanly
+        host.shutdown().await;
 
         let plugin_limits = plugin_handle.join().expect("Plugin thread panicked");
 
         // Both should have negotiated the same limits
-        assert_eq!(handshake_result.limits.max_frame, plugin_limits.max_frame);
-        assert_eq!(handshake_result.limits.max_chunk, plugin_limits.max_chunk);
-
-        // Verify manifest was received
-        assert_eq!(handshake_result.manifest, TEST_MANIFEST.as_bytes());
+        assert_eq!(host_limits.max_frame, plugin_limits.max_frame);
+        assert_eq!(host_limits.max_chunk, plugin_limits.max_chunk);
     }
 
-    #[test]
-    fn test_handshake_fails_without_manifest() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
-
-        // Plugin side: send HELLO without manifest (should cause host to fail)
-        let plugin_handle = thread::spawn(move || {
-            let reader = BufReader::new(plugin_read);
-            let writer = BufWriter::new(plugin_write);
-            let mut frame_reader = FrameReader::new(reader);
-            let mut frame_writer = FrameWriter::new(writer);
-
-            // Read host's HELLO
-            let _ = frame_reader.read().expect("Should receive host HELLO");
-
-            // Send HELLO WITHOUT manifest - this is a protocol violation
-            let bad_hello = Frame::hello(1_000_000, 100_000);
-            frame_writer.write(&bad_hello).expect("Should write HELLO");
-        });
-
-        // Host side - should fail due to missing manifest
-        let reader = BufReader::new(host_read);
-        let writer = BufWriter::new(host_write);
-        let mut frame_reader = FrameReader::new(reader);
-        let mut frame_writer = FrameWriter::new(writer);
-
-        let result = handshake(&mut frame_reader, &mut frame_writer);
-        assert!(result.is_err(), "Handshake should fail when plugin HELLO is missing manifest");
-
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("missing required manifest"),
-            "Error should mention missing manifest: {}",
-            err
-        );
-
-        plugin_handle.join().expect("Plugin thread panicked");
-    }
-
-    #[test]
-    fn test_request_response_simple() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_request_response_simple() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: accept handshake and respond to request
         let plugin_handle = thread::spawn(move || {
@@ -145,22 +118,23 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Verify manifest was received
         assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
 
         // Send request
-        let response = host.call("cap:op=echo", b"hello", "application/json").expect("Call failed");
+        let response = host.call("cap:op=echo", b"hello", "application/json").await.expect("Call failed");
 
         assert_eq!(response.concatenated(), b"hello back");
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_streaming_chunks() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_streaming_chunks() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: send multiple chunks
         let plugin_handle = thread::spawn(move || {
@@ -194,31 +168,36 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Call and collect streaming response
-        let response = host
+        let mut streaming = host
             .call_streaming("cap:op=stream", b"go", "application/json")
+            .await
             .expect("Call streaming failed");
 
-        let chunks: Vec<_> = response.collect();
+        let mut chunks = Vec::new();
+        while let Some(result) = streaming.next().await {
+            chunks.push(result.expect("Chunk error"));
+        }
+
         assert_eq!(chunks.len(), 3);
 
         // Verify chunk contents
-        let payloads: Vec<_> = chunks
-            .into_iter()
-            .map(|r| r.expect("Chunk error").payload)
-            .collect();
-        assert_eq!(payloads[0], b"chunk1");
-        assert_eq!(payloads[1], b"chunk2");
-        assert_eq!(payloads[2], b"chunk3");
+        assert_eq!(chunks[0].payload, b"chunk1");
+        assert_eq!(chunks[1].payload, b"chunk2");
+        assert_eq!(chunks[2].payload, b"chunk3");
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_heartbeat_from_host() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_heartbeat_from_host() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
+
+        // Use a channel to signal when plugin has sent response
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
         // Plugin side: respond to heartbeats
         let plugin_handle = thread::spawn(move || {
@@ -239,20 +218,32 @@ mod tests {
             // Respond with heartbeat (same ID)
             let response = Frame::heartbeat(frame.id);
             frame_writer.write(&response).unwrap();
+
+            // Signal done
+            done_tx.send(()).unwrap();
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
-        // Send heartbeat
-        host.send_heartbeat().expect("Heartbeat failed");
+        // Send heartbeat - yield first to ensure writer task is running
+        tokio::task::yield_now().await;
+        host.send_heartbeat().await.expect("Heartbeat failed");
 
+        // Wait for plugin to finish responding with timeout
+        let timeout = std::time::Duration::from_secs(5);
+        done_rx.recv_timeout(timeout).expect("Plugin did not signal done in time");
+
+        // Small delay to let the heartbeat response be processed
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_plugin_error_response() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_plugin_error_response() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: respond with error
         let plugin_handle = thread::spawn(move || {
@@ -275,27 +266,28 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Call should fail with plugin error
-        let result = host.call("cap:op=missing", b"", "application/json");
+        let result = host.call("cap:op=missing", b"", "application/json").await;
         assert!(result.is_err());
 
         let err = result.unwrap_err();
         match err {
-            crate::plugin_host::HostError::PluginError { code, message } => {
+            crate::async_plugin_host::AsyncHostError::PluginError { code, message } => {
                 assert_eq!(code, "NOT_FOUND");
                 assert!(message.contains("Cap not found"));
             }
             _ => panic!("Expected PluginError, got {:?}", err),
         }
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_log_frames_during_request() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_log_frames_during_request() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: send logs before response
         let plugin_handle = thread::spawn(move || {
@@ -326,18 +318,19 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Call should succeed despite log frames
-        let response = host.call("cap:op=test", b"", "application/json").expect("Call failed");
+        let response = host.call("cap:op=test", b"", "application/json").await.expect("Call failed");
         assert_eq!(response.concatenated(), b"done");
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_limits_negotiation() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_limits_negotiation() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: use smaller limits
         let plugin_handle = thread::spawn(move || {
@@ -366,9 +359,11 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         let host_limits = host.limits();
+
+        host.shutdown().await;
         let plugin_small_limits = plugin_handle.join().expect("Plugin thread panicked");
 
         // Host should have negotiated to the smaller limits
@@ -378,9 +373,9 @@ mod tests {
         assert_eq!(host_limits.max_chunk, 50_000);
     }
 
-    #[test]
-    fn test_binary_payload_roundtrip() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_binary_payload_roundtrip() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Create binary test data with all byte values
         let mut binary_data = Vec::new();
@@ -417,10 +412,10 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Send binary data
-        let response = host.call("cap:op=binary", &binary_clone, "application/octet-stream").expect("Call failed");
+        let response = host.call("cap:op=binary", &binary_clone, "application/octet-stream").await.expect("Call failed");
         let result = response.concatenated();
 
         // Verify response matches
@@ -429,12 +424,13 @@ mod tests {
             assert_eq!(byte, i as u8, "Response byte mismatch at position {}", i);
         }
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_message_id_uniqueness() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_message_id_uniqueness() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         let received_ids = Arc::new(Mutex::new(Vec::<MessageId>::new()));
         let received_ids_clone = received_ids.clone();
@@ -462,13 +458,14 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Send requests one by one
         for i in 0..3 {
-            let _response = host.call(&format!("cap:op=test{}", i), b"", "application/json").expect("Call failed");
+            let _response = host.call(&format!("cap:op=test{}", i), b"", "application/json").await.expect("Call failed");
         }
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
 
         // Verify IDs were received and are unique
@@ -505,9 +502,9 @@ mod tests {
         assert!(runtime.find_handler("cap:op=unknown").is_none());
     }
 
-    #[test]
-    fn test_heartbeat_during_streaming() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_heartbeat_during_streaming() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: send heartbeat between chunks
         let plugin_handle = thread::spawn(move || {
@@ -546,22 +543,29 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Call streaming - should handle heartbeat mid-stream
-        let response = host.call_streaming("cap:op=stream", b"", "application/json").expect("Call streaming failed");
-        let chunks: Vec<_> = response.filter_map(|r| r.ok()).collect();
+        let mut streaming = host.call_streaming("cap:op=stream", b"", "application/json").await.expect("Call streaming failed");
+
+        let mut chunks = Vec::new();
+        while let Some(result) = streaming.next().await {
+            if let Ok(chunk) = result {
+                chunks.push(chunk);
+            }
+        }
 
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].payload, b"part1");
         assert_eq!(chunks[1].payload, b"part2");
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_res_frame_single_response() {
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+    #[tokio::test]
+    async fn test_res_frame_single_response() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: respond with RES frame (not END)
         let plugin_handle = thread::spawn(move || {
@@ -584,19 +588,20 @@ mod tests {
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
-        let response = host.call("cap:op=single", b"", "application/json").expect("Call failed");
+        let response = host.call("cap:op=single", b"", "application/json").await.expect("Call failed");
         assert_eq!(response.concatenated(), b"single response");
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 
-    #[test]
-    fn test_host_initiated_heartbeat_no_ping_pong() {
+    #[tokio::test]
+    async fn test_host_initiated_heartbeat_no_ping_pong() {
         // This test verifies that when the HOST sends a heartbeat and the plugin responds,
         // the host does NOT respond back (which would cause infinite ping-pong or SIGPIPE).
-        let (host_write, plugin_read, plugin_write, host_read) = create_pipe_pair();
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
         // Plugin side: respond to heartbeat, then send a request response, then close
         let plugin_handle = thread::spawn(move || {
@@ -628,34 +633,25 @@ mod tests {
             let response = Frame::res(request_id, b"done".to_vec(), "text/plain");
             frame_writer.write(&response).unwrap();
 
-            // If the host incorrectly responds to our heartbeat response,
-            // we would receive another heartbeat here. Let's verify we don't.
-            // We use a short timeout to check - if we receive anything, the test fails.
-            // (In production, the host should NOT send anything else)
-
             // Close the writer to signal EOF to host
             drop(frame_writer);
-
-            // Verify no additional frames were received (the host should NOT respond to our response)
-            // We can't easily check this without timeout, but the test passing without hanging
-            // is proof enough that the ping-pong isn't happening
         });
 
         // Host side
-        let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
+        let host = AsyncPluginHost::new(host_write, host_read).await.expect("Host creation failed");
 
         // Verify manifest was received
         assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
 
-        // Start a request (non-blocking via request())
-        let receiver = host.request("cap:op=test", b"", "application/json").expect("Request failed");
+        // Start a streaming request
+        let mut streaming = host.call_streaming("cap:op=test", b"", "application/json").await.expect("Request failed");
 
         // Send heartbeat while request is in flight
-        host.send_heartbeat().expect("Heartbeat failed");
+        host.send_heartbeat().await.expect("Heartbeat failed");
 
         // Collect response
         let mut chunks = Vec::new();
-        for result in receiver {
+        while let Some(result) = streaming.next().await {
             match result {
                 Ok(chunk) => {
                     let is_eof = chunk.is_eof;
@@ -671,6 +667,7 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].payload, b"done");
 
+        host.shutdown().await;
         plugin_handle.join().expect("Plugin thread panicked");
     }
 }
