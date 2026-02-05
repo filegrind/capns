@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
 
         // Send request
-        let response = host.call("cap:op=echo", b"hello").expect("Call failed");
+        let response = host.call("cap:op=echo", b"hello", "application/json").expect("Call failed");
 
         assert_eq!(response.concatenated(), b"hello back");
 
@@ -198,7 +198,7 @@ mod tests {
 
         // Call and collect streaming response
         let response = host
-            .call_streaming("cap:op=stream", b"go")
+            .call_streaming("cap:op=stream", b"go", "application/json")
             .expect("Call streaming failed");
 
         let chunks: Vec<_> = response.collect();
@@ -278,7 +278,7 @@ mod tests {
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
 
         // Call should fail with plugin error
-        let result = host.call("cap:op=missing", b"");
+        let result = host.call("cap:op=missing", b"", "application/json");
         assert!(result.is_err());
 
         let err = result.unwrap_err();
@@ -329,7 +329,7 @@ mod tests {
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
 
         // Call should succeed despite log frames
-        let response = host.call("cap:op=test", b"").expect("Call failed");
+        let response = host.call("cap:op=test", b"", "application/json").expect("Call failed");
         assert_eq!(response.concatenated(), b"done");
 
         plugin_handle.join().expect("Plugin thread panicked");
@@ -420,7 +420,7 @@ mod tests {
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
 
         // Send binary data
-        let response = host.call("cap:op=binary", &binary_clone).expect("Call failed");
+        let response = host.call("cap:op=binary", &binary_clone, "application/octet-stream").expect("Call failed");
         let result = response.concatenated();
 
         // Verify response matches
@@ -466,7 +466,7 @@ mod tests {
 
         // Send requests one by one
         for i in 0..3 {
-            let _response = host.call(&format!("cap:op=test{}", i), b"").expect("Call failed");
+            let _response = host.call(&format!("cap:op=test{}", i), b"", "application/json").expect("Call failed");
         }
 
         plugin_handle.join().expect("Plugin thread panicked");
@@ -549,7 +549,7 @@ mod tests {
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
 
         // Call streaming - should handle heartbeat mid-stream
-        let response = host.call_streaming("cap:op=stream", b"").expect("Call streaming failed");
+        let response = host.call_streaming("cap:op=stream", b"", "application/json").expect("Call streaming failed");
         let chunks: Vec<_> = response.filter_map(|r| r.ok()).collect();
 
         assert_eq!(chunks.len(), 2);
@@ -586,7 +586,7 @@ mod tests {
         // Host side
         let host = PluginHost::new(host_write, host_read).expect("Host creation failed");
 
-        let response = host.call("cap:op=single", b"").expect("Call failed");
+        let response = host.call("cap:op=single", b"", "application/json").expect("Call failed");
         assert_eq!(response.concatenated(), b"single response");
 
         plugin_handle.join().expect("Plugin thread panicked");
@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(host.plugin_manifest(), TEST_MANIFEST.as_bytes());
 
         // Start a request (non-blocking via request())
-        let receiver = host.request("cap:op=test", b"").expect("Request failed");
+        let receiver = host.request("cap:op=test", b"", "application/json").expect("Request failed");
 
         // Send heartbeat while request is in flight
         host.send_heartbeat().expect("Heartbeat failed");

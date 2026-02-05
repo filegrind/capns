@@ -1190,7 +1190,8 @@ mod tests {
     #[test]
     fn test_no_peer_invoker() {
         let no_peer = NoPeerInvoker;
-        let result = no_peer.invoke("cap:op=test", b"payload");
+        // NoPeerInvoker should always return an error regardless of arguments
+        let result = no_peer.invoke("cap:op=test", &[]);
         assert!(result.is_err());
         match result {
             Err(RuntimeError::PeerRequest(_)) => {}

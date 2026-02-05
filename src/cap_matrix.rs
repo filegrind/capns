@@ -970,9 +970,7 @@ mod tests {
         fn execute_cap(
             &self,
             _cap_urn: &str,
-            _positional_args: &[String],
-            _named_args: &[(String, String)],
-            _stdin_source: Option<StdinSource>
+            _arguments: &[CapArgumentValue],
         ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
             Box::pin(async move {
                 Ok((None, Some(format!("Mock response from {}", self.name))))

@@ -76,6 +76,38 @@ pub enum HostError {
 
     #[error("Host is closed")]
     Closed,
+
+    #[error("Unknown plugin request: {0}")]
+    UnknownPluginRequest(String),
+}
+
+/// A request from the plugin to invoke a cap on the host.
+///
+/// When a plugin needs to perform an operation that requires host capabilities
+/// (e.g., downloading a model, accessing the network), it sends a REQ frame to the host.
+/// The host receives this as a `PluginCapRequest` and should process it accordingly.
+#[derive(Debug, Clone)]
+pub struct PluginCapRequest {
+    /// The message ID for correlating responses
+    pub id: MessageId,
+    /// The cap URN being requested
+    pub cap_urn: String,
+    /// The request payload
+    pub payload: Vec<u8>,
+    /// Content type of the payload
+    pub content_type: Option<String>,
+}
+
+/// Handler trait for processing plugin cap requests.
+///
+/// Implement this trait to handle caps that plugins invoke on the host.
+/// The handler receives requests and can send streaming responses back.
+pub trait PluginCapHandler: Send + Sync {
+    /// Handle a cap request from the plugin.
+    ///
+    /// Returns a channel receiver that yields response chunks.
+    /// The handler should process the request and send responses via the sender.
+    fn handle(&self, request: PluginCapRequest) -> Receiver<Result<ResponseChunk, HostError>>;
 }
 
 impl From<CborError> for HostError {
@@ -141,12 +173,14 @@ impl PluginResponse {
 
 /// Internal shared state for the plugin host
 struct HostState {
-    /// Pending requests waiting for responses
+    /// Pending requests waiting for responses (host -> plugin)
     pending: HashMap<MessageId, Sender<Result<ResponseChunk, HostError>>>,
     /// Pending heartbeat IDs we've sent (to avoid responding to our own heartbeat responses)
     pending_heartbeats: HashSet<MessageId>,
     /// Whether the host is closed
     closed: bool,
+    /// Handler for plugin cap requests (plugin -> host)
+    cap_handler: Option<Arc<dyn PluginCapHandler>>,
 }
 
 /// Host-side runtime for communicating with a plugin process.
@@ -197,6 +231,7 @@ impl<W: Write + Send + 'static> PluginHost<W> {
             pending: HashMap::new(),
             pending_heartbeats: HashSet::new(),
             closed: false,
+            cap_handler: None,
         }));
 
         // Start background reader thread
@@ -270,6 +305,12 @@ impl<W: Write + Send + 'static> PluginHost<W> {
                 continue;
             }
 
+            // Handle plugin-initiated REQ frames (plugin invoking host caps)
+            if frame.frame_type == FrameType::Req {
+                Self::handle_plugin_request(&frame, &writer, &state);
+                continue;
+            }
+
             // Route frame to the appropriate pending request
             let request_id = frame.id.clone();
             let should_remove = {
@@ -324,10 +365,15 @@ impl<W: Write + Send + 'static> PluginHost<W> {
                             let _ = sender.send(Err(HostError::PluginError { code, message }));
                             true // Remove - error terminates request
                         }
-                        FrameType::Hello | FrameType::Req | FrameType::Heartbeat => {
+                        FrameType::Hello | FrameType::Heartbeat => {
                             // Protocol errors - Heartbeat is handled above, these should not happen
                             let _ = sender.send(Err(HostError::UnexpectedFrameType(frame.frame_type)));
                             true // Remove - error terminates request
+                        }
+                        FrameType::Req => {
+                            // This shouldn't happen here - REQ from plugin is handled before pending lookup
+                            let _ = sender.send(Err(HostError::UnexpectedFrameType(frame.frame_type)));
+                            true
                         }
                     };
                     remove
@@ -344,6 +390,113 @@ impl<W: Write + Send + 'static> PluginHost<W> {
         }
     }
 
+    /// Handle a REQ frame from the plugin (plugin invoking a cap on the host).
+    ///
+    /// This is called when the plugin sends a REQ frame to invoke a host capability.
+    /// If a cap handler is registered, it delegates to the handler and streams
+    /// responses back to the plugin. Otherwise, it sends an error.
+    fn handle_plugin_request(
+        frame: &Frame,
+        writer: &Arc<Mutex<FrameWriter<W>>>,
+        state: &Arc<Mutex<HostState>>,
+    ) {
+        let request_id = frame.id.clone();
+
+        // Extract cap URN from the frame
+        let cap_urn = match &frame.cap {
+            Some(cap) => cap.clone(),
+            None => {
+                // Missing cap URN - send error back to plugin
+                let err_frame = Frame::err(request_id, "INVALID_REQUEST", "Missing cap URN");
+                if let Ok(mut w) = writer.lock() {
+                    let _ = w.write(&err_frame);
+                }
+                return;
+            }
+        };
+
+        let payload = frame.payload.clone().unwrap_or_default();
+        let content_type = frame.content_type.clone();
+
+        // Get the cap handler
+        let handler = {
+            let state_guard = state.lock().unwrap();
+            state_guard.cap_handler.clone()
+        };
+
+        let Some(handler) = handler else {
+            // No handler registered - send error
+            let err_frame = Frame::err(
+                request_id,
+                "NO_HANDLER",
+                "No cap handler registered on host",
+            );
+            if let Ok(mut w) = writer.lock() {
+                let _ = w.write(&err_frame);
+            }
+            return;
+        };
+
+        // Create the request
+        let request = PluginCapRequest {
+            id: request_id.clone(),
+            cap_urn,
+            payload,
+            content_type,
+        };
+
+        // Call the handler and stream responses back
+        let writer_clone = Arc::clone(writer);
+        thread::spawn(move || {
+            let receiver = handler.handle(request);
+
+            let mut seq: u64 = 0;
+            for result in receiver {
+                match result {
+                    Ok(chunk) => {
+                        // Send CHUNK or END frame back to plugin
+                        if chunk.is_eof {
+                            // Final chunk - send as END frame
+                            let end_frame = Frame::end(request_id.clone(), Some(chunk.payload));
+                            if let Ok(mut w) = writer_clone.lock() {
+                                let _ = w.write(&end_frame);
+                            }
+                        } else {
+                            // Intermediate chunk
+                            let chunk_frame =
+                                Frame::chunk(request_id.clone(), seq, chunk.payload);
+                            if let Ok(mut w) = writer_clone.lock() {
+                                let _ = w.write(&chunk_frame);
+                            }
+                            seq += 1;
+                        }
+                    }
+                    Err(e) => {
+                        // Error - send ERR frame and stop
+                        let err_frame =
+                            Frame::err(request_id.clone(), "CAP_INVOCATION_ERROR", &e.to_string());
+                        if let Ok(mut w) = writer_clone.lock() {
+                            let _ = w.write(&err_frame);
+                        }
+                        return;
+                    }
+                }
+            }
+
+            // If we get here without sending an END frame, send one with no payload
+            // (This handles the case where receiver is empty)
+        });
+    }
+
+    /// Set the handler for plugin cap requests.
+    ///
+    /// When the plugin sends REQ frames to invoke caps on the host,
+    /// this handler will be called to process them.
+    pub fn set_cap_handler(&self, handler: Arc<dyn PluginCapHandler>) {
+        let mut state = self.state.lock().unwrap();
+        state.cap_handler = Some(handler);
+    }
+
     /// Send a cap request and receive responses via a channel.
     ///
     /// Returns a receiver that yields response chunks. Iterate over it
@@ -352,10 +505,16 @@ impl<W: Write + Send + 'static> PluginHost<W> {
     /// Multiple requests can be sent concurrently - each gets its own
     /// response channel. The runtime handles all multiplexing and
     /// heartbeats transparently.
+    ///
+    /// # Arguments
+    /// * `cap_urn` - The cap URN to invoke
+    /// * `payload` - Request payload bytes
+    /// * `content_type` - Content type of the payload (e.g., "application/json", "application/cbor")
     pub fn request(
         &self,
         cap_urn: &str,
         payload: &[u8],
+        content_type: &str,
     ) -> Result<Receiver<Result<ResponseChunk, HostError>>, HostError> {
         let mut state = self.state.lock().unwrap();
         if state.closed {
@@ -367,7 +526,7 @@ impl<W: Write + Send + 'static> PluginHost<W> {
             request_id.clone(),
             cap_urn,
             payload.to_vec(),
-            "application/json",
+            content_type,
         );
 
         // Create channel for responses
@@ -383,12 +542,65 @@ impl<W: Write + Send + 'static> PluginHost<W> {
         Ok(receiver)
     }
 
+    /// Send a cap request with unified arguments.
+    ///
+    /// Serializes the arguments as CBOR: `[{media_urn: string, value: bytes}, ...]`
+    /// and sends with content_type "application/cbor".
+    ///
+    /// The plugin's `extract_effective_payload` will extract the appropriate
+    /// argument data based on the cap's input type.
+    ///
+    /// # Arguments
+    /// * `cap_urn` - The cap URN to invoke
+    /// * `arguments` - Unified arguments as CapArgumentValue slice
+    pub fn request_with_unified_arguments(
+        &self,
+        cap_urn: &str,
+        arguments: &[crate::CapArgumentValue],
+    ) -> Result<Receiver<Result<ResponseChunk, HostError>>, HostError> {
+        // Serialize arguments as CBOR array of maps
+        // Format: [{media_urn: string, value: bytes}, ...]
+        let cbor_args: Vec<ciborium::Value> = arguments
+            .iter()
+            .map(|arg| {
+                ciborium::Value::Map(vec![
+                    (
+                        ciborium::Value::Text("media_urn".to_string()),
+                        ciborium::Value::Text(arg.media_urn.clone()),
+                    ),
+                    (
+                        ciborium::Value::Text("value".to_string()),
+                        ciborium::Value::Bytes(arg.value.clone()),
+                    ),
+                ])
+            })
+            .collect();
+
+        let cbor_payload = ciborium::Value::Array(cbor_args);
+        let mut payload_bytes = Vec::new();
+        ciborium::into_writer(&cbor_payload, &mut payload_bytes).map_err(|e| {
+            HostError::Cbor(format!("Failed to serialize unified arguments: {}", e))
+        })?;
+
+        self.request(cap_urn, &payload_bytes, "application/cbor")
+    }
+
     /// Send a cap request and wait for the complete response.
     ///
     /// This is a convenience method that collects all chunks.
     /// For streaming responses, use `request()` directly.
-    pub fn call(&self, cap_urn: &str, payload: &[u8]) -> Result<PluginResponse, HostError> {
-        let receiver = self.request(cap_urn, payload)?;
+    ///
+    /// # Arguments
+    /// * `cap_urn` - The cap URN to invoke
+    /// * `payload` - Request payload bytes
+    /// * `content_type` - Content type of the payload
+    pub fn call(
+        &self,
+        cap_urn: &str,
+        payload: &[u8],
+        content_type: &str,
+    ) -> Result<PluginResponse, HostError> {
+        let receiver = self.request(cap_urn, payload, content_type)?;
 
         let mut chunks = Vec::new();
         for result in receiver {
@@ -519,12 +731,18 @@ impl<W: Write + Send + 'static> PluginHost<W> {
     /// Send a cap request and return a streaming iterator.
     ///
     /// This wraps `request()` in an iterator interface for convenience.
+    ///
+    /// # Arguments
+    /// * `cap_urn` - The cap URN to invoke
+    /// * `payload` - Request payload bytes
+    /// * `content_type` - Content type of the payload
     pub fn call_streaming(
         &self,
         cap_urn: &str,
         payload: &[u8],
+        content_type: &str,
     ) -> Result<StreamingResponse<'_, W>, HostError> {
-        let receiver = self.request(cap_urn, payload)?;
+        let receiver = self.request(cap_urn, payload, content_type)?;
         Ok(StreamingResponse {
             receiver,
             finished: false,
