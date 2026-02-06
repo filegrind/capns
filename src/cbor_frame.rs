@@ -481,6 +481,7 @@ pub mod keys {
 mod tests {
     use super::*;
 
+    // TEST171: Test all FrameType discriminants roundtrip through u8 conversion preserving identity
     #[test]
     fn test_frame_type_roundtrip() {
         for t in [
@@ -499,11 +500,28 @@ mod tests {
         }
     }
 
+    // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     #[test]
     fn test_invalid_frame_type() {
+        assert!(FrameType::from_u8(8).is_none(), "value 8 is one past Heartbeat");
         assert!(FrameType::from_u8(100).is_none());
+        assert!(FrameType::from_u8(255).is_none());
     }
 
+    // TEST173: Test FrameType discriminant values match the wire protocol specification exactly
+    #[test]
+    fn test_frame_type_discriminant_values() {
+        assert_eq!(FrameType::Hello as u8, 0);
+        assert_eq!(FrameType::Req as u8, 1);
+        assert_eq!(FrameType::Res as u8, 2);
+        assert_eq!(FrameType::Chunk as u8, 3);
+        assert_eq!(FrameType::End as u8, 4);
+        assert_eq!(FrameType::Log as u8, 5);
+        assert_eq!(FrameType::Err as u8, 6);
+        assert_eq!(FrameType::Heartbeat as u8, 7);
+    }
+
+    // TEST174: Test MessageId::new_uuid generates valid UUID that roundtrips through string conversion
     #[test]
     fn test_message_id_uuid() {
         let id = MessageId::new_uuid();
@@ -512,15 +530,64 @@ mod tests {
         assert_eq!(id, recovered);
     }
 
+    // TEST175: Test two MessageId::new_uuid calls produce distinct IDs (no collisions)
+    #[test]
+    fn test_message_id_uuid_uniqueness() {
+        let id1 = MessageId::new_uuid();
+        let id2 = MessageId::new_uuid();
+        assert_ne!(id1, id2, "two UUIDs must be distinct");
+    }
+
+    // TEST176: Test MessageId::Uint does not produce a UUID string, to_uuid_string returns None
+    #[test]
+    fn test_message_id_uint_has_no_uuid_string() {
+        let id = MessageId::Uint(42);
+        assert!(id.to_uuid_string().is_none(), "Uint IDs have no UUID representation");
+    }
+
+    // TEST177: Test MessageId::from_uuid_str rejects invalid UUID strings
+    #[test]
+    fn test_message_id_from_invalid_uuid_str() {
+        assert!(MessageId::from_uuid_str("not-a-uuid").is_none());
+        assert!(MessageId::from_uuid_str("").is_none());
+        assert!(MessageId::from_uuid_str("12345678").is_none());
+    }
+
+    // TEST178: Test MessageId::as_bytes produces correct byte representations for Uuid and Uint variants
+    #[test]
+    fn test_message_id_as_bytes() {
+        let uuid_id = MessageId::new_uuid();
+        let uuid_bytes = uuid_id.as_bytes();
+        assert_eq!(uuid_bytes.len(), 16, "UUID must be 16 bytes");
+
+        let uint_id = MessageId::Uint(0x0102030405060708);
+        let uint_bytes = uint_id.as_bytes();
+        assert_eq!(uint_bytes.len(), 8, "Uint ID must be 8 bytes big-endian");
+        assert_eq!(uint_bytes, vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+    }
+
+    // TEST179: Test MessageId::default creates a UUID variant (not Uint)
+    #[test]
+    fn test_message_id_default_is_uuid() {
+        let id = MessageId::default();
+        assert!(id.to_uuid_string().is_some(), "default MessageId must be UUID");
+    }
+
+    // TEST180: Test Frame::hello without manifest produces correct HELLO frame for host side
     #[test]
     fn test_hello_frame() {
         let frame = Frame::hello(1_000_000, 100_000);
         assert_eq!(frame.frame_type, FrameType::Hello);
+        assert_eq!(frame.version, PROTOCOL_VERSION);
         assert_eq!(frame.hello_max_frame(), Some(1_000_000));
         assert_eq!(frame.hello_max_chunk(), Some(100_000));
-        assert!(frame.hello_manifest().is_none(), "Host HELLO should not include manifest");
+        assert!(frame.hello_manifest().is_none(), "Host HELLO must not include manifest");
+        assert!(frame.payload.is_none(), "HELLO has no payload");
+        // ID should be Uint(0) for HELLO
+        assert_eq!(frame.id, MessageId::Uint(0));
     }
 
+    // TEST181: Test Frame::hello_with_manifest produces HELLO with manifest bytes for plugin side
     #[test]
     fn test_hello_frame_with_manifest() {
         let manifest_json = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test","caps":[]}"#;
@@ -528,10 +595,11 @@ mod tests {
         assert_eq!(frame.frame_type, FrameType::Hello);
         assert_eq!(frame.hello_max_frame(), Some(1_000_000));
         assert_eq!(frame.hello_max_chunk(), Some(100_000));
-        assert!(frame.hello_manifest().is_some(), "Plugin HELLO must include manifest");
-        assert_eq!(frame.hello_manifest().unwrap(), manifest_json.as_bytes());
+        let manifest = frame.hello_manifest().expect("Plugin HELLO must include manifest");
+        assert_eq!(manifest, manifest_json.as_bytes());
     }
 
+    // TEST182: Test Frame::req stores cap URN, payload, and content_type correctly
     #[test]
     fn test_req_frame() {
         let id = MessageId::new_uuid();
@@ -540,8 +608,34 @@ mod tests {
         assert_eq!(frame.id, id);
         assert_eq!(frame.cap, Some("cap:op=test".to_string()));
         assert_eq!(frame.payload, Some(b"payload".to_vec()));
+        assert_eq!(frame.content_type, Some("application/json".to_string()));
+        assert_eq!(frame.version, PROTOCOL_VERSION);
     }
 
+    // TEST183: Test Frame::res stores payload and content_type for single complete response
+    #[test]
+    fn test_res_frame() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::res(id.clone(), b"result".to_vec(), "text/plain");
+        assert_eq!(frame.frame_type, FrameType::Res);
+        assert_eq!(frame.id, id);
+        assert_eq!(frame.payload, Some(b"result".to_vec()));
+        assert_eq!(frame.content_type, Some("text/plain".to_string()));
+    }
+
+    // TEST184: Test Frame::chunk stores seq and payload for streaming
+    #[test]
+    fn test_chunk_frame() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::chunk(id.clone(), 3, b"data".to_vec());
+        assert_eq!(frame.frame_type, FrameType::Chunk);
+        assert_eq!(frame.id, id);
+        assert_eq!(frame.seq, 3);
+        assert_eq!(frame.payload, Some(b"data".to_vec()));
+        assert!(!frame.is_eof(), "plain chunk should not be EOF");
+    }
+
+    // TEST185: Test Frame::err stores error code and message in metadata
     #[test]
     fn test_err_frame() {
         let id = MessageId::new_uuid();
@@ -551,21 +645,57 @@ mod tests {
         assert_eq!(frame.error_message(), Some("Cap not found"));
     }
 
+    // TEST186: Test Frame::log stores level and message in metadata
+    #[test]
+    fn test_log_frame() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::log(id.clone(), "info", "Processing started");
+        assert_eq!(frame.frame_type, FrameType::Log);
+        assert_eq!(frame.id, id);
+        assert_eq!(frame.log_level(), Some("info"));
+        assert_eq!(frame.log_message(), Some("Processing started"));
+    }
+
+    // TEST187: Test Frame::end with payload sets eof and optional final payload
+    #[test]
+    fn test_end_frame_with_payload() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::end(id.clone(), Some(b"final".to_vec()));
+        assert_eq!(frame.frame_type, FrameType::End);
+        assert!(frame.is_eof());
+        assert_eq!(frame.payload, Some(b"final".to_vec()));
+    }
+
+    // TEST188: Test Frame::end without payload still sets eof marker
+    #[test]
+    fn test_end_frame_without_payload() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::end(id, None);
+        assert_eq!(frame.frame_type, FrameType::End);
+        assert!(frame.is_eof());
+        assert!(frame.payload.is_none());
+    }
+
+    // TEST189: Test chunk_with_offset sets offset on all chunks but len only on seq=0
     #[test]
     fn test_chunk_with_offset() {
         let id = MessageId::new_uuid();
-        let frame = Frame::chunk_with_offset(id, 0, b"data".to_vec(), 0, Some(1000), false);
-        assert_eq!(frame.seq, 0);
-        assert_eq!(frame.offset, Some(0));
-        assert_eq!(frame.len, Some(1000));
-        assert!(!frame.is_eof());
+        let first = Frame::chunk_with_offset(id.clone(), 0, b"data".to_vec(), 0, Some(1000), false);
+        assert_eq!(first.seq, 0);
+        assert_eq!(first.offset, Some(0));
+        assert_eq!(first.len, Some(1000), "first chunk must carry total len");
+        assert!(!first.is_eof());
 
-        let id2 = MessageId::new_uuid();
-        let last = Frame::chunk_with_offset(id2, 5, b"last".to_vec(), 900, None, true);
+        let mid = Frame::chunk_with_offset(id.clone(), 3, b"mid".to_vec(), 500, Some(9999), false);
+        assert!(mid.len.is_none(), "non-first chunk must not carry len, seq != 0");
+        assert_eq!(mid.offset, Some(500));
+
+        let last = Frame::chunk_with_offset(id, 5, b"last".to_vec(), 900, None, true);
         assert!(last.is_eof());
-        assert!(last.len.is_none()); // len only on first chunk
+        assert!(last.len.is_none());
     }
 
+    // TEST190: Test Frame::heartbeat creates minimal frame with no payload or metadata
     #[test]
     fn test_heartbeat_frame() {
         let id = MessageId::new_uuid();
@@ -574,5 +704,153 @@ mod tests {
         assert_eq!(frame.id, id);
         assert!(frame.payload.is_none());
         assert!(frame.meta.is_none());
+        assert_eq!(frame.seq, 0);
+    }
+
+    // TEST191: Test error_code and error_message return None for non-Err frame types
+    #[test]
+    fn test_error_accessors_on_non_err_frame() {
+        let req = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
+        assert!(req.error_code().is_none(), "REQ must have no error_code");
+        assert!(req.error_message().is_none(), "REQ must have no error_message");
+
+        let hello = Frame::hello(1000, 500);
+        assert!(hello.error_code().is_none());
+    }
+
+    // TEST192: Test log_level and log_message return None for non-Log frame types
+    #[test]
+    fn test_log_accessors_on_non_log_frame() {
+        let req = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
+        assert!(req.log_level().is_none(), "REQ must have no log_level");
+        assert!(req.log_message().is_none(), "REQ must have no log_message");
+    }
+
+    // TEST193: Test hello_max_frame and hello_max_chunk return None for non-Hello frame types
+    #[test]
+    fn test_hello_accessors_on_non_hello_frame() {
+        let err = Frame::err(MessageId::new_uuid(), "E", "m");
+        assert!(err.hello_max_frame().is_none());
+        assert!(err.hello_max_chunk().is_none());
+        assert!(err.hello_manifest().is_none());
+    }
+
+    // TEST194: Test Frame::new sets version and defaults correctly, optional fields are None
+    #[test]
+    fn test_frame_new_defaults() {
+        let id = MessageId::new_uuid();
+        let frame = Frame::new(FrameType::Chunk, id.clone());
+        assert_eq!(frame.version, PROTOCOL_VERSION);
+        assert_eq!(frame.frame_type, FrameType::Chunk);
+        assert_eq!(frame.id, id);
+        assert_eq!(frame.seq, 0);
+        assert!(frame.content_type.is_none());
+        assert!(frame.meta.is_none());
+        assert!(frame.payload.is_none());
+        assert!(frame.len.is_none());
+        assert!(frame.offset.is_none());
+        assert!(frame.eof.is_none());
+        assert!(frame.cap.is_none());
+    }
+
+    // TEST195: Test Frame::default creates a Req frame (the documented default)
+    #[test]
+    fn test_frame_default() {
+        let frame = Frame::default();
+        assert_eq!(frame.frame_type, FrameType::Req);
+        assert_eq!(frame.version, PROTOCOL_VERSION);
+    }
+
+    // TEST196: Test is_eof returns false when eof field is None (unset)
+    #[test]
+    fn test_is_eof_when_none() {
+        let frame = Frame::new(FrameType::Chunk, MessageId::Uint(0));
+        assert!(!frame.is_eof(), "eof=None must mean not EOF");
+    }
+
+    // TEST197: Test is_eof returns false when eof field is explicitly Some(false)
+    #[test]
+    fn test_is_eof_when_false() {
+        let mut frame = Frame::new(FrameType::Chunk, MessageId::Uint(0));
+        frame.eof = Some(false);
+        assert!(!frame.is_eof());
+    }
+
+    // TEST198: Test Limits::default provides the documented default values
+    #[test]
+    fn test_limits_default() {
+        let limits = Limits::default();
+        assert_eq!(limits.max_frame, DEFAULT_MAX_FRAME);
+        assert_eq!(limits.max_chunk, DEFAULT_MAX_CHUNK);
+        assert_eq!(limits.max_frame, 1_048_576, "default max_frame = 1 MB");
+        assert_eq!(limits.max_chunk, 262_144, "default max_chunk = 256 KB");
+    }
+
+    // TEST199: Test PROTOCOL_VERSION is 1
+    #[test]
+    fn test_protocol_version_constant() {
+        assert_eq!(PROTOCOL_VERSION, 1);
+    }
+
+    // TEST200: Test integer key constants match the protocol specification
+    #[test]
+    fn test_key_constants() {
+        assert_eq!(keys::VERSION, 0);
+        assert_eq!(keys::FRAME_TYPE, 1);
+        assert_eq!(keys::ID, 2);
+        assert_eq!(keys::SEQ, 3);
+        assert_eq!(keys::CONTENT_TYPE, 4);
+        assert_eq!(keys::META, 5);
+        assert_eq!(keys::PAYLOAD, 6);
+        assert_eq!(keys::LEN, 7);
+        assert_eq!(keys::OFFSET, 8);
+        assert_eq!(keys::EOF, 9);
+        assert_eq!(keys::CAP, 10);
+    }
+
+    // TEST201: Test hello_with_manifest preserves binary manifest data (not just JSON text)
+    #[test]
+    fn test_hello_manifest_binary_data() {
+        let binary_manifest = vec![0x00, 0x01, 0xFF, 0xFE, 0x80];
+        let frame = Frame::hello_with_manifest(1000, 500, &binary_manifest);
+        assert_eq!(frame.hello_manifest().unwrap(), &binary_manifest);
+    }
+
+    // TEST202: Test MessageId Eq/Hash semantics: equal UUIDs are equal, different ones are not
+    #[test]
+    fn test_message_id_equality_and_hash() {
+        use std::collections::HashSet;
+
+        let id1 = MessageId::Uuid([1; 16]);
+        let id2 = MessageId::Uuid([1; 16]);
+        let id3 = MessageId::Uuid([2; 16]);
+        assert_eq!(id1, id2);
+        assert_ne!(id1, id3);
+
+        let mut set = HashSet::new();
+        set.insert(id1.clone());
+        assert!(set.contains(&id2), "equal IDs must hash the same");
+        assert!(!set.contains(&id3));
+
+        let uint1 = MessageId::Uint(42);
+        let uint2 = MessageId::Uint(42);
+        let uint3 = MessageId::Uint(43);
+        assert_eq!(uint1, uint2);
+        assert_ne!(uint1, uint3);
+    }
+
+    // TEST203: Test Uuid and Uint variants of MessageId are never equal even for coincidental byte values
+    #[test]
+    fn test_message_id_cross_variant_inequality() {
+        let uuid_id = MessageId::Uuid([0; 16]);
+        let uint_id = MessageId::Uint(0);
+        assert_ne!(uuid_id, uint_id, "different variants must not be equal");
+    }
+
+    // TEST204: Test Frame::req with empty payload stores Some(empty vec) not None
+    #[test]
+    fn test_req_frame_empty_payload() {
+        let frame = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
+        assert_eq!(frame.payload, Some(vec![]), "empty payload is still Some(vec![])");
     }
 }

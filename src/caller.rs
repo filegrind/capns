@@ -392,4 +392,86 @@ mod tests {
         assert!(debug_str.contains("test-id"));
         assert!(debug_str.contains("/test/path.pdf"));
     }
+
+    // TEST274: Test CapArgumentValue::new stores media_urn and raw byte value
+    #[test]
+    fn test_cap_argument_value_new() {
+        let arg = CapArgumentValue::new("media:model-spec;textable;form=scalar", b"gpt-4".to_vec());
+        assert_eq!(arg.media_urn, "media:model-spec;textable;form=scalar");
+        assert_eq!(arg.value, b"gpt-4");
+    }
+
+    // TEST275: Test CapArgumentValue::from_str converts string to UTF-8 bytes
+    #[test]
+    fn test_cap_argument_value_from_str() {
+        let arg = CapArgumentValue::from_str("media:string;textable", "hello world");
+        assert_eq!(arg.media_urn, "media:string;textable");
+        assert_eq!(arg.value, b"hello world");
+    }
+
+    // TEST276: Test CapArgumentValue::value_as_str succeeds for UTF-8 data
+    #[test]
+    fn test_cap_argument_value_as_str_valid() {
+        let arg = CapArgumentValue::from_str("media:string", "test");
+        assert_eq!(arg.value_as_str().unwrap(), "test");
+    }
+
+    // TEST277: Test CapArgumentValue::value_as_str fails for non-UTF-8 binary data
+    #[test]
+    fn test_cap_argument_value_as_str_invalid_utf8() {
+        let arg = CapArgumentValue::new("media:pdf;bytes", vec![0xFF, 0xFE, 0x80]);
+        assert!(arg.value_as_str().is_err(), "non-UTF-8 data must fail");
+    }
+
+    // TEST278: Test CapArgumentValue::new with empty value stores empty vec
+    #[test]
+    fn test_cap_argument_value_empty() {
+        let arg = CapArgumentValue::new("media:void", vec![]);
+        assert!(arg.value.is_empty());
+        assert_eq!(arg.value_as_str().unwrap(), "");
+    }
+
+    // TEST279: Test CapArgumentValue Clone produces independent copy with same data
+    #[test]
+    fn test_cap_argument_value_clone() {
+        let arg = CapArgumentValue::new("media:test", b"data".to_vec());
+        let cloned = arg.clone();
+        assert_eq!(arg.media_urn, cloned.media_urn);
+        assert_eq!(arg.value, cloned.value);
+    }
+
+    // TEST280: Test CapArgumentValue Debug format includes media_urn and value
+    #[test]
+    fn test_cap_argument_value_debug() {
+        let arg = CapArgumentValue::from_str("media:test", "val");
+        let debug = format!("{:?}", arg);
+        assert!(debug.contains("media:test"), "debug must include media_urn");
+    }
+
+    // TEST281: Test CapArgumentValue::new accepts Into<String> for media_urn (String and &str)
+    #[test]
+    fn test_cap_argument_value_into_string() {
+        let s = String::from("media:owned");
+        let arg1 = CapArgumentValue::new(s, vec![]);
+        assert_eq!(arg1.media_urn, "media:owned");
+
+        let arg2 = CapArgumentValue::new("media:borrowed", vec![]);
+        assert_eq!(arg2.media_urn, "media:borrowed");
+    }
+
+    // TEST282: Test CapArgumentValue::from_str with Unicode string preserves all characters
+    #[test]
+    fn test_cap_argument_value_unicode() {
+        let arg = CapArgumentValue::from_str("media:string", "hello 世界 🌍");
+        assert_eq!(arg.value_as_str().unwrap(), "hello 世界 🌍");
+    }
+
+    // TEST283: Test CapArgumentValue with large binary payload preserves all bytes
+    #[test]
+    fn test_cap_argument_value_large_binary() {
+        let data: Vec<u8> = (0u8..=255).cycle().take(10000).collect();
+        let arg = CapArgumentValue::new("media:pdf;bytes", data.clone());
+        assert_eq!(arg.value.len(), 10000);
+        assert_eq!(arg.value, data);
+    }
 }

@@ -656,3 +656,86 @@ pub async fn all_coercion_caps(registry: Arc<CapRegistry>) -> Result<Vec<(&'stat
     }
     Ok(caps)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::media_urn::{MEDIA_MODEL_SPEC, MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT};
+    use crate::standard::media::MEDIA_STRING;
+
+    // TEST307: Test model_availability_urn builds valid cap URN with correct op and media specs
+    #[test]
+    fn test_model_availability_urn() {
+        let urn = model_availability_urn();
+        let urn_str = urn.to_string();
+        assert!(urn_str.contains("op=model-availability"), "URN must contain op=model-availability: {}", urn_str);
+        assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
+        assert_eq!(urn.out_spec(), MEDIA_AVAILABILITY_OUTPUT, "output must be availability output");
+    }
+
+    // TEST308: Test model_path_urn builds valid cap URN with correct op and media specs
+    #[test]
+    fn test_model_path_urn() {
+        let urn = model_path_urn();
+        let urn_str = urn.to_string();
+        assert!(urn_str.contains("op=model-path"), "URN must contain op=model-path: {}", urn_str);
+        assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
+        assert_eq!(urn.out_spec(), MEDIA_PATH_OUTPUT, "output must be path output");
+    }
+
+    // TEST309: Test model_availability_urn and model_path_urn produce distinct URNs
+    #[test]
+    fn test_model_availability_and_path_are_distinct() {
+        let avail = model_availability_urn();
+        let path = model_path_urn();
+        assert_ne!(avail.to_string(), path.to_string(),
+            "availability and path must be distinct cap URNs");
+    }
+
+    // TEST310: Test llm_conversation_urn uses unconstrained tag (not constrained)
+    #[test]
+    fn test_llm_conversation_urn_unconstrained() {
+        let urn = llm_conversation_urn("en");
+        let urn_str = urn.to_string();
+        assert!(urn_str.contains("unconstrained"), "LLM conversation URN must use 'unconstrained': {}", urn_str);
+        assert!(!urn_str.contains("constrained;"), "must not contain bare 'constrained' tag");
+        assert!(urn_str.contains("op=conversation"), "must have op=conversation: {}", urn_str);
+        assert!(urn_str.contains("language=en"), "must have language tag: {}", urn_str);
+    }
+
+    // TEST311: Test llm_conversation_urn in/out specs match the expected media URNs semantically
+    #[test]
+    fn test_llm_conversation_urn_specs() {
+        use crate::media_urn::MediaUrn;
+        let urn = llm_conversation_urn("fr");
+
+        // Compare semantically via MediaUrn matching (tag order may differ)
+        let in_spec = MediaUrn::from_string(urn.in_spec()).expect("in_spec must parse");
+        let expected_in = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING must parse");
+        assert!(in_spec.matches(&expected_in).unwrap(),
+            "in_spec '{}' must match MEDIA_STRING '{}'", urn.in_spec(), MEDIA_STRING);
+
+        let out_spec = MediaUrn::from_string(urn.out_spec()).expect("out_spec must parse");
+        let expected_out = MediaUrn::from_string(MEDIA_LLM_INFERENCE_OUTPUT).expect("LLM output must parse");
+        assert!(out_spec.matches(&expected_out).unwrap(),
+            "out_spec '{}' must match '{}'", urn.out_spec(), MEDIA_LLM_INFERENCE_OUTPUT);
+    }
+
+    // TEST312: Test all URN builders produce parseable cap URNs
+    #[test]
+    fn test_all_urn_builders_produce_valid_urns() {
+        // Each of these must not panic
+        let _avail = model_availability_urn();
+        let _path = model_path_urn();
+        let _conv = llm_conversation_urn("en");
+
+        // Verify they roundtrip through CapUrn parsing
+        let avail_str = model_availability_urn().to_string();
+        let parsed = crate::cap_urn::CapUrn::from_string(&avail_str);
+        assert!(parsed.is_ok(), "model_availability_urn must be parseable: {:?}", parsed.err());
+
+        let path_str = model_path_urn().to_string();
+        let parsed = crate::cap_urn::CapUrn::from_string(&path_str);
+        assert!(parsed.is_ok(), "model_path_urn must be parseable: {:?}", parsed.err());
+    }
+}

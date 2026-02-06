@@ -613,6 +613,7 @@ impl Drop for AsyncPluginHost {
 mod tests {
     use super::*;
 
+    // TEST235: Test ResponseChunk stores payload, seq, offset, len, and eof fields correctly
     #[test]
     fn test_response_chunk() {
         let chunk = ResponseChunk {
@@ -624,9 +625,30 @@ mod tests {
         };
 
         assert_eq!(chunk.payload, b"hello");
+        assert_eq!(chunk.seq, 0);
+        assert!(chunk.offset.is_none());
+        assert!(chunk.len.is_none());
         assert!(!chunk.is_eof);
     }
 
+    // TEST236: Test ResponseChunk with all fields populated preserves offset, len, and eof
+    #[test]
+    fn test_response_chunk_with_all_fields() {
+        let chunk = ResponseChunk {
+            payload: b"data".to_vec(),
+            seq: 5,
+            offset: Some(1024),
+            len: Some(8192),
+            is_eof: true,
+        };
+
+        assert_eq!(chunk.seq, 5);
+        assert_eq!(chunk.offset, Some(1024));
+        assert_eq!(chunk.len, Some(8192));
+        assert!(chunk.is_eof);
+    }
+
+    // TEST237: Test PluginResponse::Single final_payload returns the single payload slice
     #[test]
     fn test_plugin_response_single() {
         let response = PluginResponse::Single(b"result".to_vec());
@@ -634,6 +656,15 @@ mod tests {
         assert_eq!(response.concatenated(), b"result");
     }
 
+    // TEST238: Test PluginResponse::Single with empty payload returns empty slice and empty vec
+    #[test]
+    fn test_plugin_response_single_empty() {
+        let response = PluginResponse::Single(vec![]);
+        assert_eq!(response.final_payload(), Some(b"".as_slice()));
+        assert_eq!(response.concatenated(), b"");
+    }
+
+    // TEST239: Test PluginResponse::Streaming concatenated joins all chunk payloads in order
     #[test]
     fn test_plugin_response_streaming() {
         let chunks = vec![
@@ -655,5 +686,149 @@ mod tests {
 
         let response = PluginResponse::Streaming(chunks);
         assert_eq!(response.concatenated(), b"hello world");
+    }
+
+    // TEST240: Test PluginResponse::Streaming final_payload returns the last chunk's payload
+    #[test]
+    fn test_plugin_response_streaming_final_payload() {
+        let chunks = vec![
+            ResponseChunk {
+                payload: b"first".to_vec(),
+                seq: 0,
+                offset: None,
+                len: None,
+                is_eof: false,
+            },
+            ResponseChunk {
+                payload: b"second".to_vec(),
+                seq: 1,
+                offset: None,
+                len: None,
+                is_eof: false,
+            },
+            ResponseChunk {
+                payload: b"last".to_vec(),
+                seq: 2,
+                offset: None,
+                len: None,
+                is_eof: true,
+            },
+        ];
+
+        let response = PluginResponse::Streaming(chunks);
+        assert_eq!(response.final_payload(), Some(b"last".as_slice()));
+    }
+
+    // TEST241: Test PluginResponse::Streaming with empty chunks vec returns empty concatenation
+    #[test]
+    fn test_plugin_response_streaming_empty_chunks() {
+        let response = PluginResponse::Streaming(vec![]);
+        assert_eq!(response.concatenated(), b"");
+        assert!(response.final_payload().is_none());
+    }
+
+    // TEST242: Test PluginResponse::Streaming concatenated capacity is pre-allocated correctly for large payloads
+    #[test]
+    fn test_plugin_response_streaming_large_payload() {
+        let chunk1_data = vec![0xAA; 1000];
+        let chunk2_data = vec![0xBB; 2000];
+
+        let chunks = vec![
+            ResponseChunk {
+                payload: chunk1_data.clone(),
+                seq: 0,
+                offset: None,
+                len: None,
+                is_eof: false,
+            },
+            ResponseChunk {
+                payload: chunk2_data.clone(),
+                seq: 1,
+                offset: None,
+                len: None,
+                is_eof: true,
+            },
+        ];
+
+        let response = PluginResponse::Streaming(chunks);
+        let result = response.concatenated();
+        assert_eq!(result.len(), 3000);
+        assert_eq!(&result[..1000], &chunk1_data);
+        assert_eq!(&result[1000..], &chunk2_data);
+    }
+
+    // TEST243: Test AsyncHostError variants display correct error messages
+    #[test]
+    fn test_async_host_error_display() {
+        let err = AsyncHostError::PluginError {
+            code: "NOT_FOUND".to_string(),
+            message: "Cap not found".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("NOT_FOUND"), "error display must include code");
+        assert!(msg.contains("Cap not found"), "error display must include message");
+
+        let err2 = AsyncHostError::Closed;
+        assert_eq!(format!("{}", err2), "Host is closed");
+
+        let err3 = AsyncHostError::ProcessExited;
+        assert_eq!(format!("{}", err3), "Plugin process exited unexpectedly");
+
+        let err4 = AsyncHostError::SendError;
+        assert_eq!(format!("{}", err4), "Send error: channel closed");
+
+        let err5 = AsyncHostError::RecvError;
+        assert_eq!(format!("{}", err5), "Receive error: channel closed");
+    }
+
+    // TEST244: Test AsyncHostError::from converts CborError to Cbor variant
+    #[test]
+    fn test_async_host_error_from_cbor() {
+        let cbor_err = crate::cbor_io::CborError::InvalidFrame("test".to_string());
+        let host_err: AsyncHostError = cbor_err.into();
+        match host_err {
+            AsyncHostError::Cbor(msg) => assert!(msg.contains("test")),
+            _ => panic!("expected Cbor variant"),
+        }
+    }
+
+    // TEST245: Test AsyncHostError::from converts io::Error to Io variant
+    #[test]
+    fn test_async_host_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broken");
+        let host_err: AsyncHostError = io_err.into();
+        match host_err {
+            AsyncHostError::Io(msg) => assert!(msg.contains("pipe broken")),
+            _ => panic!("expected Io variant"),
+        }
+    }
+
+    // TEST246: Test AsyncHostError Clone implementation produces equal values
+    #[test]
+    fn test_async_host_error_clone() {
+        let err = AsyncHostError::PluginError {
+            code: "ERR".to_string(),
+            message: "msg".to_string(),
+        };
+        let cloned = err.clone();
+        assert_eq!(format!("{}", err), format!("{}", cloned));
+    }
+
+    // TEST247: Test ResponseChunk Clone produces independent copy with same data
+    #[test]
+    fn test_response_chunk_clone() {
+        let chunk = ResponseChunk {
+            payload: b"data".to_vec(),
+            seq: 3,
+            offset: Some(100),
+            len: Some(500),
+            is_eof: true,
+        };
+        let cloned = chunk.clone();
+        assert_eq!(chunk.payload, cloned.payload);
+        assert_eq!(chunk.seq, cloned.seq);
+        assert_eq!(chunk.offset, cloned.offset);
+        assert_eq!(chunk.len, cloned.len);
+        assert_eq!(chunk.is_eof, cloned.is_eof);
     }
 }

@@ -755,6 +755,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    // TEST205: Test REQ frame encode/decode roundtrip preserves all fields
     #[test]
     fn test_encode_decode_roundtrip() {
         let id = MessageId::new_uuid();
@@ -771,6 +772,7 @@ mod tests {
         assert_eq!(decoded.content_type, original.content_type);
     }
 
+    // TEST206: Test HELLO frame encode/decode roundtrip preserves max_frame and max_chunk metadata
     #[test]
     fn test_hello_frame_roundtrip() {
         let original = Frame::hello(500_000, 50_000);
@@ -782,6 +784,7 @@ mod tests {
         assert_eq!(decoded.hello_max_chunk(), Some(50_000));
     }
 
+    // TEST207: Test ERR frame encode/decode roundtrip preserves error code and message
     #[test]
     fn test_err_frame_roundtrip() {
         let id = MessageId::new_uuid();
@@ -794,6 +797,92 @@ mod tests {
         assert_eq!(decoded.error_message(), Some("Cap not found"));
     }
 
+    // TEST208: Test LOG frame encode/decode roundtrip preserves level and message
+    #[test]
+    fn test_log_frame_roundtrip() {
+        let id = MessageId::new_uuid();
+        let original = Frame::log(id, "warn", "Something happened");
+        let bytes = encode_frame(&original).expect("encode should succeed");
+        let decoded = decode_frame(&bytes).expect("decode should succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::Log);
+        assert_eq!(decoded.log_level(), Some("warn"));
+        assert_eq!(decoded.log_message(), Some("Something happened"));
+    }
+
+    // TEST209: Test RES frame encode/decode roundtrip preserves payload and content_type
+    #[test]
+    fn test_res_frame_roundtrip() {
+        let id = MessageId::new_uuid();
+        let original = Frame::res(id.clone(), b"result data".to_vec(), "application/octet-stream");
+        let bytes = encode_frame(&original).expect("encode should succeed");
+        let decoded = decode_frame(&bytes).expect("decode should succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::Res);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.payload, Some(b"result data".to_vec()));
+        assert_eq!(decoded.content_type, Some("application/octet-stream".to_string()));
+    }
+
+    // TEST210: Test END frame encode/decode roundtrip preserves eof marker and optional payload
+    #[test]
+    fn test_end_frame_roundtrip() {
+        let id = MessageId::new_uuid();
+        let original = Frame::end(id.clone(), Some(b"final".to_vec()));
+        let bytes = encode_frame(&original).expect("encode should succeed");
+        let decoded = decode_frame(&bytes).expect("decode should succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::End);
+        assert_eq!(decoded.id, id);
+        assert!(decoded.is_eof());
+        assert_eq!(decoded.payload, Some(b"final".to_vec()));
+    }
+
+    // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes
+    #[test]
+    fn test_hello_with_manifest_roundtrip() {
+        let manifest = b"{\"name\":\"Test\",\"version\":\"1.0\"}";
+        let original = Frame::hello_with_manifest(1_000_000, 100_000, manifest);
+        let bytes = encode_frame(&original).expect("encode should succeed");
+        let decoded = decode_frame(&bytes).expect("decode should succeed");
+
+        assert_eq!(decoded.hello_manifest().unwrap(), manifest);
+        assert_eq!(decoded.hello_max_frame(), Some(1_000_000));
+        assert_eq!(decoded.hello_max_chunk(), Some(100_000));
+    }
+
+    // TEST212: Test chunk_with_offset encode/decode roundtrip preserves offset, len, eof
+    #[test]
+    fn test_chunk_with_offset_roundtrip() {
+        let id = MessageId::new_uuid();
+        let original = Frame::chunk_with_offset(id.clone(), 0, b"data".to_vec(), 100, Some(5000), true);
+        let bytes = encode_frame(&original).expect("encode should succeed");
+        let decoded = decode_frame(&bytes).expect("decode should succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::Chunk);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.seq, 0);
+        assert_eq!(decoded.offset, Some(100));
+        assert_eq!(decoded.len, Some(5000));
+        assert!(decoded.is_eof());
+        assert_eq!(decoded.payload, Some(b"data".to_vec()));
+    }
+
+    // TEST213: Test heartbeat frame encode/decode roundtrip preserves ID with no extra fields
+    #[test]
+    fn test_heartbeat_roundtrip() {
+        let id = MessageId::new_uuid();
+        let original = Frame::heartbeat(id.clone());
+        let bytes = encode_frame(&original).expect("encode should succeed");
+        let decoded = decode_frame(&bytes).expect("decode should succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::Heartbeat);
+        assert_eq!(decoded.id, id);
+        assert!(decoded.payload.is_none());
+        assert!(decoded.meta.is_none());
+    }
+
+    // TEST214: Test write_frame/read_frame IO roundtrip through length-prefixed wire format
     #[test]
     fn test_frame_io_roundtrip() {
         let limits = Limits::default();
@@ -802,6 +891,11 @@ mod tests {
 
         let mut buf = Vec::new();
         write_frame(&mut buf, &original, &limits).expect("write should succeed");
+
+        // Verify length prefix exists (first 4 bytes are u32 big-endian length)
+        assert!(buf.len() > 4, "must have length prefix + data");
+        let prefix_len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+        assert_eq!(buf.len(), 4 + prefix_len, "buffer must be exactly prefix + frame");
 
         let mut cursor = Cursor::new(buf);
         let decoded = read_frame(&mut cursor, &limits)
@@ -813,6 +907,7 @@ mod tests {
         assert_eq!(decoded.payload, original.payload);
     }
 
+    // TEST215: Test reading multiple sequential frames from a single buffer
     #[test]
     fn test_multiple_frames() {
         let limits = Limits::default();
@@ -844,10 +939,11 @@ mod tests {
         assert_eq!(r3.frame_type, FrameType::End);
         assert_eq!(r3.id, id3);
 
-        // EOF
+        // EOF after all frames read
         assert!(read_frame(&mut cursor, &limits).unwrap().is_none());
     }
 
+    // TEST216: Test write_frame rejects frames exceeding max_frame limit
     #[test]
     fn test_frame_too_large() {
         let limits = Limits {
@@ -864,6 +960,25 @@ mod tests {
         assert!(matches!(result, Err(CborError::FrameTooLarge { .. })));
     }
 
+    // TEST217: Test read_frame rejects incoming frames exceeding the negotiated max_frame limit
+    #[test]
+    fn test_read_frame_too_large() {
+        let write_limits = Limits { max_frame: 10_000_000, max_chunk: 1_000_000 };
+        let read_limits = Limits { max_frame: 50, max_chunk: 50 };
+
+        // Write a frame with generous limits
+        let id = MessageId::new_uuid();
+        let frame = Frame::req(id, "cap:op=test", vec![0u8; 200], "text/plain");
+        let mut buf = Vec::new();
+        write_frame(&mut buf, &frame, &write_limits).unwrap();
+
+        // Try to read with strict limits
+        let mut cursor = Cursor::new(buf);
+        let result = read_frame(&mut cursor, &read_limits);
+        assert!(matches!(result, Err(CborError::FrameTooLarge { .. })));
+    }
+
+    // TEST218: Test write_chunked splits data into chunks respecting max_chunk and reconstructs correctly
     #[test]
     fn test_write_chunked() {
         let limits = Limits {
@@ -886,7 +1001,9 @@ mod tests {
         let mut reader = FrameReader::with_limits(&mut cursor, limits);
 
         let mut received = Vec::new();
-        let mut chunk_count = 0;
+        let mut chunk_count = 0u64;
+        let mut first_chunk_had_len = false;
+        let mut first_chunk_had_content_type = false;
 
         loop {
             let frame = reader.read().unwrap();
@@ -896,8 +1013,16 @@ mod tests {
                     assert_eq!(f.id, id);
                     assert_eq!(f.seq, chunk_count);
 
+                    if chunk_count == 0 {
+                        first_chunk_had_len = f.len.is_some();
+                        first_chunk_had_content_type = f.content_type.is_some();
+                        assert_eq!(f.len, Some(data.len() as u64), "first chunk must carry total len");
+                        assert_eq!(f.content_type, Some("text/plain".to_string()));
+                    }
+
                     let is_eof = f.is_eof();
                     if let Some(payload) = f.payload {
+                        assert!(payload.len() <= limits.max_chunk, "chunk must not exceed max_chunk");
                         received.extend_from_slice(&payload);
                     }
 
@@ -911,9 +1036,50 @@ mod tests {
         }
 
         assert_eq!(received, data);
-        assert!(chunk_count > 0); // Should have multiple chunks
+        assert!(chunk_count > 0, "data larger than max_chunk must produce multiple chunks");
+        assert!(first_chunk_had_len, "first chunk must carry total length");
+        assert!(first_chunk_had_content_type, "first chunk must carry content_type");
     }
 
+    // TEST219: Test write_chunked with empty data produces a single EOF chunk
+    #[test]
+    fn test_write_chunked_empty_data() {
+        let limits = Limits { max_frame: 1_000_000, max_chunk: 100 };
+        let mut buf = Vec::new();
+        let mut writer = FrameWriter::with_limits(&mut buf, limits);
+
+        let id = MessageId::new_uuid();
+        writer.write_chunked(id.clone(), "text/plain", b"").unwrap();
+
+        let mut cursor = Cursor::new(buf);
+        let frame = read_frame(&mut cursor, &limits).unwrap().expect("should have frame");
+        assert_eq!(frame.frame_type, FrameType::Chunk);
+        assert!(frame.is_eof(), "empty data must produce immediate EOF");
+        assert_eq!(frame.len, Some(0), "empty payload must report len=0");
+        assert_eq!(frame.payload, Some(vec![]));
+    }
+
+    // TEST220: Test write_chunked with data exactly equal to max_chunk produces exactly one chunk
+    #[test]
+    fn test_write_chunked_exact_fit() {
+        let limits = Limits { max_frame: 1_000_000, max_chunk: 10 };
+        let mut buf = Vec::new();
+        let mut writer = FrameWriter::with_limits(&mut buf, limits);
+
+        let id = MessageId::new_uuid();
+        let data = b"0123456789"; // exactly 10 bytes = max_chunk
+        writer.write_chunked(id.clone(), "text/plain", data).unwrap();
+
+        let mut cursor = Cursor::new(buf);
+        let frame = read_frame(&mut cursor, &limits).unwrap().expect("should have frame");
+        assert!(frame.is_eof(), "single-chunk data must be EOF");
+        assert_eq!(frame.payload, Some(data.to_vec()));
+        assert_eq!(frame.seq, 0);
+        // No more frames
+        assert!(read_frame(&mut cursor, &limits).unwrap().is_none());
+    }
+
+    // TEST221: Test read_frame returns Ok(None) on clean EOF (empty stream)
     #[test]
     fn test_eof_handling() {
         let limits = Limits::default();
@@ -922,6 +1088,35 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // TEST222: Test read_frame handles truncated length prefix (fewer than 4 bytes available)
+    #[test]
+    fn test_truncated_length_prefix() {
+        let limits = Limits::default();
+        // Only 2 bytes, but 4 needed for length prefix
+        let mut cursor = Cursor::new(vec![0x00, 0x01]);
+        let result = read_frame(&mut cursor, &limits);
+        // read_exact on Cursor with insufficient data returns UnexpectedEof,
+        // which maps to Ok(None) for the clean-EOF path in read_frame.
+        match result {
+            Ok(None) => {} // clean EOF interpretation
+            Err(_) => {}   // partial read error interpretation
+            Ok(Some(_)) => panic!("must not produce a frame from truncated data"),
+        }
+    }
+
+    // TEST223: Test read_frame returns error on truncated frame body (length prefix says more bytes than available)
+    #[test]
+    fn test_truncated_frame_body() {
+        let limits = Limits::default();
+        // Length prefix says 100 bytes, but only 5 bytes of data follow
+        let mut data = vec![0x00, 0x00, 0x00, 100]; // length = 100
+        data.extend_from_slice(b"short"); // only 5 bytes
+        let mut cursor = Cursor::new(data);
+        let result = read_frame(&mut cursor, &limits);
+        assert!(result.is_err(), "truncated body must be an error");
+    }
+
+    // TEST224: Test MessageId::Uint roundtrips through encode/decode
     #[test]
     fn test_message_id_uint() {
         let id = MessageId::Uint(12345);
@@ -931,5 +1126,185 @@ mod tests {
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
         assert_eq!(decoded.id, id);
+    }
+
+    // TEST225: Test decode_frame rejects non-map CBOR values (e.g., array, integer, string)
+    #[test]
+    fn test_decode_non_map_value() {
+        // Encode a CBOR array instead of map
+        let value = ciborium::Value::Array(vec![ciborium::Value::Integer(1.into())]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&value, &mut bytes).unwrap();
+
+        let result = decode_frame(&bytes);
+        assert!(matches!(result, Err(CborError::InvalidFrame(_))));
+    }
+
+    // TEST226: Test decode_frame rejects CBOR map missing required version field
+    #[test]
+    fn test_decode_missing_version() {
+        // Build CBOR map with frame_type and id but missing version
+        let map = ciborium::Value::Map(vec![
+            (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(1.into())),
+            (ciborium::Value::Integer(keys::ID.into()), ciborium::Value::Integer(0.into())),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&map, &mut bytes).unwrap();
+
+        let result = decode_frame(&bytes);
+        assert!(matches!(result, Err(CborError::InvalidFrame(_))));
+    }
+
+    // TEST227: Test decode_frame rejects CBOR map with invalid frame_type value
+    #[test]
+    fn test_decode_invalid_frame_type_value() {
+        let map = ciborium::Value::Map(vec![
+            (ciborium::Value::Integer(keys::VERSION.into()), ciborium::Value::Integer(1.into())),
+            (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(99.into())),
+            (ciborium::Value::Integer(keys::ID.into()), ciborium::Value::Integer(0.into())),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&map, &mut bytes).unwrap();
+
+        let result = decode_frame(&bytes);
+        assert!(matches!(result, Err(CborError::InvalidFrame(_))));
+    }
+
+    // TEST228: Test decode_frame rejects CBOR map missing required id field
+    #[test]
+    fn test_decode_missing_id() {
+        let map = ciborium::Value::Map(vec![
+            (ciborium::Value::Integer(keys::VERSION.into()), ciborium::Value::Integer(1.into())),
+            (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(1.into())),
+            // No ID field
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&map, &mut bytes).unwrap();
+
+        let result = decode_frame(&bytes);
+        assert!(matches!(result, Err(CborError::InvalidFrame(_))));
+    }
+
+    // TEST229: Test FrameReader/FrameWriter set_limits updates the negotiated limits
+    #[test]
+    fn test_frame_reader_writer_set_limits() {
+        let buf: Vec<u8> = Vec::new();
+        let mut reader = FrameReader::new(Cursor::new(buf));
+        let mut writer = FrameWriter::new(Vec::new());
+
+        let custom = Limits { max_frame: 500, max_chunk: 100 };
+        reader.set_limits(custom);
+        writer.set_limits(custom);
+
+        assert_eq!(reader.limits().max_frame, 500);
+        assert_eq!(reader.limits().max_chunk, 100);
+        assert_eq!(writer.limits().max_frame, 500);
+        assert_eq!(writer.limits().max_chunk, 100);
+    }
+
+    // TEST230: Test sync handshake exchanges HELLO frames and negotiates minimum limits
+    #[test]
+    fn test_sync_handshake() {
+        use std::thread;
+
+        let (host_std, plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (plugin_write_std, host_read_std) = std::os::unix::net::UnixStream::pair().unwrap();
+
+        let manifest = b"{\"name\":\"Test\",\"version\":\"1.0\",\"caps\":[]}";
+        let manifest_clone = manifest.to_vec();
+
+        // Plugin side in thread
+        let plugin_handle = thread::spawn(move || {
+            let mut reader = FrameReader::new(std::io::BufReader::new(plugin_std));
+            let mut writer = FrameWriter::new(std::io::BufWriter::new(plugin_write_std));
+            handshake_accept(&mut reader, &mut writer, &manifest_clone).unwrap()
+        });
+
+        // Host side
+        let mut reader = FrameReader::new(std::io::BufReader::new(host_read_std));
+        let mut writer = FrameWriter::new(std::io::BufWriter::new(host_std));
+        let result = handshake(&mut reader, &mut writer).unwrap();
+
+        let plugin_limits = plugin_handle.join().unwrap();
+
+        // Both sides must agree on limits
+        assert_eq!(result.limits.max_frame, plugin_limits.max_frame);
+        assert_eq!(result.limits.max_chunk, plugin_limits.max_chunk);
+        assert_eq!(result.manifest, manifest.to_vec());
+    }
+
+    // TEST231: Test handshake fails when peer sends non-HELLO frame
+    #[test]
+    fn test_handshake_rejects_non_hello() {
+        let (host_std, plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (plugin_write_std, host_read_std) = std::os::unix::net::UnixStream::pair().unwrap();
+
+        // Plugin side: send a REQ frame instead of HELLO
+        let plugin_handle = std::thread::spawn(move || {
+            let mut reader = FrameReader::new(std::io::BufReader::new(plugin_std));
+            let mut writer = FrameWriter::new(std::io::BufWriter::new(plugin_write_std));
+            // Read host's HELLO (consume it)
+            let _ = reader.read().unwrap();
+            // Send a REQ instead of HELLO
+            let bad_frame = Frame::req(MessageId::Uint(1), "cap:op=bad", vec![], "text/plain");
+            writer.write(&bad_frame).unwrap();
+        });
+
+        let mut reader = FrameReader::new(std::io::BufReader::new(host_read_std));
+        let mut writer = FrameWriter::new(std::io::BufWriter::new(host_std));
+        let result = handshake(&mut reader, &mut writer);
+        assert!(result.is_err(), "handshake must fail when peer sends non-HELLO");
+        let err = result.unwrap_err();
+        assert!(matches!(err, CborError::Handshake(_)));
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST232: Test handshake fails when plugin HELLO is missing required manifest
+    #[test]
+    fn test_handshake_rejects_missing_manifest() {
+        let (host_std, plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (plugin_write_std, host_read_std) = std::os::unix::net::UnixStream::pair().unwrap();
+
+        // Plugin side: send HELLO without manifest
+        let plugin_handle = std::thread::spawn(move || {
+            let mut reader = FrameReader::new(std::io::BufReader::new(plugin_std));
+            let mut writer = FrameWriter::new(std::io::BufWriter::new(plugin_write_std));
+            let _ = reader.read().unwrap(); // consume host HELLO
+            let no_manifest_hello = Frame::hello(1_000_000, 200_000);
+            writer.write(&no_manifest_hello).unwrap();
+        });
+
+        let mut reader = FrameReader::new(std::io::BufReader::new(host_read_std));
+        let mut writer = FrameWriter::new(std::io::BufWriter::new(host_std));
+        let result = handshake(&mut reader, &mut writer);
+        assert!(result.is_err(), "handshake must fail when manifest is missing");
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST233: Test binary payload with all 256 byte values roundtrips through encode/decode
+    #[test]
+    fn test_binary_payload_all_byte_values() {
+        let mut data = Vec::with_capacity(256);
+        for i in 0u8..=255 {
+            data.push(i);
+        }
+
+        let id = MessageId::new_uuid();
+        let frame = Frame::req(id.clone(), "cap:op=binary", data.clone(), "application/octet-stream");
+
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.payload.unwrap(), data);
+    }
+
+    // TEST234: Test decode_frame handles garbage CBOR bytes gracefully with an error
+    #[test]
+    fn test_decode_garbage_bytes() {
+        let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB];
+        let result = decode_frame(&garbage);
+        assert!(result.is_err(), "garbage bytes must produce decode error");
     }
 }

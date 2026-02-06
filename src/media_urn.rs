@@ -874,4 +874,41 @@ mod debug_tests {
             "MEDIA_OBJECT should NOT match MEDIA_STRING"
         );
     }
+
+    // TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags
+    #[test]
+    fn test_media_availability_output_constant() {
+        let urn = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).expect("must parse");
+        assert!(urn.is_text(), "model-availability must be textable");
+        assert!(urn.is_map(), "model-availability must be form=map");
+        assert!(!urn.is_binary(), "model-availability must not be binary");
+        // to_string() alphabetizes tags, so compare via roundtrip parsing instead
+        let reparsed = MediaUrn::from_string(&urn.to_string()).expect("roundtrip must parse");
+        assert!(urn.matches(&reparsed).unwrap(), "roundtrip must match original");
+    }
+
+    // TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags
+    #[test]
+    fn test_media_path_output_constant() {
+        let urn = MediaUrn::from_string(MEDIA_PATH_OUTPUT).expect("must parse");
+        assert!(urn.is_text(), "model-path must be textable");
+        assert!(urn.is_map(), "model-path must be form=map");
+        assert!(!urn.is_binary(), "model-path must not be binary");
+        let reparsed = MediaUrn::from_string(&urn.to_string()).expect("roundtrip must parse");
+        assert!(urn.matches(&reparsed).unwrap(), "roundtrip must match original");
+    }
+
+    // TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs
+    #[test]
+    fn test_availability_and_path_output_distinct() {
+        assert_ne!(MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
+            "availability and path output must be distinct media URNs");
+        let avail = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).unwrap();
+        let path = MediaUrn::from_string(MEDIA_PATH_OUTPUT).unwrap();
+        // They must NOT match each other (different types)
+        assert!(
+            !avail.matches(&path).unwrap_or(true),
+            "availability must not match path"
+        );
+    }
 }

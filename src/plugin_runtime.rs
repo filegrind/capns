@@ -1142,9 +1142,17 @@ impl PluginRuntime {
 mod tests {
     use super::*;
 
-    /// Test manifest JSON - plugins MUST include manifest
+    /// Test manifest JSON with a single cap for basic tests.
+    /// Note: cap URN uses "cap:op=test" which lacks in/out tags, so CapManifest deserialization
+    /// may fail because Cap requires in/out specs. For tests that only need raw manifest bytes
+    /// (CBOR mode handshake), this is fine. For tests that need parsed CapManifest, use
+    /// VALID_MANIFEST instead.
     const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
 
+    /// Valid manifest with proper in/out specs for tests that need parsed CapManifest
+    const VALID_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}]}"#;
+
+    // TEST248: Test register handler by exact cap URN and find it by the same URN
     #[test]
     fn test_register_and_find_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
@@ -1156,79 +1164,384 @@ mod tests {
         assert!(runtime.find_handler("cap:in=*;op=test;out=*").is_some());
     }
 
+    // TEST249: Test register_raw handler works with bytes directly without deserialization
     #[test]
     fn test_raw_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register_raw("cap:op=raw", |payload, _emitter, _peer| {
-            // Echo the payload back
             Ok(payload.to_vec())
         });
 
-        assert!(runtime.find_handler("cap:op=raw").is_some());
+        let handler = runtime.find_handler("cap:op=raw").unwrap();
+        let no_peer = NoPeerInvoker;
+        let emitter = CliStreamEmitter::new();
+        let result = handler(b"echo this", &emitter, &no_peer).unwrap();
+        assert_eq!(result, b"echo this", "raw handler must echo payload");
     }
 
+    // TEST250: Test register typed handler deserializes JSON and executes correctly
     #[test]
-    fn test_handler_streaming() {
-        // Create runtime with handler
+    fn test_typed_handler_deserialization() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-        runtime.register::<serde_json::Value, _>("cap:op=test", |req, emitter, _peer| {
-            emitter.emit_status("processing", "Starting...");
-            emitter.emit_bytes(b"chunk1");
-            emitter.emit_bytes(b"chunk2");
-
-            let result = serde_json::json!({
-                "received": req["value"],
-                "status": "done"
-            });
-            serde_json::to_vec(&result)
-                .map_err(|e| RuntimeError::Serialize(e.to_string()))
+        runtime.register::<serde_json::Value, _>("cap:op=test", |req, _emitter, _peer| {
+            let value = req.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
+            Ok(value.as_bytes().to_vec())
         });
 
-        // Verify handler exists
-        assert!(runtime.find_handler("cap:op=test").is_some());
+        let handler = runtime.find_handler("cap:op=test").unwrap();
+        let no_peer = NoPeerInvoker;
+        let emitter = CliStreamEmitter::new();
+        let result = handler(b"{\"key\":\"hello\"}", &emitter, &no_peer).unwrap();
+        assert_eq!(result, b"hello");
     }
 
+    // TEST251: Test typed handler returns RuntimeError::Deserialize for invalid JSON input
+    #[test]
+    fn test_typed_handler_rejects_invalid_json() {
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
+        runtime.register::<serde_json::Value, _>("cap:op=test", |_req, _emitter, _peer| {
+            Ok(vec![])
+        });
+
+        let handler = runtime.find_handler("cap:op=test").unwrap();
+        let no_peer = NoPeerInvoker;
+        let emitter = CliStreamEmitter::new();
+        let result = handler(b"not json {{{{", &emitter, &no_peer);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RuntimeError::Deserialize(_) => {}
+            other => panic!("Expected Deserialize error, got {:?}", other),
+        }
+    }
+
+    // TEST252: Test find_handler returns None for unregistered cap URNs
+    #[test]
+    fn test_find_handler_unknown_cap() {
+        let runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
+        assert!(runtime.find_handler("cap:op=nonexistent").is_none());
+    }
+
+    // TEST253: Test handler function can be cloned via Arc and sent across threads (Send + Sync)
     #[test]
     fn test_handler_is_send_sync() {
-        // This test verifies at compile time that handlers can be shared across threads
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:op=threaded", |_req, emitter, _peer| {
-            // Emitter must be usable from handler thread
-            emitter.emit_status("in_thread", "Processing in separate thread");
+        runtime.register::<serde_json::Value, _>("cap:op=threaded", |_req, _emitter, _peer| {
             Ok(b"done".to_vec())
         });
 
-        // Get handler and verify it can be cloned (Arc) and sent to another thread
         let handler = runtime.find_handler("cap:op=threaded").unwrap();
         let handler_clone = Arc::clone(&handler);
 
-        // Spawn a thread to prove handler is Send
         let handle = std::thread::spawn(move || {
-            // Handler is usable in another thread
-            let _ = &handler_clone;
+            let no_peer = NoPeerInvoker;
+            let emitter = CliStreamEmitter::new();
+            let result = handler_clone(b"{}", &emitter, &no_peer).unwrap();
+            assert_eq!(result, b"done");
         });
 
         handle.join().unwrap();
     }
 
+    // TEST254: Test NoPeerInvoker always returns PeerRequest error regardless of arguments
     #[test]
     fn test_no_peer_invoker() {
         let no_peer = NoPeerInvoker;
-        // NoPeerInvoker should always return an error regardless of arguments
         let result = no_peer.invoke("cap:op=test", &[]);
         assert!(result.is_err());
         match result {
-            Err(RuntimeError::PeerRequest(_)) => {}
+            Err(RuntimeError::PeerRequest(msg)) => {
+                assert!(msg.contains("not supported"), "error must indicate peer not supported");
+            }
             _ => panic!("Expected PeerRequest error"),
         }
     }
 
+    // TEST255: Test NoPeerInvoker returns error even with valid arguments
+    #[test]
+    fn test_no_peer_invoker_with_arguments() {
+        let no_peer = NoPeerInvoker;
+        let args = vec![CapArgumentValue::from_str("media:test", "value")];
+        let result = no_peer.invoke("cap:op=test", &args);
+        assert!(result.is_err());
+    }
+
+    // TEST256: Test PluginRuntime::with_manifest_json stores manifest data and parses when valid
     #[test]
     fn test_with_manifest_json() {
-        let runtime = PluginRuntime::with_manifest_json(TEST_MANIFEST);
-        // Verify it was created and manifest is stored
+        // TEST_MANIFEST has "cap:op=test" which lacks in/out, so CapManifest parsing fails
+        let runtime_basic = PluginRuntime::with_manifest_json(TEST_MANIFEST);
+        assert!(!runtime_basic.manifest_data.is_empty());
+        // The cap URN "cap:op=test" is invalid for CapManifest (missing in/out)
+        // so manifest parse is expected to fail - this is correct behavior
+        assert!(runtime_basic.manifest.is_none(), "cap:op=test lacks in/out, parse must fail");
+
+        // VALID_MANIFEST has proper in/out specs
+        let runtime_valid = PluginRuntime::with_manifest_json(VALID_MANIFEST);
+        assert!(!runtime_valid.manifest_data.is_empty());
+        assert!(runtime_valid.manifest.is_some(), "VALID_MANIFEST must parse into CapManifest");
+    }
+
+    // TEST257: Test PluginRuntime::new with invalid JSON still creates runtime (manifest is None)
+    #[test]
+    fn test_new_with_invalid_json() {
+        let runtime = PluginRuntime::new(b"not json");
         assert!(!runtime.manifest_data.is_empty());
+        assert!(runtime.manifest.is_none(), "invalid JSON should leave manifest as None");
+    }
+
+    // TEST258: Test PluginRuntime::with_manifest creates runtime with valid manifest data
+    #[test]
+    fn test_with_manifest_struct() {
+        let manifest: crate::manifest::CapManifest = serde_json::from_str(VALID_MANIFEST).unwrap();
+        let runtime = PluginRuntime::with_manifest(manifest);
+        assert!(!runtime.manifest_data.is_empty());
+        assert!(runtime.manifest.is_some());
+    }
+
+    // TEST259: Test extract_effective_payload with non-CBOR content_type returns raw payload unchanged
+    #[test]
+    fn test_extract_effective_payload_non_cbor() {
+        let payload = b"raw data";
+        let result = extract_effective_payload(payload, Some("application/json"), "cap:op=test").unwrap();
+        assert_eq!(result, payload, "non-CBOR must return raw payload");
+    }
+
+    // TEST260: Test extract_effective_payload with None content_type returns raw payload unchanged
+    #[test]
+    fn test_extract_effective_payload_no_content_type() {
+        let payload = b"raw data";
+        let result = extract_effective_payload(payload, None, "cap:op=test").unwrap();
+        assert_eq!(result, payload);
+    }
+
+    // TEST261: Test extract_effective_payload with CBOR content extracts matching argument value
+    #[test]
+    fn test_extract_effective_payload_cbor_match() {
+        // Build CBOR unified arguments: [{media_urn: "media:string;textable;form=scalar", value: bytes("hello")}]
+        let args = ciborium::Value::Array(vec![
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:string;textable;form=scalar".to_string())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"hello".to_vec())),
+            ]),
+        ]);
+        let mut payload = Vec::new();
+        ciborium::into_writer(&args, &mut payload).unwrap();
+
+        // The cap URN has in=media:string;textable;form=scalar
+        let result = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            "cap:in=media:string;textable;form=scalar;op=test;out=*",
+        ).unwrap();
+        assert_eq!(result, b"hello");
+    }
+
+    // TEST262: Test extract_effective_payload with CBOR content fails when no argument matches expected input
+    #[test]
+    fn test_extract_effective_payload_cbor_no_match() {
+        let args = ciborium::Value::Array(vec![
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:other-type".to_string())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"data".to_vec())),
+            ]),
+        ]);
+        let mut payload = Vec::new();
+        ciborium::into_writer(&args, &mut payload).unwrap();
+
+        let result = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            "cap:in=media:string;textable;form=scalar;op=test;out=*",
+        );
+        assert!(result.is_err(), "must fail when no argument matches");
+        match result.unwrap_err() {
+            RuntimeError::Deserialize(msg) => {
+                assert!(msg.contains("No argument found matching"), "{}", msg);
+            }
+            other => panic!("expected Deserialize, got {:?}", other),
+        }
+    }
+
+    // TEST263: Test extract_effective_payload with invalid CBOR bytes returns deserialization error
+    #[test]
+    fn test_extract_effective_payload_invalid_cbor() {
+        let result = extract_effective_payload(
+            b"not cbor",
+            Some("application/cbor"),
+            "cap:in=*;op=test;out=*",
+        );
+        assert!(result.is_err());
+    }
+
+    // TEST264: Test extract_effective_payload with CBOR non-array (e.g. map) returns error
+    #[test]
+    fn test_extract_effective_payload_cbor_not_array() {
+        let value = ciborium::Value::Map(vec![]);
+        let mut payload = Vec::new();
+        ciborium::into_writer(&value, &mut payload).unwrap();
+
+        let result = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            "cap:in=*;op=test;out=*",
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RuntimeError::Deserialize(msg) => {
+                assert!(msg.contains("must be an array"), "{}", msg);
+            }
+            other => panic!("expected Deserialize, got {:?}", other),
+        }
+    }
+
+    // TEST265: Test extract_effective_payload with invalid cap URN returns CapUrn error
+    #[test]
+    fn test_extract_effective_payload_invalid_cap_urn() {
+        let args = ciborium::Value::Array(vec![]);
+        let mut payload = Vec::new();
+        ciborium::into_writer(&args, &mut payload).unwrap();
+
+        let result = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            "not-a-cap-urn",
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RuntimeError::CapUrn(_) => {}
+            other => panic!("expected CapUrn error, got {:?}", other),
+        }
+    }
+
+    // TEST266: Test CliStreamEmitter writes to stdout and stderr correctly (basic construction)
+    #[test]
+    fn test_cli_stream_emitter_construction() {
+        let emitter = CliStreamEmitter::new();
+        assert!(emitter.ndjson, "default CLI emitter must use NDJSON");
+
+        let emitter2 = CliStreamEmitter::without_ndjson();
+        assert!(!emitter2.ndjson);
+    }
+
+    // TEST267: Test CliStreamEmitter::default creates NDJSON emitter
+    #[test]
+    fn test_cli_stream_emitter_default() {
+        let emitter = CliStreamEmitter::default();
+        assert!(emitter.ndjson);
+    }
+
+    // TEST268: Test RuntimeError variants display correct messages
+    #[test]
+    fn test_runtime_error_display() {
+        let err = RuntimeError::NoHandler("cap:op=missing".to_string());
+        assert!(format!("{}", err).contains("cap:op=missing"));
+
+        let err2 = RuntimeError::MissingArgument("model".to_string());
+        assert!(format!("{}", err2).contains("model"));
+
+        let err3 = RuntimeError::UnknownSubcommand("badcmd".to_string());
+        assert!(format!("{}", err3).contains("badcmd"));
+
+        let err4 = RuntimeError::Manifest("parse failed".to_string());
+        assert!(format!("{}", err4).contains("parse failed"));
+
+        let err5 = RuntimeError::PeerRequest("denied".to_string());
+        assert!(format!("{}", err5).contains("denied"));
+
+        let err6 = RuntimeError::PeerResponse("timeout".to_string());
+        assert!(format!("{}", err6).contains("timeout"));
+    }
+
+    // TEST269: Test PluginRuntime limits returns default protocol limits
+    #[test]
+    fn test_runtime_limits_default() {
+        let runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
+        let limits = runtime.limits();
+        assert_eq!(limits.max_frame, crate::cbor_frame::DEFAULT_MAX_FRAME);
+        assert_eq!(limits.max_chunk, crate::cbor_frame::DEFAULT_MAX_CHUNK);
+    }
+
+    // TEST270: Test registering multiple handlers for different caps and finding each independently
+    #[test]
+    fn test_multiple_handlers() {
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
+
+        runtime.register_raw("cap:op=alpha", |_, _, _| Ok(b"a".to_vec()));
+        runtime.register_raw("cap:op=beta", |_, _, _| Ok(b"b".to_vec()));
+        runtime.register_raw("cap:op=gamma", |_, _, _| Ok(b"g".to_vec()));
+
+        let no_peer = NoPeerInvoker;
+        let emitter = CliStreamEmitter::new();
+
+        let h_alpha = runtime.find_handler("cap:op=alpha").unwrap();
+        assert_eq!(h_alpha(b"", &emitter, &no_peer).unwrap(), b"a");
+
+        let h_beta = runtime.find_handler("cap:op=beta").unwrap();
+        assert_eq!(h_beta(b"", &emitter, &no_peer).unwrap(), b"b");
+
+        let h_gamma = runtime.find_handler("cap:op=gamma").unwrap();
+        assert_eq!(h_gamma(b"", &emitter, &no_peer).unwrap(), b"g");
+    }
+
+    // TEST271: Test handler replacing an existing registration for the same cap URN
+    #[test]
+    fn test_handler_replacement() {
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
+
+        runtime.register_raw("cap:op=test", |_, _, _| Ok(b"first".to_vec()));
+        runtime.register_raw("cap:op=test", |_, _, _| Ok(b"second".to_vec()));
+
+        let handler = runtime.find_handler("cap:op=test").unwrap();
+        let no_peer = NoPeerInvoker;
+        let emitter = CliStreamEmitter::new();
+        let result = handler(b"", &emitter, &no_peer).unwrap();
+        assert_eq!(result, b"second", "later registration must replace earlier");
+    }
+
+    // TEST272: Test extract_effective_payload CBOR with multiple arguments selects the correct one
+    #[test]
+    fn test_extract_effective_payload_multiple_args() {
+        let args = ciborium::Value::Array(vec![
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:other-type;textable".to_string())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"wrong".to_vec())),
+            ]),
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:model-spec;textable;form=scalar".to_string())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"correct".to_vec())),
+            ]),
+        ]);
+        let mut payload = Vec::new();
+        ciborium::into_writer(&args, &mut payload).unwrap();
+
+        let result = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            "cap:in=media:model-spec;textable;form=scalar;op=infer;out=*",
+        ).unwrap();
+        assert_eq!(result, b"correct");
+    }
+
+    // TEST273: Test extract_effective_payload with binary data in CBOR value (not just text)
+    #[test]
+    fn test_extract_effective_payload_binary_value() {
+        let binary_data: Vec<u8> = (0u8..=255).collect();
+        let args = ciborium::Value::Array(vec![
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf;bytes".to_string())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(binary_data.clone())),
+            ]),
+        ]);
+        let mut payload = Vec::new();
+        ciborium::into_writer(&args, &mut payload).unwrap();
+
+        let result = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            "cap:in=media:pdf;bytes;op=process;out=*",
+        ).unwrap();
+        assert_eq!(result, binary_data, "binary values must roundtrip through CBOR extraction");
     }
 }
