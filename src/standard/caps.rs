@@ -5,7 +5,7 @@
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{
-    Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGE, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, MediaUrn, RegistryError
+    Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGE, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, RegistryError
 };
 use crate::media_urn::{
     // Primitives (needed for coercion functions)

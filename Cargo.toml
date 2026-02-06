@@ -21,7 +21,7 @@ features = ["derive"]
 version = "1.0"
 
 [dependencies.tagged-urn]
-version = "0.12.3794"
+path = "../tagged-urn-rs"
 
 [dependencies.tokio]
 features = ["full"]

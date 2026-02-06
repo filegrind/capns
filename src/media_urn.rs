@@ -17,7 +17,7 @@
 
 use std::fmt;
 use std::str::FromStr;
-use tagged_urn::{TaggedUrn, TaggedUrnBuilder, TaggedUrnError};
+use tagged_urn::{TaggedUrn, TaggedUrnError};
 
 // =============================================================================
 // STANDARD MEDIA URN CONSTANTS
@@ -209,53 +209,14 @@ impl MediaUrn {
         Self::new(urn)
     }
 
-    /// Create a simple MediaUrn with just type and version
-    pub fn simple(type_name: &str, version: u32) -> Self {
-        let urn = TaggedUrnBuilder::new(Self::PREFIX)
-            .solo_tag(type_name)
-            .tag("v", &version.to_string())
-            .expect("version is non-empty")
-            .build()
-            .expect("valid media URN");
-        Self(urn)
-    }
-
-    /// Create a MediaUrn with type, subtype, and optional version
-    pub fn with_subtype(type_name: &str, subtype: &str, version: Option<u32>) -> Self {
-        let mut builder = TaggedUrnBuilder::new(Self::PREFIX)
-            .solo_tag(type_name)
-            .tag("subtype", subtype)
-            .expect("subtype is non-empty");
-        if let Some(v) = version {
-            builder = builder.tag("v", &v.to_string()).expect("version is non-empty");
-        }
-        let urn = builder.build().expect("valid media URN");
-        Self(urn)
-    }
-
     /// Get the inner TaggedUrn
     pub fn inner(&self) -> &TaggedUrn {
         &self.0
     }
 
-    /// Get the type tag value (e.g., "string", "object", "application")
-    pub fn type_name(&self) -> Option<&str> {
-        self.0.get_tag("type").map(|s| s.as_str())
-    }
-
-    /// Get the subtype tag value (e.g., "json", "pdf", "png")
-    pub fn subtype(&self) -> Option<&str> {
-        self.0.get_tag("subtype").map(|s| s.as_str())
-    }
-
-    /// Get the version tag value
-    pub fn version(&self) -> Option<u32> {
-        self.0.get_tag("v").and_then(|v| v.parse().ok())
-    }
-
-    /// Get the profile tag value (URL)
-    pub fn profile(&self) -> Option<&str> {
-        self.0.get_tag("profile").map(|s| s.as_str())
+    /// Get the extension tag value (e.g., "pdf", "epub", "md")
+    pub fn extension(&self) -> Option<&str> {
+        self.get_tag("ext")
     }
 
     /// Get any tag value by key
@@ -279,6 +240,13 @@ impl MediaUrn {
         Self(self.0.clone().without_tag(key))
     }
 
+    /// Serialize just the tags portion (without "media:" prefix)
+    ///
+    /// Returns tags in canonical form with proper quoting and sorting.
+    pub fn tags_to_string(&self) -> String {
+        self.0.tags_to_string()
+    }
+
     /// Get the canonical string representation
     pub fn to_string(&self) -> String {
         self.0.to_string()
@@ -299,20 +267,6 @@ impl MediaUrn {
     /// Specificity is the count of non-wildcard tags.
     pub fn specificity(&self) -> usize {
         self.0.specificity()
-    }
-
-    /// Check if this media URN satisfies a cap's input requirement
-    ///
-    /// Returns true if all required tags in `requirement` are present in `self`
-    /// with matching values. This is used to determine if an item (listing, chip, block)
-    /// with this media URN can provide input to a cap.
-    ///
-    /// # Matching rules:
-    /// - Type must match exactly
-    /// Check if this media URN satisfies a requirement.
-    /// Get the extension tag value (e.g., "pdf", "epub", "md")
-    pub fn extension(&self) -> Option<&str> {
-        self.get_tag("ext")
     }
 
     // =========================================================================
@@ -396,8 +350,8 @@ impl MediaUrn {
 
     /// Check if this represents a void (no data) type
     pub fn is_void(&self) -> bool {
-        // Check for "void" flag (solo tag) or type=void
-        self.0.tags.contains_key("void") || self.type_name() == Some("void")
+        // Check for "void" marker tag
+        self.0.tags.contains_key("void")
     }
 
     /// Check if this represents a file path type.
@@ -510,39 +464,6 @@ impl<'de> serde::Deserialize<'de> for MediaUrn {
 mod tests {
     use super::*;
 
-    // TEST057: Test parsing simple media URN verifies correct structure with no version, subtype, or profile
-    #[test]
-    fn test_parse_simple() {
-        let urn = MediaUrn::from_string("media:string").unwrap();
-        // type_name() returns None for flag-based types (requires type= tag)
-        // Use to_string() to verify the URN is parsed correctly
-        assert!(urn.to_string().contains("string"));
-        assert!(urn.version().is_none());
-        assert!(urn.subtype().is_none());
-        assert!(urn.profile().is_none());
-    }
-
-    // TEST058: Test parsing media URN with subtype extracts subtype tag correctly
-    #[test]
-    fn test_parse_with_subtype() {
-        // Subtype is extracted from subtype= tag
-        let urn = MediaUrn::from_string("media:application;subtype=json").unwrap();
-        assert_eq!(urn.subtype(), Some("json"));
-        assert!(urn.to_string().contains("application"));
-    }
-
-    // TEST059: Test parsing media URN with profile extracts profile URL correctly
-    #[test]
-    fn test_parse_with_profile() {
-        // Profile is extracted from profile= tag
-        let urn = MediaUrn::from_string(
-            r#"media:object;profile="https://example.com/schema.json""#,
-        )
-        .unwrap();
-        assert_eq!(urn.profile(), Some("https://example.com/schema.json"));
-        assert!(urn.to_string().contains("object"));
-    }
-
     // TEST060: Test wrong prefix fails with InvalidPrefix error showing expected and actual prefix
     #[test]
     fn test_wrong_prefix_fails() {
@@ -648,27 +569,6 @@ mod tests {
     fn test_is_void() {
         assert!(MediaUrn::from_string("media:void").unwrap().is_void());
         assert!(!MediaUrn::from_string("media:string").unwrap().is_void());
-    }
-
-    // TEST069: Test simple constructor creates media URN with type and version tags
-    #[test]
-    fn test_simple_constructor() {
-        let urn = MediaUrn::simple("string", 1);
-        // Constructor creates URN with flag (solo tag) for type, not type= tag
-        // So type_name() returns None, but the string representation has it
-        assert!(urn.to_string().contains("string"));
-        assert_eq!(urn.version(), Some(1));
-    }
-
-    // TEST070: Test with_subtype constructor creates media URN with type, subtype, and optional version
-    #[test]
-    fn test_with_subtype_constructor() {
-        let urn = MediaUrn::with_subtype("application", "json", Some(1));
-        // Constructor creates URN with flag (solo tag) for type, not type= tag
-        assert!(urn.to_string().contains("application"));
-        assert_eq!(urn.subtype(), Some("json"));
-        // Constructor with version adds it explicitly
-        assert_eq!(urn.version(), Some(1));
     }
 
     // TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure

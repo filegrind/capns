@@ -119,9 +119,8 @@ impl CapUrn {
     /// All tags (including in/out) are sorted alphabetically
     /// No trailing semicolon in canonical form
     /// Values are quoted only when necessary (smart quoting via TaggedUrn)
-    pub fn to_string(&self) -> String {
-        // Build using TaggedUrnBuilder
-        // in_urn and out_urn are guaranteed non-empty by constructor
+    /// Build a TaggedUrn representation of this CapUrn (internal helper)
+    fn build_tagged_urn(&self) -> TaggedUrn {
         let mut builder = TaggedUrnBuilder::new(Self::PREFIX)
             .tag("in", &self.in_urn).expect("in_urn guaranteed non-empty")
             .tag("out", &self.out_urn).expect("out_urn guaranteed non-empty");
@@ -132,7 +131,18 @@ impl CapUrn {
         }
 
         // Use build_allow_empty which returns TaggedUrn directly
-        builder.build_allow_empty().to_string()
+        builder.build_allow_empty()
+    }
+
+    /// Serialize just the tags portion (without "cap:" prefix)
+    ///
+    /// Returns tags in canonical form with proper quoting and sorting.
+    pub fn tags_to_string(&self) -> String {
+        self.build_tagged_urn().tags_to_string()
+    }
+
+    pub fn to_string(&self) -> String {
+        self.build_tagged_urn().to_string()
     }
 
     /// Get a specific tag value
@@ -510,6 +520,7 @@ impl CapUrnError {
             TaggedUrnError::UnterminatedQuote(pos) => CapUrnError::UnterminatedQuote(pos),
             TaggedUrnError::InvalidEscapeSequence(pos) => CapUrnError::InvalidEscapeSequence(pos),
             TaggedUrnError::PrefixMismatch { .. } => CapUrnError::MissingCapPrefix,
+            TaggedUrnError::WhitespaceInInput(s) => CapUrnError::InvalidCharacter(s),
         }
     }
 }

@@ -7,7 +7,7 @@
 //! where nodes are MediaSpec IDs and edges are capabilities that convert
 //! from one spec to another.
 
-use crate::{Cap, CapArgumentValue, CapUrn, CapSet, StdinSource};
+use crate::{Cap, CapArgumentValue, CapUrn, CapSet};
 use crate::media_urn::MediaUrn;
 use std::collections::{HashMap, HashSet, VecDeque};
 
