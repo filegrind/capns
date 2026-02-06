@@ -38,8 +38,8 @@ use std::collections::BTreeMap;
 /// Protocol version. Always 1 for this implementation.
 pub const PROTOCOL_VERSION: u8 = 1;
 
-/// Default maximum frame size (1 MB)
-pub const DEFAULT_MAX_FRAME: usize = 1_048_576;
+/// Default maximum frame size (2 MB) - allows 1MB payloads with CBOR overhead
+pub const DEFAULT_MAX_FRAME: usize = 2_097_152;
 
 /// Default maximum chunk size (256 KB)
 pub const DEFAULT_MAX_CHUNK: usize = 262_144;
