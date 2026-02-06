@@ -973,12 +973,13 @@ impl PluginRuntime {
         let frame_writer = Arc::new(Mutex::new(FrameWriter::new(writer)));
 
         // Perform handshake - send our manifest in the HELLO response
-        {
+        let negotiated_limits = {
             let mut writer_guard = frame_writer.lock().unwrap();
             let limits = handshake_accept(&mut frame_reader, &mut writer_guard, &self.manifest_data)?;
             frame_reader.set_limits(limits);
             writer_guard.set_limits(limits);
-        }
+            limits
+        };
 
         // Track pending peer requests (plugin invoking host caps)
         let pending_peer_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>> =
@@ -1034,6 +1035,7 @@ impl PluginRuntime {
                     let raw_payload = frame.payload.clone().unwrap_or_default();
                     let content_type = frame.content_type.clone();
                     let cap_urn_clone = cap_urn.clone();
+                    let max_chunk = negotiated_limits.max_chunk;
 
                     // Spawn handler in separate thread - main loop continues immediately
                     let handle = thread::spawn(move || {
@@ -1069,15 +1071,54 @@ impl PluginRuntime {
 
                         let result = handler(&payload, &emitter, &peer_invoker);
 
-                        // Write final response (END or ERR)
-                        let response_frame = match result {
-                            Ok(final_payload) => Frame::end(request_id, Some(final_payload)),
-                            Err(e) => Frame::err(request_id, "HANDLER_ERROR", &e.to_string()),
-                        };
+                        // Send response with automatic chunking for large payloads
+                        match result {
+                            Ok(final_payload) => {
+                                let mut writer = writer_clone.lock().unwrap();
 
-                        let mut writer = writer_clone.lock().unwrap();
-                        if let Err(e) = writer.write(&response_frame) {
-                            eprintln!("[PluginRuntime] Failed to write response: {}", e);
+                                // Automatic chunking: split large payloads into CHUNK frames
+                                if final_payload.len() <= max_chunk {
+                                    // Small payload: send single END frame
+                                    let end_frame = Frame::end(request_id.clone(), Some(final_payload));
+                                    if let Err(e) = writer.write(&end_frame) {
+                                        eprintln!("[PluginRuntime] Failed to write END frame: {}", e);
+                                    }
+                                } else {
+                                    // Large payload: send CHUNK frames + final END
+                                    let mut offset = 0;
+                                    let mut seq = 0u64;
+
+                                    while offset < final_payload.len() {
+                                        let remaining = final_payload.len() - offset;
+                                        let chunk_size = remaining.min(max_chunk);
+                                        let chunk_data = final_payload[offset..offset + chunk_size].to_vec();
+                                        offset += chunk_size;
+
+                                        if offset < final_payload.len() {
+                                            // Not the last chunk - send CHUNK frame
+                                            let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
+                                            if let Err(e) = writer.write(&chunk_frame) {
+                                                eprintln!("[PluginRuntime] Failed to write CHUNK frame: {}", e);
+                                                return;
+                                            }
+                                            seq += 1;
+                                        } else {
+                                            // Last chunk - send END frame with remaining data
+                                            let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
+                                            if let Err(e) = writer.write(&end_frame) {
+                                                eprintln!("[PluginRuntime] Failed to write END frame: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
+                                let mut writer = writer_clone.lock().unwrap();
+                                if let Err(e) = writer.write(&err_frame) {
+                                    eprintln!("[PluginRuntime] Failed to write error response: {}", e);
+                                }
+                            }
                         }
                     });
 
