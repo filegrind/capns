@@ -45,6 +45,7 @@ use crate::caller::CapArgumentValue;
 use crate::cap::{ArgSource, Cap, CapArg};
 use crate::cap_urn::CapUrn;
 use crate::manifest::CapManifest;
+use crate::media_urn::MediaUrn;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -324,9 +325,9 @@ fn extract_effective_payload(
         return Ok(payload.to_vec());
     }
 
-    // Parse the cap URN to get the expected input media type
-    let expected_input = match CapUrn::from_string(cap_urn) {
-        Ok(urn) => urn.in_spec().to_string(),
+    // Parse the cap URN to get the expected input media URN
+    let cap = match CapUrn::from_string(cap_urn) {
+        Ok(urn) => urn,
         Err(e) => {
             return Err(RuntimeError::CapUrn(format!(
                 "Failed to parse cap URN '{}': {}",
@@ -334,6 +335,8 @@ fn extract_effective_payload(
             )));
         }
     };
+    let expected_input = cap.in_spec().to_string();
+    let expected_media_urn = MediaUrn::from_string(&expected_input).ok();
 
     // Parse the CBOR payload as an array of argument maps
     let cbor_value: ciborium::Value = ciborium::from_reader(payload).map_err(|e| {
@@ -377,13 +380,17 @@ fn extract_effective_payload(
             }
         }
 
-        // Check if this argument matches the expected input
-        if let (Some(urn), Some(val)) = (media_urn, value) {
-            // Match if the media_urn contains the expected input or vice versa
-            // This allows for flexible matching (e.g., "media:llm-generation-request;json;form=map"
-            // matches "media:llm-generation-request")
-            if urn.contains(&expected_input) || expected_input.contains(&urn) {
-                return Ok(val);
+        // Check if this argument matches the expected input using semantic URN matching
+        if let (Some(urn_str), Some(val)) = (media_urn, value) {
+            if let Some(ref expected) = expected_media_urn {
+                if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
+                    // Use semantic matching in both directions
+                    let fwd = arg_urn.matches(expected).unwrap_or(false);
+                    let rev = expected.matches(&arg_urn).unwrap_or(false);
+                    if fwd || rev {
+                        return Ok(val);
+                    }
+                }
             }
         }
     }

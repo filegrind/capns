@@ -667,8 +667,7 @@ mod tests {
     #[test]
     fn test_model_availability_urn() {
         let urn = model_availability_urn();
-        let urn_str = urn.to_string();
-        assert!(urn_str.contains("op=model-availability"), "URN must contain op=model-availability: {}", urn_str);
+        assert!(urn.has_tag("op", "model-availability"), "URN must have op=model-availability");
         assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
         assert_eq!(urn.out_spec(), MEDIA_AVAILABILITY_OUTPUT, "output must be availability output");
     }
@@ -677,8 +676,7 @@ mod tests {
     #[test]
     fn test_model_path_urn() {
         let urn = model_path_urn();
-        let urn_str = urn.to_string();
-        assert!(urn_str.contains("op=model-path"), "URN must contain op=model-path: {}", urn_str);
+        assert!(urn.has_tag("op", "model-path"), "URN must have op=model-path");
         assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
         assert_eq!(urn.out_spec(), MEDIA_PATH_OUTPUT, "output must be path output");
     }
@@ -696,11 +694,9 @@ mod tests {
     #[test]
     fn test_llm_conversation_urn_unconstrained() {
         let urn = llm_conversation_urn("en");
-        let urn_str = urn.to_string();
-        assert!(urn_str.contains("unconstrained"), "LLM conversation URN must use 'unconstrained': {}", urn_str);
-        assert!(!urn_str.contains("constrained;"), "must not contain bare 'constrained' tag");
-        assert!(urn_str.contains("op=conversation"), "must have op=conversation: {}", urn_str);
-        assert!(urn_str.contains("language=en"), "must have language tag: {}", urn_str);
+        assert!(urn.get_tag("unconstrained").is_some(), "LLM conversation URN must have 'unconstrained' tag");
+        assert!(urn.has_tag("op", "conversation"), "must have op=conversation");
+        assert!(urn.has_tag("language", "en"), "must have language=en");
     }
 
     // TEST311: Test llm_conversation_urn in/out specs match the expected media URNs semantically

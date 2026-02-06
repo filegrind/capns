@@ -768,16 +768,14 @@ mod tests {
     fn test_extension_helpers() {
         // Test binary_media_urn_for_ext
         let pdf_urn = binary_media_urn_for_ext("pdf");
-        // Extension helper creates URN with ext= tag
-        assert!(pdf_urn.contains("ext=pdf"));
         let parsed = MediaUrn::from_string(&pdf_urn).unwrap();
+        assert!(parsed.has_tag("ext", "pdf"), "binary ext helper must set ext=pdf");
         assert_eq!(parsed.extension(), Some("pdf"));
 
         // Test text_media_urn_for_ext
         let md_urn = text_media_urn_for_ext("md");
-        // Extension helper creates URN with ext= tag
-        assert!(md_urn.contains("ext=md"));
         let parsed = MediaUrn::from_string(&md_urn).unwrap();
+        assert!(parsed.has_tag("ext", "md"), "text ext helper must set ext=md");
         assert_eq!(parsed.extension(), Some("md"));
     }
 
