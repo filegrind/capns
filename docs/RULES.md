@@ -66,18 +66,26 @@ Cap matching follows Tagged URN matching semantics. See [MATCHING.md](./MATCHING
 
 ### Direction Specifier Matching
 
-Direction specs (`in`/`out`) follow standard tag matching:
+Direction specs (`in`/`out`) use **`TaggedUrn::matches()`** (via `MediaUrn::matches()`):
+
+- **Input**: `request_input.matches(&cap_input)` — the request's input (instance) is matched against the cap's input (pattern). A cap accepting `media:bytes` matches a request with `media:pdf;bytes` because `media:pdf;bytes` has all the marker tags that `media:bytes` requires.
+- **Output**: `cap_output.matches(&request_output)` — the cap's output (instance) is matched against what the request expects (pattern).
 
 ```
-# Exact match
-Cap:     cap:in="media:binary";op=extract;out="media:object"
-Request: cap:in="media:binary";op=extract;out="media:object"
-Result:  MATCH
+# Semantic match (pdf;bytes satisfies bytes requirement)
+Cap:     cap:in="media:bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+Request: cap:in="media:pdf;bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+Result:  MATCH (request's pdf;bytes has all markers that cap's bytes requires)
 
-# Direction mismatch
-Cap:     cap:in="media:binary";op=extract;out="media:object"
-Request: cap:in="media:text";op=extract;out="media:object"
-Result:  NO MATCH (input types differ)
+# Reverse does NOT match (bytes does not satisfy pdf;bytes requirement)
+Cap:     cap:in="media:pdf;bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+Request: cap:in="media:bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+Result:  NO MATCH (request lacks pdf marker required by cap)
+
+# Incompatible types still don't match
+Cap:     cap:in="media:string";op=extract;out="media:object"
+Request: cap:in="media:bytes";op=extract;out="media:object"
+Result:  NO MATCH (completely different marker tags)
 ```
 
 ### Must-Have-Any Direction Specs
@@ -352,6 +360,10 @@ All implementations (Rust capns, JavaScript capns-js, server functions) MUST enf
 
 ## Changelog
 
+- 2026-02-06: Direction specifier matching uses `TaggedUrn::matches()` via `MediaUrn::matches()`
+  - Full tagged URN semantics (*, !, ?, exact, missing) apply to direction specs
+  - Generic providers (e.g., `media:bytes`) now match specific requests (e.g., `media:pdf;bytes`)
+  - Specificity uses MediaUrn tag count instead of flat +1 for direction specs
 - 2026-01-29: Added XV5 (No Redefinition of Registry Media Specs) validation
   - Inline media specs must not redefine existing registry specs
   - Strict enforcement with network, graceful degradation without

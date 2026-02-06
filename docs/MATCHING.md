@@ -26,15 +26,12 @@ Special values work symmetrically on both instance and pattern sides.
 
 ### Direction Specifiers in Matching
 
-Cap URNs have required `in` and `out` tags (direction specifiers) whose values are Media URNs. These follow standard tag matching:
+Cap URNs have required `in` and `out` tags (direction specifiers) whose values are Media URNs. Direction specs use **`TaggedUrn::matches()`** (via `MediaUrn::matches()`):
 
-```rust
-/// Check if this cap matches a request
-/// Direction specifiers (in/out) are matched using standard tag semantics
-pub fn matches(&self, request: &CapUrn) -> bool {
-    self.urn.matches(&request.urn)
-}
-```
+- **Input**: `request_input.matches(&cap_input)` — the request's input (instance) is matched against the cap's input (pattern). All tagged URN matching semantics apply: `*` (must-have-any), `!` (must-not-have), `?` (no constraint), exact values, missing tags (no constraint). A cap accepting `media:bytes` matches a request with `media:pdf;bytes` because `pdf;bytes` has the `bytes` marker.
+- **Output**: `cap_output.matches(&request_output)` — the cap's output (instance) is matched against the request's output expectation (pattern).
+
+Direction specs are Media URNs whose internal tags are compared using the full `TaggedUrn::matches()` semantics, not as opaque strings.
 
 ### Test Cases
 
@@ -49,10 +46,10 @@ Test 2: Cap has wildcard direction specifiers (fallback provider)
   Request: cap:in="media:binary";op=extract;out="media:object"
   Result:  MATCH (cap requires any input/output, request has them)
 
-Test 3: Direction specifier mismatch
-  Cap:     cap:in="media:binary";op=extract;out="media:object"
-  Request: cap:in="media:text";op=extract;out="media:object"
-  Result:  NO MATCH (input media types differ)
+Test 3: Direction specifier mismatch (incompatible types)
+  Cap:     cap:in="media:string";op=extract;out="media:object"
+  Request: cap:in="media:bytes";op=extract;out="media:object"
+  Result:  NO MATCH (completely different marker tags)
 
 Test 4: Cap has extra tags (more specific)
   Cap:     cap:ext=pdf;in="media:binary";op=extract;out="media:object"
@@ -68,6 +65,21 @@ Test 6: Must-not-have in request
   Cap:     cap:in="media:binary";op=extract;out="media:object"
   Request: cap:debug=!;in="media:binary";op=extract;out="media:object"
   Result:  MATCH (cap lacks debug, request wants it absent)
+
+Test 7: Semantic direction matching - generic provider accepts specific input
+  Cap:     cap:in="media:bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+  Request: cap:in="media:pdf;bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+  Result:  MATCH (request's pdf;bytes has all markers that cap's bytes requires)
+
+Test 8: Semantic direction matching - specific provider rejects generic input
+  Cap:     cap:in="media:pdf;bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+  Request: cap:in="media:bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+  Result:  NO MATCH (request's bytes lacks pdf marker required by cap)
+
+Test 9: Semantic direction matching - incompatible subtypes
+  Cap:     cap:in="media:pdf;bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+  Request: cap:in="media:epub;bytes";op=generate_thumbnail;out="media:image;png;bytes;thumbnail"
+  Result:  NO MATCH (request's epub;bytes lacks pdf marker required by cap)
 ```
 
 ### Graded Specificity

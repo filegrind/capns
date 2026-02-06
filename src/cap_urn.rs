@@ -224,21 +224,37 @@ impl CapUrn {
 
     /// Check if this cap matches another based on tag compatibility
     ///
-    /// Direction (in/out) is ALWAYS part of matching - they must match exactly or with wildcards.
+    /// Direction (in/out) uses `MediaUrn::matches()` (which delegates to `TaggedUrn::matches()`):
+    /// - Input: `request_input.matches(&cap_input)` — does request's data satisfy cap's requirement?
+    /// - Output: `cap_output.matches(&request_output)` — does cap's output satisfy what request expects?
     /// For other tags:
     /// - For each tag in the request: cap has same value, wildcard (*), or missing tag
     /// - For each tag in the cap: if request is missing that tag, that's fine (cap is more specific)
     /// Missing tags (except in/out) are treated as wildcards (less specific, can handle any value).
     pub fn matches(&self, request: &CapUrn) -> bool {
-        // Direction specs must match (wildcards allowed)
-        // Check in_urn
-        if self.in_urn != "*" && request.in_urn != "*" && self.in_urn != request.in_urn {
-            return false;
+        // Direction specs: TaggedUrn semantic matching via MediaUrn::matches()
+        // Check in_urn: request's input must satisfy cap's input requirement
+        if self.in_urn != "*" && request.in_urn != "*" {
+            let cap_in = MediaUrn::from_string(&self.in_urn)
+                .unwrap_or_else(|e| panic!("CU2: cap in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
+            let request_in = MediaUrn::from_string(&request.in_urn)
+                .unwrap_or_else(|e| panic!("CU2: request in_spec '{}' is not a valid MediaUrn: {}", request.in_urn, e));
+            if !request_in.matches(&cap_in)
+                .expect("CU2: media URN prefix mismatch in direction spec matching") {
+                return false;
+            }
         }
 
-        // Check out_urn
-        if self.out_urn != "*" && request.out_urn != "*" && self.out_urn != request.out_urn {
-            return false;
+        // Check out_urn: cap's output must satisfy what the request expects
+        if self.out_urn != "*" && request.out_urn != "*" {
+            let cap_out = MediaUrn::from_string(&self.out_urn)
+                .unwrap_or_else(|e| panic!("CU2: cap out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
+            let request_out = MediaUrn::from_string(&request.out_urn)
+                .unwrap_or_else(|e| panic!("CU2: request out_spec '{}' is not a valid MediaUrn: {}", request.out_urn, e));
+            if !cap_out.matches(&request_out)
+                .expect("CU2: media URN prefix mismatch in direction spec matching") {
+                return false;
+            }
         }
 
         // Check all other tags that the request specifies
@@ -285,16 +301,20 @@ impl CapUrn {
 
     /// Calculate specificity score for cap matching
     ///
-    /// More specific caps have higher scores and are preferred
-    /// Includes direction specs (in/out) in the count
+    /// More specific caps have higher scores and are preferred.
+    /// Direction specs contribute their MediaUrn tag count (more tags = more specific).
+    /// Other tags contribute 1 per non-wildcard value.
     pub fn specificity(&self) -> usize {
-        // Count non-wildcard direction specs
         let mut count = 0;
         if self.in_urn != "*" {
-            count += 1;
+            let in_media = MediaUrn::from_string(&self.in_urn)
+                .unwrap_or_else(|e| panic!("CU2: in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
+            count += in_media.inner().tags.len();
         }
         if self.out_urn != "*" {
-            count += 1;
+            let out_media = MediaUrn::from_string(&self.out_urn)
+                .unwrap_or_else(|e| panic!("CU2: out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
+            count += out_media.inner().tags.len();
         }
         // Count non-wildcard tags
         count + self.tags.values().filter(|v| v.as_str() != "*").count()
@@ -314,16 +334,36 @@ impl CapUrn {
     ///
     /// Two caps are compatible if they can potentially match
     /// the same types of requests (considering wildcards and missing tags as wildcards)
-    /// Direction specs must be compatible (same value or one is wildcard)
+    /// Direction specs are compatible if either is a subtype of the other via TaggedUrn matching
     pub fn is_compatible_with(&self, other: &CapUrn) -> bool {
-        // Check in_urn compatibility
-        if self.in_urn != "*" && other.in_urn != "*" && self.in_urn != other.in_urn {
-            return false;
+        // Check in_urn compatibility: either direction of MediaUrn::matches succeeds
+        if self.in_urn != "*" && other.in_urn != "*" {
+            let self_in = MediaUrn::from_string(&self.in_urn)
+                .unwrap_or_else(|e| panic!("CU2: self in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
+            let other_in = MediaUrn::from_string(&other.in_urn)
+                .unwrap_or_else(|e| panic!("CU2: other in_spec '{}' is not a valid MediaUrn: {}", other.in_urn, e));
+            let fwd = self_in.matches(&other_in)
+                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
+            let rev = other_in.matches(&self_in)
+                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
+            if !fwd && !rev {
+                return false;
+            }
         }
 
         // Check out_urn compatibility
-        if self.out_urn != "*" && other.out_urn != "*" && self.out_urn != other.out_urn {
-            return false;
+        if self.out_urn != "*" && other.out_urn != "*" {
+            let self_out = MediaUrn::from_string(&self.out_urn)
+                .unwrap_or_else(|e| panic!("CU2: self out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
+            let other_out = MediaUrn::from_string(&other.out_urn)
+                .unwrap_or_else(|e| panic!("CU2: other out_spec '{}' is not a valid MediaUrn: {}", other.out_urn, e));
+            let fwd = self_out.matches(&other_out)
+                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
+            let rev = other_out.matches(&self_out)
+                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
+            if !fwd && !rev {
+                return false;
+            }
         }
 
         // Get all unique tag keys from both caps
@@ -1026,22 +1066,24 @@ mod tests {
         assert!(cap2.matches(&request2));
     }
 
-    // TEST020: Test specificity calculation (in/out base, wildcards don't count)
+    // TEST020: Test specificity calculation (direction specs use MediaUrn tag count, wildcards don't count)
     #[test]
     fn test_specificity() {
-        // Specificity now includes in/out (2 base) + other tags
+        // Direction specs contribute their MediaUrn tag count:
+        // MEDIA_VOID = "media:void" -> 1 tag (void)
+        // MEDIA_OBJECT = "media:form=map;textable" -> 2 tags (form, textable)
         let cap1 = CapUrn::from_string(&test_urn("type=general")).unwrap();
         let cap2 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
         let cap3 = CapUrn::from_string(&test_urn("op=*;ext=pdf")).unwrap();
 
-        assert_eq!(cap1.specificity(), 3); // in + out + type
-        assert_eq!(cap2.specificity(), 3); // in + out + op
-        assert_eq!(cap3.specificity(), 3); // in + out + ext (wildcard op doesn't count)
+        assert_eq!(cap1.specificity(), 4); // void(1) + object(2) + type(1)
+        assert_eq!(cap2.specificity(), 4); // void(1) + object(2) + op(1)
+        assert_eq!(cap3.specificity(), 4); // void(1) + object(2) + ext(1) (wildcard op doesn't count)
 
         // Wildcard in direction doesn't count
         let cap4 =
             CapUrn::from_string(&format!("cap:in=*;out=\"{}\";op=test", MEDIA_OBJECT)).unwrap();
-        assert_eq!(cap4.specificity(), 2); // out + op (in wildcard doesn't count)
+        assert_eq!(cap4.specificity(), 3); // object(2) + op(1) (in wildcard doesn't count)
     }
 
     // TEST021: Test builder creates cap URN with correct tags and direction specs
@@ -1478,6 +1520,8 @@ mod tests {
     #[test]
     fn test_matching_semantics_test10_direction_mismatch() {
         // Test 10: Direction mismatch prevents matching
+        // media:string has tags {textable:*, form:scalar}, media:bytes has tags {bytes:*}
+        // Neither can provide input for the other (completely different marker tags)
         let cap = CapUrn::from_string(&format!(
             "cap:in=media:string;op=generate;out=\"{}\"",
             MEDIA_OBJECT
@@ -1492,5 +1536,92 @@ mod tests {
             !cap.matches(&request),
             "Test 10: Direction mismatch should not match"
         );
+    }
+
+    // TEST051: Semantic direction matching - generic provider matches specific request
+    #[test]
+    fn test_direction_semantic_matching() {
+        // A cap accepting media:bytes (generic) should match a request with media:pdf;bytes (specific)
+        // because media:pdf;bytes has all marker tags that media:bytes requires (bytes=*)
+        let generic_cap = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        let pdf_request = CapUrn::from_string(
+            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        assert!(generic_cap.matches(&pdf_request),
+            "Generic bytes provider must match specific pdf;bytes request");
+
+        // Generic cap also matches epub;bytes (any bytes subtype)
+        let epub_request = CapUrn::from_string(
+            "cap:in=\"media:epub;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        assert!(generic_cap.matches(&epub_request),
+            "Generic bytes provider must match epub;bytes request");
+
+        // Reverse: specific cap does NOT match generic request
+        // A pdf-only handler cannot accept arbitrary bytes
+        let pdf_cap = CapUrn::from_string(
+            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        let generic_request = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        assert!(!pdf_cap.matches(&generic_request),
+            "Specific pdf;bytes cap must NOT match generic bytes request");
+
+        // Incompatible types: pdf cap does NOT match epub request
+        assert!(!pdf_cap.matches(&epub_request),
+            "PDF-specific cap must NOT match epub request (epub lacks pdf marker)");
+
+        // Output direction: cap producing more specific output matches less specific request
+        let specific_out_cap = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        let generic_out_request = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;bytes\""
+        ).unwrap();
+        assert!(specific_out_cap.matches(&generic_out_request),
+            "Cap producing image;png;bytes;thumbnail must satisfy request for image;bytes");
+
+        // Reverse output: generic output cap does NOT match specific output request
+        let generic_out_cap = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;bytes\""
+        ).unwrap();
+        let specific_out_request = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        assert!(!generic_out_cap.matches(&specific_out_request),
+            "Cap producing generic image;bytes must NOT satisfy request requiring image;png;bytes;thumbnail");
+    }
+
+    // TEST052: Semantic direction specificity - more media URN tags = higher specificity
+    #[test]
+    fn test_direction_semantic_specificity() {
+        // media:bytes has 1 tag, media:pdf;bytes has 2 tags
+        // media:image;png;bytes;thumbnail has 4 tags
+        let generic_cap = CapUrn::from_string(
+            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        let specific_cap = CapUrn::from_string(
+            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+
+        // generic: bytes(1) + image;png;bytes;thumbnail(4) + op(1) = 6
+        assert_eq!(generic_cap.specificity(), 6);
+        // specific: pdf;bytes(2) + image;png;bytes;thumbnail(4) + op(1) = 7
+        assert_eq!(specific_cap.specificity(), 7);
+
+        assert!(specific_cap.specificity() > generic_cap.specificity(),
+            "pdf;bytes cap must be more specific than bytes cap");
+
+        // CapMatcher should prefer the more specific cap when both match
+        let pdf_request = CapUrn::from_string(
+            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+        ).unwrap();
+        let caps = vec![generic_cap.clone(), specific_cap.clone()];
+        let best = CapMatcher::find_best_match(&caps, &pdf_request).unwrap();
+        assert_eq!(best.in_spec(), "media:pdf;bytes",
+            "CapMatcher must prefer the more specific pdf;bytes provider");
     }
 }
