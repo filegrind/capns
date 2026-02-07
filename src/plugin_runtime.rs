@@ -385,8 +385,8 @@ fn extract_effective_payload(
             if let Some(ref expected) = expected_media_urn {
                 if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
                     // Use semantic matching in both directions
-                    let fwd = arg_urn.matches(expected).unwrap_or(false);
-                    let rev = expected.matches(&arg_urn).unwrap_or(false);
+                    let fwd = arg_urn.conforms_to(expected).unwrap_or(false);
+                    let rev = expected.conforms_to(&arg_urn).unwrap_or(false);
                     if fwd || rev {
                         return Ok(val);
                     }
@@ -599,7 +599,7 @@ impl PluginRuntime {
 
         for (pattern, handler) in &self.handlers {
             if let Ok(pattern_urn) = CapUrn::from_string(pattern) {
-                if pattern_urn.matches(&request_urn) {
+                if pattern_urn.accepts(&request_urn) {
                     return Some(Arc::clone(handler));
                 }
             }

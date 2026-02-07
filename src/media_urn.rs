@@ -252,14 +252,16 @@ impl MediaUrn {
         self.0.to_string()
     }
 
-    /// Check if this media URN matches a request using tagged URN semantics
-    ///
-    /// Matching follows standard tagged URN rules:
-    /// - Missing tags are treated as implicit wildcards
-    /// - Explicit "*" values are wildcards
-    /// - All present tags must match
-    pub fn matches(&self, request: &MediaUrn) -> Result<bool, MediaUrnError> {
-        self.0.matches(&request.0).map_err(MediaUrnError::Match)
+    /// Check if this media URN (instance) satisfies the pattern's constraints.
+    /// Equivalent to `pattern.accepts(self)`.
+    pub fn conforms_to(&self, pattern: &MediaUrn) -> Result<bool, MediaUrnError> {
+        self.0.conforms_to(&pattern.0).map_err(MediaUrnError::Match)
+    }
+
+    /// Check if this media URN (pattern) accepts the given instance.
+    /// Equivalent to `instance.conforms_to(self)`.
+    pub fn accepts(&self, instance: &MediaUrn) -> Result<bool, MediaUrnError> {
+        self.0.accepts(&instance.0).map_err(MediaUrnError::Match)
     }
 
     /// Get the specificity of this media URN
@@ -631,43 +633,43 @@ mod tests {
         assert_eq!(parsed.extension(), Some("md"));
     }
 
-    // TEST074: Test media URN matching using tagged URN semantics with specific and generic requirements
+    // TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements
     #[test]
     fn test_media_urn_matching() {
-        // PDF listing matches PDF requirement (PRIMARY type naming)
-        // A more specific URN (media:pdf;bytes) matches a less specific requirement (media:pdf)
+        // PDF listing conforms to PDF requirement (PRIMARY type naming)
+        // A more specific URN (media:pdf;bytes) conforms to a less specific requirement (media:pdf)
         let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf;bytes"
         let pdf_requirement = MediaUrn::from_string("media:pdf").unwrap();
-        assert!(pdf_listing.matches(&pdf_requirement).expect("MediaUrn prefix mismatch impossible"));
+        assert!(pdf_listing.conforms_to(&pdf_requirement).expect("MediaUrn prefix mismatch impossible"));
 
-        // Markdown listing matches md requirement (PRIMARY type naming)
+        // Markdown listing conforms to md requirement (PRIMARY type naming)
         let md_listing = MediaUrn::from_string(MEDIA_MD).unwrap(); // "media:md;textable"
         let md_requirement = MediaUrn::from_string("media:md").unwrap();
-        assert!(md_listing.matches(&md_requirement).expect("MediaUrn prefix mismatch impossible"));
+        assert!(md_listing.conforms_to(&md_requirement).expect("MediaUrn prefix mismatch impossible"));
 
-        // Same URNs should match each other
+        // Same URNs should conform to each other
         let string_urn = MediaUrn::from_string(MEDIA_STRING).unwrap();
         let string_req = MediaUrn::from_string(MEDIA_STRING).unwrap();
-        assert!(string_urn.matches(&string_req).expect("MediaUrn prefix mismatch impossible"));
+        assert!(string_urn.conforms_to(&string_req).expect("MediaUrn prefix mismatch impossible"));
     }
 
-    // TEST075: Test matching with implicit wildcards where handlers with fewer tags can handle more requests
+    // TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests
     #[test]
     fn test_matching() {
         let handler = MediaUrn::from_string("media:string").unwrap();
         let request = MediaUrn::from_string("media:string").unwrap();
-        assert!(handler.matches(&request).unwrap());
+        assert!(handler.accepts(&request).unwrap());
 
         // Handler with fewer tags can handle more requests (implicit wildcards)
         let general_handler = MediaUrn::from_string("media:string").unwrap();
-        assert!(general_handler.matches(&request).unwrap());
+        assert!(general_handler.accepts(&request).unwrap());
 
-        // Same URN should match
+        // Same URN should accept
         let same = MediaUrn::from_string("media:string").unwrap();
-        assert!(handler.matches(&same).unwrap());
+        assert!(handler.accepts(&same).unwrap());
     }
 
-    // TEST076: Test specificity increases with more tags for ranking matches
+    // TEST076: Test specificity increases with more tags for ranking conformance
     #[test]
     fn test_specificity() {
         // More tags = higher specificity
@@ -702,7 +704,7 @@ mod debug_tests {
     use super::*;
     use crate::standard::media::{MEDIA_BINARY, MEDIA_STRING, MEDIA_OBJECT};
 
-    // TEST078: Debug test for matching behavior between different media URN types
+    // TEST078: Debug test for conforms_to behavior between different media URN types
     #[test]
     fn debug_matching_behavior() {
         println!("MEDIA_BINARY = {}", MEDIA_BINARY);
@@ -713,15 +715,15 @@ mod debug_tests {
         let obj_urn = MediaUrn::from_string(MEDIA_OBJECT).unwrap();
         let _bin_urn = MediaUrn::from_string(MEDIA_BINARY).unwrap();
 
-        println!("string.matches(string) = {:?}", str_urn.matches(&str_urn));
-        println!("object.matches(string) = {:?}", obj_urn.matches(&str_urn));
-        println!("object.matches(object) = {:?}", obj_urn.matches(&obj_urn));
-        println!("string.matches(object) = {:?}", str_urn.matches(&obj_urn));
+        println!("string.conforms_to(string) = {:?}", str_urn.conforms_to(&str_urn));
+        println!("object.conforms_to(string) = {:?}", obj_urn.conforms_to(&str_urn));
+        println!("object.conforms_to(object) = {:?}", obj_urn.conforms_to(&obj_urn));
+        println!("string.conforms_to(object) = {:?}", str_urn.conforms_to(&obj_urn));
 
-        // MEDIA_OBJECT should NOT match MEDIA_STRING (different type flags)
+        // MEDIA_OBJECT should NOT conform to MEDIA_STRING (different type flags)
         assert!(
-            !obj_urn.matches(&str_urn).expect("MediaUrn prefix mismatch impossible"),
-            "MEDIA_OBJECT should NOT match MEDIA_STRING"
+            !obj_urn.conforms_to(&str_urn).expect("MediaUrn prefix mismatch impossible"),
+            "MEDIA_OBJECT should NOT conform to MEDIA_STRING"
         );
     }
 
@@ -734,7 +736,7 @@ mod debug_tests {
         assert!(!urn.is_binary(), "model-availability must not be binary");
         // to_string() alphabetizes tags, so compare via roundtrip parsing instead
         let reparsed = MediaUrn::from_string(&urn.to_string()).expect("roundtrip must parse");
-        assert!(urn.matches(&reparsed).unwrap(), "roundtrip must match original");
+        assert!(urn.conforms_to(&reparsed).unwrap(), "roundtrip must conform to original");
     }
 
     // TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags
@@ -745,7 +747,7 @@ mod debug_tests {
         assert!(urn.is_map(), "model-path must be form=map");
         assert!(!urn.is_binary(), "model-path must not be binary");
         let reparsed = MediaUrn::from_string(&urn.to_string()).expect("roundtrip must parse");
-        assert!(urn.matches(&reparsed).unwrap(), "roundtrip must match original");
+        assert!(urn.conforms_to(&reparsed).unwrap(), "roundtrip must conform to original");
     }
 
     // TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs
@@ -755,10 +757,10 @@ mod debug_tests {
             "availability and path output must be distinct media URNs");
         let avail = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).unwrap();
         let path = MediaUrn::from_string(MEDIA_PATH_OUTPUT).unwrap();
-        // They must NOT match each other (different types)
+        // They must NOT conform to each other (different types)
         assert!(
-            !avail.matches(&path).unwrap_or(true),
-            "availability must not match path"
+            !avail.conforms_to(&path).unwrap_or(true),
+            "availability must not conform to path"
         );
     }
 }

@@ -137,7 +137,7 @@ let cap = CapUrn::from_string(
 let request = CapUrn::from_string(
     "cap:in=\"media:binary\";op=extract;out=\"media:object\"")?;
 
-if cap.matches(&request) {
+if cap.accepts(&request) {
     println!("Cap can handle this request");
 }
 ```

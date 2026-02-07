@@ -139,8 +139,8 @@ impl CapGraph {
 
     /// Get all edges originating from a spec (all caps that take this spec as input).
     ///
-    /// Uses MediaUrn::satisfies() matching: returns edges where the provided spec
-    /// satisfies the edge's from_spec requirement. This allows a specific media URN
+    /// Uses MediaUrn::conforms_to() matching: returns edges where the provided spec
+    /// conforms to the edge's from_spec requirement. This allows a specific media URN
     /// like "media:pdf;bytes" to match caps that accept "media:pdf".
     pub fn get_outgoing(&self, spec: &str) -> Vec<&CapGraphEdge> {
         let provided_urn = match MediaUrn::from_string(spec) {
@@ -152,7 +152,7 @@ impl CapGraph {
             .iter()
             .filter(|edge| {
                 match MediaUrn::from_string(&edge.from_spec) {
-                    Ok(requirement_urn) => provided_urn.matches(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
+                    Ok(requirement_urn) => provided_urn.conforms_to(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -161,8 +161,8 @@ impl CapGraph {
 
     /// Get all edges targeting a spec (all caps that produce this spec as output).
     ///
-    /// Uses MediaUrn::satisfies() matching: returns edges where the edge's to_spec
-    /// satisfies the requested spec requirement.
+    /// Uses MediaUrn::conforms_to() matching: returns edges where the edge's to_spec
+    /// conforms to the requested spec requirement.
     pub fn get_incoming(&self, spec: &str) -> Vec<&CapGraphEdge> {
         let requirement_urn = match MediaUrn::from_string(spec) {
             Ok(urn) => urn,
@@ -173,7 +173,7 @@ impl CapGraph {
             .iter()
             .filter(|edge| {
                 match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.matches(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
+                    Ok(produced_urn) => produced_urn.conforms_to(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -182,7 +182,7 @@ impl CapGraph {
 
     /// Check if there's any direct edge from one spec to another.
     ///
-    /// Uses satisfies matching: from_spec must satisfy edge input, edge output must satisfy to_spec.
+    /// Uses conforms_to matching: from_spec must conform to edge input, edge output must conform to to_spec.
     pub fn has_direct_edge(&self, from_spec: &str, to_spec: &str) -> bool {
         let to_requirement = match MediaUrn::from_string(to_spec) {
             Ok(urn) => urn,
@@ -193,7 +193,7 @@ impl CapGraph {
             .iter()
             .any(|edge| {
                 match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
+                    Ok(produced_urn) => produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -202,7 +202,7 @@ impl CapGraph {
     /// Get all direct edges from one spec to another.
     ///
     /// Returns all capabilities that can directly convert from `from_spec` to `to_spec`.
-    /// Uses satisfies matching for both input and output specs.
+    /// Uses conforms_to matching for both input and output specs.
     /// Sorted by specificity (highest first).
     pub fn get_direct_edges(&self, from_spec: &str, to_spec: &str) -> Vec<&CapGraphEdge> {
         let to_requirement = match MediaUrn::from_string(to_spec) {
@@ -214,7 +214,7 @@ impl CapGraph {
             .into_iter()
             .filter(|edge| {
                 match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
+                    Ok(produced_urn) => produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
                     Err(_) => false,
                 }
             })
@@ -228,7 +228,7 @@ impl CapGraph {
     /// Check if a conversion path exists from one spec to another.
     ///
     /// Uses BFS to find if there's any path (direct or through intermediates).
-    /// Uses satisfies matching for both input and output specs.
+    /// Uses conforms_to matching for both input and output specs.
     pub fn can_convert(&self, from_spec: &str, to_spec: &str) -> bool {
         if from_spec == to_spec {
             return true;
@@ -251,7 +251,7 @@ impl CapGraph {
         // Start by checking edges from the initial spec
         for edge in &initial_edges {
             if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                     return true;
                 }
             }
@@ -265,7 +265,7 @@ impl CapGraph {
         while let Some(current) = queue.pop_front() {
             for edge in self.get_outgoing(&current) {
                 if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                    if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                    if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                         return true;
                     }
                 }
@@ -282,7 +282,7 @@ impl CapGraph {
     /// Find the shortest conversion path from one spec to another.
     ///
     /// Returns a sequence of edges representing the conversion chain.
-    /// Uses satisfies matching for both input and output specs.
+    /// Uses conforms_to matching for both input and output specs.
     /// Returns None if no path exists.
     pub fn find_path(&self, from_spec: &str, to_spec: &str) -> Option<Vec<&CapGraphEdge>> {
         if from_spec == to_spec {
@@ -299,7 +299,7 @@ impl CapGraph {
         let mut visited: HashMap<String, Option<(String, usize)>> = HashMap::new();
         let mut queue: VecDeque<String> = VecDeque::new();
 
-        // Find edges that the input spec satisfies
+        // Find edges that the input spec conforms to
         let initial_edges = self.get_outgoing(from_spec);
         if initial_edges.is_empty() {
             return None;
@@ -311,7 +311,7 @@ impl CapGraph {
             let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, *edge))?;
 
             if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                     // Direct path found
                     return Some(vec![&self.edges[edge_idx]]);
                 }
@@ -329,7 +329,7 @@ impl CapGraph {
                 let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, edge))?;
 
                 if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                    if produced_urn.matches(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                    if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
                         // Found target - reconstruct path
                         let mut path_indices = vec![edge_idx];
                         let mut backtrack = current.clone();
@@ -357,7 +357,7 @@ impl CapGraph {
     /// Find all conversion paths from one spec to another (up to a maximum depth).
     ///
     /// Returns all possible paths, sorted by total path length (shortest first).
-    /// Uses satisfies matching for both input and output specs.
+    /// Uses conforms_to matching for both input and output specs.
     /// Limits search to `max_depth` edges to prevent infinite loops in cyclic graphs.
     pub fn find_all_paths(
         &self,
@@ -400,7 +400,7 @@ impl CapGraph {
     }
 
     /// DFS helper for finding all paths
-    /// Uses satisfies matching for output spec comparison
+    /// Uses conforms_to matching for output spec comparison
     fn dfs_find_paths(
         &self,
         current: &str,
@@ -421,13 +421,13 @@ impl CapGraph {
                 None => continue,
             };
 
-            // Check if edge output satisfies target
-            let output_satisfies = match MediaUrn::from_string(&edge.to_spec) {
-                Ok(produced) => produced.matches(target).expect("MediaUrn prefix mismatch impossible"),
+            // Check if edge output conforms to target
+            let output_conforms = match MediaUrn::from_string(&edge.to_spec) {
+                Ok(produced) => produced.conforms_to(target).expect("MediaUrn prefix mismatch impossible"),
                 Err(_) => false,
             };
 
-            if output_satisfies {
+            if output_conforms {
                 // Found a path
                 let mut path = current_path.clone();
                 path.push(edge_idx);
@@ -557,7 +557,7 @@ impl CapMatrix {
         
         for entry in self.sets.values() {
             for cap in &entry.capabilities {
-                if cap.urn.matches(&request) {
+                if cap.urn.accepts(&request) {
                     matching_sets.push(entry.host.as_ref());
                     break; // Found a matching capability for this host, no need to check others
                 }
@@ -581,7 +581,7 @@ impl CapMatrix {
 
         for entry in self.sets.values() {
             for cap in &entry.capabilities {
-                if cap.urn.matches(&request) {
+                if cap.urn.accepts(&request) {
                     let specificity = cap.urn.specificity();
                     match best_match {
                         None => {
@@ -628,7 +628,7 @@ impl CapMatrix {
     }
 
     /// Check if any host can handle the specified capability
-    pub fn can_handle(&self, request_urn: &str) -> bool {
+    pub fn accepts_request(&self, request_urn: &str) -> bool {
         self.find_cap_sets(request_urn).is_ok()
     }
 
@@ -738,7 +738,7 @@ impl CapSet for CompositeCapSet {
                 // Find best match in this registry
                 for entry in registry.sets.values() {
                     for cap in &entry.capabilities {
-                        if cap.urn.matches(&request) {
+                        if cap.urn.accepts(&request) {
                             let specificity = cap.urn.specificity();
                             match &best_match {
                                 None => {
@@ -868,7 +868,7 @@ impl CapCube {
     }
 
     /// Check if any registry can handle the specified capability
-    pub fn can_handle(&self, request_urn: &str) -> bool {
+    pub fn accepts_request(&self, request_urn: &str) -> bool {
         self.find_best_cap_set(request_urn).is_ok()
     }
 
@@ -913,7 +913,7 @@ impl CapCube {
 
         for entry in registry.sets.values() {
             for cap in &entry.capabilities {
-                if cap.urn.matches(request) {
+                if cap.urn.accepts(request) {
                     let specificity = cap.urn.specificity();
                     match best {
                         None => {
@@ -1076,14 +1076,14 @@ mod tests {
         assert!(matches!(result, Err(CapMatrixError::InvalidUrn(_))));
     }
 
-    // TEST120: Test can_handle checks if registry can handle a capability request
+    // TEST120: Test accepts_request checks if registry can handle a capability request
     #[tokio::test]
-    async fn test_can_handle() {
+    async fn test_accepts_request() {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
         // Empty registry - need valid URN with in/out
-        assert!(!registry.can_handle(&test_urn("op=test")));
+        assert!(!registry.accepts_request(&test_urn("op=test")));
 
         // After registration
         let host = Box::new(MockCapSet {
@@ -1104,9 +1104,9 @@ mod tests {
 
         registry.register_cap_set("test".to_string(), host, vec![cap]).unwrap();
 
-        assert!(registry.can_handle(&test_urn("op=test")));
-        assert!(registry.can_handle(&test_urn("op=test;extra=param")));
-        assert!(!registry.can_handle(&test_urn("op=different")));
+        assert!(registry.accepts_request(&test_urn("op=test")));
+        assert!(registry.accepts_request(&test_urn("op=test;extra=param")));
+        assert!(!registry.accepts_request(&test_urn("op=different")));
     }
 
     // ============================================================================
@@ -1346,8 +1346,8 @@ mod tests {
 
         // Verify we got the right cap
         // The caller should work (though we can't easily test execution in unit tests)
-        assert!(composite.can_handle(&test_urn("op=generate;ext=pdf")));
-        assert!(!composite.can_handle(&test_urn("op=nonexistent")));
+        assert!(composite.accepts_request(&test_urn("op=generate;ext=pdf")));
+        assert!(!composite.accepts_request(&test_urn("op=nonexistent")));
     }
 
     // ============================================================================

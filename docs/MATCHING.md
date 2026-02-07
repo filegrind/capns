@@ -26,12 +26,12 @@ Special values work symmetrically on both instance and pattern sides.
 
 ### Direction Specifiers in Matching
 
-Cap URNs have required `in` and `out` tags (direction specifiers) whose values are Media URNs. Direction specs use **`TaggedUrn::matches()`** (via `MediaUrn::matches()`):
+Cap URNs have required `in` and `out` tags (direction specifiers) whose values are Media URNs. Direction specs use **`TaggedUrn::accepts()`** / **`TaggedUrn::conforms_to()`** (via `MediaUrn`):
 
-- **Input**: `request_input.matches(&cap_input)` — the request's input (instance) is matched against the cap's input (pattern). All tagged URN matching semantics apply: `*` (must-have-any), `!` (must-not-have), `?` (no constraint), exact values, missing tags (no constraint). A cap accepting `media:bytes` matches a request with `media:pdf;bytes` because `pdf;bytes` has the `bytes` marker.
-- **Output**: `cap_output.matches(&request_output)` — the cap's output (instance) is matched against the request's output expectation (pattern).
+- **Input**: `cap_input.accepts(&request_input)` — the cap's input (pattern) checks whether the request's input (instance) satisfies it. All tagged URN matching semantics apply: `*` (must-have-any), `!` (must-not-have), `?` (no constraint), exact values, missing tags (no constraint). A cap accepting `media:bytes` accepts a request with `media:pdf;bytes` because `pdf;bytes` has the `bytes` marker.
+- **Output**: `cap_output.conforms_to(&request_output)` — the cap's output (instance) checks whether it conforms to the request's output expectation (pattern).
 
-Direction specs are Media URNs whose internal tags are compared using the full `TaggedUrn::matches()` semantics, not as opaque strings.
+Direction specs are Media URNs whose internal tags are compared using the full `TaggedUrn::accepts()` / `conforms_to()` semantics, not as opaque strings.
 
 ### Test Cases
 
@@ -107,7 +107,7 @@ Winner: Cap C (highest specificity)
 
 ### Selection Algorithm
 
-1. Collect all caps where `cap.matches(request)` is true
+1. Collect all caps where `cap.accepts(&request)` is true
 2. Calculate graded specificity for each
 3. Select highest specificity
 4. Ties use specificity tuple `(exact_count, must_have_any_count, must_not_count)`

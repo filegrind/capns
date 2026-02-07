@@ -728,10 +728,10 @@ impl Cap {
         resolve_media_urn(media_urn, Some(&self.media_specs), registry).await
     }
 
-    /// Check if this cap matches a request string
-    pub fn matches_request(&self, request: &str) -> bool {
+    /// Check if this cap accepts a request string
+    pub fn accepts_request(&self, request: &str) -> bool {
         let request_urn = CapUrn::from_string(request).expect("Invalid cap URN in request");
-        self.urn.can_handle(&request_urn)
+        self.urn.accepts(&request_urn)
     }
 
     /// Get the cap URN as a string
@@ -741,7 +741,7 @@ impl Cap {
 
     /// Check if this cap is more specific than another for the same request
     pub fn is_more_specific_than(&self, other: &Cap, request: &str) -> bool {
-        if !self.matches_request(request) || !other.matches_request(request) {
+        if !self.accepts_request(request) || !other.accepts_request(request) {
             return false;
         }
         self.urn.is_more_specific_than(&other.urn)
@@ -893,10 +893,10 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
-        assert!(cap.matches_request(&test_urn("op=transform;format=json;type=data_processing")));
-        assert!(cap.matches_request(&test_urn("op=transform;format=*;type=data_processing")));
-        assert!(cap.matches_request(&test_urn("type=data_processing")));
-        assert!(!cap.matches_request(&test_urn("type=compute")));
+        assert!(cap.accepts_request(&test_urn("op=transform;format=json;type=data_processing")));
+        assert!(cap.accepts_request(&test_urn("op=transform;format=*;type=data_processing")));
+        assert!(cap.accepts_request(&test_urn("type=data_processing")));
+        assert!(!cap.accepts_request(&test_urn("type=compute")));
     }
 
     // TEST111: Test getting and setting cap title updates correctly

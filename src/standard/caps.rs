@@ -708,12 +708,12 @@ mod tests {
         // Compare semantically via MediaUrn matching (tag order may differ)
         let in_spec = MediaUrn::from_string(urn.in_spec()).expect("in_spec must parse");
         let expected_in = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING must parse");
-        assert!(in_spec.matches(&expected_in).unwrap(),
+        assert!(in_spec.conforms_to(&expected_in).unwrap(),
             "in_spec '{}' must match MEDIA_STRING '{}'", urn.in_spec(), MEDIA_STRING);
 
         let out_spec = MediaUrn::from_string(urn.out_spec()).expect("out_spec must parse");
         let expected_out = MediaUrn::from_string(MEDIA_LLM_INFERENCE_OUTPUT).expect("LLM output must parse");
-        assert!(out_spec.matches(&expected_out).unwrap(),
+        assert!(out_spec.conforms_to(&expected_out).unwrap(),
             "out_spec '{}' must match '{}'", urn.out_spec(), MEDIA_LLM_INFERENCE_OUTPUT);
     }
 
