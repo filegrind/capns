@@ -61,6 +61,7 @@ pub mod profile_schema_registry;
 pub mod cbor_frame;
 pub mod cbor_io;
 pub mod plugin_runtime;
+pub mod plugin_repo;
 pub mod async_plugin_host;
 
 // Integration tests for CBOR protocol
@@ -92,6 +93,11 @@ pub use cbor_io::{
     read_frame_async, write_frame_async,
 };
 pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter, PeerInvoker, NoPeerInvoker, CliStreamEmitter};
+pub use plugin_repo::{
+    PluginRepo, PluginRepoError,
+    PluginCapSummary, PluginInfo, PluginSuggestion, PluginRegistryResponse,
+    PluginPackageInfo, PluginVersionInfo,
+};
 
 // PluginHost is the primary API for host-side plugin communication (async/tokio-native)
 pub use async_plugin_host::{
