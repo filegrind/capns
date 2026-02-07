@@ -8,10 +8,10 @@ CapNs provides a unified system for discovering and executing capabilities acros
 
 1. **CapSet** - Trait for capability execution
 2. **CapMatrix** - Registry for capability providers within a single domain
-3. **CapCube** - Composite registry that aggregates multiple CapMatrix instances
+3. **CapBlock** - Composite registry that aggregates multiple CapMatrix instances
 
 ```
-                    CapCube (unified lookup)
+                    CapBlock (unified lookup)
                     /                      \
            CapMatrix                   CapMatrix
          "providers"                   "plugins"
@@ -82,12 +82,12 @@ struct CapSetEntry {
 3. A cap matches if it satisfies all tags in the request (see RULES.md sections 12-17)
 4. When finding the "best" match, select the one with highest specificity
 
-### CapCube
+### CapBlock
 
-A `CapCube` aggregates multiple `CapMatrix` instances for unified lookup:
+A `CapBlock` aggregates multiple `CapMatrix` instances for unified lookup:
 
 ```rust
-pub struct CapCube {
+pub struct CapBlock {
     registries: Vec<(String, Arc<RwLock<CapMatrix>>)>,
 }
 ```
@@ -129,14 +129,14 @@ Winner: Plugin (specificity 3 > 2)
 - Higher specificity wins
 
 **Tiebreaking:**
-When specificities are equal, the first registry added to CapCube wins. This allows prioritizing providers over plugins (or vice versa) by controlling registration order.
+When specificities are equal, the first registry added to CapBlock wins. This allows prioritizing providers over plugins (or vice versa) by controlling registration order.
 
 ## CapCaller
 
 The `CapCaller` provides a convenient wrapper for executing capabilities:
 
 ```rust
-let caller = cap_cube.can("cap:op=generate_thumbnail;ext=pdf")?;
+let caller = cap_block.can("cap:op=generate_thumbnail;ext=pdf")?;
 let result = caller.call(positional_args, named_args, stdin).await?;
 ```
 
@@ -158,7 +158,7 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    // Expose the CapMatrix for CapCube integration
+    // Expose the CapMatrix for CapBlock integration
     pub fn cap_matrix(&self) -> Arc<RwLock<CapMatrix>> {
         self.cap_matrix.clone()
     }
@@ -175,7 +175,7 @@ pub struct FgndPluginGateway {
 }
 
 impl FgndPluginGateway {
-    // Expose the CapMatrix for CapCube integration
+    // Expose the CapMatrix for CapBlock integration
     pub fn cap_matrix(&self) -> Arc<RwLock<CapMatrix>> {
         self.cap_matrix.clone()
     }
@@ -188,7 +188,7 @@ impl FgndPluginGateway {
 pub struct CapService {
     provider_registry: Arc<Mutex<ProviderRegistry>>,
     plugin_gateway: Arc<FgndPluginGateway>,
-    cap_cube: CapCube,
+    cap_block: CapBlock,
 }
 
 impl CapService {
@@ -199,18 +199,18 @@ impl CapService {
         let mut plugin_gateway = FgndPluginGateway::new(...);
         plugin_gateway.initialize().await?;
 
-        // Create CapCube with both registries
+        // Create CapBlock with both registries
         // Providers added first = higher priority on ties
-        let mut cap_cube = CapCube::new();
-        cap_cube.add_registry("providers".into(), provider_registry.cap_matrix());
-        cap_cube.add_registry("plugins".into(), plugin_gateway.cap_matrix());
+        let mut cap_block = CapBlock::new();
+        cap_block.add_registry("providers".into(), provider_registry.cap_matrix());
+        cap_block.add_registry("plugins".into(), plugin_gateway.cap_matrix());
 
-        Ok(Self { provider_registry, plugin_gateway, cap_cube })
+        Ok(Self { provider_registry, plugin_gateway, cap_block })
     }
 
     pub async fn can(&self, cap_urn: &str) -> Result<CapCaller> {
-        // Use CapCube for provider lookup (sync)
-        let provider_result = self.cap_cube.find_best_cap_set(cap_urn);
+        // Use CapBlock for provider lookup (sync)
+        let provider_result = self.cap_block.find_best_cap_set(cap_urn);
 
         // Use plugin gateway directly for async gRPC lookup
         let plugin_result = self.plugin_gateway.resolve(cap_urn).await;
@@ -242,12 +242,12 @@ The architecture is designed for concurrent access:
 
 ```rust
 // Setup
-let mut cap_cube = CapCube::new();
-cap_cube.add_registry("providers".into(), provider_cap_matrix);
-cap_cube.add_registry("plugins".into(), plugin_cap_matrix);
+let mut cap_block = CapBlock::new();
+cap_block.add_registry("providers".into(), provider_cap_matrix);
+cap_block.add_registry("plugins".into(), plugin_cap_matrix);
 
 // Lookup and execute
-match cap_cube.can("cap:op=generate_thumbnail;ext=pdf") {
+match cap_block.can("cap:op=generate_thumbnail;ext=pdf") {
     Ok(caller) => {
         let result = caller.call(vec![], vec![], None).await?;
         println!("Result: {:?}", result.as_bytes());

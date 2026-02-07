@@ -177,10 +177,10 @@ let caller = provider_registry.can("cap:in=...;op=extract;out=...")?;
 let result = caller.call(args).await?;
 ```
 
-### CapCube (Multi-Provider)
+### CapBlock (Multi-Provider)
 
 ```rust
-let cube = CapCube::new();
+let cube = CapBlock::new();
 cube.register_cap_set("provider-a", caps_a);
 cube.register_cap_set("provider-b", caps_b);
 

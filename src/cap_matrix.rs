@@ -507,7 +507,7 @@ pub struct CapGraphStats {
 /// Unified registry for cap sets (providers and plugins)
 #[derive(Debug)]
 pub struct CapMatrix {
-    /// Map of host name to entry. pub(crate) for CapCube access.
+    /// Map of host name to entry. pub(crate) for CapBlock access.
     pub(crate) sets: HashMap<String, CapSetEntry>,
     /// Media URN registry for resolving media specs
     pub(crate) media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>,
@@ -669,7 +669,7 @@ pub struct BestCapSetMatch {
 /// the original owners (e.g., ProviderRegistry, PluginGateway) to retain
 /// ownership while still participating in unified capability lookup.
 #[derive(Debug)]
-pub struct CapCube {
+pub struct CapBlock {
     /// Child registries in priority order (first added = highest priority on ties)
     /// Uses Arc<std::sync::RwLock> for shared access
     registries: Vec<(String, std::sync::Arc<std::sync::RwLock<CapMatrix>>)>,
@@ -677,7 +677,7 @@ pub struct CapCube {
     media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>,
 }
 
-/// Wrapper that implements CapSet for CapCube
+/// Wrapper that implements CapSet for CapBlock
 /// This allows the composite to be used with CapCaller
 #[derive(Debug)]
 pub struct CompositeCapSet {
@@ -775,7 +775,7 @@ impl CapSet for CompositeCapSet {
     }
 }
 
-impl CapCube {
+impl CapBlock {
     /// Create a new composite registry with the given media registry
     pub fn new(media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>) -> Self {
         Self {
@@ -887,7 +887,7 @@ impl CapCube {
     ///
     /// # Example
     /// ```ignore
-    /// let cube = CapCube::new();
+    /// let cube = CapBlock::new();
     /// // ... add registries ...
     /// let graph = cube.graph()?;
     ///
@@ -1110,7 +1110,7 @@ mod tests {
     }
 
     // ============================================================================
-    // CapCube Tests
+    // CapBlock Tests
     // ============================================================================
 
     use std::sync::{Arc, RwLock};
@@ -1130,9 +1130,9 @@ mod tests {
         }
     }
 
-    // TEST121: Test CapCube selects more specific cap over less specific regardless of registry order
+    // TEST121: Test CapBlock selects more specific cap over less specific regardless of registry order
     #[tokio::test]
-    async fn test_cap_cube_more_specific_wins() {
+    async fn test_cap_block_more_specific_wins() {
         // This is the key test: provider has less specific cap, plugin has more specific
         // The more specific one should win regardless of registry order
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1165,7 +1165,7 @@ mod tests {
         ).unwrap();
 
         // Create composite with provider first (normally would have priority on ties)
-        let mut composite = CapCube::new(media_registry.clone());
+        let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
@@ -1181,9 +1181,9 @@ mod tests {
         assert_eq!(best.cap.title, "Plugin PDF Thumbnail Generator (specific)");
     }
 
-    // TEST122: Test CapCube breaks specificity ties by first registered registry
+    // TEST122: Test CapBlock breaks specificity ties by first registered registry
     #[tokio::test]
-    async fn test_cap_cube_tie_goes_to_first() {
+    async fn test_cap_block_tie_goes_to_first() {
         // When specificity is equal, first registry wins
         let (media_registry, _temp_dir) = test_media_registry();
 
@@ -1199,7 +1199,7 @@ mod tests {
         let cap2 = make_cap(&test_urn("op=generate;ext=pdf"), "Registry 2 Cap");
         registry2.register_cap_set("host2".to_string(), host2, vec![cap2]).unwrap();
 
-        let mut composite = CapCube::new(media_registry.clone());
+        let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("first".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("second".to_string(), Arc::new(RwLock::new(registry2)));
 
@@ -1210,9 +1210,9 @@ mod tests {
         assert_eq!(best.cap.title, "Registry 1 Cap");
     }
 
-    // TEST123: Test CapCube polls all registries to find most specific match
+    // TEST123: Test CapBlock polls all registries to find most specific match
     #[tokio::test]
-    async fn test_cap_cube_polls_all() {
+    async fn test_cap_block_polls_all() {
         // Test that all registries are polled
         let (media_registry, _temp_dir) = test_media_registry();
 
@@ -1235,7 +1235,7 @@ mod tests {
         let cap3 = make_cap(&test_urn("op=generate;ext=pdf;format=thumbnail"), "Registry 3");
         registry3.register_cap_set("host3".to_string(), host3, vec![cap3]).unwrap();
 
-        let mut composite = CapCube::new(media_registry.clone());
+        let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("r1".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("r2".to_string(), Arc::new(RwLock::new(registry2)));
         composite.add_registry("r3".to_string(), Arc::new(RwLock::new(registry3)));
@@ -1246,22 +1246,22 @@ mod tests {
         assert_eq!(best.registry_name, "r3", "Most specific registry should win");
     }
 
-    // TEST124: Test CapCube returns error when no registries match the request
+    // TEST124: Test CapBlock returns error when no registries match the request
     #[tokio::test]
-    async fn test_cap_cube_no_match() {
+    async fn test_cap_block_no_match() {
         let (media_registry, _temp_dir) = test_media_registry();
         let registry = CapMatrix::new(media_registry.clone());
 
-        let mut composite = CapCube::new(media_registry.clone());
+        let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("empty".to_string(), Arc::new(RwLock::new(registry)));
 
         let result = composite.find_best_cap_set(&test_urn("op=nonexistent"));
         assert!(matches!(result, Err(CapMatrixError::NoSetsFound(_))));
     }
 
-    // TEST125: Test CapCube prefers specific plugin over generic provider fallback
+    // TEST125: Test CapBlock prefers specific plugin over generic provider fallback
     #[tokio::test]
-    async fn test_cap_cube_fallback_scenario() {
+    async fn test_cap_block_fallback_scenario() {
         // Test the exact scenario from the user's issue:
         // Provider: generic fallback (can handle any file type)
         // Plugin:   PDF-specific handler
@@ -1297,7 +1297,7 @@ mod tests {
         ).unwrap();
 
         // Providers first (would win on tie)
-        let mut composite = CapCube::new(media_registry.clone());
+        let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
         composite.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
@@ -1338,7 +1338,7 @@ mod tests {
             vec![provider_cap]
         ).unwrap();
 
-        let mut composite = CapCube::new(media_registry.clone());
+        let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
 
         // Test can() returns a CapCaller
@@ -1643,10 +1643,10 @@ mod tests {
         assert_eq!(edges[1].cap.title, "Generic"); // Lower specificity
     }
 
-    // TEST133: Test CapCube graph integration with multiple registries and conversion paths
+    // TEST133: Test CapBlock graph integration with multiple registries and conversion paths
     #[tokio::test]
-    async fn test_cap_cube_graph_integration() {
-        // Test that CapCube.graph() works correctly
+    async fn test_cap_block_graph_integration() {
+        // Test that CapBlock.graph() works correctly
         let (media_registry, _temp_dir) = test_media_registry();
 
         let mut provider_registry = CapMatrix::new(media_registry.clone());
@@ -1692,7 +1692,7 @@ mod tests {
             vec![plugin_cap]
         ).unwrap();
 
-        let mut cube = CapCube::new(media_registry.clone());
+        let mut cube = CapBlock::new(media_registry.clone());
         cube.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
         cube.add_registry("plugins".to_string(), Arc::new(RwLock::new(plugin_registry)));
 
