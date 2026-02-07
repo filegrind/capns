@@ -435,8 +435,8 @@ impl AsyncPluginHost {
         Ok(receiver)
     }
 
-    /// Send a cap request with unified arguments.
-    pub async fn request_with_unified_arguments(
+    /// Send a cap request with arguments.
+    pub async fn request_with_arguments(
         &self,
         cap_urn: &str,
         arguments: &[crate::CapArgumentValue],
@@ -477,13 +477,13 @@ impl AsyncPluginHost {
         Self::collect_response(&mut receiver).await
     }
 
-    /// Send a cap request with unified arguments and wait for the complete response.
-    pub async fn call_with_unified_arguments(
+    /// Send a cap request with arguments and wait for the complete response.
+    pub async fn call_with_arguments(
         &self,
         cap_urn: &str,
         arguments: &[crate::CapArgumentValue],
     ) -> Result<PluginResponse, AsyncHostError> {
-        let mut receiver = self.request_with_unified_arguments(cap_urn, arguments).await?;
+        let mut receiver = self.request_with_arguments(cap_urn, arguments).await?;
         Self::collect_response(&mut receiver).await
     }
 

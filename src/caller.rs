@@ -68,7 +68,7 @@ pub struct CapCaller {
 
 /// Trait for Cap Host communication
 pub trait CapSet: Send + Sync + std::fmt::Debug {
-    /// Execute a cap with unified arguments identified by media_urn.
+    /// Execute a cap with arguments identified by media_urn.
     /// The cap definition's sources specify how to extract values (stdin, position, cli_flag).
     fn execute_cap(
         &self,
@@ -114,7 +114,7 @@ impl CapCaller {
         positions
     }
 
-    /// Call the cap with unified arguments identified by media_urn.
+    /// Call the cap with arguments identified by media_urn.
     /// Validates arguments against cap definition before execution.
     pub async fn call(&self, arguments: Vec<CapArgumentValue>) -> Result<ResponseWrapper> {
         // Validate arguments against cap definition
@@ -190,7 +190,7 @@ impl CapCaller {
             ))
     }
 
-    /// Validate unified arguments against cap definition.
+    /// Validate arguments against cap definition.
     /// Checks that all required arguments are provided (by media_urn).
     fn validate_arguments(&self, arguments: &[CapArgumentValue]) -> Result<()> {
         let arg_defs = self.cap_definition.get_args();

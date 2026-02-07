@@ -686,7 +686,7 @@ mod tests {
 
     // TEST297: Test host call with unified CBOR arguments sends correct content_type and payload
     #[tokio::test]
-    async fn test_unified_arguments_roundtrip() {
+    async fn test_arguments_roundtrip() {
         use crate::caller::CapArgumentValue;
 
         let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
@@ -704,7 +704,7 @@ mod tests {
             // Read request
             let frame = frame_reader.read().unwrap().expect("Expected request frame");
             assert_eq!(frame.content_type, Some("application/cbor".to_string()),
-                "unified arguments must use application/cbor content type");
+                "arguments must use application/cbor content type");
 
             // Verify the CBOR payload contains our argument
             let payload = frame.payload.unwrap_or_default();
@@ -739,7 +739,7 @@ mod tests {
         let host = AsyncPluginHost::new(host_write, host_read).await.unwrap();
 
         let args = vec![CapArgumentValue::from_str("media:model-spec;textable", "gpt-4")];
-        let response = host.call_with_unified_arguments("cap:op=test", &args).await.unwrap();
+        let response = host.call_with_arguments("cap:op=test", &args).await.unwrap();
         assert_eq!(response.concatenated(), b"gpt-4");
 
         host.shutdown().await;
@@ -920,9 +920,9 @@ mod tests {
         plugin_handle.join().unwrap();
     }
 
-    // TEST303: Test multiple unified arguments are correctly serialized in CBOR payload
+    // TEST303: Test multiple arguments are correctly serialized in CBOR payload
     #[tokio::test]
-    async fn test_unified_arguments_multiple() {
+    async fn test_arguments_multiple() {
         use crate::caller::CapArgumentValue;
 
         let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
@@ -958,7 +958,7 @@ mod tests {
             CapArgumentValue::from_str("media:model-spec;textable", "gpt-4"),
             CapArgumentValue::new("media:pdf;bytes", vec![0x89, 0x50, 0x4E, 0x47]),
         ];
-        let response = host.call_with_unified_arguments("cap:op=test", &args).await.unwrap();
+        let response = host.call_with_arguments("cap:op=test", &args).await.unwrap();
         assert_eq!(response.concatenated(), b"got 2 args");
 
         host.shutdown().await;

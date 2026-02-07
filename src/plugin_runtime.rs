@@ -136,7 +136,7 @@ pub trait StreamEmitter: Send + Sync {
 /// that yields response chunks as they arrive. The caller can iterate over
 /// the receiver to collect all response data.
 pub trait PeerInvoker: Send + Sync {
-    /// Invoke a cap on the host with unified arguments.
+    /// Invoke a cap on the host with arguments.
     ///
     /// Sends a REQ frame to the host with the specified cap URN and arguments.
     /// Arguments are serialized as CBOR with native binary values.
@@ -310,7 +310,7 @@ struct PeerInvokerImpl<W: Write + Send> {
 /// Extract the effective payload from a REQ frame.
 ///
 /// If the content_type is "application/cbor", the payload is expected to be
-/// CBOR unified arguments: `[{media_urn: string, value: bytes}, ...]`
+/// CBOR arguments: `[{media_urn: string, value: bytes}, ...]`
 /// The function extracts the value whose media_urn matches the cap's input type.
 ///
 /// For other content types (or if content_type is None), returns the raw payload.
@@ -319,9 +319,9 @@ fn extract_effective_payload(
     content_type: Option<&str>,
     cap_urn: &str,
 ) -> Result<Vec<u8>, RuntimeError> {
-    // Check if this is CBOR unified arguments
+    // Check if this is CBOR arguments
     if content_type != Some("application/cbor") {
-        // Not CBOR unified arguments - return raw payload
+        // Not CBOR arguments - return raw payload
         return Ok(payload.to_vec());
     }
 
@@ -340,14 +340,14 @@ fn extract_effective_payload(
 
     // Parse the CBOR payload as an array of argument maps
     let cbor_value: ciborium::Value = ciborium::from_reader(payload).map_err(|e| {
-        RuntimeError::Deserialize(format!("Failed to parse CBOR unified arguments: {}", e))
+        RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e))
     })?;
 
     let arguments = match cbor_value {
         ciborium::Value::Array(arr) => arr,
         _ => {
             return Err(RuntimeError::Deserialize(
-                "CBOR unified arguments must be an array".to_string(),
+                "CBOR arguments must be an array".to_string(),
             ));
         }
     };
@@ -397,7 +397,7 @@ fn extract_effective_payload(
 
     // No matching argument found - this is an error, no fallbacks
     Err(RuntimeError::Deserialize(format!(
-        "No argument found matching expected input media type '{}' in CBOR unified arguments",
+        "No argument found matching expected input media type '{}' in CBOR arguments",
         expected_input
     )))
 }
@@ -1051,7 +1051,7 @@ impl PluginRuntime {
                             pending_requests: Arc::clone(&pending_clone),
                         };
 
-                        // Extract effective payload from unified arguments if content_type is CBOR
+                        // Extract effective payload from arguments if content_type is CBOR
                         let payload = match extract_effective_payload(
                             &raw_payload,
                             content_type.as_deref(),
@@ -1367,7 +1367,7 @@ mod tests {
     // TEST261: Test extract_effective_payload with CBOR content extracts matching argument value
     #[test]
     fn test_extract_effective_payload_cbor_match() {
-        // Build CBOR unified arguments: [{media_urn: "media:string;textable;form=scalar", value: bytes("hello")}]
+        // Build CBOR arguments: [{media_urn: "media:string;textable;form=scalar", value: bytes("hello")}]
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
                 (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:string;textable;form=scalar".to_string())),
