@@ -45,7 +45,7 @@ use crate::caller::CapArgumentValue;
 use crate::cap::{ArgSource, Cap, CapArg};
 use crate::cap_urn::CapUrn;
 use crate::manifest::CapManifest;
-use crate::media_urn::MediaUrn;
+use crate::media_urn::{MediaUrn, MEDIA_FILE_PATH, MEDIA_FILE_PATH_ARRAY};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -648,6 +648,7 @@ impl PluginRuntime {
         self.run_cli_mode(&args)
     }
 
+
     /// Run in CLI mode - parse arguments and invoke handler.
     fn run_cli_mode(&self, args: &[String]) -> Result<(), RuntimeError> {
         let manifest = self.manifest.as_ref().ok_or_else(|| {
@@ -694,9 +695,17 @@ impl PluginRuntime {
             ))
         })?;
 
-        // Build arguments from CLI
+        // Build arguments from CLI (CBOR format)
         let cli_args = &args[2..];
-        let payload = self.build_payload_from_cli(&cap, cli_args)?;
+        let raw_payload = self.build_payload_from_cli(&cap, cli_args)?;
+
+        // Extract effective payload (same logic as CBOR mode)
+        // This handles CBOR arguments array and extracts the value matching cap's input spec
+        let payload = extract_effective_payload(
+            &raw_payload,
+            Some("application/cbor"),  // CLI mode now produces CBOR
+            &cap.urn_string(),
+        )?;
 
         // Create CLI-mode emitter and no-op peer invoker
         let emitter = CliStreamEmitter::new();
@@ -735,6 +744,12 @@ impl PluginRuntime {
     }
 
     /// Build payload from CLI arguments based on cap's arg definitions.
+    ///
+    /// This method builds a CBOR arguments array (same format as CBOR mode) to ensure
+    /// consistency between CLI mode and CBOR mode. The payload format is:
+    /// ```
+    /// [ { media_urn: "...", value: bytes }, ... ]
+    /// ```
     fn build_payload_from_cli(&self, cap: &Cap, cli_args: &[String]) -> Result<Vec<u8>, RuntimeError> {
         let mut arguments: Vec<CapArgumentValue> = Vec::new();
 
@@ -750,8 +765,36 @@ impl PluginRuntime {
             let value = self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
 
             if let Some(val) = value {
+                // Determine the media URN to use in CBOR arguments:
+                // - If file-path/file-path-array with stdin source, use the stdin source's media URN
+                // - Otherwise, use the arg's media URN
+                let arg_media_urn = MediaUrn::from_string(&arg_def.media_urn)
+                    .map_err(|e| RuntimeError::Cli(format!("Invalid media URN '{}': {}", arg_def.media_urn, e)))?;
+
+                let file_path_pattern = MediaUrn::from_string(MEDIA_FILE_PATH)
+                    .expect("MEDIA_FILE_PATH constant should be valid");
+                let file_path_array_pattern = MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
+                    .expect("MEDIA_FILE_PATH_ARRAY constant should be valid");
+
+                let is_file_path = file_path_pattern.accepts(&arg_media_urn)
+                    .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))? ||
+                    file_path_array_pattern.accepts(&arg_media_urn)
+                    .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))?;
+
+                let media_urn = if is_file_path {
+                    // Check if there's a stdin source
+                    arg_def.sources.iter()
+                        .find_map(|s| match s {
+                            ArgSource::Stdin { stdin } => Some(stdin.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| arg_def.media_urn.clone())
+                } else {
+                    arg_def.media_urn.clone()
+                };
+
                 arguments.push(CapArgumentValue {
-                    media_urn: arg_def.media_urn.clone(),
+                    media_urn,
                     value: val,
                 });
             } else if arg_def.required {
@@ -767,43 +810,35 @@ impl PluginRuntime {
             if let Some(data) = stdin_data {
                 return Ok(data);
             }
+            // No args and no stdin - return empty payload
+            return Ok(vec![]);
         }
 
-        // If we have structured arguments, serialize as JSON
+        // Build CBOR arguments array (same format as CBOR mode)
         if !arguments.is_empty() {
-            // Build a JSON object from the arguments
-            let mut json_obj = serde_json::Map::new();
-            for arg in &arguments {
-                // Try to parse value as JSON first, fall back to string
-                let value = if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(&arg.value) {
-                    parsed
-                } else if let Ok(s) = String::from_utf8(arg.value.clone()) {
-                    serde_json::Value::String(s)
-                } else {
-                    // Binary data - keep as raw bytes (the handler will deal with it)
-                    // For JSON serialization, we need a string representation
-                    // If it's truly binary and can't be represented as UTF-8,
-                    // the handler should use a different approach (like stdin)
-                    return Err(RuntimeError::Cli(
-                        "Binary data cannot be passed via CLI flags. Use stdin instead.".to_string()
-                    ));
-                };
-                // Use the last part of media_urn as key (e.g., "model-spec" from "media:model-spec;...")
-                let key = arg.media_urn
-                    .strip_prefix("media:")
-                    .unwrap_or(&arg.media_urn)
-                    .split(';')
-                    .next()
-                    .unwrap_or(&arg.media_urn)
-                    .replace('-', "_");
-                json_obj.insert(key, value);
-            }
-            serde_json::to_vec(&json_obj)
-                .map_err(|e| RuntimeError::Serialize(e.to_string()))
-        } else {
-            // No arguments, no stdin - return empty object
-            Ok(b"{}".to_vec())
+            let cbor_args: Vec<ciborium::Value> = arguments.iter().map(|arg| {
+                ciborium::Value::Map(vec![
+                    (
+                        ciborium::Value::Text("media_urn".to_string()),
+                        ciborium::Value::Text(arg.media_urn.clone()),
+                    ),
+                    (
+                        ciborium::Value::Text("value".to_string()),
+                        ciborium::Value::Bytes(arg.value.clone()),
+                    ),
+                ])
+            }).collect();
+
+            let cbor_array = ciborium::Value::Array(cbor_args);
+            let mut payload = Vec::new();
+            ciborium::into_writer(&cbor_array, &mut payload)
+                .map_err(|e| RuntimeError::Serialize(format!("Failed to encode CBOR payload: {}", e)))?;
+
+            return Ok(payload);
         }
+
+        // No arguments and no stdin
+        Ok(vec![])
     }
 
     /// Extract a single argument value from CLI args or stdin.
@@ -813,18 +848,49 @@ impl PluginRuntime {
         cli_args: &[String],
         stdin_data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, RuntimeError> {
+        // Check if this arg requires file-path to bytes conversion using proper URN matching
+        let arg_media_urn = MediaUrn::from_string(&arg_def.media_urn)
+            .map_err(|e| RuntimeError::Cli(format!("Invalid media URN '{}': {}", arg_def.media_urn, e)))?;
+
+        let file_path_pattern = MediaUrn::from_string(MEDIA_FILE_PATH)
+            .expect("MEDIA_FILE_PATH constant should be valid");
+        let file_path_array_pattern = MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
+            .expect("MEDIA_FILE_PATH_ARRAY constant should be valid");
+
+        // Check array first (more specific), then single file-path
+        let is_array = file_path_array_pattern.accepts(&arg_media_urn)
+            .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))?;
+        let is_file_path = if !is_array {
+            file_path_pattern.accepts(&arg_media_urn)
+                .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))?
+        } else {
+            true  // Array is also a file-path type
+        };
+
+        // Get stdin source media URN if it exists (tells us target type)
+        let has_stdin_source = arg_def.sources.iter()
+            .any(|s| matches!(s, ArgSource::Stdin { .. }));
+
         // Try each source in order
         for source in &arg_def.sources {
             match source {
                 ArgSource::CliFlag { cli_flag } => {
                     if let Some(value) = self.get_cli_flag_value(cli_args, cli_flag) {
+                        // If file-path type with stdin source, read file(s)
+                        if is_file_path && has_stdin_source {
+                            return self.read_file_path_to_bytes(&value, is_array);
+                        }
                         return Ok(Some(value.into_bytes()));
                     }
                 }
                 ArgSource::Position { position } => {
                     // Positional args: filter out flags and their values
-                    let positional: Vec<_> = self.get_positional_args(cli_args);
+                    let positional = self.get_positional_args(cli_args);
                     if let Some(value) = positional.get(*position) {
+                        // If file-path type with stdin source, read file(s)
+                        if is_file_path && has_stdin_source {
+                            return self.read_file_path_to_bytes(value, is_array);
+                        }
                         return Ok(Some(value.clone().into_bytes()));
                     }
                 }
@@ -900,6 +966,103 @@ impl PluginRuntime {
             Ok(None)
         } else {
             Ok(Some(data))
+        }
+    }
+
+    /// Read file(s) for file-path arguments and return bytes.
+    ///
+    /// This method implements automatic file-path to bytes conversion when:
+    /// - arg.media_urn is "media:file-path" or "media:file-path-array"
+    /// - arg has a stdin source (indicating bytes are the canonical type)
+    ///
+    /// # Arguments
+    /// * `path_value` - File path string (single path or JSON array of path patterns)
+    /// * `is_array` - True if media:file-path-array (read multiple files with glob expansion)
+    ///
+    /// # Returns
+    /// - For single file: Vec<u8> containing raw file bytes
+    /// - For array: CBOR-encoded array of file bytes (each element is one file's contents)
+    ///
+    /// # Errors
+    /// Returns RuntimeError::Io if file cannot be read with clear error message.
+    fn read_file_path_to_bytes(&self, path_value: &str, is_array: bool) -> Result<Option<Vec<u8>>, RuntimeError> {
+        if is_array {
+            // Parse JSON array of path patterns
+            let path_patterns: Vec<String> = serde_json::from_str(path_value)
+                .map_err(|e| RuntimeError::Cli(format!(
+                    "Failed to parse file-path-array: expected JSON array of path patterns, got '{}': {}",
+                    path_value, e
+                )))?;
+
+            // Expand globs and collect all file paths
+            let mut all_files = Vec::new();
+            for pattern in &path_patterns {
+                // Check if this is a literal path (no glob metacharacters) or a glob pattern
+                let is_glob = pattern.contains('*') || pattern.contains('?') || pattern.contains('[');
+
+                if !is_glob {
+                    // Literal path - verify it exists and is a file
+                    let path = std::path::Path::new(pattern);
+                    if !path.exists() {
+                        return Err(RuntimeError::Io(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("Failed to read file '{}' from file-path-array: No such file or directory", pattern)
+                        )));
+                    }
+                    if path.is_file() {
+                        all_files.push(path.to_path_buf());
+                    }
+                    // Skip directories silently for consistency with glob behavior
+                } else {
+                    // Glob pattern - expand it
+                    let paths = glob::glob(pattern)
+                        .map_err(|e| RuntimeError::Cli(format!(
+                            "Invalid glob pattern '{}': {}",
+                            pattern, e
+                        )))?;
+
+                    for path_result in paths {
+                        let path = path_result
+                            .map_err(|e| RuntimeError::Io(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                format!("Glob error: {}", e)
+                            )))?;
+
+                        // Only include files (skip directories)
+                        if path.is_file() {
+                            all_files.push(path);
+                        }
+                    }
+                }
+            }
+
+            // Read each file sequentially (streaming construction - don't load all at once)
+            let mut files_data = Vec::new();
+            for path in &all_files {
+                let bytes = std::fs::read(path)
+                    .map_err(|e| RuntimeError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to read file '{}' from file-path-array: {}", path.display(), e)
+                    )))?;
+                files_data.push(ciborium::Value::Bytes(bytes));
+            }
+
+            // Encode as CBOR array
+            let cbor_array = ciborium::Value::Array(files_data);
+            let mut cbor_bytes = Vec::new();
+            ciborium::into_writer(&cbor_array, &mut cbor_bytes)
+                .map_err(|e| RuntimeError::Serialize(format!("Failed to encode CBOR array: {}", e)))?;
+
+            Ok(Some(cbor_bytes))
+        } else {
+            // Single file path - read and return raw bytes
+            let bytes = std::fs::read(path_value)
+                .map_err(|e| RuntimeError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to read file '{}': {}", path_value, e)
+                )))?;
+
+            Ok(Some(bytes))
         }
     }
 
@@ -985,6 +1148,16 @@ impl PluginRuntime {
         let pending_peer_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
+        // Track incoming requests that are being chunked
+        #[derive(Clone)]
+        struct PendingIncomingRequest {
+            cap_urn: String,
+            content_type: Option<String>,
+            chunks: Vec<Vec<u8>>,
+        }
+        let pending_incoming: Arc<Mutex<HashMap<MessageId, PendingIncomingRequest>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
         // Track active handler threads for cleanup
         let mut active_handlers: Vec<JoinHandle<()>> = Vec::new();
 
@@ -1028,11 +1201,26 @@ impl PluginRuntime {
                         }
                     };
 
+                    let raw_payload = frame.payload.clone().unwrap_or_default();
+
+                    // Check if this is a chunked request (empty payload means chunks will follow)
+                    if raw_payload.is_empty() {
+                        // Start accumulating chunks for this request
+                        let mut pending = pending_incoming.lock().unwrap();
+                        pending.insert(frame.id.clone(), PendingIncomingRequest {
+                            cap_urn: cap_urn.clone(),
+                            content_type: frame.content_type.clone(),
+                            chunks: vec![],
+                        });
+                        drop(pending);
+                        continue; // Wait for CHUNK/END frames
+                    }
+
+                    // Complete payload in REQ frame - invoke handler immediately
                     // Clone what we need for the handler thread
                     let writer_clone = Arc::clone(&frame_writer);
                     let pending_clone = Arc::clone(&pending_peer_requests);
                     let request_id = frame.id.clone();
-                    let raw_payload = frame.payload.clone().unwrap_or_default();
                     let content_type = frame.content_type.clone();
                     let cap_urn_clone = cap_urn.clone();
                     let max_chunk = negotiated_limits.max_chunk;
@@ -1124,6 +1312,138 @@ impl PluginRuntime {
 
                     active_handlers.push(handle);
                 }
+                FrameType::Chunk => {
+                    // Check if this is a chunk for an incoming request or a response
+                    let mut incoming = pending_incoming.lock().unwrap();
+                    if let Some(pending_req) = incoming.get_mut(&frame.id) {
+                        // This is a chunk for an incoming request
+                        if let Some(payload) = frame.payload {
+                            pending_req.chunks.push(payload);
+                        }
+                        drop(incoming);
+                        continue; // Wait for more chunks or END
+                    }
+                    drop(incoming);
+
+                    // Not an incoming request chunk - must be a response chunk
+                    let pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending.get(&frame.id) {
+                        let payload = frame.payload.clone().unwrap_or_default();
+                        let _ = pending_req.sender.send(Ok(payload));
+                    }
+                }
+                FrameType::End => {
+                    // Check if this is the end of an incoming chunked request
+                    let mut incoming = pending_incoming.lock().unwrap();
+                    if let Some(mut pending_req) = incoming.remove(&frame.id) {
+                        // Collect all chunks into final payload
+                        if let Some(final_chunk) = frame.payload {
+                            pending_req.chunks.push(final_chunk);
+                        }
+                        let raw_payload: Vec<u8> = pending_req.chunks.concat();
+                        drop(incoming);
+
+                        // Find handler and invoke
+                        let handler = match self.find_handler(&pending_req.cap_urn) {
+                            Some(h) => h,
+                            None => {
+                                let err_frame = Frame::err(
+                                    frame.id.clone(),
+                                    "NO_HANDLER",
+                                    &format!("No handler registered for cap: {}", pending_req.cap_urn),
+                                );
+                                let mut writer = frame_writer.lock().unwrap();
+                                let _ = writer.write(&err_frame);
+                                continue;
+                            }
+                        };
+
+                        // Spawn handler for the complete request
+                        let writer_clone = Arc::clone(&frame_writer);
+                        let pending_clone = Arc::clone(&pending_peer_requests);
+                        let request_id = frame.id.clone();
+                        let content_type = pending_req.content_type.clone();
+                        let cap_urn_clone = pending_req.cap_urn.clone();
+                        let max_chunk = negotiated_limits.max_chunk;
+
+                        let handle = thread::spawn(move || {
+                            let emitter = ThreadSafeEmitter {
+                                writer: Arc::clone(&writer_clone),
+                                request_id: request_id.clone(),
+                                seq: Mutex::new(0),
+                            };
+
+                            let peer_invoker = PeerInvokerImpl {
+                                writer: Arc::clone(&writer_clone),
+                                pending_requests: Arc::clone(&pending_clone),
+                            };
+
+                            let payload = match extract_effective_payload(
+                                &raw_payload,
+                                content_type.as_deref(),
+                                &cap_urn_clone,
+                            ) {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id, "PAYLOAD_ERROR", &e.to_string());
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                    return;
+                                }
+                            };
+
+                            let result = handler(&payload, &emitter, &peer_invoker);
+
+                            // Send response with automatic chunking
+                            match result {
+                                Ok(final_payload) => {
+                                    let mut writer = writer_clone.lock().unwrap();
+
+                                    if final_payload.len() <= max_chunk {
+                                        let end_frame = Frame::end(request_id.clone(), Some(final_payload));
+                                        let _ = writer.write(&end_frame);
+                                    } else {
+                                        let mut offset = 0;
+                                        let mut seq = 0u64;
+
+                                        while offset < final_payload.len() {
+                                            let remaining = final_payload.len() - offset;
+                                            let chunk_size = remaining.min(max_chunk);
+                                            let chunk_data = final_payload[offset..offset + chunk_size].to_vec();
+                                            offset += chunk_size;
+
+                                            if offset < final_payload.len() {
+                                                let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
+                                                let _ = writer.write(&chunk_frame);
+                                                seq += 1;
+                                            } else {
+                                                let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
+                                                let _ = writer.write(&end_frame);
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                }
+                            }
+                        });
+
+                        active_handlers.push(handle);
+                        continue;
+                    }
+
+                    // Not an incoming request end - must be a response end
+                    let pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending.get(&frame.id) {
+                        let payload = frame.payload.clone().unwrap_or_default();
+                        let _ = pending_req.sender.send(Ok(payload));
+                    }
+                    drop(pending);
+                    pending_peer_requests.lock().unwrap().remove(&frame.id);
+                }
                 FrameType::Heartbeat => {
                     // Respond to heartbeat immediately - never blocked by handlers
                     let response = Frame::heartbeat(frame.id);
@@ -1136,20 +1456,16 @@ impl PluginRuntime {
                     let mut writer = frame_writer.lock().unwrap();
                     writer.write(&err_frame)?;
                 }
-                FrameType::Res | FrameType::Chunk | FrameType::End => {
-                    // Response frames from host - route to pending peer request by frame.id
+                FrameType::Res => {
+                    // Response frame from host - single complete response
                     let pending = pending_peer_requests.lock().unwrap();
                     if let Some(pending_req) = pending.get(&frame.id) {
-                        // Send the payload to the waiting receiver
                         let payload = frame.payload.clone().unwrap_or_default();
                         let _ = pending_req.sender.send(Ok(payload));
                     }
                     drop(pending);
-
-                    // Remove completed requests (RES or END frame marks completion)
-                    if frame.frame_type == FrameType::Res || frame.frame_type == FrameType::End {
-                        pending_peer_requests.lock().unwrap().remove(&frame.id);
-                    }
+                    // RES marks completion
+                    pending_peer_requests.lock().unwrap().remove(&frame.id);
                 }
                 FrameType::Err => {
                     // Error frame from host - could be response to peer request
@@ -1189,6 +1505,22 @@ impl PluginRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Helper function to create a Cap for tests
+    fn create_test_cap(urn_str: &str, title: &str, command: &str, args: Vec<CapArg>) -> Cap {
+        let urn = CapUrn::from_string(urn_str).expect("Invalid cap URN");
+        Cap::with_args(urn, title.to_string(), command.to_string(), args)
+    }
+
+    /// Helper function to create a CapManifest for tests
+    fn create_test_manifest(name: &str, version: &str, description: &str, caps: Vec<Cap>) -> CapManifest {
+        CapManifest::new(
+            name.to_string(),
+            version.to_string(),
+            description.to_string(),
+            caps,
+        )
+    }
 
     /// Test manifest JSON with a single cap for basic tests.
     /// Note: cap URN uses "cap:op=test" which lacks in/out tags, so CapManifest deserialization
@@ -1591,5 +1923,1067 @@ mod tests {
             "cap:in=media:pdf;bytes;op=process;out=*",
         ).unwrap();
         assert_eq!(result, binary_data, "binary values must roundtrip through CBOR extraction");
+    }
+
+    // TEST336: Single file-path arg with stdin source reads file and passes bytes to handler
+    #[test]
+    fn test336_file_path_reads_file_passes_bytes() {
+        use std::sync::{Arc, Mutex};
+
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test336_input.pdf");
+        std::fs::write(&test_file, b"PDF binary content 336").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process PDF",
+            "process",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let mut runtime = PluginRuntime::with_manifest(manifest);
+
+        // Track what handler receives
+        let received_payload = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = Arc::clone(&received_payload);
+
+        runtime.register_raw(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            move |payload, _emitter, _peer| {
+                let mut received = received_clone.lock().unwrap();
+                *received = payload.to_vec();
+                Ok(b"processed".to_vec())
+            },
+        );
+
+        // Simulate CLI invocation: plugin process /path/to/file.pdf
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
+
+        // Extract effective payload (simulates what run_cli_mode does)
+        let payload = extract_effective_payload(
+            &raw_payload,
+            Some("application/cbor"),
+            &cap.urn_string(),
+        ).unwrap();
+
+        let handler = runtime.find_handler(&cap.urn_string()).unwrap();
+        let emitter = CliStreamEmitter::new();
+        let peer = NoPeerInvoker;
+        let result = handler(&payload, &emitter, &peer).unwrap();
+
+        // Verify handler received file bytes, not file path
+        let received = received_payload.lock().unwrap();
+        assert_eq!(&*received, b"PDF binary content 336", "Handler should receive file bytes");
+        assert_eq!(result, b"processed");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST337: file-path arg without stdin source passes path as string (no conversion)
+    #[test]
+    fn test337_file_path_without_stdin_passes_string() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test337_input.txt");
+        std::fs::write(&test_file, b"content").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:void\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![ArgSource::Position { position: 0 }],  // NO stdin source!
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+
+        // Should get file PATH as string, not file CONTENTS
+        let value_str = String::from_utf8(result.unwrap()).unwrap();
+        assert!(value_str.contains("test337_input.txt"), "Should receive file path string when no stdin source");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST338: file-path arg reads file via --file CLI flag
+    #[test]
+    fn test338_file_path_via_cli_flag() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test338.pdf");
+        std::fs::write(&test_file, b"PDF via flag 338").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::CliFlag { cli_flag: "--file".to_string() },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec!["--file".to_string(), test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+
+        assert_eq!(result.unwrap(), b"PDF via flag 338", "Should read file from --file flag");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST339: file-path-array reads multiple files with glob pattern
+    #[test]
+    fn test339_file_path_array_glob_expansion() {
+        let temp_dir = std::env::temp_dir().join("test339");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let file1 = temp_dir.join("doc1.txt");
+        let file2 = temp_dir.join("doc2.txt");
+        std::fs::write(&file1, b"content1").unwrap();
+        std::fs::write(&file2, b"content2").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Batch",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Pass glob pattern as JSON array
+        let pattern = format!("{}/*.txt", temp_dir.display());
+        let paths_json = serde_json::to_string(&vec![pattern]).unwrap();
+
+        let cli_args = vec![paths_json];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        // Decode CBOR array
+        let cbor_value: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let files_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        assert_eq!(files_array.len(), 2, "Should find 2 files");
+
+        // Verify contents (order may vary, so sort)
+        let mut bytes_vec = Vec::new();
+        for val in &files_array {
+            match val {
+                ciborium::Value::Bytes(b) => bytes_vec.push(b.as_slice()),
+                _ => panic!("Expected bytes"),
+            }
+        }
+        bytes_vec.sort();
+        assert_eq!(bytes_vec, vec![b"content1" as &[u8], b"content2" as &[u8]]);
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    // TEST340: File not found error provides clear message
+    #[test]
+    fn test340_file_not_found_clear_error() {
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec!["/nonexistent/file.pdf".to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None);
+
+        assert!(result.is_err(), "Should fail when file doesn't exist");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("/nonexistent/file.pdf"), "Error should mention file path");
+        assert!(err_msg.contains("Failed to read file"), "Error should be clear");
+    }
+
+    // TEST341: stdin takes precedence over file-path in source order
+    #[test]
+    fn test341_stdin_precedence_over_file_path() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test341_input.txt");
+        std::fs::write(&test_file, b"file content").unwrap();
+
+        // Stdin source comes BEFORE position source
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },  // First
+                    ArgSource::Position { position: 0 },                     // Second
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let stdin_data = b"stdin content 341";
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, Some(stdin_data)).unwrap().unwrap();
+
+        // Should get stdin data, not file content (stdin source tried first)
+        assert_eq!(result, b"stdin content 341", "stdin source should take precedence");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST342: file-path with position 0 reads first positional arg as file
+    #[test]
+    fn test342_file_path_position_zero_reads_first_arg() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test342.dat");
+        std::fs::write(&test_file, b"binary data 342").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // CLI: plugin test /path/to/file (position 0 after subcommand)
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        assert_eq!(result, b"binary data 342", "Should read file at position 0");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST343: Non-file-path args are not affected by file reading
+    #[test]
+    fn test343_non_file_path_args_unaffected() {
+        // Arg with different media type should NOT trigger file reading
+        let cap = create_test_cap(
+            "cap:in=\"media:void\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:model-spec;textable;form=scalar",  // NOT file-path
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:model-spec;textable;form=scalar".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec!["mlx-community/Llama-3.2-3B-Instruct-4bit".to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        // Should get the string value, not attempt file read
+        let value_str = String::from_utf8(result).unwrap();
+        assert_eq!(value_str, "mlx-community/Llama-3.2-3B-Instruct-4bit");
+    }
+
+    // TEST344: file-path-array with invalid JSON fails clearly
+    #[test]
+    fn test344_file_path_array_invalid_json_fails() {
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Pass invalid JSON (not an array)
+        let cli_args = vec!["not a json array".to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None);
+
+        assert!(result.is_err(), "Should fail on invalid JSON for file-path-array");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Failed to parse file-path-array"), "Error should mention file-path-array");
+        assert!(err.contains("expected JSON array"), "Error should explain expected format");
+    }
+
+    // TEST345: file-path-array with one file failing stops and reports error
+    #[test]
+    fn test345_file_path_array_one_file_missing_fails_hard() {
+        let temp_dir = std::env::temp_dir();
+        let file1 = temp_dir.join("test345_exists.txt");
+        std::fs::write(&file1, b"exists").unwrap();
+        let file2_path = temp_dir.join("test345_missing.txt");
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Construct glob pattern that matches both existing and non-existing files
+        let pattern = format!("{}/test345_*.txt", temp_dir.display());
+        let paths_json = serde_json::to_string(&vec![pattern]).unwrap();
+
+        let cli_args = vec![paths_json];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None);
+
+        // Glob will only match test345_exists.txt (not test345_missing.txt since it doesn't exist)
+        // So this should actually succeed with 1 file
+        // Let me change this test to explicitly list both files
+        let paths_json2 = serde_json::to_string(&vec![
+            file1.to_string_lossy().to_string(),
+            file2_path.to_string_lossy().to_string(),  // Doesn't exist!
+        ]).unwrap();
+
+        let cli_args2 = vec![paths_json2];
+        let result2 = runtime.extract_arg_value(&cap.args[0], &cli_args2, None);
+
+        assert!(result2.is_err(), "Should fail hard when any file in array is missing");
+        let err = result2.unwrap_err().to_string();
+        assert!(err.contains("test345_missing.txt"), "Error should mention the missing file");
+        assert!(err.contains("Failed to read file"), "Error should be clear about read failure");
+
+        std::fs::remove_file(file1).ok();
+    }
+
+    // TEST346: Large file (1MB) reads successfully
+    #[test]
+    fn test346_large_file_reads_successfully() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test346_large.bin");
+
+        // Create 1MB file
+        let large_data = vec![42u8; 1_000_000];
+        std::fs::write(&test_file, &large_data).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        assert_eq!(result.len(), 1_000_000, "Should read entire 1MB file");
+        assert_eq!(result, large_data, "Content should match exactly");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST347: Empty file reads as empty bytes
+    #[test]
+    fn test347_empty_file_reads_as_empty_bytes() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test347_empty.txt");
+        std::fs::write(&test_file, b"").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        assert_eq!(result, b"", "Empty file should produce empty bytes");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST348: file-path conversion respects source order
+    #[test]
+    fn test348_file_path_conversion_respects_source_order() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test348.txt");
+        std::fs::write(&test_file, b"file content 348").unwrap();
+
+        // Position source BEFORE stdin source
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Position { position: 0 },                     // First
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },  // Second
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let stdin_data = b"stdin content 348";
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, Some(stdin_data)).unwrap().unwrap();
+
+        // Position source tried first, so file is read
+        assert_eq!(result, b"file content 348", "Position source tried first, file read");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST349: file-path arg with multiple sources tries all in order
+    #[test]
+    fn test349_file_path_multiple_sources_fallback() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test349.txt");
+        std::fs::write(&test_file, b"content 349").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::CliFlag { cli_flag: "--file".to_string() },  // First (not provided)
+                    ArgSource::Position { position: 0 },                     // Second (provided)
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },  // Third (not used)
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Only provide position arg, no --file flag
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        assert_eq!(result, b"content 349", "Should fall back to position source and read file");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST350: Integration test - full CLI mode invocation with file-path
+    #[test]
+    fn test350_full_cli_mode_with_file_path_integration() {
+        use std::sync::{Arc, Mutex};
+
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test350_input.pdf");
+        let test_content = b"PDF file content for integration test";
+        std::fs::write(&test_file, test_content).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
+            "Process PDF",
+            "process",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let mut runtime = PluginRuntime::with_manifest(manifest);
+
+        // Track what the handler receives
+        let received_payload = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = Arc::clone(&received_payload);
+
+        runtime.register_raw(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
+            move |payload, _emitter, _peer| {
+                let mut received = received_clone.lock().unwrap();
+                *received = payload.to_vec();
+                Ok(b"processed".to_vec())
+            },
+        );
+
+        // Simulate full CLI invocation
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
+
+        // Extract effective payload (what run_cli_mode does)
+        let payload = extract_effective_payload(
+            &raw_payload,
+            Some("application/cbor"),
+            &cap.urn_string(),
+        ).unwrap();
+
+        let handler = runtime.find_handler(&cap.urn_string()).unwrap();
+        let emitter = CliStreamEmitter::new();
+        let peer = NoPeerInvoker;
+        let result = handler(&payload, &emitter, &peer).unwrap();
+
+        // Verify handler received file bytes
+        let received = received_payload.lock().unwrap();
+        assert_eq!(&*received, test_content, "Handler should receive file bytes, not path");
+        assert_eq!(result, b"processed");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST351: file-path-array with empty array succeeds
+    #[test]
+    fn test351_file_path_array_empty_array() {
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                false,  // Not required
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec!["[]".to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        // Decode CBOR array
+        let cbor_value: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let files_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        assert_eq!(files_array.len(), 0, "Empty array should produce empty result");
+    }
+
+    // TEST352: file permission denied error is clear (Unix-specific)
+    #[test]
+    #[cfg(unix)]
+    fn test352_file_permission_denied_clear_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test352_noperm.txt");
+        std::fs::write(&test_file, b"content").unwrap();
+
+        // Remove read permissions
+        let mut perms = std::fs::metadata(&test_file).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&test_file, perms).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None);
+
+        assert!(result.is_err(), "Should fail on permission denied");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("test352_noperm.txt"), "Error should mention the file");
+
+        // Cleanup: restore permissions then delete
+        let mut perms = std::fs::metadata(&test_file).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&test_file, perms).unwrap();
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST353: CBOR payload format matches between CLI and CBOR mode
+    #[test]
+    fn test353_cbor_payload_format_consistency() {
+        let cap = create_test_cap(
+            "cap:in=\"media:text;textable\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:text;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:text;textable".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec!["test value".to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
+
+        // Decode CBOR payload
+        let cbor_value: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
+        let args_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        assert_eq!(args_array.len(), 1, "Should have 1 argument");
+
+        // Verify structure: { media_urn: "...", value: bytes }
+        let arg_map = match &args_array[0] {
+            ciborium::Value::Map(m) => m,
+            _ => panic!("Expected CBOR map"),
+        };
+
+        assert_eq!(arg_map.len(), 2, "Argument should have media_urn and value");
+
+        // Check media_urn key
+        let media_urn_val = arg_map.iter()
+            .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "media_urn"))
+            .map(|(_, v)| v)
+            .expect("Should have media_urn key");
+
+        match media_urn_val {
+            ciborium::Value::Text(s) => assert_eq!(s, "media:text;textable;form=scalar"),
+            _ => panic!("media_urn should be text"),
+        }
+
+        // Check value key
+        let value_val = arg_map.iter()
+            .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
+            .map(|(_, v)| v)
+            .expect("Should have value key");
+
+        match value_val {
+            ciborium::Value::Bytes(b) => assert_eq!(b, b"test value"),
+            _ => panic!("value should be bytes"),
+        }
+    }
+
+    // TEST354: Glob pattern with no matches produces empty array
+    #[test]
+    fn test354_glob_pattern_no_matches_empty_array() {
+        let temp_dir = std::env::temp_dir();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Glob pattern that matches nothing
+        let pattern = format!("{}/nonexistent_*.xyz", temp_dir.display());
+        let paths_json = serde_json::to_string(&vec![pattern]).unwrap();
+
+        let cli_args = vec![paths_json];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        // Decode CBOR array
+        let cbor_value: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let files_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        assert_eq!(files_array.len(), 0, "No matches should produce empty array");
+    }
+
+    // TEST355: Glob pattern skips directories
+    #[test]
+    fn test355_glob_pattern_skips_directories() {
+        let temp_dir = std::env::temp_dir().join("test355");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let subdir = temp_dir.join("subdir");
+        std::fs::create_dir_all(&subdir).unwrap();
+
+        let file1 = temp_dir.join("file1.txt");
+        std::fs::write(&file1, b"content1").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Glob that matches both file and directory
+        let pattern = format!("{}/*", temp_dir.display());
+        let paths_json = serde_json::to_string(&vec![pattern]).unwrap();
+
+        let cli_args = vec![paths_json];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        // Decode CBOR array
+        let cbor_value: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let files_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        // Should only include the file, not the directory
+        assert_eq!(files_array.len(), 1, "Should only include files, not directories");
+
+        match &files_array[0] {
+            ciborium::Value::Bytes(b) => assert_eq!(b, b"content1"),
+            _ => panic!("Expected bytes"),
+        }
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    // TEST356: Multiple glob patterns combined
+    #[test]
+    fn test356_multiple_glob_patterns_combined() {
+        let temp_dir = std::env::temp_dir().join("test356");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let file1 = temp_dir.join("doc.txt");
+        let file2 = temp_dir.join("data.json");
+        std::fs::write(&file1, b"text").unwrap();
+        std::fs::write(&file2, b"json").unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Multiple patterns
+        let pattern1 = format!("{}/*.txt", temp_dir.display());
+        let pattern2 = format!("{}/*.json", temp_dir.display());
+        let paths_json = serde_json::to_string(&vec![pattern1, pattern2]).unwrap();
+
+        let cli_args = vec![paths_json];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        // Decode CBOR array
+        let cbor_value: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let files_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        assert_eq!(files_array.len(), 2, "Should find both files from different patterns");
+
+        // Collect contents (order may vary)
+        let mut contents = Vec::new();
+        for val in &files_array {
+            match val {
+                ciborium::Value::Bytes(b) => contents.push(b.as_slice()),
+                _ => panic!("Expected bytes"),
+            }
+        }
+        contents.sort();
+        assert_eq!(contents, vec![b"json" as &[u8], b"text" as &[u8]]);
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    // TEST357: Symlinks are followed when reading files
+    #[test]
+    #[cfg(unix)]
+    fn test357_symlinks_followed() {
+        use std::os::unix::fs as unix_fs;
+
+        let temp_dir = std::env::temp_dir().join("test357");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let real_file = temp_dir.join("real.txt");
+        let link_file = temp_dir.join("link.txt");
+        std::fs::write(&real_file, b"real content").unwrap();
+        unix_fs::symlink(&real_file, &link_file).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![link_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        assert_eq!(result, b"real content", "Should follow symlink and read real file");
+
+        std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    // TEST358: Binary file with non-UTF8 data reads correctly
+    #[test]
+    fn test358_binary_file_non_utf8() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test358.bin");
+
+        // Binary data that's not valid UTF-8
+        let binary_data = vec![0xFF, 0xFE, 0x00, 0x01, 0x80, 0x7F, 0xAB, 0xCD];
+        std::fs::write(&test_file, &binary_data).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "Test",
+            "test",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap().unwrap();
+
+        assert_eq!(result, binary_data, "Binary data should read correctly");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST359: Invalid glob pattern fails with clear error
+    #[test]
+    fn test359_invalid_glob_pattern_fails() {
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "Test",
+            "batch",
+            vec![CapArg::new(
+                "media:file-path;textable;form=list",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Invalid glob pattern (unclosed bracket)
+        let pattern = "[invalid";
+        let paths_json = serde_json::to_string(&vec![pattern]).unwrap();
+
+        let cli_args = vec![paths_json];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None);
+
+        assert!(result.is_err(), "Should fail on invalid glob pattern");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid glob pattern"), "Error should mention invalid glob");
+    }
+
+    // TEST360: Extract effective payload handles file-path data correctly
+    #[test]
+    fn test360_extract_effective_payload_with_file_data() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test360.pdf");
+        let pdf_content = b"PDF content for extraction test";
+        std::fs::write(&test_file, pdf_content).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![CapArg::new(
+                "media:file-path;textable;form=scalar",
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+
+        // Build CBOR payload (what build_payload_from_cli does)
+        let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
+
+        // Extract effective payload (what run_cli_mode does)
+        let effective = extract_effective_payload(
+            &raw_payload,
+            Some("application/cbor"),
+            &cap.urn_string(),
+        ).unwrap();
+
+        // The effective payload should be the raw PDF bytes
+        assert_eq!(effective, pdf_content, "extract_effective_payload should extract file bytes");
+
+        std::fs::remove_file(test_file).ok();
     }
 }

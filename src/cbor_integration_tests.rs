@@ -1179,3 +1179,4 @@ mod tests {
         plugin_handle.join().unwrap();
     }
 }
+
