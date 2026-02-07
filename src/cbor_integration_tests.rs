@@ -964,4 +964,218 @@ mod tests {
         host.shutdown().await;
         plugin_handle.join().unwrap();
     }
+
+    // TEST313: Test auto-chunking splits payload larger than max_chunk into CHUNK frames + END frame,
+    // and host concatenated() reassembles the full original data
+    #[tokio::test]
+    async fn test_auto_chunking_reassembly() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
+
+        let plugin_handle = thread::spawn(move || {
+            let reader = BufReader::new(plugin_read);
+            let writer = BufWriter::new(plugin_write);
+            let mut frame_reader = FrameReader::new(reader);
+            let mut frame_writer = FrameWriter::new(writer);
+
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
+            frame_reader.set_limits(limits);
+            frame_writer.set_limits(limits);
+
+            let frame = frame_reader.read().unwrap().expect("Expected request frame");
+            let request_id = frame.id;
+
+            // Simulate auto-chunking: 250 bytes with max_chunk=100 → 3 frames (100+100+50)
+            let max_chunk = 100;
+            let data: Vec<u8> = (0..250u16).map(|i| (i % 256) as u8).collect();
+
+            let mut offset = 0usize;
+            let mut seq = 0u64;
+            while offset < data.len() {
+                let chunk_size = (data.len() - offset).min(max_chunk);
+                let chunk_data = data[offset..offset + chunk_size].to_vec();
+                offset += chunk_size;
+
+                if offset < data.len() {
+                    let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
+                    frame_writer.write(&chunk_frame).unwrap();
+                    seq += 1;
+                } else {
+                    let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
+                    frame_writer.write(&end_frame).unwrap();
+                }
+            }
+        });
+
+        let host = AsyncPluginHost::new(host_write, host_read).await.unwrap();
+
+        let response = host.call("cap:op=test", b"", "text/plain").await.unwrap();
+        let reassembled = response.concatenated();
+        let expected: Vec<u8> = (0..250u16).map(|i| (i % 256) as u8).collect();
+        assert_eq!(reassembled, expected, "concatenated must reconstruct the original payload exactly");
+
+        host.shutdown().await;
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST314: Test payload exactly equal to max_chunk produces single END frame (no CHUNK frames)
+    #[tokio::test]
+    async fn test_exact_max_chunk_single_end() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
+
+        let plugin_handle = thread::spawn(move || {
+            let reader = BufReader::new(plugin_read);
+            let writer = BufWriter::new(plugin_write);
+            let mut frame_reader = FrameReader::new(reader);
+            let mut frame_writer = FrameWriter::new(writer);
+
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
+            frame_reader.set_limits(limits);
+            frame_writer.set_limits(limits);
+
+            let frame = frame_reader.read().unwrap().expect("Expected request frame");
+
+            // Payload exactly max_chunk → single END frame
+            let data = vec![0xAB; 100];
+            let end_frame = Frame::end(frame.id, Some(data));
+            frame_writer.write(&end_frame).unwrap();
+        });
+
+        let host = AsyncPluginHost::new(host_write, host_read).await.unwrap();
+
+        let response = host.call("cap:op=test", b"", "text/plain").await.unwrap();
+        let result = response.concatenated();
+        assert_eq!(result.len(), 100);
+        assert!(result.iter().all(|&b| b == 0xAB), "all bytes must be 0xAB");
+
+        host.shutdown().await;
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST315: Test payload of max_chunk + 1 produces exactly one CHUNK frame + one END frame
+    #[tokio::test]
+    async fn test_max_chunk_plus_one_splits_into_two() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
+
+        let plugin_handle = thread::spawn(move || {
+            let reader = BufReader::new(plugin_read);
+            let writer = BufWriter::new(plugin_write);
+            let mut frame_reader = FrameReader::new(reader);
+            let mut frame_writer = FrameWriter::new(writer);
+
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
+            frame_reader.set_limits(limits);
+            frame_writer.set_limits(limits);
+
+            let frame = frame_reader.read().unwrap().expect("Expected request frame");
+            let request_id = frame.id;
+
+            // max_chunk=100, payload=101 → CHUNK(100) + END(1)
+            let max_chunk = 100;
+            let data: Vec<u8> = (0..101u8).collect();
+
+            let chunk_frame = Frame::chunk(request_id.clone(), 0, data[..max_chunk].to_vec());
+            frame_writer.write(&chunk_frame).unwrap();
+
+            let end_frame = Frame::end(request_id, Some(data[max_chunk..].to_vec()));
+            frame_writer.write(&end_frame).unwrap();
+        });
+
+        let host = AsyncPluginHost::new(host_write, host_read).await.unwrap();
+
+        let response = host.call("cap:op=test", b"", "text/plain").await.unwrap();
+        let reassembled = response.concatenated();
+        let expected: Vec<u8> = (0..101u8).collect();
+        assert_eq!(reassembled, expected, "101-byte payload must reassemble correctly from CHUNK+END");
+
+        host.shutdown().await;
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST316: Test that concatenated() returns full payload while final_payload() returns only last chunk
+    #[tokio::test]
+    async fn test_concatenated_vs_final_payload_divergence() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
+
+        let plugin_handle = thread::spawn(move || {
+            let reader = BufReader::new(plugin_read);
+            let writer = BufWriter::new(plugin_write);
+            let mut frame_reader = FrameReader::new(reader);
+            let mut frame_writer = FrameWriter::new(writer);
+
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
+            frame_reader.set_limits(limits);
+            frame_writer.set_limits(limits);
+
+            let frame = frame_reader.read().unwrap().expect("Expected request frame");
+            let request_id = frame.id;
+
+            // Send 3 CHUNK frames + END
+            let chunk1 = Frame::chunk(request_id.clone(), 0, b"AAAA".to_vec());
+            let chunk2 = Frame::chunk(request_id.clone(), 1, b"BBBB".to_vec());
+            let end = Frame::end(request_id, Some(b"CCCC".to_vec()));
+
+            frame_writer.write(&chunk1).unwrap();
+            frame_writer.write(&chunk2).unwrap();
+            frame_writer.write(&end).unwrap();
+        });
+
+        let host = AsyncPluginHost::new(host_write, host_read).await.unwrap();
+
+        let response = host.call("cap:op=test", b"", "text/plain").await.unwrap();
+
+        // concatenated() must return ALL chunk data joined
+        assert_eq!(response.concatenated(), b"AAAABBBBCCCC");
+
+        // final_payload() must return only the LAST chunk's data
+        assert_eq!(response.final_payload(), Some(b"CCCC".as_slice()));
+
+        host.shutdown().await;
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST317: Test auto-chunking preserves data integrity across chunk boundaries for 3x max_chunk payload
+    #[tokio::test]
+    async fn test_chunking_data_integrity_3x() {
+        let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
+
+        let plugin_handle = thread::spawn(move || {
+            let reader = BufReader::new(plugin_read);
+            let writer = BufWriter::new(plugin_write);
+            let mut frame_reader = FrameReader::new(reader);
+            let mut frame_writer = FrameWriter::new(writer);
+
+            let limits = handshake_accept(&mut frame_reader, &mut frame_writer, TEST_MANIFEST.as_bytes()).unwrap();
+            frame_reader.set_limits(limits);
+            frame_writer.set_limits(limits);
+
+            let frame = frame_reader.read().unwrap().expect("Expected request frame");
+            let request_id = frame.id;
+
+            // 300 bytes with repeating pattern, max_chunk=100 → CHUNK(100) + CHUNK(100) + END(100)
+            let max_chunk = 100;
+            let pattern = b"ABCDEFGHIJ"; // 10 bytes
+            let data: Vec<u8> = pattern.iter().cycle().take(300).copied().collect();
+
+            let chunk0 = Frame::chunk(request_id.clone(), 0, data[..max_chunk].to_vec());
+            let chunk1 = Frame::chunk(request_id.clone(), 1, data[max_chunk..2 * max_chunk].to_vec());
+            let end = Frame::end(request_id, Some(data[2 * max_chunk..].to_vec()));
+
+            frame_writer.write(&chunk0).unwrap();
+            frame_writer.write(&chunk1).unwrap();
+            frame_writer.write(&end).unwrap();
+        });
+
+        let host = AsyncPluginHost::new(host_write, host_read).await.unwrap();
+
+        let response = host.call("cap:op=test", b"", "text/plain").await.unwrap();
+        let reassembled = response.concatenated();
+
+        let pattern = b"ABCDEFGHIJ";
+        let expected: Vec<u8> = pattern.iter().cycle().take(300).copied().collect();
+        assert_eq!(reassembled.len(), 300);
+        assert_eq!(reassembled, expected, "pattern must be preserved across chunk boundaries");
+
+        host.shutdown().await;
+        plugin_handle.join().unwrap();
+    }
 }
