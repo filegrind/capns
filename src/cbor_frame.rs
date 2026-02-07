@@ -783,7 +783,7 @@ mod tests {
         let limits = Limits::default();
         assert_eq!(limits.max_frame, DEFAULT_MAX_FRAME);
         assert_eq!(limits.max_chunk, DEFAULT_MAX_CHUNK);
-        assert_eq!(limits.max_frame, 1_048_576, "default max_frame = 1 MB");
+        assert_eq!(limits.max_frame, 3_670_016, "default max_frame = 3.5 MB");
         assert_eq!(limits.max_chunk, 262_144, "default max_chunk = 256 KB");
     }
 
