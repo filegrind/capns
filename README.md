@@ -86,7 +86,7 @@ let cap = CapUrnBuilder::new()
 ### Go (`capns-go`)
 
 ```go
-import "github.com/fgnd/capns-go"
+import "github.com/macina/capns-go"
 
 // Create cap URN
 cap, err := capns.NewCapUrnFromString(

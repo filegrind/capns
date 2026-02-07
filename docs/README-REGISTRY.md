@@ -56,7 +56,7 @@ import (
     "fmt"
     "log"
     
-    capns "github.com/fgnd/capns-go"
+    capns "github.com/macina/capns-go"
 )
 
 func main() {
@@ -162,7 +162,7 @@ package main
 
 import (
     "log"
-    sdk "github.com/fgnd/fgnd-plugin-sdk-go"
+    sdk "github.com/macina/macina-plugin-sdk-go"
 )
 
 func main() {
@@ -192,14 +192,14 @@ func main() {
 ### Objective-C Plugin SDK
 
 ```objc
-#import <FGNDPluginSDK/FGNDPluginSDK.h>
+#import <MACINAPluginSDK/MACINAPluginSDK.h>
 
 int main() {
     // Create registry manager
-    FGNDRegistryManager *manager = [FGNDRegistryManager manager];
+    MACINARegistryManager *manager = [MACINARegistryManager manager];
     
     // Get canonical cap
-    [FGNDStandardCaps standardCapWithUrnCanonical:@"cap:op=extract;target=metadata;" completion:^(CSCap *cap, NSError *error) {
+    [MACINAStandardCaps standardCapWithUrnCanonical:@"cap:op=extract;target=metadata;" completion:^(CSCap *cap, NSError *error) {
         if (cap) {
             NSLog(@"Got canonical cap: %@", [cap urnString]);
         } else {
@@ -208,7 +208,7 @@ int main() {
     }];
     
     // Validate all standard caps
-    [FGNDStandardCaps validateStandardCaps:^(NSError *error) {
+    [MACINAStandardCaps validateStandardCaps:^(NSError *error) {
         if (error) {
             NSLog(@"Standard caps validation failed: %@", error);
         } else {

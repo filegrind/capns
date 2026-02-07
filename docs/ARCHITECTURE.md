@@ -46,7 +46,7 @@ pub trait CapSet: Send + Sync + std::fmt::Debug {
 
 **Implementations:**
 - `ProviderRegistry` - Executes via internal/external providers
-- `FgndPluginGateway` - Executes via gRPC to plugins
+- `MacinaPluginGateway` - Executes via gRPC to plugins
 - `CompositeCapSet` - Delegates to best-matching child registry
 
 ### CapMatrix
@@ -168,13 +168,13 @@ impl ProviderRegistry {
 ### Plugin Integration
 
 ```rust
-// FgndPluginGateway owns a CapMatrix for plugin capabilities
-pub struct FgndPluginGateway {
+// MacinaPluginGateway owns a CapMatrix for plugin capabilities
+pub struct MacinaPluginGateway {
     cap_matrix: Arc<RwLock<CapMatrix>>,
     grpc_client: Arc<GrpcPluginClient>,
 }
 
-impl FgndPluginGateway {
+impl MacinaPluginGateway {
     // Expose the CapMatrix for CapBlock integration
     pub fn cap_matrix(&self) -> Arc<RwLock<CapMatrix>> {
         self.cap_matrix.clone()
@@ -187,7 +187,7 @@ impl FgndPluginGateway {
 ```rust
 pub struct CapService {
     provider_registry: Arc<Mutex<ProviderRegistry>>,
-    plugin_gateway: Arc<FgndPluginGateway>,
+    plugin_gateway: Arc<MacinaPluginGateway>,
     cap_block: CapBlock,
 }
 
@@ -196,7 +196,7 @@ impl CapService {
         let mut provider_registry = ProviderRegistry::new();
         provider_registry.initialize().await?;
 
-        let mut plugin_gateway = FgndPluginGateway::new(...);
+        let mut plugin_gateway = MacinaPluginGateway::new(...);
         plugin_gateway.initialize().await?;
 
         // Create CapBlock with both registries

@@ -1,7 +1,7 @@
 //! Standard capability definitions with arguments
 //!
 //! This module provides the standard capability definitions used across
-//! all FGND providers, including their formal argument specifications.
+//! all MACINA providers, including their formal argument specifications.
 //! These definitions should match the TOML definitions in capns_dot_org/standard/
 
 use crate::{
@@ -351,7 +351,7 @@ pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
 }
 
 // -----------------------------------------------------------------------------
-// FGND-SPECIFIC TASK URN BUILDERS
+// MACINA-SPECIFIC TASK URN BUILDERS
 // -----------------------------------------------------------------------------
 // Note: These are legitimate task capabilities for document analysis workflows.
 // They represent phases of document processing, NOT tool wrappers.

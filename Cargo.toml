@@ -32,7 +32,7 @@ tempfile = "3.10"
 
 [package]
 authors = ["https://github.com/jowharshamshiri"]
-description = "Core cap URN and definition system for FGND plugins"
+description = "Core cap URN and definition system for MACINA plugins"
 edition = "2021"
 license = "MIT"
 name = "capns"
