@@ -924,56 +924,97 @@ impl PluginRuntime {
             ))
         })?;
 
+        // Extract CLI arguments (everything after subcommand)
+        let cli_args = &args[2..];
+
         // Check if stdin is piped (binary streaming mode)
         let stdin_is_piped = !atty::is(atty::Stream::Stdin);
         let cap_accepts_stdin = cap.accepts_stdin();
 
-        let payload = if stdin_is_piped && cap_accepts_stdin {
-            // STREAMING PATH: Read stdin in chunks and accumulate
-            // This uses the same PendingIncomingRequest logic as CBOR mode
-            eprintln!("[PluginRuntime] CLI mode: streaming binary from stdin");
-            self.build_payload_from_streaming_stdin(&cap)?
-        } else {
+        // Priority: CLI args > stdin (args take precedence)
+        let payload = if !cli_args.is_empty() {
             // ARGUMENT PATH: Build from CLI arguments (may include file paths)
-            let cli_args = &args[2..];
+            // File-path auto-conversion happens in extract_effective_payload
             let raw_payload = self.build_payload_from_cli(&cap, cli_args)?;
-
-            // Extract effective payload (handles file-path auto-conversion)
             extract_effective_payload(
                 &raw_payload,
                 Some("application/cbor"),
                 &cap.urn_string(),
             )?
+        } else if stdin_is_piped && cap_accepts_stdin {
+            // STREAMING PATH: No args, read stdin in chunks and accumulate
+            // This uses the same PendingIncomingRequest logic as CBOR mode
+            eprintln!("[PluginRuntime] CLI mode: streaming binary from stdin");
+            self.build_payload_from_streaming_stdin(&cap)?
+        } else {
+            // No input provided
+            return Err(RuntimeError::MissingArgument(
+                "No input provided (expected CLI arguments or piped stdin)".to_string()
+            ));
         };
 
         // Create CLI-mode emitter and no-op peer invoker
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
 
-        // STREAM MULTIPLEXING: CLI mode has a single input stream
-        // Parse cap URN to get in_spec (media_urn for the stream)
-        let cap_urn = crate::CapUrn::from_string(&cap.urn_string())
-            .map_err(|e| RuntimeError::Handler(format!("Invalid cap URN: {}", e)))?;
-        let media_urn = cap_urn.in_spec().to_string();
-        let stream_id = uuid::Uuid::new_v4().to_string();
+        // STREAM MULTIPLEXING: Parse CBOR arguments and create separate streams
+        // The payload from extract_effective_payload is a CBOR array of argument maps
+        let cbor_value: ciborium::Value = ciborium::from_reader(&payload[..])
+            .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e)))?;
 
-        // Create channel and send payload as StreamChunk messages
+        let arguments = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => return Err(RuntimeError::Deserialize("CBOR arguments must be an array".to_string())),
+        };
+
+        // Create channel and send each argument as separate StreamChunks
         let (tx, rx) = std::sync::mpsc::channel();
         const MAX_CHUNK: usize = 262144; // 256KB chunks
-        let mut offset = 0;
-        while offset < payload.len() {
-            let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
-            let chunk_data = payload[offset..offset + chunk_size].to_vec();
-            let is_last = offset + chunk_size >= payload.len();
 
-            let stream_chunk = StreamChunk {
-                stream_id: stream_id.clone(),
-                media_urn: media_urn.clone(),
-                data: chunk_data,
-                is_last,
-            };
-            tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk to handler".to_string()))?;
-            offset += chunk_size;
+        for arg in arguments {
+            if let ciborium::Value::Map(arg_map) = arg {
+                let mut media_urn: Option<String> = None;
+                let mut value_bytes: Option<Vec<u8>> = None;
+
+                // Extract media_urn and value
+                for (k, v) in arg_map {
+                    if let ciborium::Value::Text(key) = k {
+                        match key.as_str() {
+                            "media_urn" => {
+                                if let ciborium::Value::Text(s) = v {
+                                    media_urn = Some(s);
+                                }
+                            }
+                            "value" => {
+                                if let ciborium::Value::Bytes(b) = v {
+                                    value_bytes = Some(b);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Send this argument as chunked stream
+                if let (Some(urn), Some(bytes)) = (media_urn, value_bytes) {
+                    let stream_id = uuid::Uuid::new_v4().to_string();
+                    let mut offset = 0;
+                    while offset < bytes.len() {
+                        let chunk_size = (bytes.len() - offset).min(MAX_CHUNK);
+                        let chunk_data = bytes[offset..offset + chunk_size].to_vec();
+                        let is_last = offset + chunk_size >= bytes.len();
+
+                        let stream_chunk = StreamChunk {
+                            stream_id: stream_id.clone(),
+                            media_urn: urn.clone(),
+                            data: chunk_data,
+                            is_last,
+                        };
+                        tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk to handler".to_string()))?;
+                        offset += chunk_size;
+                    }
+                }
+            }
         }
         drop(tx); // Close channel - signals end of streams
 
@@ -1119,37 +1160,12 @@ impl PluginRuntime {
             let value = self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
 
             if let Some(val) = value {
-                // Determine the media URN to use in CBOR arguments:
-                // - If file-path/file-path-array with stdin source, use the stdin source's media URN
-                //   (which should match the cap's in_spec - this is the REAL input type)
-                // - Otherwise, use the arg's media URN
-                let arg_media_urn = MediaUrn::from_string(&arg_def.media_urn)
-                    .map_err(|e| RuntimeError::Cli(format!("Invalid media URN '{}': {}", arg_def.media_urn, e)))?;
-
-                let file_path_pattern = MediaUrn::from_string(MEDIA_FILE_PATH)
-                    .expect("MEDIA_FILE_PATH constant should be valid");
-                let file_path_array_pattern = MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
-                    .expect("MEDIA_FILE_PATH_ARRAY constant should be valid");
-
-                let is_file_path = file_path_pattern.accepts(&arg_media_urn)
-                    .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))? ||
-                    file_path_array_pattern.accepts(&arg_media_urn)
-                    .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))?;
-
-                let media_urn = if is_file_path {
-                    // Check if there's a stdin source
-                    arg_def.sources.iter()
-                        .find_map(|s| match s {
-                            ArgSource::Stdin { stdin } => Some(stdin.clone()),
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| arg_def.media_urn.clone())
-                } else {
-                    arg_def.media_urn.clone()
-                };
-
+                // Use the arg's media URN as-is in the CBOR payload.
+                // File-path auto-conversion will happen in extract_effective_payload(),
+                // which will detect file-path media URNs, read the files, and replace
+                // both the value (with file bytes) and media_urn (with in_spec).
                 arguments.push(CapArgumentValue {
-                    media_urn,
+                    media_urn: arg_def.media_urn.clone(),
                     value: val,
                 });
             } else if arg_def.required {
@@ -1203,38 +1219,12 @@ impl PluginRuntime {
         cli_args: &[String],
         stdin_data: Option<&[u8]>,
     ) -> Result<Option<Vec<u8>>, RuntimeError> {
-        // Check if this arg requires file-path to bytes conversion using proper URN matching
-        let arg_media_urn = MediaUrn::from_string(&arg_def.media_urn)
-            .map_err(|e| RuntimeError::Cli(format!("Invalid media URN '{}': {}", arg_def.media_urn, e)))?;
-
-        let file_path_pattern = MediaUrn::from_string(MEDIA_FILE_PATH)
-            .expect("MEDIA_FILE_PATH constant should be valid");
-        let file_path_array_pattern = MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
-            .expect("MEDIA_FILE_PATH_ARRAY constant should be valid");
-
-        // Check array first (more specific), then single file-path
-        let is_array = file_path_array_pattern.accepts(&arg_media_urn)
-            .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))?;
-        let is_file_path = if !is_array {
-            file_path_pattern.accepts(&arg_media_urn)
-                .map_err(|e| RuntimeError::Cli(format!("URN comparison failed: {}", e)))?
-        } else {
-            true  // Array is also a file-path type
-        };
-
-        // Get stdin source media URN if it exists (tells us target type)
-        let has_stdin_source = arg_def.sources.iter()
-            .any(|s| matches!(s, ArgSource::Stdin { .. }));
-
-        // Try each source in order
+        // Try each source in order, returning RAW values (file paths, flags, etc.)
+        // File-path auto-conversion happens later in extract_effective_payload()
         for source in &arg_def.sources {
             match source {
                 ArgSource::CliFlag { cli_flag } => {
                     if let Some(value) = self.get_cli_flag_value(cli_args, cli_flag) {
-                        // If file-path type with stdin source, read file(s)
-                        if is_file_path && has_stdin_source {
-                            return self.read_file_path_to_bytes(&value, is_array);
-                        }
                         return Ok(Some(value.into_bytes()));
                     }
                 }
@@ -1242,10 +1232,6 @@ impl PluginRuntime {
                     // Positional args: filter out flags and their values
                     let positional = self.get_positional_args(cli_args);
                     if let Some(value) = positional.get(*position) {
-                        // If file-path type with stdin source, read file(s)
-                        if is_file_path && has_stdin_source {
-                            return self.read_file_path_to_bytes(value, is_array);
-                        }
                         return Ok(Some(value.clone().into_bytes()));
                     }
                 }

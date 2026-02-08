@@ -1,0 +1,17 @@
+[package]
+name = "testcartridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+capns = { path = ".." }
+serde_json = "1.0"
+anyhow = "1.0"
+ciborium = "0.2"
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[[bin]]
+name = "testcartridge"
+path = "src/main.rs"
