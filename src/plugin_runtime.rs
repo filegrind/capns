@@ -198,6 +198,29 @@ struct ThreadSafeEmitter<W: Write + Send> {
 
 impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
     fn emit_bytes(&self, payload: &[u8]) {
+        // Handlers ALWAYS emit CBOR - decode it to get raw bytes
+        // NO FALLBACK - fail hard if not valid CBOR
+        let cbor_value = ciborium::from_reader(std::io::Cursor::new(payload))
+            .expect("FATAL: Handler emitted non-CBOR output");
+
+        let raw_bytes = match cbor_value {
+            ciborium::Value::Bytes(bytes) => bytes,
+            ciborium::Value::Text(text) => text.into_bytes(),
+            ciborium::Value::Array(arr) => {
+                // For arrays, concatenate all elements' bytes
+                let mut combined = Vec::new();
+                for item in arr {
+                    match item {
+                        ciborium::Value::Bytes(bytes) => combined.extend_from_slice(&bytes),
+                        ciborium::Value::Text(text) => combined.extend_from_slice(text.as_bytes()),
+                        _ => panic!("FATAL: CBOR array contains non-bytes/text element"),
+                    }
+                }
+                combined
+            }
+            _ => panic!("FATAL: Handler emitted unsupported CBOR type (expected Bytes, Text, or Array)"),
+        };
+
         // STREAM MULTIPLEXING PROTOCOL: Send STREAM_START before first chunk
         if !self.stream_started.swap(true, Ordering::SeqCst) {
             let start_frame = Frame::stream_start(
@@ -218,9 +241,9 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
         const MAX_CHUNK: usize = 262144; // 256KB
         let mut offset = 0;
 
-        while offset < payload.len() {
-            let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
-            let chunk_data = payload[offset..offset + chunk_size].to_vec();
+        while offset < raw_bytes.len() {
+            let chunk_size = (raw_bytes.len() - offset).min(MAX_CHUNK);
+            let chunk_data = raw_bytes[offset..offset + chunk_size].to_vec();
 
             let seq = {
                 let mut seq_guard = self.seq.lock().unwrap();
@@ -294,7 +317,47 @@ impl StreamEmitter for CliStreamEmitter {
     fn emit_bytes(&self, payload: &[u8]) {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
-        let _ = handle.write_all(payload);
+
+        // In CLI mode, handlers ALWAYS emit CBOR
+        // Our job: strip CBOR and emit raw content
+        // - If CBOR array (form=list): emit each element's bytes
+        // - If CBOR bytes: emit the bytes
+        // - If CBOR text: emit the text bytes
+        // NO FALLBACK - fail hard if not valid CBOR
+
+        let cbor_value = ciborium::from_reader(std::io::Cursor::new(payload))
+            .expect("FATAL: Handler emitted non-CBOR output in CLI mode");
+
+        match cbor_value {
+            ciborium::Value::Array(arr) => {
+                // CBOR array (form=list) - emit each element's raw content
+                for item in arr {
+                    match item {
+                        ciborium::Value::Bytes(bytes) => {
+                            let _ = handle.write_all(&bytes);
+                        }
+                        ciborium::Value::Text(text) => {
+                            let _ = handle.write_all(text.as_bytes());
+                        }
+                        _ => {
+                            panic!("FATAL: CBOR array contains non-bytes/text element");
+                        }
+                    }
+                }
+            }
+            ciborium::Value::Bytes(bytes) => {
+                // CBOR bytes - emit raw bytes
+                let _ = handle.write_all(&bytes);
+            }
+            ciborium::Value::Text(text) => {
+                // CBOR text - emit as UTF-8 bytes
+                let _ = handle.write_all(text.as_bytes());
+            }
+            _ => {
+                panic!("FATAL: Handler emitted unsupported CBOR type (expected Bytes, Text, or Array)");
+            }
+        }
+
         if self.ndjson {
             let _ = handle.write_all(b"\n");
         }
@@ -527,12 +590,95 @@ fn extract_effective_payload(
                             }
                         }
                     } else {
-                        // Array of files - not implemented yet
-                        // This would require parsing path_bytes as a list of paths,
-                        // reading each file, and constructing a CBOR array
-                        return Err(RuntimeError::Handler(
-                            "File-path array conversion not yet implemented in CBOR mode".to_string()
-                        ));
+                        // Array of files - expand glob and read all files
+                        let path_str = String::from_utf8_lossy(path_bytes);
+                        eprintln!("[PluginRuntime] Converting file-path array '{}' to bytes", path_str);
+
+                        // Detect glob pattern
+                        let is_glob = path_str.contains('*') || path_str.contains('?') || path_str.contains('[');
+
+                        let mut all_files = Vec::new();
+
+                        if is_glob {
+                            // Expand glob pattern
+                            let paths = glob::glob(&path_str)
+                                .map_err(|e| RuntimeError::Handler(format!(
+                                    "Invalid glob pattern '{}': {}",
+                                    path_str, e
+                                )))?;
+
+                            for path_result in paths {
+                                let path = path_result
+                                    .map_err(|e| RuntimeError::Handler(format!("Glob error: {}", e)))?;
+
+                                // Only include files (skip directories)
+                                if path.is_file() {
+                                    all_files.push(path);
+                                }
+                            }
+
+                            if all_files.is_empty() {
+                                return Err(RuntimeError::Handler(format!(
+                                    "No files matched glob pattern '{}'",
+                                    path_str
+                                )));
+                            }
+                        } else {
+                            // Literal path - verify it exists
+                            let path = std::path::Path::new(path_str.as_ref());
+                            if !path.exists() {
+                                return Err(RuntimeError::Handler(format!(
+                                    "File not found: '{}'",
+                                    path_str
+                                )));
+                            }
+                            if path.is_file() {
+                                all_files.push(path.to_path_buf());
+                            } else {
+                                return Err(RuntimeError::Handler(format!(
+                                    "Path is not a file: '{}'",
+                                    path_str
+                                )));
+                            }
+                        }
+
+                        // Read all files
+                        let mut files_data = Vec::new();
+                        for path in &all_files {
+                            let bytes = std::fs::read(path)
+                                .map_err(|e| RuntimeError::Handler(format!(
+                                    "Failed to read file '{}': {}",
+                                    path.display(), e
+                                )))?;
+                            files_data.push(ciborium::Value::Bytes(bytes));
+                        }
+
+                        eprintln!("[PluginRuntime] Read {} files, total CBOR array elements", files_data.len());
+
+                        // Find target media_urn from arg_to_stdin map
+                        let target_urn = arg_to_stdin.get(urn_str)
+                            .cloned()
+                            .unwrap_or_else(|| expected_input.clone());
+
+                        eprintln!("[PluginRuntime] Converting media_urn to '{}'", target_urn);
+
+                        // Encode as CBOR array
+                        let cbor_array = ciborium::Value::Array(files_data);
+                        let mut cbor_bytes = Vec::new();
+                        ciborium::into_writer(&cbor_array, &mut cbor_bytes)
+                            .map_err(|e| RuntimeError::Serialize(format!("Failed to encode CBOR array: {}", e)))?;
+
+                        // Replace value with CBOR array AND media_urn with target
+                        for (k, v) in arg_map.iter_mut() {
+                            if let ciborium::Value::Text(key) = k {
+                                if key == "value" {
+                                    *v = ciborium::Value::Bytes(cbor_bytes.clone());
+                                }
+                                if key == "media_urn" {
+                                    *v = ciborium::Value::Text(target_urn.clone());
+                                }
+                            }
+                        }
                     }
                 }
             }

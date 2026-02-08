@@ -294,7 +294,13 @@ fn handle_edge1(
     let input_str = String::from_utf8_lossy(input);
     let result = format!("{}{}", prefix, input_str);
 
-    emitter.emit_bytes(result.as_bytes());
+    // Emit as CBOR bytes (required - handlers must always emit CBOR)
+    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
+    let mut output = Vec::new();
+    ciborium::into_writer(&cbor_value, &mut output)
+        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
+
+    emitter.emit_bytes(&output);
     Ok(())
 }
 
@@ -322,7 +328,13 @@ fn handle_edge2(
     let input_str = String::from_utf8_lossy(input);
     let result = format!("{}{}", input_str, suffix);
 
-    emitter.emit_bytes(result.as_bytes());
+    // Emit as CBOR bytes (required - handlers must always emit CBOR)
+    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
+    let mut output = Vec::new();
+    ciborium::into_writer(&cbor_value, &mut output)
+        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
+
+    emitter.emit_bytes(&output);
     Ok(())
 }
 
@@ -523,8 +535,13 @@ fn handle_large(
         payload.push((i % 256) as u8);
     }
 
-    // Emit will auto-chunk into 256KB pieces
-    emitter.emit_bytes(&payload);
+    // Emit as CBOR bytes (required - handlers must always emit CBOR)
+    let cbor_value = ciborium::Value::Bytes(payload);
+    let mut output = Vec::new();
+    ciborium::into_writer(&cbor_value, &mut output)
+        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
+
+    emitter.emit_bytes(&output);
     Ok(())
 }
 
