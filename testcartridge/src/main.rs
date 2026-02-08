@@ -160,9 +160,12 @@ fn build_manifest() -> CapManifest {
         "Path to the first input text file (node2)".to_string(),
     ));
     edge5.add_arg(CapArg::with_description(
-        "media:edge5arg2;file-path;textable;form=scalar",
+        "media:file-path;textable;form=scalar",
         true,
-        vec![ArgSource::CliFlag { cli_flag: "--second-input".to_string() }],
+        vec![
+            ArgSource::Stdin { stdin: "media:node3;textable".to_string() },
+            ArgSource::CliFlag { cli_flag: "--second-input".to_string() },
+        ],
         "Path to the second input text file (node3)".to_string(),
     ));
     let mut edge5_separator = CapArg::with_description(

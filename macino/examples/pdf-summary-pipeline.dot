@@ -1,0 +1,10 @@
+digraph pdf_summary {
+  label="PDF to Summary Pipeline";
+
+  // Step 1: Extract text pages from PDF
+  pdf_input -> pages [label="cap:in=\"media:pdf;bytes\";op=disbind;out=\"media:disbound-page;textable;form=list\""];
+  
+  // Step 2: Summarize the extracted text
+  // Note: This would require a cap that converts list to scalar, which may not exist
+  // So this is a conceptual example showing multi-stage processing
+}

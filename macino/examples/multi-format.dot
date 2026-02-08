@@ -1,0 +1,6 @@
+digraph multi_format {
+  pdf_doc -> pages [label="cap:in=\"media:pdf;bytes\";op=disbind;out=\"media:disbound-page;textable;form=list\""];
+  txt_doc -> pages [label="cap:in=\"media:txt;textable\";op=disbind;out=\"media:disbound-page;textable;form=list\""];
+  pdf_doc -> thumb1 [label="cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""];
+  txt_doc -> thumb2 [label="cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""];
+}

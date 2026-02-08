@@ -375,17 +375,19 @@ struct PeerInvokerImpl<W: Write + Send> {
     pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
 }
 
-/// Extract the effective payload from a REQ frame.
+/// Extract the effective payload from a CBOR arguments payload.
 ///
-/// If the content_type is "application/cbor", the payload is expected to be
-/// CBOR arguments: `[{media_urn: string, value: bytes}, ...]`
-/// The function extracts the value whose media_urn matches the cap's input type.
+/// Handles file-path auto-conversion for BOTH CLI and CBOR modes:
+/// 1. Detects media:file-path arguments
+/// 2. Reads file(s) from filesystem
+/// 3. Replaces with file bytes and correct media_urn (from arg's stdin source)
+/// 4. Validates at least one arg matches in_spec (unless void)
 ///
-/// For other content types (or if content_type is None), returns the raw payload.
+/// For non-CBOR content types, returns raw payload as-is.
 fn extract_effective_payload(
     payload: &[u8],
     content_type: Option<&str>,
-    cap_urn: &str,
+    cap: &Cap,
 ) -> Result<Vec<u8>, RuntimeError> {
     // Check if this is CBOR arguments
     if content_type != Some("application/cbor") {
@@ -393,18 +395,22 @@ fn extract_effective_payload(
         return Ok(payload.to_vec());
     }
 
-    // Parse the cap URN to get the expected input media URN
-    let cap = match CapUrn::from_string(cap_urn) {
-        Ok(urn) => urn,
-        Err(e) => {
-            return Err(RuntimeError::CapUrn(format!(
-                "Failed to parse cap URN '{}': {}",
-                cap_urn, e
-            )));
-        }
-    };
-    let expected_input = cap.in_spec().to_string();
+    // Parse cap URN to get expected input media URN
+    let cap_urn = CapUrn::from_string(&cap.urn_string())
+        .map_err(|e| RuntimeError::CapUrn(format!("Invalid cap URN: {}", e)))?;
+    let expected_input = cap_urn.in_spec().to_string();
     let expected_media_urn = MediaUrn::from_string(&expected_input).ok();
+
+    // Build map of arg media_urn → stdin source media_urn for file-path conversion
+    let mut arg_to_stdin: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for arg_def in cap.get_args() {
+        if let Some(stdin_urn) = arg_def.sources.iter().find_map(|s| match s {
+            ArgSource::Stdin { stdin } => Some(stdin.clone()),
+            _ => None,
+        }) {
+            arg_to_stdin.insert(arg_def.media_urn.clone(), stdin_urn);
+        }
+    }
 
     // Parse the CBOR payload as an array of argument maps
     let cbor_value: ciborium::Value = ciborium::from_reader(payload).map_err(|e| {
@@ -502,17 +508,21 @@ fn extract_effective_payload(
                         let file_bytes = std::fs::read(path_str.as_ref())
                             .map_err(|e| RuntimeError::Handler(format!("Failed to read file '{}': {}", path_str, e)))?;
 
-                        eprintln!("[PluginRuntime] Read {} bytes, converting media_urn to '{}'", file_bytes.len(), expected_input);
+                        // Find target media_urn from arg_to_stdin map
+                        let target_urn = arg_to_stdin.get(urn_str)
+                            .cloned()
+                            .unwrap_or_else(|| expected_input.clone());
 
-                        // Replace value with file contents
+                        eprintln!("[PluginRuntime] Read {} bytes, converting media_urn to '{}'", file_bytes.len(), target_urn);
+
+                        // Replace value with file contents AND media_urn with target
                         for (k, v) in arg_map.iter_mut() {
                             if let ciborium::Value::Text(key) = k {
                                 if key == "value" {
                                     *v = ciborium::Value::Bytes(file_bytes.clone());
                                 }
-                                // Replace media_urn with expected input
                                 if key == "media_urn" {
-                                    *v = ciborium::Value::Text(expected_input.clone());
+                                    *v = ciborium::Value::Text(target_urn.clone());
                                 }
                             }
                         }
@@ -530,39 +540,44 @@ fn extract_effective_payload(
     }
 
     // Validate: At least ONE argument must match in_spec (fail hard if none)
+    // UNLESS in_spec is "media:void" (no input required)
     // This ensures the handler can distinguish main input from other args
-    let mut found_matching_arg = false;
-    for arg in &arguments {
-        if let ciborium::Value::Map(map) = arg {
-            for (k, v) in map {
-                if let (ciborium::Value::Text(key), ciborium::Value::Text(urn_str)) = (k, v) {
-                    if key == "media_urn" {
-                        if let Ok(arg_urn) = MediaUrn::from_string(urn_str) {
-                            if let Some(ref expected) = expected_media_urn {
-                                // Check both directions for matching (subtype semantics)
-                                let fwd = arg_urn.conforms_to(expected).unwrap_or(false);
-                                let rev = expected.accepts(&arg_urn).unwrap_or(false);
-                                if fwd || rev {
-                                    found_matching_arg = true;
-                                    eprintln!("[PluginRuntime] Found argument matching in_spec: {}", urn_str);
-                                    break;
+    let is_void_input = expected_input == "media:void";
+
+    if !is_void_input {
+        let mut found_matching_arg = false;
+        for arg in &arguments {
+            if let ciborium::Value::Map(map) = arg {
+                for (k, v) in map {
+                    if let (ciborium::Value::Text(key), ciborium::Value::Text(urn_str)) = (k, v) {
+                        if key == "media_urn" {
+                            if let Ok(arg_urn) = MediaUrn::from_string(urn_str) {
+                                if let Some(ref expected) = expected_media_urn {
+                                    // Check both directions for matching (subtype semantics)
+                                    let fwd = arg_urn.conforms_to(expected).unwrap_or(false);
+                                    let rev = expected.accepts(&arg_urn).unwrap_or(false);
+                                    if fwd || rev {
+                                        found_matching_arg = true;
+                                        eprintln!("[PluginRuntime] Found argument matching in_spec: {}", urn_str);
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            if found_matching_arg {
-                break;
+                if found_matching_arg {
+                    break;
+                }
             }
         }
-    }
 
-    if !found_matching_arg {
-        return Err(RuntimeError::Deserialize(format!(
-            "No argument found matching expected input media type '{}' in CBOR arguments",
-            expected_input
-        )));
+        if !found_matching_arg {
+            return Err(RuntimeError::Deserialize(format!(
+                "No argument found matching expected input media type '{}' in CBOR arguments",
+                expected_input
+            )));
+        }
     }
 
     // After file-path conversion and validation, return the full CBOR array
@@ -939,7 +954,7 @@ impl PluginRuntime {
             extract_effective_payload(
                 &raw_payload,
                 Some("application/cbor"),
-                &cap.urn_string(),
+                &cap,
             )?
         } else if stdin_is_piped && cap_accepts_stdin {
             // STREAMING PATH: No args, read stdin in chunks and accumulate
@@ -953,8 +968,8 @@ impl PluginRuntime {
             ));
         };
 
-        // Create CLI-mode emitter and no-op peer invoker
-        let emitter = CliStreamEmitter::new();
+        // Create CLI-mode emitter (no newlines for binary safety) and no-op peer invoker
+        let emitter = CliStreamEmitter::without_ndjson();
         let peer = NoPeerInvoker;
 
         // STREAM MULTIPLEXING: Parse CBOR arguments and create separate streams
@@ -996,22 +1011,36 @@ impl PluginRuntime {
                 }
 
                 // Send this argument as chunked stream
+                // ALWAYS send at least ONE chunk per argument, even if empty
                 if let (Some(urn), Some(bytes)) = (media_urn, value_bytes) {
                     let stream_id = uuid::Uuid::new_v4().to_string();
-                    let mut offset = 0;
-                    while offset < bytes.len() {
-                        let chunk_size = (bytes.len() - offset).min(MAX_CHUNK);
-                        let chunk_data = bytes[offset..offset + chunk_size].to_vec();
-                        let is_last = offset + chunk_size >= bytes.len();
 
+                    if bytes.is_empty() {
+                        // Empty value - send single empty chunk
                         let stream_chunk = StreamChunk {
-                            stream_id: stream_id.clone(),
-                            media_urn: urn.clone(),
-                            data: chunk_data,
-                            is_last,
+                            stream_id,
+                            media_urn: urn,
+                            data: vec![],
+                            is_last: true,
                         };
-                        tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk to handler".to_string()))?;
-                        offset += chunk_size;
+                        tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk".to_string()))?;
+                    } else {
+                        // Non-empty value - chunk into MAX_CHUNK pieces
+                        let mut offset = 0;
+                        while offset < bytes.len() {
+                            let chunk_size = (bytes.len() - offset).min(MAX_CHUNK);
+                            let chunk_data = bytes[offset..offset + chunk_size].to_vec();
+                            let is_last = offset + chunk_size >= bytes.len();
+
+                            let stream_chunk = StreamChunk {
+                                stream_id: stream_id.clone(),
+                                media_urn: urn.clone(),
+                                data: chunk_data,
+                                is_last,
+                            };
+                            tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk".to_string()))?;
+                            offset += chunk_size;
+                        }
                     }
                 }
             }
@@ -1157,15 +1186,25 @@ impl PluginRuntime {
 
         // Process each cap argument
         for arg_def in cap.get_args() {
-            let value = self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
+            let (value, came_from_stdin) = self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
 
             if let Some(val) = value {
-                // Use the arg's media URN as-is in the CBOR payload.
-                // File-path auto-conversion will happen in extract_effective_payload(),
-                // which will detect file-path media URNs, read the files, and replace
-                // both the value (with file bytes) and media_urn (with in_spec).
+                // Determine media_urn: if value came from stdin source, use stdin's media_urn
+                // Otherwise use arg's media_urn as-is (file-path conversion happens later)
+                let media_urn = if came_from_stdin {
+                    // Find stdin source's media_urn
+                    arg_def.sources.iter()
+                        .find_map(|s| match s {
+                            ArgSource::Stdin { stdin } => Some(stdin.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| arg_def.media_urn.clone())
+                } else {
+                    arg_def.media_urn.clone()
+                };
+
                 arguments.push(CapArgumentValue {
-                    media_urn: arg_def.media_urn.clone(),
+                    media_urn,
                     value: val,
                 });
             } else if arg_def.required {
@@ -1213,31 +1252,32 @@ impl PluginRuntime {
     }
 
     /// Extract a single argument value from CLI args or stdin.
+    /// Returns (value, came_from_stdin) to track the source.
     fn extract_arg_value(
         &self,
         arg_def: &CapArg,
         cli_args: &[String],
         stdin_data: Option<&[u8]>,
-    ) -> Result<Option<Vec<u8>>, RuntimeError> {
+    ) -> Result<(Option<Vec<u8>>, bool), RuntimeError> {
         // Try each source in order, returning RAW values (file paths, flags, etc.)
         // File-path auto-conversion happens later in extract_effective_payload()
         for source in &arg_def.sources {
             match source {
                 ArgSource::CliFlag { cli_flag } => {
                     if let Some(value) = self.get_cli_flag_value(cli_args, cli_flag) {
-                        return Ok(Some(value.into_bytes()));
+                        return Ok((Some(value.into_bytes()), false));
                     }
                 }
                 ArgSource::Position { position } => {
                     // Positional args: filter out flags and their values
                     let positional = self.get_positional_args(cli_args);
                     if let Some(value) = positional.get(*position) {
-                        return Ok(Some(value.clone().into_bytes()));
+                        return Ok((Some(value.clone().into_bytes()), false));
                     }
                 }
                 ArgSource::Stdin { .. } => {
                     if let Some(data) = stdin_data {
-                        return Ok(Some(data.to_vec()));
+                        return Ok((Some(data.to_vec()), true)); // true = came from stdin
                     }
                 }
             }
@@ -1247,10 +1287,10 @@ impl PluginRuntime {
         if let Some(default) = &arg_def.default_value {
             let bytes = serde_json::to_vec(default)
                 .map_err(|e| RuntimeError::Serialize(e.to_string()))?;
-            return Ok(Some(bytes));
+            return Ok((Some(bytes), false));
         }
 
-        Ok(None)
+        Ok((None, false))
     }
 
     /// Get value for a CLI flag (e.g., --model "value")

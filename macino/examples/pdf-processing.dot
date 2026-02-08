@@ -1,0 +1,5 @@
+digraph pdf_pipeline {
+  pdf_input -> pages [label="cap:in=\"media:pdf;bytes\";op=disbind;out=\"media:disbound-page;textable;form=list\""];
+  pdf_input -> thumbnail [label="cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""];
+  pdf_input -> outline [label="cap:in=\"media:pdf;bytes\";op=extract_outline;out=\"media:document-outline;textable;form=map\""];
+}

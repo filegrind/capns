@@ -1,0 +1,85 @@
+# Rust build chips
+/target/
+**/*.rs.bk
+target/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Application-specific files
+Cargo.lock
+*.pdb
+
+# Test chips
+test_data/
+test_results/
+coverage/
+target/coverage/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Database files (DEV)
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration files with sensitive data
+config/local.toml
+config/PROD.toml
+.env.local
+.env.PROD
+
+# Documentation build chips
+book/
+doc/
+
+# Performance and benchmark results
+benchmarks/
+profile/
+flame.svg
+
+# Backup files
+*.bak
+*.log
+*.backup
+.scrap/
+
+standard/*
+standard/media/*
+.ws/
+diffs/

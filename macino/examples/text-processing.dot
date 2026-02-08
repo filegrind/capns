@@ -1,0 +1,4 @@
+digraph text_pipeline {
+  txt_input -> chips [label="cap:in=\"media:txt;textable\";op=disbind;out=\"media:disbound-page;textable;form=list\""];
+  txt_input -> thumbnail [label="cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""];
+}
