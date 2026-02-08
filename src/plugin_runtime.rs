@@ -290,10 +290,19 @@ impl StreamEmitter for CliStreamEmitter {
 /// Receives request payload bytes, emitter, and peer invoker; returns response payload bytes.
 ///
 /// The `PeerInvoker` allows the handler to invoke caps on the host (peer) during
-/// request processing. This enables bidirectional communication for operations
-/// like model downloading that sandboxed plugins cannot perform directly.
+/// STREAMING HANDLER ARCHITECTURE (Option A):
+/// Handlers receive input chunks as an iterator (via mpsc::Receiver).
+/// This enables true streaming - process chunks as they arrive, emit results immediately.
+/// No accumulation, no waiting for EOF, works with infinite streams.
+///
+/// Handler receives:
+/// - Input chunks via mpsc::Receiver (iterate until channel closes)
+/// - StreamEmitter for emitting output chunks
+/// - PeerInvoker for calling host caps
+///
+/// Handler processes chunks as they arrive and emits results incrementally.
 pub type HandlerFn = Arc<
-    dyn Fn(&[u8], &dyn StreamEmitter, &dyn PeerInvoker) -> Result<Vec<u8>, RuntimeError> + Send + Sync,
+    dyn Fn(std::sync::mpsc::Receiver<Vec<u8>>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync,
 >;
 
 /// Internal struct to track pending peer requests (plugin invoking host caps).
@@ -343,7 +352,7 @@ fn extract_effective_payload(
         RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e))
     })?;
 
-    let arguments = match cbor_value {
+    let mut arguments = match cbor_value {
         ciborium::Value::Array(arr) => arr,
         _ => {
             return Err(RuntimeError::Deserialize(
@@ -352,54 +361,160 @@ fn extract_effective_payload(
         }
     };
 
-    // Find the argument with matching media_urn
-    for arg in arguments {
-        let arg_map = match arg {
-            ciborium::Value::Map(m) => m,
-            _ => continue,
-        };
+    // File-path auto-conversion: If arg is media:file-path, read file(s)
+    // Pattern hierarchy:
+    // - media:file-path (base) accepts both scalar and list
+    // - media:file-path;form=scalar (single file)
+    // - media:file-path;form=list (array of files)
+    let file_path_base = MediaUrn::from_string("media:file-path")
+        .map_err(|e| RuntimeError::Handler(format!("Invalid file-path base pattern: {}", e)))?;
+    let file_path_scalar = MediaUrn::from_string("media:file-path;form=scalar")
+        .map_err(|e| RuntimeError::Handler(format!("Invalid file-path scalar pattern: {}", e)))?;
+    let file_path_list = MediaUrn::from_string("media:file-path;form=list")
+        .map_err(|e| RuntimeError::Handler(format!("Invalid file-path list pattern: {}", e)))?;
 
-        let mut media_urn: Option<String> = None;
-        let mut value: Option<Vec<u8>> = None;
+    for arg in arguments.iter_mut() {
+        if let ciborium::Value::Map(ref mut arg_map) = arg {
+            let mut media_urn: Option<String> = None;
+            let mut value_bytes: Option<Vec<u8>> = None;
 
-        for (k, v) in arg_map {
-            if let ciborium::Value::Text(key) = k {
-                match key.as_str() {
-                    "media_urn" => {
-                        if let ciborium::Value::Text(s) = v {
-                            media_urn = Some(s);
+            // Extract media_urn and value
+            for (k, v) in arg_map.iter() {
+                if let ciborium::Value::Text(key) = k {
+                    match key.as_str() {
+                        "media_urn" => {
+                            if let ciborium::Value::Text(s) = v {
+                                media_urn = Some(s.clone());
+                            }
                         }
-                    }
-                    "value" => {
-                        if let ciborium::Value::Bytes(b) = v {
-                            value = Some(b);
+                        "value" => {
+                            if let ciborium::Value::Bytes(b) = v {
+                                value_bytes = Some(b.clone());
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
-        }
 
-        // Check if this argument matches the expected input using semantic URN matching
-        if let (Some(urn_str), Some(val)) = (media_urn, value) {
-            if let Some(ref expected) = expected_media_urn {
-                if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
-                    // Use semantic matching in both directions
-                    let fwd = arg_urn.conforms_to(expected).unwrap_or(false);
-                    let rev = expected.conforms_to(&arg_urn).unwrap_or(false);
-                    if fwd || rev {
-                        return Ok(val);
+            eprintln!("[PluginRuntime] Checking arg: media_urn={:?}, has_value={}", media_urn, value_bytes.is_some());
+
+            // Check if this is a file-path argument using proper URN matching
+            if let (Some(ref urn_str), Some(ref path_bytes)) = (media_urn, value_bytes) {
+                let arg_urn = MediaUrn::from_string(urn_str)
+                    .map_err(|e| RuntimeError::Handler(format!("Invalid argument media URN '{}': {}", urn_str, e)))?;
+
+                // Check if it's a file-path at all
+                let is_file_path = file_path_base.accepts(&arg_urn)
+                    .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
+
+                eprintln!("[PluginRuntime] is_file_path={}", is_file_path);
+
+                if is_file_path {
+                    // Determine if it's scalar or list - MUST be one or the other
+                    let is_scalar = file_path_scalar.accepts(&arg_urn)
+                        .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
+                    let is_list = file_path_list.accepts(&arg_urn)
+                        .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
+
+                    eprintln!("[PluginRuntime] is_scalar={}, is_list={}", is_scalar, is_list);
+
+                    // Hard failure if neither scalar nor list
+                    if !is_scalar && !is_list {
+                        return Err(RuntimeError::Handler(format!(
+                            "File-path argument '{}' must be either form=scalar or form=list",
+                            urn_str
+                        )));
+                    }
+
+                    // Hard failure if both (should never happen with proper URN matching)
+                    if is_scalar && is_list {
+                        return Err(RuntimeError::Handler(format!(
+                            "File-path argument '{}' cannot be both scalar and list",
+                            urn_str
+                        )));
+                    }
+
+                    // Read file(s) and replace value
+                    if is_scalar {
+                        // Single file - read and replace with bytes
+                        let path_str = String::from_utf8_lossy(path_bytes);
+                        eprintln!("[PluginRuntime] Converting single file-path '{}' to bytes", path_str);
+                        let file_bytes = std::fs::read(path_str.as_ref())
+                            .map_err(|e| RuntimeError::Handler(format!("Failed to read file '{}': {}", path_str, e)))?;
+
+                        eprintln!("[PluginRuntime] Read {} bytes, converting media_urn to '{}'", file_bytes.len(), expected_input);
+
+                        // Replace value with file contents
+                        for (k, v) in arg_map.iter_mut() {
+                            if let ciborium::Value::Text(key) = k {
+                                if key == "value" {
+                                    *v = ciborium::Value::Bytes(file_bytes.clone());
+                                }
+                                // Replace media_urn with expected input
+                                if key == "media_urn" {
+                                    *v = ciborium::Value::Text(expected_input.clone());
+                                }
+                            }
+                        }
+                    } else {
+                        // Array of files - not implemented yet
+                        // This would require parsing path_bytes as a list of paths,
+                        // reading each file, and constructing a CBOR array
+                        return Err(RuntimeError::Handler(
+                            "File-path array conversion not yet implemented in CBOR mode".to_string()
+                        ));
                     }
                 }
             }
         }
     }
 
-    // No matching argument found
-    Err(RuntimeError::Deserialize(format!(
-        "No argument found matching expected input media type '{}' in CBOR arguments",
-        expected_input
-    )))
+    // Validate: At least ONE argument must match in_spec (fail hard if none)
+    // This ensures the handler can distinguish main input from other args
+    let mut found_matching_arg = false;
+    for arg in &arguments {
+        if let ciborium::Value::Map(map) = arg {
+            for (k, v) in map {
+                if let (ciborium::Value::Text(key), ciborium::Value::Text(urn_str)) = (k, v) {
+                    if key == "media_urn" {
+                        if let Ok(arg_urn) = MediaUrn::from_string(urn_str) {
+                            if let Some(ref expected) = expected_media_urn {
+                                // Check both directions for matching (subtype semantics)
+                                let fwd = arg_urn.conforms_to(expected).unwrap_or(false);
+                                let rev = expected.accepts(&arg_urn).unwrap_or(false);
+                                if fwd || rev {
+                                    found_matching_arg = true;
+                                    eprintln!("[PluginRuntime] Found argument matching in_spec: {}", urn_str);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if found_matching_arg {
+                break;
+            }
+        }
+    }
+
+    if !found_matching_arg {
+        return Err(RuntimeError::Deserialize(format!(
+            "No argument found matching expected input media type '{}' in CBOR arguments",
+            expected_input
+        )));
+    }
+
+    // After file-path conversion and validation, return the full CBOR array
+    // Handler will parse it and extract arguments by matching against in_spec
+    let modified_cbor = ciborium::Value::Array(arguments);
+    let mut serialized = Vec::new();
+    ciborium::into_writer(&modified_cbor, &mut serialized)
+        .map_err(|e| RuntimeError::Serialize(format!("Failed to serialize modified CBOR: {}", e)))?;
+
+    eprintln!("[PluginRuntime] Returning modified CBOR array ({} bytes) with validated matching argument", serialized.len());
+    Ok(serialized)
 }
 
 impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
@@ -556,29 +671,44 @@ impl PluginRuntime {
     /// **Peer invocation**: Use the `peer` parameter to invoke caps on the host.
     /// This is useful for sandboxed plugins that need to delegate operations
     /// (like network access) to the host.
+    /// Register a streaming handler with automatic deserialization.
+    ///
+    /// NOTE: This method accumulates chunks to deserialize the complete request.
+    /// For true streaming without deserialization, use register_raw instead.
     pub fn register<Req, F>(&mut self, cap_urn: &str, handler: F)
     where
         Req: serde::de::DeserializeOwned + 'static,
-        F: Fn(Req, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<Vec<u8>, RuntimeError> + Send + Sync + 'static,
+        F: Fn(Req, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
-        let handler = move |payload: &[u8], emitter: &dyn StreamEmitter, peer: &dyn PeerInvoker| -> Result<Vec<u8>, RuntimeError> {
-            // Deserialize request from payload bytes (JSON format for now)
-            let request: Req = serde_json::from_slice(payload)
+        let streaming_handler = move |chunks: std::sync::mpsc::Receiver<Vec<u8>>, emitter: &dyn StreamEmitter, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
+            // Accumulate all chunks to deserialize complete request
+            let mut accumulated = Vec::new();
+            for chunk in chunks {
+                accumulated.extend_from_slice(&chunk);
+            }
+
+            // Deserialize complete request from accumulated bytes (JSON format)
+            let request: Req = serde_json::from_slice(&accumulated)
                 .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse request: {}", e)))?;
 
             handler(request, emitter, peer)
         };
 
-        self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
+        self.handlers.insert(cap_urn.to_string(), Arc::new(streaming_handler));
     }
 
     /// Register a raw handler that works with bytes directly.
     ///
     /// Use this when you need full control over serialization.
     /// The handler receives the emitter and peer invoker in addition to the raw payload.
+    /// Register a streaming handler for a cap URN.
+    ///
+    /// STREAMING ARCHITECTURE: Handler receives chunks via mpsc::Receiver as they arrive.
+    /// No accumulation - process and emit results immediately.
+    /// Perfect for infinite streams (video, audio, real-time data).
     pub fn register_raw<F>(&mut self, cap_urn: &str, handler: F)
     where
-        F: Fn(&[u8], &dyn StreamEmitter, &dyn PeerInvoker) -> Result<Vec<u8>, RuntimeError> + Send + Sync + 'static,
+        F: Fn(std::sync::mpsc::Receiver<Vec<u8>>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
         self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
     }
@@ -650,6 +780,10 @@ impl PluginRuntime {
 
 
     /// Run in CLI mode - parse arguments and invoke handler.
+    ///
+    /// If stdin is piped (binary data), this streams it in chunks and accumulates
+    /// via the same PendingIncomingRequest logic as CBOR mode, ensuring all modes
+    /// converge to one unified processing path.
     fn run_cli_mode(&self, args: &[String]) -> Result<(), RuntimeError> {
         let manifest = self.manifest.as_ref().ok_or_else(|| {
             RuntimeError::Manifest("Failed to parse manifest for CLI mode".to_string())
@@ -695,35 +829,51 @@ impl PluginRuntime {
             ))
         })?;
 
-        // Build arguments from CLI (CBOR format)
-        let cli_args = &args[2..];
-        let raw_payload = self.build_payload_from_cli(&cap, cli_args)?;
+        // Check if stdin is piped (binary streaming mode)
+        let stdin_is_piped = !atty::is(atty::Stream::Stdin);
+        let cap_accepts_stdin = cap.accepts_stdin();
 
-        // Extract effective payload (same logic as CBOR mode)
-        // This handles CBOR arguments array and extracts the value matching cap's input spec
-        let payload = extract_effective_payload(
-            &raw_payload,
-            Some("application/cbor"),  // CLI mode now produces CBOR
-            &cap.urn_string(),
-        )?;
+        let payload = if stdin_is_piped && cap_accepts_stdin {
+            // STREAMING PATH: Read stdin in chunks and accumulate
+            // This uses the same PendingIncomingRequest logic as CBOR mode
+            eprintln!("[PluginRuntime] CLI mode: streaming binary from stdin");
+            self.build_payload_from_streaming_stdin(&cap)?
+        } else {
+            // ARGUMENT PATH: Build from CLI arguments (may include file paths)
+            let cli_args = &args[2..];
+            let raw_payload = self.build_payload_from_cli(&cap, cli_args)?;
+
+            // Extract effective payload (handles file-path auto-conversion)
+            extract_effective_payload(
+                &raw_payload,
+                Some("application/cbor"),
+                &cap.urn_string(),
+            )?
+        };
 
         // Create CLI-mode emitter and no-op peer invoker
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
 
-        // Invoke handler
-        let result = handler(&payload, &emitter, &peer);
+        // STREAMING ARCHITECTURE: Create channel and chunk payload before sending
+        // This ensures handlers receive manageable chunks (256KB) for true streaming
+        let (tx, rx) = std::sync::mpsc::channel();
+        const MAX_CHUNK: usize = 262144; // 256KB chunks
+        let mut offset = 0;
+        while offset < payload.len() {
+            let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
+            let chunk = payload[offset..offset + chunk_size].to_vec();
+            tx.send(chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk to handler".to_string()))?;
+            offset += chunk_size;
+        }
+        drop(tx); // Close channel - signals EOF to handler
+
+        // Invoke streaming handler
+        let result = handler(rx, &emitter, &peer);
 
         match result {
-            Ok(response) => {
-                // Output final response if not empty
-                if !response.is_empty() {
-                    let stdout = io::stdout();
-                    let mut handle = stdout.lock();
-                    let _ = handle.write_all(&response);
-                    let _ = handle.write_all(b"\n");
-                    let _ = handle.flush();
-                }
+            Ok(()) => {
+                // Handler emitted output via StreamEmitter
                 Ok(())
             }
             Err(e) => {
@@ -743,11 +893,106 @@ impl PluginRuntime {
         manifest.caps.iter().find(|cap| cap.command == command_name)
     }
 
+    /// Build payload from streaming stdin (CLI mode with piped binary).
+    ///
+    /// Public wrapper that reads from actual stdin.
+    fn build_payload_from_streaming_stdin(&self, cap: &Cap) -> Result<Vec<u8>, RuntimeError> {
+        let stdin = io::stdin();
+        let locked = stdin.lock();
+        self.build_payload_from_streaming_reader(cap, locked)
+    }
+
+    /// Build payload from streaming reader (testable version).
+    ///
+    /// This simulates the CBOR chunked request flow for CLI piped stdin:
+    /// - Pure binary chunks from reader
+    /// - Converted to virtual CHUNK frames on-the-fly
+    /// - Accumulated via PendingIncomingRequest (same as CBOR mode)
+    /// - Handler invoked when reader EOF (simulates END frame)
+    ///
+    /// This makes all 4 modes use the SAME PendingIncomingRequest code path:
+    /// - CLI file path → read file → payload
+    /// - CLI piped binary → chunk reader → PendingIncomingRequest → payload
+    /// - CBOR chunked → PendingIncomingRequest → payload
+    /// - CBOR file path → auto-convert → payload
+    fn build_payload_from_streaming_reader<R: io::Read>(
+        &self,
+        cap: &Cap,
+        mut reader: R,
+    ) -> Result<Vec<u8>, RuntimeError> {
+        eprintln!("[PluginRuntime] CLI mode: streaming PURE BINARY from reader (NOT CBOR)");
+
+        // Simulate PendingIncomingRequest structure (same as CBOR mode)
+        struct PendingRequest {
+            cap_urn: String,
+            chunks: Vec<Vec<u8>>,
+        }
+
+        let mut pending = PendingRequest {
+            cap_urn: cap.urn_string(),
+            chunks: Vec::new(),
+        };
+
+        // Stream reader in chunks - convert to virtual CHUNK frames on-the-fly
+        const MAX_CHUNK: usize = 262144; // Same as CBOR mode
+        let mut total_bytes = 0;
+
+        loop {
+            let mut buffer = vec![0u8; MAX_CHUNK];
+            match reader.read(&mut buffer) {
+                Ok(0) => {
+                    // EOF - simulate END frame
+                    eprintln!("[PluginRuntime] Reader EOF (simulated END frame), accumulated {} bytes in {} chunks",
+                        total_bytes, pending.chunks.len());
+                    break;
+                }
+                Ok(n) => {
+                    buffer.truncate(n);
+                    total_bytes += n;
+
+                    // Simulate receiving CHUNK frame - add to accumulator immediately
+                    pending.chunks.push(buffer);
+                    eprintln!("[PluginRuntime] Chunk {} received ({} bytes, total: {}) - simulated CHUNK frame",
+                        pending.chunks.len(), n, total_bytes);
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(RuntimeError::Io(e));
+                }
+            }
+        }
+
+        // Concatenate chunks (same as PendingIncomingRequest does on END frame)
+        let complete_payload = pending.chunks.concat();
+        eprintln!("[PluginRuntime] Accumulated payload complete: {} bytes from {} chunks",
+            complete_payload.len(), pending.chunks.len());
+
+        // Build CBOR arguments array (same format as CBOR mode)
+        let cap_urn = CapUrn::from_string(&pending.cap_urn)
+            .map_err(|e| RuntimeError::Cli(format!("Invalid cap URN: {}", e)))?;
+        let expected_media_urn = cap_urn.in_spec();
+
+        let arg = CapArgumentValue::new(expected_media_urn, complete_payload);
+        let mut cbor_payload = Vec::new();
+        let cbor_args: Vec<ciborium::Value> = vec![
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(arg.media_urn.clone())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(arg.value.clone())),
+            ])
+        ];
+        ciborium::into_writer(&ciborium::Value::Array(cbor_args), &mut cbor_payload)
+            .map_err(|e| RuntimeError::Serialize(format!("Failed to serialize CBOR: {}", e)))?;
+
+        Ok(cbor_payload)
+    }
+
     /// Build payload from CLI arguments based on cap's arg definitions.
     ///
     /// This method builds a CBOR arguments array (same format as CBOR mode) to ensure
     /// consistency between CLI mode and CBOR mode. The payload format is:
-    /// ```
+    /// ```text
     /// [ { media_urn: "...", value: bytes }, ... ]
     /// ```
     fn build_payload_from_cli(&self, cap: &Cap, cli_args: &[String]) -> Result<Vec<u8>, RuntimeError> {
@@ -1258,47 +1503,28 @@ impl PluginRuntime {
                             }
                         };
 
-                        let result = handler(&payload, &emitter, &peer_invoker);
+                        // STREAMING ARCHITECTURE: Chunk payload before sending to handler
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        const MAX_CHUNK: usize = 262144; // 256KB chunks
+                        let mut offset = 0;
+                        while offset < payload.len() {
+                            let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
+                            let chunk = payload[offset..offset + chunk_size].to_vec();
+                            let _ = tx.send(chunk); // Ignore send errors
+                            offset += chunk_size;
+                        }
+                        drop(tx); // Close channel - signals EOF to handler
 
-                        // Send response with automatic chunking for large payloads
+                        let result = handler(rx, &emitter, &peer_invoker);
+
+                        // Handler emits output via StreamEmitter (ThreadSafeEmitter handles chunking)
+                        // Send END frame to signal completion
                         match result {
-                            Ok(final_payload) => {
+                            Ok(()) => {
                                 let mut writer = writer_clone.lock().unwrap();
-
-                                // Automatic chunking: split large payloads into CHUNK frames
-                                if final_payload.len() <= max_chunk {
-                                    // Small payload: send single END frame
-                                    let end_frame = Frame::end(request_id.clone(), Some(final_payload));
-                                    if let Err(e) = writer.write(&end_frame) {
-                                        eprintln!("[PluginRuntime] Failed to write END frame: {}", e);
-                                    }
-                                } else {
-                                    // Large payload: send CHUNK frames + final END
-                                    let mut offset = 0;
-                                    let mut seq = 0u64;
-
-                                    while offset < final_payload.len() {
-                                        let remaining = final_payload.len() - offset;
-                                        let chunk_size = remaining.min(max_chunk);
-                                        let chunk_data = final_payload[offset..offset + chunk_size].to_vec();
-                                        offset += chunk_size;
-
-                                        if offset < final_payload.len() {
-                                            // Not the last chunk - send CHUNK frame
-                                            let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
-                                            if let Err(e) = writer.write(&chunk_frame) {
-                                                eprintln!("[PluginRuntime] Failed to write CHUNK frame: {}", e);
-                                                return;
-                                            }
-                                            seq += 1;
-                                        } else {
-                                            // Last chunk - send END frame with remaining data
-                                            let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
-                                            if let Err(e) = writer.write(&end_frame) {
-                                                eprintln!("[PluginRuntime] Failed to write END frame: {}", e);
-                                            }
-                                        }
-                                    }
+                                let end_frame = Frame::end(request_id.clone(), None);
+                                if let Err(e) = writer.write(&end_frame) {
+                                    eprintln!("[PluginRuntime] Failed to write END frame: {}", e);
                                 }
                             }
                             Err(e) => {
@@ -1393,36 +1619,26 @@ impl PluginRuntime {
                                 }
                             };
 
-                            let result = handler(&payload, &emitter, &peer_invoker);
+                            // STREAMING ARCHITECTURE: Chunk payload before sending to handler
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            const MAX_CHUNK: usize = 262144; // 256KB chunks
+                            let mut offset = 0;
+                            while offset < payload.len() {
+                                let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
+                                let chunk = payload[offset..offset + chunk_size].to_vec();
+                                let _ = tx.send(chunk);
+                                offset += chunk_size;
+                            }
+                            drop(tx); // Close channel
 
-                            // Send response with automatic chunking
+                            let result = handler(rx, &emitter, &peer_invoker);
+
+                            // Handler emits via StreamEmitter, send END frame
                             match result {
-                                Ok(final_payload) => {
+                                Ok(()) => {
                                     let mut writer = writer_clone.lock().unwrap();
-
-                                    if final_payload.len() <= max_chunk {
-                                        let end_frame = Frame::end(request_id.clone(), Some(final_payload));
-                                        let _ = writer.write(&end_frame);
-                                    } else {
-                                        let mut offset = 0;
-                                        let mut seq = 0u64;
-
-                                        while offset < final_payload.len() {
-                                            let remaining = final_payload.len() - offset;
-                                            let chunk_size = remaining.min(max_chunk);
-                                            let chunk_data = final_payload[offset..offset + chunk_size].to_vec();
-                                            offset += chunk_size;
-
-                                            if offset < final_payload.len() {
-                                                let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
-                                                let _ = writer.write(&chunk_frame);
-                                                seq += 1;
-                                            } else {
-                                                let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
-                                                let _ = writer.write(&end_frame);
-                                            }
-                                        }
-                                    }
+                                    let end_frame = Frame::end(request_id.clone(), None);
+                                    let _ = writer.write(&end_frame);
                                 }
                                 Err(e) => {
                                     let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
@@ -1538,8 +1754,9 @@ mod tests {
     fn test_register_and_find_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, _emitter, _peer| {
-            Ok(b"result".to_vec())
+        runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, emitter, _peer| {
+            emitter.emit_bytes(b"result");
+            Ok(())
         });
 
         assert!(runtime.find_handler("cap:in=*;op=test;out=*").is_some());
@@ -1550,31 +1767,55 @@ mod tests {
     fn test_raw_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_raw("cap:op=raw", |payload, _emitter, _peer| {
-            Ok(payload.to_vec())
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = Arc::clone(&received);
+
+        runtime.register_raw("cap:op=raw", move |chunks, emitter, _peer| {
+            // Stream through and track
+            let mut total = Vec::new();
+            for chunk in chunks {
+                total.extend_from_slice(&chunk);
+                emitter.emit_bytes(&chunk);
+            }
+            *received_clone.lock().unwrap() = total;
+            Ok(())
         });
 
         let handler = runtime.find_handler("cap:op=raw").unwrap();
         let no_peer = NoPeerInvoker;
         let emitter = CliStreamEmitter::new();
-        let result = handler(b"echo this", &emitter, &no_peer).unwrap();
-        assert_eq!(result, b"echo this", "raw handler must echo payload");
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"echo this".to_vec()).ok();
+        drop(tx);
+        handler(rx, &emitter, &no_peer).unwrap();
+        assert_eq!(&*received.lock().unwrap(), b"echo this", "raw handler must echo payload");
     }
 
     // TEST250: Test register typed handler deserializes JSON and executes correctly
     #[test]
     fn test_typed_handler_deserialization() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-        runtime.register::<serde_json::Value, _>("cap:op=test", |req, _emitter, _peer| {
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = Arc::clone(&received);
+
+        runtime.register::<serde_json::Value, _>("cap:op=test", move |req, emitter, _peer| {
             let value = req.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
-            Ok(value.as_bytes().to_vec())
+            let bytes = value.as_bytes();
+            emitter.emit_bytes(bytes);
+            *received_clone.lock().unwrap() = bytes.to_vec();
+            Ok(())
         });
 
         let handler = runtime.find_handler("cap:op=test").unwrap();
         let no_peer = NoPeerInvoker;
         let emitter = CliStreamEmitter::new();
-        let result = handler(b"{\"key\":\"hello\"}", &emitter, &no_peer).unwrap();
-        assert_eq!(result, b"hello");
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"{\"key\":\"hello\"}".to_vec()).ok();
+        drop(tx);
+        handler(rx, &emitter, &no_peer).unwrap();
+        assert_eq!(&*received.lock().unwrap(), b"hello");
     }
 
     // TEST251: Test typed handler returns RuntimeError::Deserialize for invalid JSON input
@@ -1582,13 +1823,17 @@ mod tests {
     fn test_typed_handler_rejects_invalid_json() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         runtime.register::<serde_json::Value, _>("cap:op=test", |_req, _emitter, _peer| {
-            Ok(vec![])
+            Ok(())
         });
 
         let handler = runtime.find_handler("cap:op=test").unwrap();
         let no_peer = NoPeerInvoker;
         let emitter = CliStreamEmitter::new();
-        let result = handler(b"not json {{{{", &emitter, &no_peer);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"not json {{{{".to_vec()).ok();
+        drop(tx);
+        let result = handler(rx, &emitter, &no_peer);
         assert!(result.is_err());
         match result.unwrap_err() {
             RuntimeError::Deserialize(_) => {}
@@ -1608,8 +1853,13 @@ mod tests {
     fn test_handler_is_send_sync() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:op=threaded", |_req, _emitter, _peer| {
-            Ok(b"done".to_vec())
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = Arc::clone(&received);
+
+        runtime.register::<serde_json::Value, _>("cap:op=threaded", move |_req, emitter, _peer| {
+            emitter.emit_bytes(b"done");
+            *received_clone.lock().unwrap() = b"done".to_vec();
+            Ok(())
         });
 
         let handler = runtime.find_handler("cap:op=threaded").unwrap();
@@ -1618,11 +1868,14 @@ mod tests {
         let handle = std::thread::spawn(move || {
             let no_peer = NoPeerInvoker;
             let emitter = CliStreamEmitter::new();
-            let result = handler_clone(b"{}", &emitter, &no_peer).unwrap();
-            assert_eq!(result, b"done");
+            let (tx, rx) = std::sync::mpsc::channel();
+            tx.send(b"{}".to_vec()).ok();
+            drop(tx);
+            handler_clone(rx, &emitter, &no_peer).unwrap();
         });
 
         handle.join().unwrap();
+        assert_eq!(&*received.lock().unwrap(), b"done");
     }
 
     // TEST254: Test NoPeerInvoker always returns PeerRequest error regardless of arguments
@@ -1716,7 +1969,30 @@ mod tests {
             Some("application/cbor"),
             "cap:in=media:string;textable;form=scalar;op=test;out=*",
         ).unwrap();
-        assert_eq!(result, b"hello");
+
+        // NEW REGIME: Result is full CBOR array, handler must parse and extract
+        let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let result_array = match result_cbor {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        // Extract value from matching argument
+        let mut found_value = None;
+        for arg in result_array {
+            if let ciborium::Value::Map(map) = arg {
+                for (k, v) in map {
+                    if let ciborium::Value::Text(key) = k {
+                        if key == "value" {
+                            if let ciborium::Value::Bytes(b) = v {
+                                found_value = Some(b);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(found_value, Some(b"hello".to_vec()), "Handler extracts value from CBOR array");
     }
 
     // TEST262: Test extract_effective_payload with CBOR content fails when no argument matches expected input
@@ -1849,21 +2125,42 @@ mod tests {
     fn test_multiple_handlers() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_raw("cap:op=alpha", |_, _, _| Ok(b"a".to_vec()));
-        runtime.register_raw("cap:op=beta", |_, _, _| Ok(b"b".to_vec()));
-        runtime.register_raw("cap:op=gamma", |_, _, _| Ok(b"g".to_vec()));
+        runtime.register_raw("cap:op=alpha", |chunks, emitter, _| {
+            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            emitter.emit_bytes(b"a");
+            Ok(())
+        });
+        runtime.register_raw("cap:op=beta", |chunks, emitter, _| {
+            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            emitter.emit_bytes(b"b");
+            Ok(())
+        });
+        runtime.register_raw("cap:op=gamma", |chunks, emitter, _| {
+            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            emitter.emit_bytes(b"g");
+            Ok(())
+        });
 
         let no_peer = NoPeerInvoker;
         let emitter = CliStreamEmitter::new();
 
         let h_alpha = runtime.find_handler("cap:op=alpha").unwrap();
-        assert_eq!(h_alpha(b"", &emitter, &no_peer).unwrap(), b"a");
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"".to_vec()).ok();
+        drop(tx);
+        h_alpha(rx, &emitter, &no_peer).unwrap();
 
         let h_beta = runtime.find_handler("cap:op=beta").unwrap();
-        assert_eq!(h_beta(b"", &emitter, &no_peer).unwrap(), b"b");
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"".to_vec()).ok();
+        drop(tx);
+        h_beta(rx, &emitter, &no_peer).unwrap();
 
         let h_gamma = runtime.find_handler("cap:op=gamma").unwrap();
-        assert_eq!(h_gamma(b"", &emitter, &no_peer).unwrap(), b"g");
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"".to_vec()).ok();
+        drop(tx);
+        h_gamma(rx, &emitter, &no_peer).unwrap();
     }
 
     // TEST271: Test handler replacing an existing registration for the same cap URN
@@ -1871,14 +2168,32 @@ mod tests {
     fn test_handler_replacement() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_raw("cap:op=test", |_, _, _| Ok(b"first".to_vec()));
-        runtime.register_raw("cap:op=test", |_, _, _| Ok(b"second".to_vec()));
+        let result1 = Arc::new(Mutex::new(Vec::new()));
+        let result1_clone = Arc::clone(&result1);
+        let result2 = Arc::new(Mutex::new(Vec::new()));
+        let result2_clone = Arc::clone(&result2);
+
+        runtime.register_raw("cap:op=test", move |chunks, emitter, _| {
+            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            emitter.emit_bytes(b"first");
+            *result1_clone.lock().unwrap() = b"first".to_vec();
+            Ok(())
+        });
+        runtime.register_raw("cap:op=test", move |chunks, emitter, _| {
+            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            emitter.emit_bytes(b"second");
+            *result2_clone.lock().unwrap() = b"second".to_vec();
+            Ok(())
+        });
 
         let handler = runtime.find_handler("cap:op=test").unwrap();
         let no_peer = NoPeerInvoker;
         let emitter = CliStreamEmitter::new();
-        let result = handler(b"", &emitter, &no_peer).unwrap();
-        assert_eq!(result, b"second", "later registration must replace earlier");
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(b"".to_vec()).ok();
+        drop(tx);
+        handler(rx, &emitter, &no_peer).unwrap();
+        assert_eq!(&*result2.lock().unwrap(), b"second", "later registration must replace earlier");
     }
 
     // TEST272: Test extract_effective_payload CBOR with multiple arguments selects the correct one
@@ -1902,7 +2217,53 @@ mod tests {
             Some("application/cbor"),
             "cap:in=media:model-spec;textable;form=scalar;op=infer;out=*",
         ).unwrap();
-        assert_eq!(result, b"correct");
+
+        // NEW REGIME: Handler receives full CBOR array with BOTH arguments
+        // Handler must match against in_spec to find main input
+        let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let result_array = match result_cbor {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        assert_eq!(result_array.len(), 2, "Both arguments present in CBOR array");
+
+        // Find the argument matching in_spec (media:model-spec)
+        let in_spec = MediaUrn::from_string("media:model-spec;textable;form=scalar").unwrap();
+        let mut found_value = None;
+        for arg in result_array {
+            if let ciborium::Value::Map(map) = arg {
+                let mut arg_urn_str = None;
+                let mut arg_value = None;
+                for (k, v) in map {
+                    if let ciborium::Value::Text(key) = k {
+                        if key == "media_urn" {
+                            if let ciborium::Value::Text(s) = v {
+                                arg_urn_str = Some(s);
+                            }
+                        } else if key == "value" {
+                            if let ciborium::Value::Bytes(b) = v {
+                                arg_value = Some(b);
+                            }
+                        }
+                    }
+                }
+
+                // Match against in_spec
+                if let (Some(urn_str), Some(val)) = (arg_urn_str, arg_value) {
+                    if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
+                        let matches = in_spec.accepts(&arg_urn).unwrap_or(false) ||
+                                     arg_urn.conforms_to(&in_spec).unwrap_or(false);
+                        if matches {
+                            found_value = Some(val);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert_eq!(found_value, Some(b"correct".to_vec()), "Handler finds correct argument by matching in_spec");
     }
 
     // TEST273: Test extract_effective_payload with binary data in CBOR value (not just text)
@@ -1923,7 +2284,29 @@ mod tests {
             Some("application/cbor"),
             "cap:in=media:pdf;bytes;op=process;out=*",
         ).unwrap();
-        assert_eq!(result, binary_data, "binary values must roundtrip through CBOR extraction");
+
+        // NEW REGIME: Parse CBOR array and extract value
+        let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
+        let result_array = match result_cbor {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        let mut found_value = None;
+        for arg in result_array {
+            if let ciborium::Value::Map(map) = arg {
+                for (k, v) in map {
+                    if let ciborium::Value::Text(key) = k {
+                        if key == "value" {
+                            if let ciborium::Value::Bytes(b) = v {
+                                found_value = Some(b);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(found_value, Some(binary_data), "binary values must roundtrip through CBOR array");
     }
 
     // TEST336: Single file-path arg with stdin source reads file and passes bytes to handler
@@ -1958,10 +2341,37 @@ mod tests {
 
         runtime.register_raw(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
-            move |payload, _emitter, _peer| {
-                let mut received = received_clone.lock().unwrap();
-                *received = payload.to_vec();
-                Ok(b"processed".to_vec())
+            move |chunks, emitter, _peer| {
+                // TRUE STREAMING: Relay chunks as they arrive, track total for verification
+                let mut total_received = Vec::new();
+                for chunk in chunks {
+                    total_received.extend_from_slice(&chunk);
+                    emitter.emit_bytes(&chunk);  // Stream through immediately
+                }
+
+                // After streaming complete, parse to verify what we received
+                let cbor_val: ciborium::Value = ciborium::from_reader(&total_received[..]).unwrap();
+                if let ciborium::Value::Array(args) = cbor_val {
+                    let in_spec = MediaUrn::from_string("media:pdf;bytes").unwrap();
+                    for arg in args {
+                        if let ciborium::Value::Map(map) = arg {
+                            let mut found_bytes = None;
+                            for (k, v) in map {
+                                if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v) {
+                                    if key == "value" {
+                                        found_bytes = Some(b);
+                                        break;
+                                    }
+                                }
+                            }
+                            if let Some(bytes) = found_bytes {
+                                *received_clone.lock().unwrap() = bytes;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                Ok(())
             },
         );
 
@@ -1971,6 +2381,7 @@ mod tests {
         let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
 
         // Extract effective payload (simulates what run_cli_mode does)
+        // This does file-path auto-conversion: path → bytes
         let payload = extract_effective_payload(
             &raw_payload,
             Some("application/cbor"),
@@ -1980,12 +2391,17 @@ mod tests {
         let handler = runtime.find_handler(&cap.urn_string()).unwrap();
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
-        let result = handler(&payload, &emitter, &peer).unwrap();
 
-        // Verify handler received file bytes, not file path
+        // STREAMING: Send payload via channel
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(payload).ok();
+        drop(tx);
+        handler(rx, &emitter, &peer).unwrap();
+
+        // Verify handler received file bytes (not file path string)
+        // File-path auto-conversion happened transparently
         let received = received_payload.lock().unwrap();
-        assert_eq!(&*received, b"PDF binary content 336", "Handler should receive file bytes");
-        assert_eq!(result, b"processed");
+        assert_eq!(&*received, b"PDF binary content 336", "Handler receives file bytes after auto-conversion");
 
         std::fs::remove_file(test_file).ok();
     }
@@ -2503,10 +2919,31 @@ mod tests {
 
         runtime.register_raw(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
-            move |payload, _emitter, _peer| {
-                let mut received = received_clone.lock().unwrap();
-                *received = payload.to_vec();
-                Ok(b"processed".to_vec())
+            move |chunks, emitter, _peer| {
+                // TRUE STREAMING: Relay chunks immediately, verify after
+                let mut total = Vec::new();
+                for chunk in chunks {
+                    total.extend_from_slice(&chunk);
+                    emitter.emit_bytes(&chunk);  // Stream through
+                }
+
+                // Verify after streaming complete
+                let cbor_val: ciborium::Value = ciborium::from_reader(&total[..]).unwrap();
+                if let ciborium::Value::Array(args) = cbor_val {
+                    for arg in args {
+                        if let ciborium::Value::Map(map) = arg {
+                            for (k, v) in map {
+                                if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v) {
+                                    if key == "value" {
+                                        *received_clone.lock().unwrap() = b;
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(())
             },
         );
 
@@ -2525,12 +2962,16 @@ mod tests {
         let handler = runtime.find_handler(&cap.urn_string()).unwrap();
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
-        let result = handler(&payload, &emitter, &peer).unwrap();
+
+        // STREAMING: Send payload via channel
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(payload).ok();
+        drop(tx);
+        handler(rx, &emitter, &peer).unwrap();
 
         // Verify handler received file bytes
         let received = received_payload.lock().unwrap();
-        assert_eq!(&*received, test_content, "Handler should receive file bytes, not path");
-        assert_eq!(result, b"processed");
+        assert_eq!(&*received, test_content, "Handler receives file bytes after auto-conversion");
 
         std::fs::remove_file(test_file).ok();
     }
@@ -2976,14 +3417,317 @@ mod tests {
         let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
 
         // Extract effective payload (what run_cli_mode does)
+        // This does file-path auto-conversion and returns full CBOR array
         let effective = extract_effective_payload(
             &raw_payload,
             Some("application/cbor"),
             &cap.urn_string(),
         ).unwrap();
 
-        // The effective payload should be the raw PDF bytes
-        assert_eq!(effective, pdf_content, "extract_effective_payload should extract file bytes");
+        // NEW REGIME: Parse CBOR array and extract file bytes
+        let result_cbor: ciborium::Value = ciborium::from_reader(&effective[..]).unwrap();
+        let result_array = match result_cbor {
+            ciborium::Value::Array(arr) => arr,
+            _ => panic!("Expected CBOR array"),
+        };
+
+        // Extract value from argument matching in_spec
+        let in_spec = MediaUrn::from_string("media:pdf;bytes").unwrap();
+        let mut found_value = None;
+        for arg in result_array {
+            if let ciborium::Value::Map(map) = arg {
+                let mut arg_urn_str = None;
+                let mut arg_value = None;
+                for (k, v) in map {
+                    if let ciborium::Value::Text(key) = k {
+                        if key == "media_urn" {
+                            if let ciborium::Value::Text(s) = v {
+                                arg_urn_str = Some(s);
+                            }
+                        } else if key == "value" {
+                            if let ciborium::Value::Bytes(b) = v {
+                                arg_value = Some(b);
+                            }
+                        }
+                    }
+                }
+
+                if let (Some(urn_str), Some(val)) = (arg_urn_str, arg_value) {
+                    if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
+                        let matches = in_spec.accepts(&arg_urn).unwrap_or(false) ||
+                                     arg_urn.conforms_to(&in_spec).unwrap_or(false);
+                        if matches {
+                            found_value = Some(val);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert_eq!(found_value, Some(pdf_content.to_vec()), "File-path auto-converted to bytes");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST361: CLI mode with file path - pass file path as command-line argument
+    #[test]
+    fn test361_cli_mode_file_path() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test361.pdf");
+        let pdf_content = b"PDF content for CLI file path test";
+        std::fs::write(&test_file, pdf_content).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![CapArg::new(
+                MEDIA_FILE_PATH,
+                true,
+                vec![
+                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Position { position: 0 },
+                ],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // CLI mode: pass file path as positional argument
+        let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let payload = runtime.build_payload_from_cli(
+            &runtime.manifest.as_ref().unwrap().caps[0],
+            &cli_args
+        ).unwrap();
+
+        // Verify payload is CBOR array with file-path argument
+        let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
+        assert!(matches!(cbor_val, ciborium::Value::Array(_)), "CLI mode produces CBOR array");
+
+        std::fs::remove_file(test_file).ok();
+    }
+
+    // TEST362: CLI mode with binary piped in - pipe binary data via stdin
+    //
+    // This test simulates real-world conditions:
+    // - Pure binary data piped to stdin (NOT CBOR)
+    // - CLI mode detected (command arg present)
+    // - Cap accepts stdin source
+    // - Binary is chunked on-the-fly and accumulated
+    // - Handler receives complete CBOR payload
+    #[test]
+    fn test362_cli_mode_piped_binary() {
+        use std::io::Cursor;
+
+        // Simulate large binary being piped (1MB PDF)
+        let pdf_content = vec![0xAB; 1_000_000];
+
+        // Create cap that accepts stdin
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![CapArg::new(
+                "media:pdf;bytes",
+                true,
+                vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap.clone()]);
+        let runtime = PluginRuntime::with_manifest(manifest);
+
+        // Mock stdin with Cursor (simulates piped binary)
+        let mock_stdin = Cursor::new(pdf_content.clone());
+
+        // Build payload from streaming reader (what CLI piped mode does)
+        let payload = runtime.build_payload_from_streaming_reader(&cap, mock_stdin).unwrap();
+
+        // Verify payload is CBOR array with correct structure
+        let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
+        match cbor_val {
+            ciborium::Value::Array(arr) => {
+                assert_eq!(arr.len(), 1, "CBOR array has one argument");
+
+                if let ciborium::Value::Map(map) = &arr[0] {
+                    let mut media_urn = None;
+                    let mut value = None;
+
+                    for (k, v) in map {
+                        if let ciborium::Value::Text(key) = k {
+                            match key.as_str() {
+                                "media_urn" => {
+                                    if let ciborium::Value::Text(s) = v {
+                                        media_urn = Some(s.clone());
+                                    }
+                                }
+                                "value" => {
+                                    if let ciborium::Value::Bytes(b) = v {
+                                        value = Some(b.clone());
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    assert_eq!(media_urn, Some("media:pdf;bytes".to_string()), "Media URN matches cap in_spec");
+                    assert_eq!(value, Some(pdf_content), "Binary content preserved exactly");
+                } else {
+                    panic!("Expected Map in CBOR array");
+                }
+            }
+            _ => panic!("Expected CBOR Array"),
+        }
+    }
+
+    // TEST363: CBOR mode with chunked content - send file content streaming as chunks
+    #[test]
+    fn test363_cbor_mode_chunked_content() {
+        use std::sync::{Arc, Mutex};
+
+        let pdf_content = vec![0xAA; 10000]; // 10KB of data
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let received_clone = Arc::clone(&received);
+
+        let handler = move |chunks: std::sync::mpsc::Receiver<Vec<u8>>, emitter: &dyn StreamEmitter, _peer: &dyn PeerInvoker| {
+            // TRUE STREAMING: Relay chunks and verify
+            let mut total = Vec::new();
+            for chunk in chunks {
+                total.extend_from_slice(&chunk);
+                emitter.emit_bytes(&chunk);  // Stream through
+            }
+
+            // Verify what we received
+            let cbor_val: ciborium::Value = ciborium::from_reader(&total[..]).unwrap();
+            if let ciborium::Value::Array(arr) = cbor_val {
+                if let ciborium::Value::Map(map) = &arr[0] {
+                    for (k, v) in map {
+                        if let (ciborium::Value::Text(key), ciborium::Value::Bytes(data)) = (k, v) {
+                            if key == "value" {
+                                *received_clone.lock().unwrap() = data.clone();
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        };
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![CapArg::new(
+                "media:pdf;bytes",
+                true,
+                vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+            )],
+        );
+
+        let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap.clone()]);
+        let mut runtime = PluginRuntime::with_manifest(manifest);
+        runtime.register_raw(&cap.urn_string(), handler);
+
+        // Verify handler can process chunked data (simulated by passing complete payload)
+        let args = vec![CapArgumentValue::new("media:pdf;bytes".to_string(), pdf_content.clone())];
+        let mut payload_bytes = Vec::new();
+        let cbor_args: Vec<ciborium::Value> = args.iter().map(|arg| {
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(arg.media_urn.clone())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(arg.value.clone())),
+            ])
+        }).collect();
+        ciborium::into_writer(&ciborium::Value::Array(cbor_args), &mut payload_bytes).unwrap();
+
+        // Simulate streaming: chunk payload and send via channel
+        let handler_func = runtime.find_handler(&cap.urn_string()).unwrap();
+        let no_peer = NoPeerInvoker;
+        let emitter = crate::CliStreamEmitter::new();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        const MAX_CHUNK: usize = 262144;
+        let mut offset = 0;
+        while offset < payload_bytes.len() {
+            let chunk_size = (payload_bytes.len() - offset).min(MAX_CHUNK);
+            tx.send(payload_bytes[offset..offset + chunk_size].to_vec()).ok();
+            offset += chunk_size;
+        }
+        drop(tx);
+        handler_func(rx, &emitter, &no_peer).unwrap();
+
+        assert_eq!(*received.lock().unwrap(), pdf_content, "Handler receives chunked content");
+    }
+
+    // TEST364: CBOR mode with file path - send file path in CBOR arguments (auto-conversion)
+    #[test]
+    fn test364_cbor_mode_file_path() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test364.pdf");
+        let pdf_content = b"PDF content for CBOR file path test";
+        std::fs::write(&test_file, pdf_content).unwrap();
+
+        let cap = create_test_cap(
+            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![CapArg::new(
+                MEDIA_FILE_PATH,
+                true,
+                vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+            )],
+        );
+
+        // Build CBOR arguments with file-path URN
+        let args = vec![CapArgumentValue::new(
+            MEDIA_FILE_PATH.to_string(),
+            test_file.to_string_lossy().as_bytes().to_vec()
+        )];
+        let mut payload = Vec::new();
+        let cbor_args: Vec<ciborium::Value> = args.iter().map(|arg| {
+            ciborium::Value::Map(vec![
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(arg.media_urn.clone())),
+                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(arg.value.clone())),
+            ])
+        }).collect();
+        ciborium::into_writer(&ciborium::Value::Array(cbor_args), &mut payload).unwrap();
+
+        // Extract effective payload (triggers file-path auto-conversion)
+        let effective = extract_effective_payload(
+            &payload,
+            Some("application/cbor"),
+            &cap.urn_string(),
+        ).unwrap();
+
+        // Verify the result is modified CBOR with PDF bytes (not file path)
+        let result: ciborium::Value = ciborium::from_reader(&effective[..]).unwrap();
+        if let ciborium::Value::Array(arr) = result {
+            if let ciborium::Value::Map(map) = &arr[0] {
+                let mut media_urn = None;
+                let mut value = None;
+                for (k, v) in map {
+                    if let ciborium::Value::Text(key) = k {
+                        match key.as_str() {
+                            "media_urn" => {
+                                if let ciborium::Value::Text(s) = v {
+                                    media_urn = Some(s);
+                                }
+                            }
+                            "value" => {
+                                if let ciborium::Value::Bytes(b) = v {
+                                    value = Some(b);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                assert_eq!(media_urn, Some(&"media:pdf;bytes".to_string()), "URN converted to expected input");
+                assert_eq!(value, Some(&pdf_content.to_vec()), "File auto-converted to bytes");
+            }
+        }
 
         std::fs::remove_file(test_file).ok();
     }

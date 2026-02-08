@@ -456,13 +456,36 @@ mod tests {
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
-            // Read 3 requests and respond with same IDs
-            for _ in 0..3 {
-                let frame = frame_reader.read().unwrap().expect("Expected frame");
-                received_ids_clone.lock().unwrap().push(frame.id.clone());
-
-                let response = Frame::end(frame.id, Some(b"ok".to_vec()));
-                frame_writer.write(&response).unwrap();
+            // Read requests until stdin EOF (plugin stays alive until host closes)
+            // Empty payload requests: REQ + END frames
+            // Non-empty: REQ + CHUNK... + END frames
+            let mut current_request: Option<MessageId> = None;
+            loop {
+                match frame_reader.read() {
+                    Ok(Some(frame)) => {
+                        match frame.frame_type {
+                            FrameType::Req | FrameType::Chunk => {
+                                // Start of request or continuation
+                                current_request = Some(frame.id.clone());
+                            }
+                            FrameType::End => {
+                                // End of request - respond now
+                                if current_request.is_some() {
+                                    received_ids_clone.lock().unwrap().push(frame.id.clone());
+                                    let response = Frame::end(frame.id, Some(b"ok".to_vec()));
+                                    frame_writer.write(&response).unwrap();
+                                    current_request = None;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Ok(None) => break,  // EOF
+                    Err(e) => {
+                        eprintln!("[Plugin] Error reading frame: {}", e);
+                        break;
+                    }
+                }
             }
         });
 
@@ -495,13 +518,16 @@ mod tests {
         // Test that handler registration and lookup works
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>("cap:op=echo", |req, _emitter, _peer| {
-            // Serialize back to bytes
-            Ok(serde_json::to_vec(&req).unwrap_or_default())
+        runtime.register::<serde_json::Value, _>("cap:op=echo", |req, emitter, _peer| {
+            // Stream response
+            let bytes = serde_json::to_vec(&req).unwrap_or_default();
+            emitter.emit_bytes(&bytes);
+            Ok(())
         });
 
-        runtime.register::<serde_json::Value, _>("cap:op=transform", |_req, _emitter, _peer| {
-            Ok(b"transformed".to_vec())
+        runtime.register::<serde_json::Value, _>("cap:op=transform", |_req, emitter, _peer| {
+            emitter.emit_bytes(b"transformed");
+            Ok(())
         });
 
         // Exact match
@@ -529,28 +555,67 @@ mod tests {
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
-            // Read request
-            let frame = frame_reader.read().unwrap().expect("Expected request frame");
-            let request_id = frame.id;
+            // Read requests until EOF
+            // Incoming request: REQ + (CHUNK)* + END frames
+            // ALWAYS respond to heartbeats immediately
+            let mut current_request: Option<MessageId> = None;
+            let mut waiting_for_heartbeat_response = false;
+            let mut expected_heartbeat_id: Option<MessageId> = None;
 
-            // Send chunk 1
-            let chunk1 = Frame::chunk(request_id.clone(), 0, b"part1".to_vec());
-            frame_writer.write(&chunk1).unwrap();
+            loop {
+                match frame_reader.read() {
+                    Ok(Some(frame)) => {
+                        match frame.frame_type {
+                            FrameType::Heartbeat => {
+                                // Check if this is a response to OUR heartbeat or a new heartbeat from host
+                                if waiting_for_heartbeat_response && Some(&frame.id) == expected_heartbeat_id.as_ref() {
+                                    // This is a response to our heartbeat - DON'T respond back!
+                                    waiting_for_heartbeat_response = false;
+                                    expected_heartbeat_id = None;
 
-            // Send heartbeat (plugin-initiated)
-            let heartbeat_id = MessageId::new_uuid();
-            let heartbeat = Frame::heartbeat(heartbeat_id.clone());
-            frame_writer.write(&heartbeat).unwrap();
+                                    // Continue sending response chunks
+                                    if let Some(request_id) = &current_request {
+                                        // Send final chunk
+                                        let mut chunk2 = Frame::chunk(request_id.clone(), 1, b"part2".to_vec());
+                                        chunk2.eof = Some(true);
+                                        frame_writer.write(&chunk2).unwrap();
+                                        current_request = None;
+                                    }
+                                } else {
+                                    // This is a HOST-initiated heartbeat - respond immediately
+                                    let heartbeat_response = Frame::heartbeat(frame.id.clone());
+                                    frame_writer.write(&heartbeat_response).unwrap();
+                                }
+                            }
+                            FrameType::Req | FrameType::Chunk => {
+                                // Start or continuation of incoming request
+                                current_request = Some(frame.id.clone());
+                            }
+                            FrameType::End => {
+                                // End of incoming request - now send response
+                                if let Some(request_id) = current_request.as_ref() {
+                                    // Send chunk 1
+                                    let chunk1 = Frame::chunk(request_id.clone(), 0, b"part1".to_vec());
+                                    frame_writer.write(&chunk1).unwrap();
 
-            // Wait for heartbeat response
-            let hb_response = frame_reader.read().unwrap().expect("Expected heartbeat response");
-            assert_eq!(hb_response.frame_type, FrameType::Heartbeat);
-            assert_eq!(hb_response.id, heartbeat_id);
+                                    // Send heartbeat (plugin-initiated)
+                                    let heartbeat_id = MessageId::new_uuid();
+                                    let heartbeat = Frame::heartbeat(heartbeat_id.clone());
+                                    frame_writer.write(&heartbeat).unwrap();
 
-            // Send final chunk
-            let mut chunk2 = Frame::chunk(request_id.clone(), 1, b"part2".to_vec());
-            chunk2.eof = Some(true);
-            frame_writer.write(&chunk2).unwrap();
+                                    // Mark that we're waiting for heartbeat response
+                                    waiting_for_heartbeat_response = true;
+                                    expected_heartbeat_id = Some(heartbeat_id);
+                                    // Will send chunk2 after receiving heartbeat response
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Ok(None) => break,  // EOF
+                    Err(_) => break,
+                }
+            }
         });
 
         // Host side
@@ -616,7 +681,7 @@ mod tests {
         // the host does NOT respond back (which would cause infinite ping-pong or SIGPIPE).
         let (host_write, plugin_read, plugin_write, host_read) = create_async_pipe_pair();
 
-        // Plugin side: respond to heartbeat, then send a request response, then close
+        // Plugin side: respond to heartbeat, then send request response
         let plugin_handle = thread::spawn(move || {
             let reader = BufReader::new(plugin_read);
             let writer = BufWriter::new(plugin_write);
@@ -628,25 +693,36 @@ mod tests {
             frame_reader.set_limits(limits);
             frame_writer.set_limits(limits);
 
-            // Read request
-            let request_frame = frame_reader.read().unwrap().expect("Expected request frame");
-            assert_eq!(request_frame.frame_type, FrameType::Req);
-            let request_id = request_frame.id;
+            // Read frames until EOF
+            let mut pending_request: Option<MessageId> = None;
+            loop {
+                match frame_reader.read() {
+                    Ok(Some(frame)) => {
+                        match frame.frame_type {
+                            FrameType::Req => {
+                                // Save request ID
+                                pending_request = Some(frame.id.clone());
+                            }
+                            FrameType::Heartbeat => {
+                                // Respond to heartbeat
+                                let heartbeat_response = Frame::heartbeat(frame.id);
+                                frame_writer.write(&heartbeat_response).unwrap();
 
-            // Read heartbeat from host
-            let heartbeat_frame = frame_reader.read().unwrap().expect("Expected heartbeat frame");
-            assert_eq!(heartbeat_frame.frame_type, FrameType::Heartbeat);
-            let heartbeat_id = heartbeat_frame.id;
+                                // Send pending request response (if any)
+                                if let Some(request_id) = pending_request.take() {
+                                    let response = Frame::res(request_id, b"done".to_vec(), "text/plain");
+                                    frame_writer.write(&response).unwrap();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Ok(None) => break,  // EOF
+                    Err(_) => break,
+                }
+            }
 
-            // Respond to heartbeat
-            let heartbeat_response = Frame::heartbeat(heartbeat_id);
-            frame_writer.write(&heartbeat_response).unwrap();
-
-            // Now send the request response
-            let response = Frame::res(request_id, b"done".to_vec(), "text/plain");
-            frame_writer.write(&response).unwrap();
-
-            // Close the writer to signal EOF to host
+            // Close explicitly on EOF (from loop break)
             drop(frame_writer);
         });
 

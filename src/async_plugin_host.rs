@@ -141,7 +141,7 @@ enum WriterCommand {
 
 /// A streaming response from a plugin that can be iterated asynchronously.
 pub struct StreamingResponse {
-    receiver: mpsc::Receiver<Result<ResponseChunk, AsyncHostError>>,
+    receiver: mpsc::UnboundedReceiver<Result<ResponseChunk, AsyncHostError>>,
 }
 
 impl StreamingResponse {
@@ -154,7 +154,7 @@ impl StreamingResponse {
 /// Internal shared state for the async plugin host
 struct HostState {
     /// Pending requests waiting for responses (host -> plugin)
-    pending: HashMap<MessageId, mpsc::Sender<Result<ResponseChunk, AsyncHostError>>>,
+    pending: HashMap<MessageId, mpsc::UnboundedSender<Result<ResponseChunk, AsyncHostError>>>,
     /// Pending heartbeat IDs we've sent
     pending_heartbeats: HashSet<MessageId>,
     /// Whether the host is closed
@@ -287,7 +287,7 @@ impl AsyncPluginHost {
                             eprintln!("[AsyncPluginHost] Reader loop: notifying {} pending requests of EOF", pending_count);
                             for (id, sender) in state.pending.drain() {
                                 eprintln!("[AsyncPluginHost] Reader loop: sending ProcessExited to request {:?}", id);
-                                let _ = sender.send(Err(AsyncHostError::ProcessExited)).await;
+                                let _ = sender.send(Err(AsyncHostError::ProcessExited));
                             }
                             break;
                         }
@@ -298,7 +298,7 @@ impl AsyncPluginHost {
                             state.closed = true;
                             let err = AsyncHostError::Cbor(e.to_string());
                             for (_, sender) in state.pending.drain() {
-                                let _ = sender.send(Err(err.clone())).await;
+                                let _ = sender.send(Err(err.clone()));
                             }
                             break;
                         }
@@ -341,7 +341,7 @@ impl AsyncPluginHost {
                                         len: frame.len,
                                         is_eof,
                                     };
-                                    let _ = sender.send(Ok(chunk)).await;
+                                    let _ = sender.send(Ok(chunk));
                                     is_eof
                                 }
                                 FrameType::Res => {
@@ -352,7 +352,7 @@ impl AsyncPluginHost {
                                         len: None,
                                         is_eof: true,
                                     };
-                                    let _ = sender.send(Ok(chunk)).await;
+                                    let _ = sender.send(Ok(chunk));
                                     true
                                 }
                                 FrameType::End => {
@@ -364,7 +364,7 @@ impl AsyncPluginHost {
                                             len: frame.len,
                                             is_eof: true,
                                         };
-                                        let _ = sender.send(Ok(chunk)).await;
+                                        let _ = sender.send(Ok(chunk));
                                     }
                                     true
                                 }
@@ -372,11 +372,11 @@ impl AsyncPluginHost {
                                 FrameType::Err => {
                                     let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
                                     let message = frame.error_message().unwrap_or("Unknown error").to_string();
-                                    let _ = sender.send(Err(AsyncHostError::PluginError { code, message })).await;
+                                    let _ = sender.send(Err(AsyncHostError::PluginError { code, message }));
                                     true
                                 }
                                 _ => {
-                                    let _ = sender.send(Err(AsyncHostError::UnexpectedFrameType(frame.frame_type))).await;
+                                    let _ = sender.send(Err(AsyncHostError::UnexpectedFrameType(frame.frame_type)));
                                     true
                                 }
                             };
@@ -403,7 +403,7 @@ impl AsyncPluginHost {
         cap_urn: &str,
         payload: &[u8],
         content_type: &str,
-    ) -> Result<mpsc::Receiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
+    ) -> Result<mpsc::UnboundedReceiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
         let mut state = self.state.lock().await;
         if state.closed {
             eprintln!("[AsyncPluginHost] request: host is closed!");
@@ -414,8 +414,8 @@ impl AsyncPluginHost {
         let request_id_str = request_id.to_uuid_string().unwrap_or_else(|| format!("{:?}", request_id));
         eprintln!("[AsyncPluginHost] request: generated request_id={} for cap={} payload_len={}", request_id_str, cap_urn, payload.len());
 
-        // Create channel for responses
-        let (sender, receiver) = mpsc::channel(32);
+        // Create unbounded channel for responses (avoid deadlock with large chunked responses)
+        let (sender, receiver) = mpsc::unbounded_channel();
         state.pending.insert(request_id.clone(), sender);
         eprintln!("[AsyncPluginHost] request: inserted request_id={} into pending (count={})", request_id_str, state.pending.len());
 
@@ -500,7 +500,7 @@ impl AsyncPluginHost {
         &self,
         cap_urn: &str,
         arguments: &[crate::CapArgumentValue],
-    ) -> Result<mpsc::Receiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
+    ) -> Result<mpsc::UnboundedReceiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
         // Serialize arguments as CBOR
         let cbor_args: Vec<ciborium::Value> = arguments
             .iter()
@@ -549,7 +549,7 @@ impl AsyncPluginHost {
 
     /// Collect all response chunks from a receiver into a PluginResponse.
     async fn collect_response(
-        receiver: &mut mpsc::Receiver<Result<ResponseChunk, AsyncHostError>>,
+        receiver: &mut mpsc::UnboundedReceiver<Result<ResponseChunk, AsyncHostError>>,
     ) -> Result<PluginResponse, AsyncHostError> {
         eprintln!("[AsyncPluginHost] collect_response: starting to collect chunks");
         let mut chunks = Vec::new();

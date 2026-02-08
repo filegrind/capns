@@ -1,5 +1,6 @@
 [dependencies]
 anyhow = "1.0"
+atty = "0.2"
 ciborium = "0.2"
 crossbeam-channel = "0.5"
 dirs = "5.0"
