@@ -422,9 +422,9 @@ impl AsyncPluginHost {
         let max_chunk = self.limits.max_chunk;
         drop(state);
 
-        // Automatic chunking for large request payloads
-        if payload.len() <= max_chunk {
-            // Small payload: send single REQ frame with full payload
+        // Automatic chunking for large request payloads (or empty payloads to avoid ambiguity)
+        if !payload.is_empty() && payload.len() <= max_chunk {
+            // Small non-empty payload: send single REQ frame with full payload
             let request = Frame::req(
                 request_id.clone(),
                 cap_urn,
@@ -436,7 +436,7 @@ impl AsyncPluginHost {
                 .await
                 .map_err(|_| AsyncHostError::SendError)?;
         } else {
-            // Large payload: send REQ + CHUNK frames + END
+            // Empty or large payload: send REQ + CHUNK frames + END
             eprintln!("[AsyncPluginHost] request: large payload ({} bytes), chunking with max_chunk={}", payload.len(), max_chunk);
 
             // Send initial REQ frame with cap_urn and content_type, but empty payload
@@ -455,27 +455,37 @@ impl AsyncPluginHost {
             let mut offset = 0;
             let mut seq = 0u64;
 
-            while offset < payload.len() {
-                let remaining = payload.len() - offset;
-                let chunk_size = remaining.min(max_chunk);
-                let chunk_data = payload[offset..offset + chunk_size].to_vec();
-                offset += chunk_size;
+            if payload.is_empty() {
+                // Empty payload: send END frame immediately with no chunks
+                let end_frame = Frame::end(request_id.clone(), Some(vec![]));
+                self.writer_tx
+                    .send(WriterCommand::WriteFrame(end_frame))
+                    .await
+                    .map_err(|_| AsyncHostError::SendError)?;
+            } else {
+                // Non-empty payload: send CHUNK frames + END
+                while offset < payload.len() {
+                    let remaining = payload.len() - offset;
+                    let chunk_size = remaining.min(max_chunk);
+                    let chunk_data = payload[offset..offset + chunk_size].to_vec();
+                    offset += chunk_size;
 
-                if offset < payload.len() {
-                    // Not the last chunk - send CHUNK frame
-                    let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
-                    self.writer_tx
-                        .send(WriterCommand::WriteFrame(chunk_frame))
-                        .await
-                        .map_err(|_| AsyncHostError::SendError)?;
-                    seq += 1;
-                } else {
-                    // Last chunk - send END frame
-                    let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
-                    self.writer_tx
-                        .send(WriterCommand::WriteFrame(end_frame))
-                        .await
-                        .map_err(|_| AsyncHostError::SendError)?;
+                    if offset < payload.len() {
+                        // Not the last chunk - send CHUNK frame
+                        let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
+                        self.writer_tx
+                            .send(WriterCommand::WriteFrame(chunk_frame))
+                            .await
+                            .map_err(|_| AsyncHostError::SendError)?;
+                        seq += 1;
+                    } else {
+                        // Last chunk - send END frame
+                        let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
+                        self.writer_tx
+                            .send(WriterCommand::WriteFrame(end_frame))
+                            .await
+                            .map_err(|_| AsyncHostError::SendError)?;
+                    }
                 }
             }
 

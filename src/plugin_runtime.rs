@@ -395,7 +395,7 @@ fn extract_effective_payload(
         }
     }
 
-    // No matching argument found - this is an error, no fallbacks
+    // No matching argument found
     Err(RuntimeError::Deserialize(format!(
         "No argument found matching expected input media type '{}' in CBOR arguments",
         expected_input
@@ -767,6 +767,7 @@ impl PluginRuntime {
             if let Some(val) = value {
                 // Determine the media URN to use in CBOR arguments:
                 // - If file-path/file-path-array with stdin source, use the stdin source's media URN
+                //   (which should match the cap's in_spec - this is the REAL input type)
                 // - Otherwise, use the arg's media URN
                 let arg_media_urn = MediaUrn::from_string(&arg_def.media_urn)
                     .map_err(|e| RuntimeError::Cli(format!("Invalid media URN '{}': {}", arg_def.media_urn, e)))?;
