@@ -134,10 +134,19 @@ impl PluginManager {
 
     /// Find a plugin that provides the given cap
     pub async fn find_plugin_for_cap(&self, cap_urn: &str) -> Result<String, ExecutionError> {
+        // Parse the requested cap URN
+        let requested_urn = capns::CapUrn::from_string(cap_urn).map_err(|e| {
+            ExecutionError::PluginNotFound {
+                cap_urn: format!("Invalid URN: {}: {}", cap_urn, e),
+            }
+        })?;
+
         // Check dev plugins first
         for (bin_path, manifest) in &self.dev_plugins {
             for cap in &manifest.caps {
-                if cap.urn.to_string() == cap_urn {
+                // Use URN equivalence check (bidirectional conforms_to), not string comparison
+                // Both directions must match for equivalence
+                if requested_urn.conforms_to(&cap.urn) && cap.urn.conforms_to(&requested_urn) {
                     eprintln!("[DevMode] Using dev binary for {}: {:?}", cap_urn, bin_path);
                     return Ok(format!("dev:{}", bin_path.display()));
                 }
