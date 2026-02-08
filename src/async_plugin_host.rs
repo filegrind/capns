@@ -68,6 +68,30 @@ pub enum AsyncHostError {
     #[error("Send error: channel closed")]
     SendError,
 
+    #[error("Protocol violation: Stream ID '{0}' already exists for request")]
+    DuplicateStreamId(String),
+
+    #[error("Protocol violation: Chunk for unknown stream ID '{0}'")]
+    UnknownStreamId(String),
+
+    #[error("Protocol violation: Chunk received for ended stream ID '{0}'")]
+    ChunkAfterStreamEnd(String),
+
+    #[error("Protocol violation: Stream activity after request END")]
+    StreamAfterRequestEnd,
+
+    #[error("Protocol violation: StreamStart missing stream_id")]
+    StreamStartMissingId,
+
+    #[error("Protocol violation: StreamStart missing media_urn")]
+    StreamStartMissingUrn,
+
+    #[error("Protocol violation: Chunk missing stream_id")]
+    ChunkMissingStreamId,
+
+    #[error("Protocol violation: {0}")]
+    Protocol(String),
+
     #[error("Receive error: channel closed")]
     RecvError,
 }
@@ -151,10 +175,24 @@ impl StreamingResponse {
     }
 }
 
+/// Stream tracking state for multiplexed streaming
+#[derive(Debug, Clone)]
+struct StreamState {
+    media_urn: String,
+    active: bool,  // false after StreamEnd
+}
+
+/// Per-request state tracking
+struct RequestState {
+    sender: mpsc::UnboundedSender<Result<ResponseChunk, AsyncHostError>>,
+    streams: HashMap<String, StreamState>,  // stream_id -> state
+    ended: bool,  // true after END frame - any stream activity after is FATAL
+}
+
 /// Internal shared state for the async plugin host
 struct HostState {
-    /// Pending requests waiting for responses (host -> plugin)
-    pending: HashMap<MessageId, mpsc::UnboundedSender<Result<ResponseChunk, AsyncHostError>>>,
+    /// Pending requests with stream tracking (host -> plugin)
+    pending: HashMap<MessageId, RequestState>,
     /// Pending heartbeat IDs we've sent
     pending_heartbeats: HashSet<MessageId>,
     /// Whether the host is closed
@@ -285,9 +323,9 @@ impl AsyncPluginHost {
                             state.closed = true;
                             let pending_count = state.pending.len();
                             eprintln!("[AsyncPluginHost] Reader loop: notifying {} pending requests of EOF", pending_count);
-                            for (id, sender) in state.pending.drain() {
+                            for (id, req_state) in state.pending.drain() {
                                 eprintln!("[AsyncPluginHost] Reader loop: sending ProcessExited to request {:?}", id);
-                                let _ = sender.send(Err(AsyncHostError::ProcessExited));
+                                let _ = req_state.sender.send(Err(AsyncHostError::ProcessExited));
                             }
                             break;
                         }
@@ -297,8 +335,8 @@ impl AsyncPluginHost {
                             let mut state = state.lock().await;
                             state.closed = true;
                             let err = AsyncHostError::Cbor(e.to_string());
-                            for (_, sender) in state.pending.drain() {
-                                let _ = sender.send(Err(err.clone()));
+                            for (_, req_state) in state.pending.drain() {
+                                let _ = req_state.sender.send(Err(err.clone()));
                             }
                             break;
                         }
@@ -319,43 +357,66 @@ impl AsyncPluginHost {
                         continue;
                     }
 
-                    // Route frame to appropriate pending request
+                    // Route frame to appropriate pending request with STRICT stream tracking
                     let request_id = frame.id.clone();
                     let frame_id_str = frame.id.to_uuid_string().unwrap_or_else(|| format!("{:?}", frame.id));
-                    let (_sender, should_remove) = {
-                        let state_guard = state.lock().await;
+                    let should_remove = {
+                        let mut state_guard = state.lock().await;
                         let pending_ids: Vec<_> = state_guard.pending.keys()
                             .map(|k| k.to_uuid_string().unwrap_or_else(|| format!("{:?}", k)))
                             .collect();
                         eprintln!("[AsyncPluginHost] Reader loop: looking for request_id={} in pending=[{}]", frame_id_str, pending_ids.join(", "));
-                        if let Some(sender) = state_guard.pending.get(&frame.id) {
+
+                        if let Some(req_state) = state_guard.pending.get_mut(&frame.id) {
                             eprintln!("[AsyncPluginHost] Reader loop: found matching request, routing frame");
-                            let sender = sender.clone();
+
                             let remove = match frame.frame_type {
                                 FrameType::Chunk => {
-                                    let is_eof = frame.is_eof();
-                                    let chunk = ResponseChunk {
-                                        payload: frame.payload.unwrap_or_default(),
-                                        seq: frame.seq,
-                                        offset: frame.offset,
-                                        len: frame.len,
-                                        is_eof,
+                                    // STRICT: Validate chunk has stream_id and stream is active
+                                    let stream_id = match frame.stream_id.as_ref() {
+                                        Some(id) => id,
+                                        None => {
+                                            let _ = req_state.sender.send(Err(AsyncHostError::ChunkMissingStreamId));
+                                            return; // Fatal: malformed chunk
+                                        }
                                     };
-                                    let _ = sender.send(Ok(chunk));
-                                    is_eof
-                                }
-                                FrameType::Res => {
-                                    let chunk = ResponseChunk {
-                                        payload: frame.payload.unwrap_or_default(),
-                                        seq: 0,
-                                        offset: None,
-                                        len: None,
-                                        is_eof: true,
-                                    };
-                                    let _ = sender.send(Ok(chunk));
-                                    true
+
+                                    // FAIL HARD: Request already ended
+                                    if req_state.ended {
+                                        let _ = req_state.sender.send(Err(AsyncHostError::StreamAfterRequestEnd));
+                                        return; // Fatal: chunk after END
+                                    }
+
+                                    // FAIL HARD: Unknown or inactive stream
+                                    match req_state.streams.get(stream_id) {
+                                        Some(stream_state) if stream_state.active => {
+                                            // ✅ Valid chunk for active stream
+                                            let is_eof = frame.is_eof();
+                                            let chunk = ResponseChunk {
+                                                payload: frame.payload.unwrap_or_default(),
+                                                seq: frame.seq,
+                                                offset: frame.offset,
+                                                len: frame.len,
+                                                is_eof,
+                                            };
+                                            let _ = req_state.sender.send(Ok(chunk));
+                                            is_eof
+                                        }
+                                        Some(_stream_state) => {
+                                            // FAIL HARD: Chunk for ended stream
+                                            let _ = req_state.sender.send(Err(AsyncHostError::ChunkAfterStreamEnd(stream_id.clone())));
+                                            return; // Fatal: chunk after StreamEnd
+                                        }
+                                        None => {
+                                            // FAIL HARD: Unknown stream
+                                            let _ = req_state.sender.send(Err(AsyncHostError::UnknownStreamId(stream_id.clone())));
+                                            return; // Fatal: unknown stream
+                                        }
+                                    }
                                 }
                                 FrameType::End => {
+                                    // STRICT: Mark request as ended - any stream activity after is FATAL
+                                    req_state.ended = true;
                                     if let Some(payload) = frame.payload {
                                         let chunk = ResponseChunk {
                                             payload,
@@ -364,26 +425,89 @@ impl AsyncPluginHost {
                                             len: frame.len,
                                             is_eof: true,
                                         };
-                                        let _ = sender.send(Ok(chunk));
+                                        let _ = req_state.sender.send(Ok(chunk));
                                     }
+                                    eprintln!("[AsyncPluginHost] Reader loop: Request ended, {} streams tracked", req_state.streams.len());
                                     true
                                 }
                                 FrameType::Log => false,
                                 FrameType::Err => {
                                     let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
                                     let message = frame.error_message().unwrap_or("Unknown error").to_string();
-                                    let _ = sender.send(Err(AsyncHostError::PluginError { code, message }));
+                                    let _ = req_state.sender.send(Err(AsyncHostError::PluginError { code, message }));
+                                    req_state.ended = true;
                                     true
                                 }
+                                FrameType::StreamStart => {
+                                    // STRICT: Track new stream, FAIL HARD on violations
+                                    let stream_id = match frame.stream_id.as_ref() {
+                                        Some(id) => id.clone(),
+                                        None => {
+                                            let _ = req_state.sender.send(Err(AsyncHostError::StreamStartMissingId));
+                                            return; // Fatal: malformed StreamStart
+                                        }
+                                    };
+                                    let media_urn = match frame.media_urn.as_ref() {
+                                        Some(urn) => urn.clone(),
+                                        None => {
+                                            let _ = req_state.sender.send(Err(AsyncHostError::StreamStartMissingUrn));
+                                            return; // Fatal: malformed StreamStart
+                                        }
+                                    };
+
+                                    // FAIL HARD: Request already ended
+                                    if req_state.ended {
+                                        let _ = req_state.sender.send(Err(AsyncHostError::StreamAfterRequestEnd));
+                                        return; // Fatal: stream after END
+                                    }
+
+                                    // FAIL HARD: Duplicate stream ID
+                                    if req_state.streams.contains_key(&stream_id) {
+                                        let _ = req_state.sender.send(Err(AsyncHostError::DuplicateStreamId(stream_id)));
+                                        return; // Fatal: duplicate stream
+                                    }
+
+                                    // ✅ Track new stream
+                                    req_state.streams.insert(stream_id.clone(), StreamState {
+                                        media_urn: media_urn.clone(),
+                                        active: true,
+                                    });
+                                    eprintln!("[AsyncPluginHost] Reader loop: StreamStart tracked stream_id={} media_urn={} (total={})",
+                                        stream_id, media_urn, req_state.streams.len());
+                                    false
+                                }
+                                FrameType::StreamEnd => {
+                                    // STRICT: Mark stream as ended, FAIL HARD on violations
+                                    let stream_id = match frame.stream_id.as_ref() {
+                                        Some(id) => id.clone(),
+                                        None => {
+                                            let _ = req_state.sender.send(Err(AsyncHostError::Protocol("StreamEnd missing stream_id".to_string())));
+                                            return; // Fatal: malformed StreamEnd
+                                        }
+                                    };
+
+                                    // FAIL HARD: Unknown stream
+                                    match req_state.streams.get_mut(&stream_id) {
+                                        Some(stream_state) => {
+                                            stream_state.active = false;
+                                            eprintln!("[AsyncPluginHost] Reader loop: StreamEnd marked stream_id={} as ended", stream_id);
+                                        }
+                                        None => {
+                                            let _ = req_state.sender.send(Err(AsyncHostError::UnknownStreamId(stream_id)));
+                                            return; // Fatal: StreamEnd for unknown stream
+                                        }
+                                    }
+                                    false
+                                }
                                 _ => {
-                                    let _ = sender.send(Err(AsyncHostError::UnexpectedFrameType(frame.frame_type)));
+                                    let _ = req_state.sender.send(Err(AsyncHostError::UnexpectedFrameType(frame.frame_type)));
                                     true
                                 }
                             };
-                            (Some(sender), remove)
+                            remove
                         } else {
                             eprintln!("[AsyncPluginHost] Reader loop: NO MATCH for request_id={}, frame dropped!", frame_id_str);
-                            (None, false)
+                            false
                         }
                     };
 
@@ -397,144 +521,102 @@ impl AsyncPluginHost {
         }
     }
 
-    /// Send a cap request and receive responses via a channel.
-    pub async fn request(
-        &self,
-        cap_urn: &str,
-        payload: &[u8],
-        content_type: &str,
-    ) -> Result<mpsc::UnboundedReceiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
-        let mut state = self.state.lock().await;
-        if state.closed {
-            eprintln!("[AsyncPluginHost] request: host is closed!");
-            return Err(AsyncHostError::Closed);
-        }
 
-        let request_id = MessageId::new_uuid();
-        let request_id_str = request_id.to_uuid_string().unwrap_or_else(|| format!("{:?}", request_id));
-        eprintln!("[AsyncPluginHost] request: generated request_id={} for cap={} payload_len={}", request_id_str, cap_urn, payload.len());
-
-        // Create unbounded channel for responses (avoid deadlock with large chunked responses)
-        let (sender, receiver) = mpsc::unbounded_channel();
-        state.pending.insert(request_id.clone(), sender);
-        eprintln!("[AsyncPluginHost] request: inserted request_id={} into pending (count={})", request_id_str, state.pending.len());
-
-        let max_chunk = self.limits.max_chunk;
-        drop(state);
-
-        // Automatic chunking for large request payloads (or empty payloads to avoid ambiguity)
-        if !payload.is_empty() && payload.len() <= max_chunk {
-            // Small non-empty payload: send single REQ frame with full payload
-            let request = Frame::req(
-                request_id.clone(),
-                cap_urn,
-                payload.to_vec(),
-                content_type,
-            );
-            self.writer_tx
-                .send(WriterCommand::WriteFrame(request))
-                .await
-                .map_err(|_| AsyncHostError::SendError)?;
-        } else {
-            // Empty or large payload: send REQ + CHUNK frames + END
-            eprintln!("[AsyncPluginHost] request: large payload ({} bytes), chunking with max_chunk={}", payload.len(), max_chunk);
-
-            // Send initial REQ frame with cap_urn and content_type, but empty payload
-            let request = Frame::req(
-                request_id.clone(),
-                cap_urn,
-                vec![],
-                content_type,
-            );
-            self.writer_tx
-                .send(WriterCommand::WriteFrame(request))
-                .await
-                .map_err(|_| AsyncHostError::SendError)?;
-
-            // Send payload in CHUNK frames
-            let mut offset = 0;
-            let mut seq = 0u64;
-
-            if payload.is_empty() {
-                // Empty payload: send END frame immediately with no chunks
-                let end_frame = Frame::end(request_id.clone(), Some(vec![]));
-                self.writer_tx
-                    .send(WriterCommand::WriteFrame(end_frame))
-                    .await
-                    .map_err(|_| AsyncHostError::SendError)?;
-            } else {
-                // Non-empty payload: send CHUNK frames + END
-                while offset < payload.len() {
-                    let remaining = payload.len() - offset;
-                    let chunk_size = remaining.min(max_chunk);
-                    let chunk_data = payload[offset..offset + chunk_size].to_vec();
-                    offset += chunk_size;
-
-                    if offset < payload.len() {
-                        // Not the last chunk - send CHUNK frame
-                        let chunk_frame = Frame::chunk(request_id.clone(), seq, chunk_data);
-                        self.writer_tx
-                            .send(WriterCommand::WriteFrame(chunk_frame))
-                            .await
-                            .map_err(|_| AsyncHostError::SendError)?;
-                        seq += 1;
-                    } else {
-                        // Last chunk - send END frame
-                        let end_frame = Frame::end(request_id.clone(), Some(chunk_data));
-                        self.writer_tx
-                            .send(WriterCommand::WriteFrame(end_frame))
-                            .await
-                            .map_err(|_| AsyncHostError::SendError)?;
-                    }
-                }
-            }
-
-            eprintln!("[AsyncPluginHost] request: sent {} chunk frames + END for request_id={}", seq, request_id_str);
-        }
-
-        Ok(receiver)
-    }
-
-    /// Send a cap request with arguments.
+    /// Send a cap request with multiple argument streams.
+    ///
+    /// NEW PROTOCOL: Each argument becomes an independent stream with its own stream_id.
+    /// Streams are sent: STREAM_START → CHUNK(s) → STREAM_END
+    /// This allows multiplexed streaming of multiple large arguments.
     pub async fn request_with_arguments(
         &self,
         cap_urn: &str,
         arguments: &[crate::CapArgumentValue],
     ) -> Result<mpsc::UnboundedReceiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
-        // Serialize arguments as CBOR
-        let cbor_args: Vec<ciborium::Value> = arguments
-            .iter()
-            .map(|arg| {
-                ciborium::Value::Map(vec![
-                    (
-                        ciborium::Value::Text("media_urn".to_string()),
-                        ciborium::Value::Text(arg.media_urn.clone()),
-                    ),
-                    (
-                        ciborium::Value::Text("value".to_string()),
-                        ciborium::Value::Bytes(arg.value.clone()),
-                    ),
-                ])
-            })
-            .collect();
+        let mut state = self.state.lock().await;
+        if state.closed {
+            return Err(AsyncHostError::Closed);
+        }
 
-        let cbor_payload = ciborium::Value::Array(cbor_args);
-        let mut payload_bytes = Vec::new();
-        ciborium::into_writer(&cbor_payload, &mut payload_bytes)
-            .map_err(|e| AsyncHostError::Cbor(format!("Failed to serialize arguments: {}", e)))?;
+        let request_id = MessageId::new_uuid();
+        let request_id_str = request_id.to_uuid_string().unwrap_or_else(|| format!("{:?}", request_id));
+        eprintln!("[AsyncPluginHost] request_with_arguments: req_id={} cap={} args={}", request_id_str, cap_urn, arguments.len());
 
-        self.request(cap_urn, &payload_bytes, "application/cbor").await
-    }
+        // Create unbounded channel for responses with stream tracking
+        let (sender, receiver) = mpsc::unbounded_channel();
+        state.pending.insert(request_id.clone(), RequestState {
+            sender,
+            streams: HashMap::new(),
+            ended: false,
+        });
 
-    /// Send a cap request and wait for the complete response.
-    pub async fn call(
-        &self,
-        cap_urn: &str,
-        payload: &[u8],
-        content_type: &str,
-    ) -> Result<PluginResponse, AsyncHostError> {
-        let mut receiver = self.request(cap_urn, payload, content_type).await?;
-        Self::collect_response(&mut receiver).await
+        let max_chunk = self.limits.max_chunk;
+        drop(state);
+
+        // Send REQ frame (no payload - arguments come as streams)
+        let request = Frame::req(request_id.clone(), cap_urn, vec![], "application/cbor");
+        self.writer_tx
+            .send(WriterCommand::WriteFrame(request))
+            .await
+            .map_err(|_| AsyncHostError::SendError)?;
+
+        // Send each argument as an independent stream
+        for arg in arguments {
+            let stream_id = uuid::Uuid::new_v4().to_string();
+            eprintln!("[AsyncPluginHost] Starting stream: stream_id={} media_urn={} size={}",
+                stream_id, arg.media_urn, arg.value.len());
+
+            // STREAM_START: Announce new stream
+            let start_frame = Frame::stream_start(
+                request_id.clone(),
+                stream_id.clone(),
+                arg.media_urn.clone()
+            );
+            self.writer_tx
+                .send(WriterCommand::WriteFrame(start_frame))
+                .await
+                .map_err(|_| AsyncHostError::SendError)?;
+
+            // CHUNK(s): Send argument data in chunks
+            let mut offset = 0;
+            let mut seq = 0u64;
+            while offset < arg.value.len() {
+                let chunk_size = (arg.value.len() - offset).min(max_chunk);
+                let chunk_data = arg.value[offset..offset + chunk_size].to_vec();
+
+                let chunk_frame = Frame::chunk(
+                    request_id.clone(),
+                    stream_id.clone(),
+                    seq,
+                    chunk_data
+                );
+                self.writer_tx
+                    .send(WriterCommand::WriteFrame(chunk_frame))
+                    .await
+                    .map_err(|_| AsyncHostError::SendError)?;
+
+                offset += chunk_size;
+                seq += 1;
+            }
+
+            // STREAM_END: Close this stream
+            let end_frame = Frame::stream_end(request_id.clone(), stream_id.clone());
+            self.writer_tx
+                .send(WriterCommand::WriteFrame(end_frame))
+                .await
+                .map_err(|_| AsyncHostError::SendError)?;
+
+            eprintln!("[AsyncPluginHost] Stream ended: stream_id={} chunks={}", stream_id, seq);
+        }
+
+        // END: Close the entire request
+        let request_end = Frame::end(request_id.clone(), None);
+        self.writer_tx
+            .send(WriterCommand::WriteFrame(request_end))
+            .await
+            .map_err(|_| AsyncHostError::SendError)?;
+
+        eprintln!("[AsyncPluginHost] Request complete: req_id={} streams={}", request_id_str, arguments.len());
+        Ok(receiver)
     }
 
     /// Send a cap request with arguments and wait for the complete response.
@@ -590,17 +672,6 @@ impl AsyncPluginHost {
     /// Get the plugin manifest extracted from HELLO handshake.
     pub fn plugin_manifest(&self) -> &[u8] {
         &self.plugin_manifest
-    }
-
-    /// Send a cap request and get a streaming response iterator.
-    pub async fn call_streaming(
-        &self,
-        cap_urn: &str,
-        payload: &[u8],
-        content_type: &str,
-    ) -> Result<StreamingResponse, AsyncHostError> {
-        let receiver = self.request(cap_urn, payload, content_type).await?;
-        Ok(StreamingResponse { receiver })
     }
 
     /// Send a heartbeat and wait for response.

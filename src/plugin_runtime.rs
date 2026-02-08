@@ -50,6 +50,7 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
 /// Errors that can occur in the plugin runtime
@@ -185,26 +186,59 @@ impl PeerInvoker for NoPeerInvoker {
 
 /// Thread-safe implementation of StreamEmitter that writes CBOR frames.
 /// Uses Arc<Mutex<>> for safe concurrent access from multiple handler threads.
+/// Implements stream multiplexing protocol: sends STREAM_START before first chunk.
 struct ThreadSafeEmitter<W: Write + Send> {
     writer: Arc<Mutex<FrameWriter<W>>>,
     request_id: MessageId,
+    stream_id: String,  // Response stream ID
+    media_urn: String,  // Response media URN
+    stream_started: AtomicBool,  // Track if STREAM_START was sent
     seq: Mutex<u64>,
 }
 
 impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
     fn emit_bytes(&self, payload: &[u8]) {
-        let seq = {
-            let mut seq_guard = self.seq.lock().unwrap();
-            let current = *seq_guard;
-            *seq_guard += 1;
-            current
-        };
+        // STREAM MULTIPLEXING PROTOCOL: Send STREAM_START before first chunk
+        if !self.stream_started.swap(true, Ordering::SeqCst) {
+            let start_frame = Frame::stream_start(
+                self.request_id.clone(),
+                self.stream_id.clone(),
+                self.media_urn.clone()
+            );
 
-        let frame = Frame::chunk(self.request_id.clone(), seq, payload.to_vec());
+            let mut writer = self.writer.lock().unwrap();
+            if let Err(e) = writer.write(&start_frame) {
+                eprintln!("[PluginRuntime] Failed to write STREAM_START: {}", e);
+                return;
+            }
+            drop(writer); // Release lock before continuing
+        }
 
-        let mut writer = self.writer.lock().unwrap();
-        if let Err(e) = writer.write(&frame) {
-            eprintln!("[PluginRuntime] Failed to write chunk: {}", e);
+        // AUTO-CHUNKING: Split large payloads into max_chunk sized chunks
+        const MAX_CHUNK: usize = 262144; // 256KB
+        let mut offset = 0;
+
+        while offset < payload.len() {
+            let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
+            let chunk_data = payload[offset..offset + chunk_size].to_vec();
+
+            let seq = {
+                let mut seq_guard = self.seq.lock().unwrap();
+                let current = *seq_guard;
+                *seq_guard += 1;
+                current
+            };
+
+            let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, chunk_data);
+
+            let mut writer = self.writer.lock().unwrap();
+            if let Err(e) = writer.write(&frame) {
+                eprintln!("[PluginRuntime] Failed to write chunk: {}", e);
+                return; // Stop on first error
+            }
+            drop(writer);
+
+            offset += chunk_size;
         }
     }
 
@@ -286,28 +320,53 @@ impl StreamEmitter for CliStreamEmitter {
     }
 }
 
+/// A chunk from a multiplexed stream.
+/// Handlers receive these via a channel, allowing processing of multiple argument streams.
+#[derive(Debug, Clone)]
+pub struct StreamChunk {
+    /// Unique identifier for this stream
+    pub stream_id: String,
+    /// Media URN identifying the stream's data type
+    pub media_urn: String,
+    /// Chunk data
+    pub data: Vec<u8>,
+    /// True if this is the last chunk for this stream
+    pub is_last: bool,
+}
+
 /// Handler function type - must be Send + Sync for concurrent execution.
-/// Receives request payload bytes, emitter, and peer invoker; returns response payload bytes.
 ///
-/// The `PeerInvoker` allows the handler to invoke caps on the host (peer) during
-/// STREAMING HANDLER ARCHITECTURE (Option A):
-/// Handlers receive input chunks as an iterator (via mpsc::Receiver).
-/// This enables true streaming - process chunks as they arrive, emit results immediately.
-/// No accumulation, no waiting for EOF, works with infinite streams.
+/// STREAM MULTIPLEXING ARCHITECTURE:
+/// Handlers receive multiple argument streams via StreamChunk messages.
+/// Each chunk identifies its stream (stream_id) and type (media_urn).
+/// Handlers can process streams as they arrive, enabling:
+/// - Multiple large arguments streamed simultaneously
+/// - Configuration args sent first (no form ordering needed)
+/// - Infinite streams (video, audio, real-time data)
+/// - Low memory footprint (no buffering all args)
 ///
 /// Handler receives:
-/// - Input chunks via mpsc::Receiver (iterate until channel closes)
+/// - Stream chunks via mpsc::Receiver<StreamChunk>
 /// - StreamEmitter for emitting output chunks
 /// - PeerInvoker for calling host caps
-///
-/// Handler processes chunks as they arrive and emits results incrementally.
 pub type HandlerFn = Arc<
-    dyn Fn(std::sync::mpsc::Receiver<Vec<u8>>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync,
+    dyn Fn(std::sync::mpsc::Receiver<StreamChunk>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync,
 >;
 
+/// Stream data accumulator for multiplexed protocol
+#[derive(Clone)]
+struct PendingStream {
+    media_urn: String,
+    chunks: Vec<Vec<u8>>,
+    complete: bool,
+}
+
 /// Internal struct to track pending peer requests (plugin invoking host caps).
+/// Uses stream multiplexing protocol to track response streams.
 struct PendingPeerRequest {
     sender: Sender<Result<Vec<u8>, RuntimeError>>,
+    streams: HashMap<String, PendingStream>,  // stream_id -> accumulated chunks
+    ended: bool,  // true after END frame
 }
 
 /// Implementation of PeerInvoker that sends REQ frames to the host.
@@ -532,47 +591,81 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
         // Register the pending request before sending
         {
             let mut pending = self.pending_requests.lock().unwrap();
-            pending.insert(request_id.clone(), PendingPeerRequest { sender });
+            pending.insert(request_id.clone(), PendingPeerRequest {
+                sender,
+                streams: HashMap::new(),
+                ended: false,
+            });
         }
 
-        // Serialize arguments as CBOR - binary values stay binary (no base64 needed)
-        let payload = ciborium::Value::Array(
-            arguments
-                .iter()
-                .map(|a| {
-                    ciborium::Value::Map(vec![
-                        (
-                            ciborium::Value::Text("media_urn".to_string()),
-                            ciborium::Value::Text(a.media_urn.clone()),
-                        ),
-                        (
-                            ciborium::Value::Text("value".to_string()),
-                            ciborium::Value::Bytes(a.value.clone()),
-                        ),
-                    ])
-                })
-                .collect(),
-        );
-        let mut payload_bytes = Vec::new();
-        ciborium::into_writer(&payload, &mut payload_bytes).map_err(|e| {
-            self.pending_requests.lock().unwrap().remove(&request_id);
-            RuntimeError::Serialize(format!("Failed to serialize arguments: {}", e))
-        })?;
-
-        // Create and send the REQ frame with CBOR payload
-        let frame = Frame::req(
-            request_id.clone(),
-            cap_urn,
-            payload_bytes,
-            "application/cbor",
-        );
+        // STREAM MULTIPLEXING PROTOCOL: Send REQ + streams for each argument + END
+        const MAX_CHUNK: usize = 262144; // 256KB chunks
 
         {
             let mut writer = self.writer.lock().unwrap();
-            writer.write(&frame).map_err(|e| {
-                // Remove the pending request on send failure
+
+            // 1. Send REQ with empty payload
+            let req_frame = Frame::req(
+                request_id.clone(),
+                cap_urn,
+                vec![], // Empty payload - arguments come as streams
+                "application/cbor",
+            );
+            writer.write(&req_frame).map_err(|e| {
                 self.pending_requests.lock().unwrap().remove(&request_id);
                 RuntimeError::PeerRequest(format!("Failed to send REQ frame: {}", e))
+            })?;
+
+            // 2. Send each argument as an independent stream
+            for arg in arguments {
+                let stream_id = uuid::Uuid::new_v4().to_string();
+
+                // STREAM_START: Announce new stream
+                let start_frame = Frame::stream_start(
+                    request_id.clone(),
+                    stream_id.clone(),
+                    arg.media_urn.clone()
+                );
+                writer.write(&start_frame).map_err(|e| {
+                    self.pending_requests.lock().unwrap().remove(&request_id);
+                    RuntimeError::PeerRequest(format!("Failed to send STREAM_START: {}", e))
+                })?;
+
+                // CHUNK(s): Send argument data in chunks
+                let mut offset = 0;
+                let mut seq = 0u64;
+                while offset < arg.value.len() {
+                    let chunk_size = (arg.value.len() - offset).min(MAX_CHUNK);
+                    let chunk_data = arg.value[offset..offset + chunk_size].to_vec();
+
+                    let chunk_frame = Frame::chunk(
+                        request_id.clone(),
+                        stream_id.clone(),
+                        seq,
+                        chunk_data
+                    );
+                    writer.write(&chunk_frame).map_err(|e| {
+                        self.pending_requests.lock().unwrap().remove(&request_id);
+                        RuntimeError::PeerRequest(format!("Failed to send CHUNK: {}", e))
+                    })?;
+
+                    offset += chunk_size;
+                    seq += 1;
+                }
+
+                // STREAM_END: Close this stream
+                let end_frame = Frame::stream_end(request_id.clone(), stream_id);
+                writer.write(&end_frame).map_err(|e| {
+                    self.pending_requests.lock().unwrap().remove(&request_id);
+                    RuntimeError::PeerRequest(format!("Failed to send STREAM_END: {}", e))
+                })?;
+            }
+
+            // 3. END: Close the entire request
+            let request_end = Frame::end(request_id.clone(), None);
+            writer.write(&request_end).map_err(|e| {
+                self.pending_requests.lock().unwrap().remove(&request_id);
+                RuntimeError::PeerRequest(format!("Failed to send END frame: {}", e))
             })?;
         }
 
@@ -680,11 +773,11 @@ impl PluginRuntime {
         Req: serde::de::DeserializeOwned + 'static,
         F: Fn(Req, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
-        let streaming_handler = move |chunks: std::sync::mpsc::Receiver<Vec<u8>>, emitter: &dyn StreamEmitter, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
-            // Accumulate all chunks to deserialize complete request
+        let streaming_handler = move |stream_chunks: std::sync::mpsc::Receiver<StreamChunk>, emitter: &dyn StreamEmitter, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
+            // Accumulate all stream chunks
             let mut accumulated = Vec::new();
-            for chunk in chunks {
-                accumulated.extend_from_slice(&chunk);
+            for chunk in stream_chunks {
+                accumulated.extend_from_slice(&chunk.data);
             }
 
             // Deserialize complete request from accumulated bytes (JSON format)
@@ -697,18 +790,20 @@ impl PluginRuntime {
         self.handlers.insert(cap_urn.to_string(), Arc::new(streaming_handler));
     }
 
-    /// Register a raw handler that works with bytes directly.
-    ///
-    /// Use this when you need full control over serialization.
-    /// The handler receives the emitter and peer invoker in addition to the raw payload.
     /// Register a streaming handler for a cap URN.
     ///
-    /// STREAMING ARCHITECTURE: Handler receives chunks via mpsc::Receiver as they arrive.
-    /// No accumulation - process and emit results immediately.
-    /// Perfect for infinite streams (video, audio, real-time data).
+    /// STREAM MULTIPLEXING ARCHITECTURE:
+    /// Handler receives multiple argument streams via StreamChunk messages.
+    /// Each chunk identifies its stream (stream_id) and data type (media_urn).
+    ///
+    /// Benefits:
+    /// - Process multiple large arguments simultaneously
+    /// - Configuration args arrive first (no blocking on large data)
+    /// - True streaming - no accumulation required
+    /// - Perfect for infinite streams (video, audio, real-time data)
     pub fn register_raw<F>(&mut self, cap_urn: &str, handler: F)
     where
-        F: Fn(std::sync::mpsc::Receiver<Vec<u8>>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
+        F: Fn(std::sync::mpsc::Receiver<StreamChunk>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
         self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
     }
@@ -855,18 +950,32 @@ impl PluginRuntime {
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
 
-        // STREAMING ARCHITECTURE: Create channel and chunk payload before sending
-        // This ensures handlers receive manageable chunks (256KB) for true streaming
+        // STREAM MULTIPLEXING: CLI mode has a single input stream
+        // Parse cap URN to get in_spec (media_urn for the stream)
+        let cap_urn = crate::CapUrn::from_string(&cap.urn_string())
+            .map_err(|e| RuntimeError::Handler(format!("Invalid cap URN: {}", e)))?;
+        let media_urn = cap_urn.in_spec().to_string();
+        let stream_id = uuid::Uuid::new_v4().to_string();
+
+        // Create channel and send payload as StreamChunk messages
         let (tx, rx) = std::sync::mpsc::channel();
         const MAX_CHUNK: usize = 262144; // 256KB chunks
         let mut offset = 0;
         while offset < payload.len() {
             let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
-            let chunk = payload[offset..offset + chunk_size].to_vec();
-            tx.send(chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk to handler".to_string()))?;
+            let chunk_data = payload[offset..offset + chunk_size].to_vec();
+            let is_last = offset + chunk_size >= payload.len();
+
+            let stream_chunk = StreamChunk {
+                stream_id: stream_id.clone(),
+                media_urn: media_urn.clone(),
+                data: chunk_data,
+                is_last,
+            };
+            tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk to handler".to_string()))?;
             offset += chunk_size;
         }
-        drop(tx); // Close channel - signals EOF to handler
+        drop(tx); // Close channel - signals end of streams
 
         // Invoke streaming handler
         let result = handler(rx, &emitter, &peer);
@@ -1394,12 +1503,13 @@ impl PluginRuntime {
         let pending_peer_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
-        // Track incoming requests that are being chunked
+        // Track incoming requests with multiplexed streams
         #[derive(Clone)]
         struct PendingIncomingRequest {
             cap_urn: String,
-            content_type: Option<String>,
-            chunks: Vec<Vec<u8>>,
+            handler: HandlerFn,
+            streams: HashMap<String, PendingStream>,  // stream_id -> stream data
+            ended: bool,  // true after END frame - any stream activity after is FATAL
         }
         let pending_incoming: Arc<Mutex<HashMap<MessageId, PendingIncomingRequest>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -1449,217 +1559,126 @@ impl PluginRuntime {
 
                     let raw_payload = frame.payload.clone().unwrap_or_default();
 
-                    // Check if this is a chunked request (empty payload means chunks will follow)
-                    if raw_payload.is_empty() {
-                        // Start accumulating chunks for this request
-                        let mut pending = pending_incoming.lock().unwrap();
-                        pending.insert(frame.id.clone(), PendingIncomingRequest {
-                            cap_urn: cap_urn.clone(),
-                            content_type: frame.content_type.clone(),
-                            chunks: vec![],
-                        });
-                        drop(pending);
-                        continue; // Wait for CHUNK/END frames
-                    }
-
-                    // Complete payload in REQ frame - invoke handler immediately
-                    // Clone what we need for the handler thread
-                    let writer_clone = Arc::clone(&frame_writer);
-                    let pending_clone = Arc::clone(&pending_peer_requests);
-                    let request_id = frame.id.clone();
-                    let content_type = frame.content_type.clone();
-                    let cap_urn_clone = cap_urn.clone();
-                    let max_chunk = negotiated_limits.max_chunk;
-
-                    // Spawn handler in separate thread - main loop continues immediately
-                    let handle = thread::spawn(move || {
-                        let emitter = ThreadSafeEmitter {
-                            writer: Arc::clone(&writer_clone),
-                            request_id: request_id.clone(),
-                            seq: Mutex::new(0),
-                        };
-
-                        // Create peer invoker for this handler
-                        let peer_invoker = PeerInvokerImpl {
-                            writer: Arc::clone(&writer_clone),
-                            pending_requests: Arc::clone(&pending_clone),
-                        };
-
-                        // Extract effective payload from arguments if content_type is CBOR
-                        let payload = match extract_effective_payload(
-                            &raw_payload,
-                            content_type.as_deref(),
-                            &cap_urn_clone,
-                        ) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                // Failed to extract payload - send error response
-                                let err_frame = Frame::err(request_id, "PAYLOAD_ERROR", &e.to_string());
-                                let mut writer = writer_clone.lock().unwrap();
-                                if let Err(write_err) = writer.write(&err_frame) {
-                                    eprintln!("[PluginRuntime] Failed to write error response: {}", write_err);
-                                }
-                                return;
-                            }
-                        };
-
-                        // STREAMING ARCHITECTURE: Chunk payload before sending to handler
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        const MAX_CHUNK: usize = 262144; // 256KB chunks
-                        let mut offset = 0;
-                        while offset < payload.len() {
-                            let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
-                            let chunk = payload[offset..offset + chunk_size].to_vec();
-                            let _ = tx.send(chunk); // Ignore send errors
-                            offset += chunk_size;
-                        }
-                        drop(tx); // Close channel - signals EOF to handler
-
-                        let result = handler(rx, &emitter, &peer_invoker);
-
-                        // Handler emits output via StreamEmitter (ThreadSafeEmitter handles chunking)
-                        // Send END frame to signal completion
-                        match result {
-                            Ok(()) => {
-                                let mut writer = writer_clone.lock().unwrap();
-                                let end_frame = Frame::end(request_id.clone(), None);
-                                if let Err(e) = writer.write(&end_frame) {
-                                    eprintln!("[PluginRuntime] Failed to write END frame: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
-                                let mut writer = writer_clone.lock().unwrap();
-                                if let Err(e) = writer.write(&err_frame) {
-                                    eprintln!("[PluginRuntime] Failed to write error response: {}", e);
-                                }
-                            }
-                        }
-                    });
-
-                    active_handlers.push(handle);
-                }
-                FrameType::Chunk => {
-                    // Check if this is a chunk for an incoming request or a response
-                    let mut incoming = pending_incoming.lock().unwrap();
-                    if let Some(pending_req) = incoming.get_mut(&frame.id) {
-                        // This is a chunk for an incoming request
-                        if let Some(payload) = frame.payload {
-                            pending_req.chunks.push(payload);
-                        }
-                        drop(incoming);
-                        continue; // Wait for more chunks or END
-                    }
-                    drop(incoming);
-
-                    // Not an incoming request chunk - must be a response chunk
-                    let pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = pending.get(&frame.id) {
-                        let payload = frame.payload.clone().unwrap_or_default();
-                        let _ = pending_req.sender.send(Ok(payload));
-                    }
-                }
-                FrameType::End => {
-                    // Check if this is the end of an incoming chunked request
-                    let mut incoming = pending_incoming.lock().unwrap();
-                    if let Some(mut pending_req) = incoming.remove(&frame.id) {
-                        // Collect all chunks into final payload
-                        if let Some(final_chunk) = frame.payload {
-                            pending_req.chunks.push(final_chunk);
-                        }
-                        let raw_payload: Vec<u8> = pending_req.chunks.concat();
-                        drop(incoming);
-
-                        // Find handler and invoke
-                        let handler = match self.find_handler(&pending_req.cap_urn) {
-                            Some(h) => h,
-                            None => {
-                                let err_frame = Frame::err(
-                                    frame.id.clone(),
-                                    "NO_HANDLER",
-                                    &format!("No handler registered for cap: {}", pending_req.cap_urn),
-                                );
-                                let mut writer = frame_writer.lock().unwrap();
-                                let _ = writer.write(&err_frame);
-                                continue;
-                            }
-                        };
-
-                        // Spawn handler for the complete request
-                        let writer_clone = Arc::clone(&frame_writer);
-                        let pending_clone = Arc::clone(&pending_peer_requests);
-                        let request_id = frame.id.clone();
-                        let content_type = pending_req.content_type.clone();
-                        let cap_urn_clone = pending_req.cap_urn.clone();
-                        let max_chunk = negotiated_limits.max_chunk;
-
-                        let handle = thread::spawn(move || {
-                            let emitter = ThreadSafeEmitter {
-                                writer: Arc::clone(&writer_clone),
-                                request_id: request_id.clone(),
-                                seq: Mutex::new(0),
-                            };
-
-                            let peer_invoker = PeerInvokerImpl {
-                                writer: Arc::clone(&writer_clone),
-                                pending_requests: Arc::clone(&pending_clone),
-                            };
-
-                            let payload = match extract_effective_payload(
-                                &raw_payload,
-                                content_type.as_deref(),
-                                &cap_urn_clone,
-                            ) {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    let err_frame = Frame::err(request_id, "PAYLOAD_ERROR", &e.to_string());
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
-                                    return;
-                                }
-                            };
-
-                            // STREAMING ARCHITECTURE: Chunk payload before sending to handler
-                            let (tx, rx) = std::sync::mpsc::channel();
-                            const MAX_CHUNK: usize = 262144; // 256KB chunks
-                            let mut offset = 0;
-                            while offset < payload.len() {
-                                let chunk_size = (payload.len() - offset).min(MAX_CHUNK);
-                                let chunk = payload[offset..offset + chunk_size].to_vec();
-                                let _ = tx.send(chunk);
-                                offset += chunk_size;
-                            }
-                            drop(tx); // Close channel
-
-                            let result = handler(rx, &emitter, &peer_invoker);
-
-                            // Handler emits via StreamEmitter, send END frame
-                            match result {
-                                Ok(()) => {
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let end_frame = Frame::end(request_id.clone(), None);
-                                    let _ = writer.write(&end_frame);
-                                }
-                                Err(e) => {
-                                    let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
-                                }
-                            }
-                        });
-
-                        active_handlers.push(handle);
+                    // NEW PROTOCOL: REQ must have empty payload - arguments come as streams
+                    if !raw_payload.is_empty() {
+                        let err_frame = Frame::err(
+                            frame.id,
+                            "PROTOCOL_ERROR",
+                            "REQ frame must have empty payload - use STREAM_START for arguments"
+                        );
+                        let mut writer = frame_writer.lock().unwrap();
+                        let _ = writer.write(&err_frame);
                         continue;
                     }
 
-                    // Not an incoming request end - must be a response end
-                    let pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = pending.get(&frame.id) {
-                        let payload = frame.payload.clone().unwrap_or_default();
-                        let _ = pending_req.sender.send(Ok(payload));
-                    }
+                    // Start tracking this request - streams will be added via STREAM_START
+                    let mut pending = pending_incoming.lock().unwrap();
+                    pending.insert(frame.id.clone(), PendingIncomingRequest {
+                        cap_urn: cap_urn.clone(),
+                        handler,
+                        streams: HashMap::new(),  // Streams added via STREAM_START
+                        ended: false,
+                    });
                     drop(pending);
-                    pending_peer_requests.lock().unwrap().remove(&frame.id);
+                    eprintln!("[PluginRuntime] REQ: req_id={:?} cap={} - waiting for streams", frame.id, cap_urn);
+                    continue; // Wait for STREAM_START/CHUNK/STREAM_END/END frames
+                }
+                FrameType::Chunk => {
+                    // NEW PROTOCOL: CHUNK has stream_id identifying which stream
+                    let stream_id = match frame.stream_id.as_ref() {
+                        Some(id) => id.clone(),
+                        None => {
+                            // FATAL: Remove request to unblock host
+                            pending_incoming.lock().unwrap().remove(&frame.id);
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "CHUNK missing stream_id");
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            continue;
+                        }
+                    };
+
+                    // STRICT: Check if this is a chunk for an incoming request with validation
+                    let mut incoming = pending_incoming.lock().unwrap();
+                    if let Some(pending_req) = incoming.get_mut(&frame.id) {
+                        // FAIL HARD: Request already ended
+                        if pending_req.ended {
+                            incoming.remove(&frame.id); // Remove to unblock host
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "CHUNK after request END");
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            drop(writer);
+                            drop(incoming);
+                            continue;
+                        }
+
+                        // Append chunk to the appropriate stream with STRICT validation
+                        match pending_req.streams.get_mut(&stream_id) {
+                            Some(stream) if !stream.complete => {
+                                // ✅ Valid chunk for active stream
+                                if let Some(payload) = frame.payload {
+                                    stream.chunks.push(payload);
+                                }
+                            }
+                            Some(_stream) => {
+                                // FAIL HARD: Chunk for ended stream
+                                incoming.remove(&frame.id); // Remove to unblock host
+                                let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
+                                    &format!("CHUNK after STREAM_END for stream_id={}", stream_id));
+                                let mut writer = frame_writer.lock().unwrap();
+                                let _ = writer.write(&err_frame);
+                                drop(writer);
+                                drop(incoming);
+                                continue;
+                            }
+                            None => {
+                                // FAIL HARD: Unknown stream
+                                incoming.remove(&frame.id); // Remove to unblock host
+                                let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
+                                    &format!("CHUNK for unknown stream_id={}", stream_id));
+                                let mut writer = frame_writer.lock().unwrap();
+                                let _ = writer.write(&err_frame);
+                                drop(writer);
+                                drop(incoming);
+                                continue;
+                            }
+                        }
+                        drop(incoming);
+                        continue; // Wait for more chunks or STREAM_END/END
+                    }
+                    drop(incoming);
+
+                    // Not an incoming request chunk - must be a peer response chunk
+                    let mut pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending.get_mut(&frame.id) {
+                        // STRICT: Validate chunk has stream_id and stream is active
+                        if pending_req.ended {
+                            // FAIL HARD: Response activity after END
+                            drop(pending);
+                            pending_peer_requests.lock().unwrap().remove(&frame.id);
+                            continue;
+                        }
+
+                        match pending_req.streams.get_mut(&stream_id) {
+                            Some(stream) if !stream.complete => {
+                                // ✅ Valid chunk for active stream
+                                if let Some(payload) = frame.payload {
+                                    stream.chunks.push(payload);
+                                }
+                            }
+                            Some(_stream) => {
+                                // FAIL HARD: Chunk for ended stream
+                                drop(pending);
+                                pending_peer_requests.lock().unwrap().remove(&frame.id);
+                                continue;
+                            }
+                            None => {
+                                // FAIL HARD: Unknown stream
+                                drop(pending);
+                                pending_peer_requests.lock().unwrap().remove(&frame.id);
+                                continue;
+                            }
+                        }
+                    }
                 }
                 FrameType::Heartbeat => {
                     // Respond to heartbeat immediately - never blocked by handlers
@@ -1673,17 +1692,8 @@ impl PluginRuntime {
                     let mut writer = frame_writer.lock().unwrap();
                     writer.write(&err_frame)?;
                 }
-                FrameType::Res => {
-                    // Response frame from host - single complete response
-                    let pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = pending.get(&frame.id) {
-                        let payload = frame.payload.clone().unwrap_or_default();
-                        let _ = pending_req.sender.send(Ok(payload));
-                    }
-                    drop(pending);
-                    // RES marks completion
-                    pending_peer_requests.lock().unwrap().remove(&frame.id);
-                }
+                // FrameType::Res REMOVED - old protocol no longer supported
+                // Responses now use stream multiplexing: STREAM_START + CHUNK + STREAM_END + END
                 FrameType::Err => {
                     // Error frame from host - could be response to peer request
                     let pending = pending_peer_requests.lock().unwrap();
@@ -1700,6 +1710,386 @@ impl PluginRuntime {
                 FrameType::Log => {
                     // Log frames from host - shouldn't normally receive these, ignore
                     continue;
+                }
+                FrameType::StreamStart => {
+                    // NEW PROTOCOL: A new stream is starting for a request
+                    let req_id = frame.id.clone();
+                    let stream_id = match frame.stream_id.as_ref() {
+                        Some(id) => id.clone(),
+                        None => {
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_START missing stream_id");
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            continue;
+                        }
+                    };
+                    let media_urn = match frame.media_urn.as_ref() {
+                        Some(urn) => urn.clone(),
+                        None => {
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_START missing media_urn");
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            continue;
+                        }
+                    };
+
+                    eprintln!("[PluginRuntime] STREAM_START: req_id={:?} stream_id={} media_urn={}",
+                        req_id, stream_id, media_urn);
+
+                    // STRICT: Add stream with validation
+                    let mut incoming = pending_incoming.lock().unwrap();
+                    if let Some(pending_req) = incoming.get_mut(&req_id) {
+                        // FAIL HARD: Request already ended
+                        if pending_req.ended {
+                            incoming.remove(&frame.id); // Remove to unblock host
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_START after request END");
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            drop(writer);
+                            drop(incoming);
+                            continue;
+                        }
+
+                        // FAIL HARD: Duplicate stream ID
+                        if pending_req.streams.contains_key(&stream_id) {
+                            incoming.remove(&frame.id); // Remove to unblock host
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
+                                &format!("Duplicate stream_id: {}", stream_id));
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            drop(writer);
+                            drop(incoming);
+                            continue;
+                        }
+
+                        // ✅ Track new stream
+                        pending_req.streams.insert(stream_id.clone(), PendingStream {
+                            media_urn: media_urn.clone(),
+                            chunks: vec![],
+                            complete: false,
+                        });
+                        eprintln!("[PluginRuntime] Stream added: {} (total streams: {})",
+                            stream_id, pending_req.streams.len());
+                        drop(incoming);
+                        continue;
+                    }
+                    drop(incoming);
+
+                    // Not an incoming request - check if it's a peer response stream
+                    let mut peer_pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = peer_pending.get_mut(&req_id) {
+                        if !pending_req.ended && !pending_req.streams.contains_key(&stream_id) {
+                            pending_req.streams.insert(stream_id.clone(), PendingStream {
+                                media_urn: media_urn.clone(),
+                                chunks: vec![],
+                                complete: false,
+                            });
+                            eprintln!("[PluginRuntime] Peer response stream added: {}", stream_id);
+                        }
+                    }
+                    drop(peer_pending);
+                    continue;
+                }
+                FrameType::StreamEnd => {
+                    // NEW PROTOCOL: A stream has ended for a request
+                    let stream_id = match frame.stream_id.as_ref() {
+                        Some(id) => id.clone(),
+                        None => {
+                            let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_END missing stream_id");
+                            let mut writer = frame_writer.lock().unwrap();
+                            let _ = writer.write(&err_frame);
+                            continue;
+                        }
+                    };
+
+                    eprintln!("[PluginRuntime] STREAM_END: stream_id={}", stream_id);
+
+                    // STRICT: Mark stream as complete with validation
+                    let mut incoming = pending_incoming.lock().unwrap();
+                    if let Some(pending_req) = incoming.get_mut(&frame.id) {
+                        match pending_req.streams.get_mut(&stream_id) {
+                            Some(stream) => {
+                                stream.complete = true;
+                                eprintln!("[PluginRuntime] Incoming stream marked complete: {}", stream_id);
+                                drop(incoming);
+                                continue;
+                            }
+                            None => {
+                                // FAIL HARD: StreamEnd for unknown stream
+                                incoming.remove(&frame.id); // Remove to unblock host
+                                let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
+                                    &format!("STREAM_END for unknown stream_id={}", stream_id));
+                                let mut writer = frame_writer.lock().unwrap();
+                                let _ = writer.write(&err_frame);
+                                drop(writer);
+                                drop(incoming);
+                                continue;
+                            }
+                        }
+                    }
+                    drop(incoming);
+
+                    // Not an incoming request - check if it's a peer response stream
+                    let mut peer_pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = peer_pending.get_mut(&frame.id) {
+                        if let Some(stream) = pending_req.streams.get_mut(&stream_id) {
+                            stream.complete = true;
+                            eprintln!("[PluginRuntime] Peer response stream marked complete: {}", stream_id);
+                        }
+                    }
+                    drop(peer_pending);
+                    continue;
+                }
+                FrameType::End => {
+                    // NEW PROTOCOL: END signals all streams for request are complete
+                    let mut incoming = pending_incoming.lock().unwrap();
+                    if let Some(pending_req) = incoming.remove(&frame.id) {
+                        drop(incoming);
+
+                        let handler = pending_req.handler.clone();
+                        let streams = pending_req.streams;
+                        let cap_urn = pending_req.cap_urn.clone();
+                        let request_id = frame.id.clone();
+                        let writer_clone = Arc::clone(&frame_writer);
+                        let pending_clone = Arc::clone(&pending_peer_requests);
+                        let manifest_clone = self.manifest.clone(); // Pass manifest for file-path conversion
+
+                        eprintln!("[PluginRuntime] END: req_id={:?} streams={}", request_id, streams.len());
+
+                        let handle = thread::spawn(move || {
+                            // Generate stream ID for plugin's response output
+                            let response_stream_id = uuid::Uuid::new_v4().to_string();
+
+                            // FAIL HARD: Extract output media URN from cap_urn - must be valid
+                            let cap = match crate::cap_urn::CapUrn::from_string(&cap_urn) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id.clone(), "INVALID_CAP_URN", &format!("Failed to parse cap_urn: {}", e));
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                    return;
+                                }
+                            };
+
+                            let media_urn = cap.out_spec().to_string();
+
+                            let emitter = ThreadSafeEmitter {
+                                writer: Arc::clone(&writer_clone),
+                                request_id: request_id.clone(),
+                                stream_id: response_stream_id,
+                                media_urn,
+                                stream_started: AtomicBool::new(false),
+                                seq: Mutex::new(0),
+                            };
+
+                            let peer_invoker = PeerInvokerImpl {
+                                writer: Arc::clone(&writer_clone),
+                                pending_requests: Arc::clone(&pending_clone),
+                            };
+
+                            // FILE-PATH AUTO-CONVERSION: Check each stream and convert file paths to file contents
+                            // Pattern matching using URN accepts() - NO string comparison!
+                            let file_path_pattern = match MediaUrn::from_string("media:file-path") {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id.clone(), "FILE_PATH_PATTERN_ERROR", &format!("Failed to create file-path pattern: {}", e));
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                    return;
+                                }
+                            };
+
+                            let file_path_scalar = match MediaUrn::from_string("media:file-path;form=scalar") {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id.clone(), "FILE_PATH_PATTERN_ERROR", &format!("Failed to create file-path;form=scalar pattern: {}", e));
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                    return;
+                                }
+                            };
+
+                            let file_path_list = match MediaUrn::from_string("media:file-path;form=list") {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id.clone(), "FILE_PATH_PATTERN_ERROR", &format!("Failed to create file-path;form=list pattern: {}", e));
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                    return;
+                                }
+                            };
+
+                            // Convert streams, applying file-path auto-conversion
+                            let mut converted_streams: Vec<(String, String, Vec<u8>)> = Vec::new(); // (stream_id, media_urn, data)
+
+                            for (stream_id, mut stream) in streams {
+                                let stream_urn = match MediaUrn::from_string(&stream.media_urn) {
+                                    Ok(u) => u,
+                                    Err(e) => {
+                                        let err_frame = Frame::err(request_id.clone(), "INVALID_STREAM_URN", &format!("Invalid stream media URN '{}': {}", stream.media_urn, e));
+                                        let mut writer = writer_clone.lock().unwrap();
+                                        let _ = writer.write(&err_frame);
+                                        return;
+                                    }
+                                };
+
+                                // Check if this stream is a file-path using URN accepts
+                                let is_file_path = match file_path_pattern.accepts(&stream_urn) {
+                                    Ok(result) => result,
+                                    Err(e) => {
+                                        let err_frame = Frame::err(request_id.clone(), "URN_MATCH_ERROR", &format!("Failed to check file-path pattern: {}", e));
+                                        let mut writer = writer_clone.lock().unwrap();
+                                        let _ = writer.write(&err_frame);
+                                        return;
+                                    }
+                                };
+
+                                if is_file_path {
+                                    // FAIL HARD: Determine if scalar or list
+                                    let is_scalar = file_path_scalar.accepts(&stream_urn).unwrap_or(false);
+                                    let is_list = file_path_list.accepts(&stream_urn).unwrap_or(false);
+
+                                    if !is_scalar && !is_list {
+                                        let err_frame = Frame::err(request_id.clone(), "FILE_PATH_FORM_ERROR", &format!("File-path '{}' must be form=scalar or form=list", stream.media_urn));
+                                        let mut writer = writer_clone.lock().unwrap();
+                                        let _ = writer.write(&err_frame);
+                                        return;
+                                    }
+
+                                    if is_scalar && is_list {
+                                        let err_frame = Frame::err(request_id.clone(), "FILE_PATH_FORM_ERROR", &format!("File-path '{}' cannot be both scalar and list", stream.media_urn));
+                                        let mut writer = writer_clone.lock().unwrap();
+                                        let _ = writer.write(&err_frame);
+                                        return;
+                                    }
+
+                                    // Get stdin source from manifest - FAIL HARD if not found
+                                    let stdin_source = if let Some(ref manifest) = manifest_clone {
+                                        // Find the cap definition by URN string comparison
+                                        let cap_def = manifest.caps.iter().find(|c| c.urn.to_string() == cap_urn);
+                                        if let Some(cap) = cap_def {
+                                            // Find arg with this file-path media URN
+                                            let arg_def = cap.args.iter().find(|a| a.media_urn == stream.media_urn);
+                                            if let Some(arg) = arg_def {
+                                                // Find stdin source
+                                                arg.sources.iter().find_map(|s| {
+                                                    if let crate::cap::ArgSource::Stdin { stdin } = s {
+                                                        Some(stdin.clone())
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    };
+
+                                    let stdin_urn = match stdin_source {
+                                        Some(urn) => urn,
+                                        None => {
+                                            let err_frame = Frame::err(request_id.clone(), "NO_STDIN_SOURCE", &format!("File-path argument '{}' has no stdin source defined", stream.media_urn));
+                                            let mut writer = writer_clone.lock().unwrap();
+                                            let _ = writer.write(&err_frame);
+                                            return;
+                                        }
+                                    };
+
+                                    // Read file and convert
+                                    if is_scalar {
+                                        let data = stream.chunks.concat();
+                                        let path_str = String::from_utf8_lossy(&data);
+                                        eprintln!("[PluginRuntime] Converting file-path '{}' to bytes with media_urn '{}'", path_str, stdin_urn);
+
+                                        let file_bytes = match std::fs::read(path_str.as_ref()) {
+                                            Ok(bytes) => bytes,
+                                            Err(e) => {
+                                                let err_frame = Frame::err(request_id.clone(), "FILE_READ_ERROR", &format!("Failed to read file '{}': {}", path_str, e));
+                                                let mut writer = writer_clone.lock().unwrap();
+                                                let _ = writer.write(&err_frame);
+                                                return;
+                                            }
+                                        };
+
+                                        eprintln!("[PluginRuntime] Read {} bytes from '{}'", file_bytes.len(), path_str);
+                                        converted_streams.push((stream_id, stdin_urn, file_bytes));
+                                    } else {
+                                        // form=list - not yet implemented
+                                        let err_frame = Frame::err(request_id.clone(), "NOT_IMPLEMENTED", "File-path form=list conversion not yet implemented in CBOR mode");
+                                        let mut writer = writer_clone.lock().unwrap();
+                                        let _ = writer.write(&err_frame);
+                                        return;
+                                    }
+                                } else {
+                                    // Not a file-path - pass through as-is
+                                    let data = stream.chunks.concat();
+                                    converted_streams.push((stream_id, stream.media_urn, data));
+                                }
+                            }
+
+                            // Send all streams as StreamChunk messages (after conversion)
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            for (stream_id, media_urn, data) in converted_streams {
+                                let chunk = StreamChunk {
+                                    stream_id,
+                                    media_urn,
+                                    data,
+                                    is_last: true,
+                                };
+                                if tx.send(chunk).is_err() {
+                                    break;
+                                }
+                            }
+                            drop(tx);
+
+                            let result = handler(rx, &emitter, &peer_invoker);
+
+                            match result {
+                                Ok(()) => {
+                                    let mut writer = writer_clone.lock().unwrap();
+
+                                    // STREAM MULTIPLEXING PROTOCOL: Send STREAM_END then END
+                                    // Only send STREAM_END if STREAM_START was sent (stream_started == true)
+                                    if emitter.stream_started.load(Ordering::SeqCst) {
+                                        let stream_end = Frame::stream_end(request_id.clone(), emitter.stream_id.clone());
+                                        let _ = writer.write(&stream_end);
+                                    }
+
+                                    let end_frame = Frame::end(request_id.clone(), None);
+                                    let _ = writer.write(&end_frame);
+                                }
+                                Err(e) => {
+                                    let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
+                                    let mut writer = writer_clone.lock().unwrap();
+                                    let _ = writer.write(&err_frame);
+                                }
+                            }
+                        });
+
+                        active_handlers.push(handle);
+                        continue;
+                    }
+                    drop(incoming);
+
+                    // Not incoming request - must be peer response END
+                    // STREAM MULTIPLEXING: Concatenate all stream chunks and send as complete response
+                    let mut pending = pending_peer_requests.lock().unwrap();
+                    if let Some(mut pending_req) = pending.remove(&frame.id) {
+                        pending_req.ended = true;
+
+                        // Concatenate all stream chunks in order
+                        let mut response_data = Vec::new();
+                        for (_stream_id, stream) in pending_req.streams {
+                            response_data.extend(stream.chunks.concat());
+                        }
+
+                        let _ = pending_req.sender.send(Ok(response_data));
+                    }
+                    drop(pending);
                 }
             }
         }
@@ -1770,12 +2160,12 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        runtime.register_raw("cap:op=raw", move |chunks, emitter, _peer| {
-            // Stream through and track
+        runtime.register_raw("cap:op=raw", move |stream_chunks, emitter, _peer| {
+            // Stream through and track (now using StreamChunk)
             let mut total = Vec::new();
-            for chunk in chunks {
-                total.extend_from_slice(&chunk);
-                emitter.emit_bytes(&chunk);
+            for chunk in stream_chunks {
+                total.extend_from_slice(&chunk.data);
+                emitter.emit_bytes(&chunk.data);
             }
             *received_clone.lock().unwrap() = total;
             Ok(())
@@ -1786,7 +2176,12 @@ mod tests {
         let emitter = CliStreamEmitter::new();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"echo this".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"echo this".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         handler(rx, &emitter, &no_peer).unwrap();
         assert_eq!(&*received.lock().unwrap(), b"echo this", "raw handler must echo payload");
@@ -1812,7 +2207,12 @@ mod tests {
         let emitter = CliStreamEmitter::new();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"{\"key\":\"hello\"}".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"{\"key\":\"hello\"}".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         handler(rx, &emitter, &no_peer).unwrap();
         assert_eq!(&*received.lock().unwrap(), b"hello");
@@ -1831,7 +2231,12 @@ mod tests {
         let emitter = CliStreamEmitter::new();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"not json {{{{".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"not json {{{{".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         let result = handler(rx, &emitter, &no_peer);
         assert!(result.is_err());
@@ -1869,7 +2274,12 @@ mod tests {
             let no_peer = NoPeerInvoker;
             let emitter = CliStreamEmitter::new();
             let (tx, rx) = std::sync::mpsc::channel();
-            tx.send(b"{}".to_vec()).ok();
+            tx.send(StreamChunk {
+                stream_id: "test-stream".to_string(),
+                media_urn: "media:bytes".to_string(),
+                data: b"{}".to_vec(),
+                is_last: true,
+            }).ok();
             drop(tx);
             handler_clone(rx, &emitter, &no_peer).unwrap();
         });
@@ -2126,17 +2536,17 @@ mod tests {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register_raw("cap:op=alpha", |chunks, emitter, _| {
-            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            for chunk in chunks { emitter.emit_bytes(&chunk.data); }
             emitter.emit_bytes(b"a");
             Ok(())
         });
         runtime.register_raw("cap:op=beta", |chunks, emitter, _| {
-            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            for chunk in chunks { emitter.emit_bytes(&chunk.data); }
             emitter.emit_bytes(b"b");
             Ok(())
         });
         runtime.register_raw("cap:op=gamma", |chunks, emitter, _| {
-            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            for chunk in chunks { emitter.emit_bytes(&chunk.data); }
             emitter.emit_bytes(b"g");
             Ok(())
         });
@@ -2146,19 +2556,34 @@ mod tests {
 
         let h_alpha = runtime.find_handler("cap:op=alpha").unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         h_alpha(rx, &emitter, &no_peer).unwrap();
 
         let h_beta = runtime.find_handler("cap:op=beta").unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         h_beta(rx, &emitter, &no_peer).unwrap();
 
         let h_gamma = runtime.find_handler("cap:op=gamma").unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         h_gamma(rx, &emitter, &no_peer).unwrap();
     }
@@ -2174,13 +2599,13 @@ mod tests {
         let result2_clone = Arc::clone(&result2);
 
         runtime.register_raw("cap:op=test", move |chunks, emitter, _| {
-            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            for chunk in chunks { emitter.emit_bytes(&chunk.data); }
             emitter.emit_bytes(b"first");
             *result1_clone.lock().unwrap() = b"first".to_vec();
             Ok(())
         });
         runtime.register_raw("cap:op=test", move |chunks, emitter, _| {
-            for chunk in chunks { emitter.emit_bytes(&chunk); }
+            for chunk in chunks { emitter.emit_bytes(&chunk.data); }
             emitter.emit_bytes(b"second");
             *result2_clone.lock().unwrap() = b"second".to_vec();
             Ok(())
@@ -2190,7 +2615,12 @@ mod tests {
         let no_peer = NoPeerInvoker;
         let emitter = CliStreamEmitter::new();
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(b"".to_vec()).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: b"".to_vec(),
+            is_last: true,
+        }).ok();
         drop(tx);
         handler(rx, &emitter, &no_peer).unwrap();
         assert_eq!(&*result2.lock().unwrap(), b"second", "later registration must replace earlier");
@@ -2345,8 +2775,8 @@ mod tests {
                 // TRUE STREAMING: Relay chunks as they arrive, track total for verification
                 let mut total_received = Vec::new();
                 for chunk in chunks {
-                    total_received.extend_from_slice(&chunk);
-                    emitter.emit_bytes(&chunk);  // Stream through immediately
+                    total_received.extend_from_slice(&chunk.data);
+                    emitter.emit_bytes(&chunk.data);  // Stream through immediately
                 }
 
                 // After streaming complete, parse to verify what we received
@@ -2392,9 +2822,14 @@ mod tests {
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
 
-        // STREAMING: Send payload via channel
+        // STREAMING: Send payload via channel as StreamChunk
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(payload).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: payload,
+            is_last: true,
+        }).ok();
         drop(tx);
         handler(rx, &emitter, &peer).unwrap();
 
@@ -2923,8 +3358,8 @@ mod tests {
                 // TRUE STREAMING: Relay chunks immediately, verify after
                 let mut total = Vec::new();
                 for chunk in chunks {
-                    total.extend_from_slice(&chunk);
-                    emitter.emit_bytes(&chunk);  // Stream through
+                    total.extend_from_slice(&chunk.data);
+                    emitter.emit_bytes(&chunk.data);  // Stream through
                 }
 
                 // Verify after streaming complete
@@ -2963,9 +3398,14 @@ mod tests {
         let emitter = CliStreamEmitter::new();
         let peer = NoPeerInvoker;
 
-        // STREAMING: Send payload via channel
+        // STREAMING: Send payload via channel as StreamChunk
         let (tx, rx) = std::sync::mpsc::channel();
-        tx.send(payload).ok();
+        tx.send(StreamChunk {
+            stream_id: "test-stream".to_string(),
+            media_urn: "media:bytes".to_string(),
+            data: payload,
+            is_last: true,
+        }).ok();
         drop(tx);
         handler(rx, &emitter, &peer).unwrap();
 
@@ -3592,12 +4032,12 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        let handler = move |chunks: std::sync::mpsc::Receiver<Vec<u8>>, emitter: &dyn StreamEmitter, _peer: &dyn PeerInvoker| {
+        let handler = move |chunks: std::sync::mpsc::Receiver<StreamChunk>, emitter: &dyn StreamEmitter, _peer: &dyn PeerInvoker| {
             // TRUE STREAMING: Relay chunks and verify
             let mut total = Vec::new();
             for chunk in chunks {
-                total.extend_from_slice(&chunk);
-                emitter.emit_bytes(&chunk);  // Stream through
+                total.extend_from_slice(&chunk.data);
+                emitter.emit_bytes(&chunk.data);  // Stream through
             }
 
             // Verify what we received
@@ -3650,9 +4090,16 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         const MAX_CHUNK: usize = 262144;
         let mut offset = 0;
+        let stream_id = "test-stream".to_string();
         while offset < payload_bytes.len() {
             let chunk_size = (payload_bytes.len() - offset).min(MAX_CHUNK);
-            tx.send(payload_bytes[offset..offset + chunk_size].to_vec()).ok();
+            let is_last = offset + chunk_size >= payload_bytes.len();
+            tx.send(StreamChunk {
+                stream_id: stream_id.clone(),
+                media_urn: "media:bytes".to_string(),
+                data: payload_bytes[offset..offset + chunk_size].to_vec(),
+                is_last,
+            }).ok();
             offset += chunk_size;
         }
         drop(tx);

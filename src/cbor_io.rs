@@ -124,6 +124,14 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CborError> {
         map.push((Value::Integer(keys::CAP.into()), Value::Text(cap.clone())));
     }
 
+    if let Some(ref stream_id) = frame.stream_id {
+        map.push((Value::Integer(keys::STREAM_ID.into()), Value::Text(stream_id.clone())));
+    }
+
+    if let Some(ref media_urn) = frame.media_urn {
+        map.push((Value::Integer(keys::MEDIA_URN.into()), Value::Text(media_urn.clone())));
+    }
+
     let value = Value::Map(map);
     let mut buf = Vec::new();
     ciborium::into_writer(&value, &mut buf)
@@ -261,10 +269,22 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
         _ => None,
     });
 
+    let stream_id = lookup.get(&keys::STREAM_ID).and_then(|v| match v {
+        Value::Text(s) => Some(s.clone()),
+        _ => None,
+    });
+
+    let media_urn = lookup.get(&keys::MEDIA_URN).and_then(|v| match v {
+        Value::Text(s) => Some(s.clone()),
+        _ => None,
+    });
+
     Ok(Frame {
         version,
         frame_type,
         id,
+        stream_id,
+        media_urn,
         seq,
         content_type,
         meta,
@@ -495,6 +515,7 @@ impl<W: Write> FrameWriter<W> {
     pub fn write_chunked(
         &mut self,
         id: MessageId,
+        stream_id: String,
         content_type: &str,
         data: &[u8],
     ) -> Result<(), CborError> {
@@ -503,7 +524,7 @@ impl<W: Write> FrameWriter<W> {
 
         if total_len == 0 {
             // Empty payload - send single chunk with eof
-            let mut frame = Frame::chunk(id, 0, Vec::new());
+            let mut frame = Frame::chunk(id, stream_id, 0, Vec::new());
             frame.content_type = Some(content_type.to_string());
             frame.len = Some(0);
             frame.offset = Some(0);
@@ -520,7 +541,7 @@ impl<W: Write> FrameWriter<W> {
 
             let chunk_data = data[offset..offset + chunk_size].to_vec();
 
-            let mut frame = Frame::chunk(id.clone(), seq, chunk_data);
+            let mut frame = Frame::chunk(id.clone(), stream_id.clone(), seq, chunk_data);
             frame.offset = Some(offset as u64);
 
             // Set content_type and total len on first chunk
@@ -810,19 +831,8 @@ mod tests {
         assert_eq!(decoded.log_message(), Some("Something happened"));
     }
 
-    // TEST209: Test RES frame encode/decode roundtrip preserves payload and content_type
-    #[test]
-    fn test_res_frame_roundtrip() {
-        let id = MessageId::new_uuid();
-        let original = Frame::res(id.clone(), b"result data".to_vec(), "application/octet-stream");
-        let bytes = encode_frame(&original).expect("encode should succeed");
-        let decoded = decode_frame(&bytes).expect("decode should succeed");
-
-        assert_eq!(decoded.frame_type, FrameType::Res);
-        assert_eq!(decoded.id, id);
-        assert_eq!(decoded.payload, Some(b"result data".to_vec()));
-        assert_eq!(decoded.content_type, Some("application/octet-stream".to_string()));
-    }
+    // TEST209 REMOVED: RES frame removed - old protocol no longer supported
+    // NEW PROTOCOL: Use stream multiplexing (STREAM_START + CHUNK + STREAM_END + END)
 
     // TEST210: Test END frame encode/decode roundtrip preserves eof marker and optional payload
     #[test]
@@ -851,11 +861,12 @@ mod tests {
         assert_eq!(decoded.hello_max_chunk(), Some(100_000));
     }
 
-    // TEST212: Test chunk_with_offset encode/decode roundtrip preserves offset, len, eof
+    // TEST212: Test chunk_with_offset encode/decode roundtrip preserves offset, len, eof (with stream_id)
     #[test]
     fn test_chunk_with_offset_roundtrip() {
         let id = MessageId::new_uuid();
-        let original = Frame::chunk_with_offset(id.clone(), 0, b"data".to_vec(), 100, Some(5000), true);
+        let stream_id = "stream-test".to_string();
+        let original = Frame::chunk_with_offset(id.clone(), stream_id, 0, b"data".to_vec(), 100, Some(5000), true);
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
@@ -918,7 +929,7 @@ mod tests {
         let id3 = MessageId::new_uuid();
 
         let f1 = Frame::req(id1.clone(), "cap:op=first", b"one".to_vec(), "text/plain");
-        let f2 = Frame::chunk(id2.clone(), 0, b"two".to_vec());
+        let f2 = Frame::chunk(id2.clone(), "stream-2".to_string(), 0, b"two".to_vec());
         let f3 = Frame::end(id3.clone(), Some(b"three".to_vec()));
 
         write_frame(&mut buf, &f1, &limits).unwrap();
@@ -990,10 +1001,11 @@ mod tests {
         let mut writer = FrameWriter::with_limits(&mut buf, limits);
 
         let id = MessageId::new_uuid();
+        let stream_id = "stream-chunked".to_string();
         let data = b"Hello, this is a longer message that will be chunked!";
 
         writer
-            .write_chunked(id.clone(), "text/plain", data)
+            .write_chunked(id.clone(), stream_id, "text/plain", data)
             .expect("chunked write should succeed");
 
         // Read back all chunks
@@ -1049,7 +1061,7 @@ mod tests {
         let mut writer = FrameWriter::with_limits(&mut buf, limits);
 
         let id = MessageId::new_uuid();
-        writer.write_chunked(id.clone(), "text/plain", b"").unwrap();
+        writer.write_chunked(id.clone(), "stream-empty".to_string(), "text/plain", b"").unwrap();
 
         let mut cursor = Cursor::new(buf);
         let frame = read_frame(&mut cursor, &limits).unwrap().expect("should have frame");
@@ -1068,7 +1080,7 @@ mod tests {
 
         let id = MessageId::new_uuid();
         let data = b"0123456789"; // exactly 10 bytes = max_chunk
-        writer.write_chunked(id.clone(), "text/plain", data).unwrap();
+        writer.write_chunked(id.clone(), "stream-1mb".to_string(), "text/plain", data).unwrap();
 
         let mut cursor = Cursor::new(buf);
         let frame = read_frame(&mut cursor, &limits).unwrap().expect("should have frame");
