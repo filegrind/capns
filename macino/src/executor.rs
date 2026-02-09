@@ -497,8 +497,23 @@ impl ExecutionContext {
             .await
             .map_err(|e| ExecutionError::HostError(format!("{:?}", e)))?;
 
-        // Get concatenated response data
-        let output_bytes = response.concatenated();
+        // Get concatenated response data (CBOR-encoded)
+        let cbor_bytes = response.concatenated();
+
+        // Decode CBOR to extract raw bytes
+        // Handlers emit ciborium::Value which gets CBOR-encoded over the wire
+        // We need to decode this before passing to the next cap
+        let output_value: ciborium::Value = ciborium::from_reader(&cbor_bytes[..])
+            .map_err(|e| ExecutionError::HostError(format!("Failed to decode CBOR response: {}", e)))?;
+
+        let output_bytes = match output_value {
+            ciborium::Value::Bytes(b) => b,
+            ciborium::Value::Text(t) => t.into_bytes(),
+            _ => return Err(ExecutionError::HostError(format!(
+                "Expected Bytes or Text from cap output, got {:?}",
+                output_value
+            ))),
+        };
 
         // Shutdown host
         host.shutdown().await;
