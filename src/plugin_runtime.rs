@@ -762,10 +762,23 @@ fn extract_effective_payload(
 
     // Validate: At least ONE argument must match in_spec (fail hard if none)
     // UNLESS in_spec is "media:void" (no input required)
-    // This ensures the handler can distinguish main input from other args
+    // After file-path conversion, arg media_urn may be the stdin target (e.g., "media:bytes")
+    // rather than the original in_spec (e.g., "media:file-path;..."), so we also accept
+    // any stdin source target as a valid match.
     let is_void_input = expected_input == "media:void";
 
     if !is_void_input {
+        // Collect all valid target URNs: in_spec + all stdin source targets
+        let mut valid_targets: Vec<MediaUrn> = Vec::new();
+        if let Some(ref expected) = expected_media_urn {
+            valid_targets.push(expected.clone());
+        }
+        for stdin_urn_str in arg_to_stdin.values() {
+            if let Ok(stdin_urn) = MediaUrn::from_string(stdin_urn_str) {
+                valid_targets.push(stdin_urn);
+            }
+        }
+
         let mut found_matching_arg = false;
         for arg in &arguments {
             if let ciborium::Value::Map(map) = arg {
@@ -773,18 +786,19 @@ fn extract_effective_payload(
                     if let (ciborium::Value::Text(key), ciborium::Value::Text(urn_str)) = (k, v) {
                         if key == "media_urn" {
                             if let Ok(arg_urn) = MediaUrn::from_string(urn_str) {
-                                if let Some(ref expected) = expected_media_urn {
-                                    // Check both directions for matching (subtype semantics)
-                                    let fwd = arg_urn.conforms_to(expected).unwrap_or(false);
-                                    let rev = expected.accepts(&arg_urn).unwrap_or(false);
+                                for target in &valid_targets {
+                                    let fwd = arg_urn.conforms_to(target).unwrap_or(false);
+                                    let rev = target.accepts(&arg_urn).unwrap_or(false);
                                     if fwd || rev {
                                         found_matching_arg = true;
-                                        eprintln!("[PluginRuntime] Found argument matching in_spec: {}", urn_str);
                                         break;
                                     }
                                 }
                             }
                         }
+                    }
+                    if found_matching_arg {
+                        break;
                     }
                 }
                 if found_matching_arg {
