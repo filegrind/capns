@@ -188,7 +188,7 @@ struct StreamState {
     active: bool,  // false after StreamEnd
 }
 
-/// Per-request state tracking
+/// Per-request state tracking (host -> plugin responses)
 struct RequestState {
     sender: mpsc::UnboundedSender<Result<ResponseChunk, AsyncHostError>>,
     streams: HashMap<String, StreamState>,  // stream_id -> state
@@ -199,6 +199,8 @@ struct RequestState {
 struct HostState {
     /// Pending requests with stream tracking (host -> plugin)
     pending: HashMap<MessageId, RequestState>,
+    /// Active peer invoke request handles (plugin -> host)
+    peer_handles: HashMap<MessageId, Box<dyn crate::cap_router::PeerRequestHandle>>,
     /// Pending heartbeat IDs we've sent
     pending_heartbeats: HashSet<MessageId>,
     /// Whether the host is closed
@@ -223,14 +225,44 @@ pub struct AsyncPluginHost {
     writer_handle: Option<JoinHandle<()>>,
     /// Shutdown signal sender
     shutdown_tx: Option<oneshot::Sender<()>>,
+    /// Router for handling peer invoke requests from plugin
+    router: crate::cap_router::ArcCapRouter,
 }
 
 impl AsyncPluginHost {
-    /// Create a new async plugin host and perform handshake.
+    /// Create a new async plugin host with NO peer invoke support.
+    ///
+    /// This is a convenience constructor that uses NoPeerRouter.
+    /// Use `new_with_router()` if you need peer invoke support.
     ///
     /// This sends a HELLO frame, waits for the plugin's HELLO (which MUST include manifest),
     /// negotiates protocol limits, then starts the background reader and writer tasks.
     pub async fn new<R, W>(stdin: W, stdout: R) -> Result<Self, AsyncHostError>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
+        Self::new_with_router(stdin, stdout, Arc::new(crate::cap_router::NoPeerRouter)).await
+    }
+
+    /// Create a new async plugin host with a custom router for peer invoke requests.
+    ///
+    /// The router will be called when the plugin sends REQ frames (peer invoke).
+    /// Use NoPeerRouter to disable peer invoke, or PluginRepoRouter for automatic
+    /// plugin discovery and spawning.
+    ///
+    /// # Arguments
+    /// * `stdin` - Plugin's stdin for writing frames
+    /// * `stdout` - Plugin's stdout for reading frames
+    /// * `router` - Router for handling peer invoke requests
+    ///
+    /// # Returns
+    /// AsyncPluginHost ready to communicate with the plugin
+    pub async fn new_with_router<R, W>(
+        stdin: W,
+        stdout: R,
+        router: crate::cap_router::ArcCapRouter,
+    ) -> Result<Self, AsyncHostError>
     where
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
@@ -251,6 +283,7 @@ impl AsyncPluginHost {
 
         let state = Arc::new(Mutex::new(HostState {
             pending: HashMap::new(),
+            peer_handles: HashMap::new(),
             pending_heartbeats: HashSet::new(),
             closed: false,
         }));
@@ -262,10 +295,12 @@ impl AsyncPluginHost {
         let reader_handle = {
             let state_clone = Arc::clone(&state);
             let writer_tx_clone = writer_tx.clone();
+            let router_clone = Arc::clone(&router);
             tokio::spawn(Self::reader_loop(
                 reader,
                 state_clone,
                 writer_tx_clone,
+                router_clone,
                 shutdown_rx,
             ))
         };
@@ -278,6 +313,7 @@ impl AsyncPluginHost {
             reader_handle: Some(reader_handle),
             writer_handle: Some(writer_handle),
             shutdown_tx: Some(shutdown_tx),
+            router,
         })
     }
 
@@ -304,6 +340,7 @@ impl AsyncPluginHost {
         mut reader: AsyncFrameReader<R>,
         state: Arc<Mutex<HostState>>,
         writer_tx: mpsc::Sender<WriterCommand>,
+        router: crate::cap_router::ArcCapRouter,
         mut shutdown_rx: oneshot::Receiver<()>,
     ) {
         eprintln!("[AsyncPluginHost] Reader loop started");
@@ -363,17 +400,140 @@ impl AsyncPluginHost {
                         continue;
                     }
 
+                    // Handle peer invoke REQ frames from plugin
+                    if frame.frame_type == FrameType::Req {
+                        eprintln!("[AsyncPluginHost] Reader loop: received peer invoke REQ from plugin");
+
+                        // Extract cap URN from frame
+                        let cap_urn = match frame.cap.as_ref() {
+                            Some(urn) => urn.clone(),
+                            None => {
+                                eprintln!("[AsyncPluginHost] Reader loop: REQ missing cap");
+                                let err_frame = Frame::err(
+                                    frame.id.clone(),
+                                    "MISSING_CAP",
+                                    "Peer invoke REQ must include cap URN",
+                                );
+                                let _ = writer_tx.send(WriterCommand::WriteFrame(err_frame)).await;
+                                continue;
+                            }
+                        };
+
+                        // Delegate to router - get handle for forwarding frames
+                        eprintln!("[AsyncPluginHost] Delegating peer request to router: req_id={} cap={}",
+                            frame.id.to_uuid_string().unwrap_or_else(|| format!("{:?}", frame.id)), cap_urn);
+
+                        // Extract UUID bytes from MessageId
+                        let req_id_bytes = match &frame.id {
+                            crate::cbor_frame::MessageId::Uuid(bytes) => *bytes,
+                            _ => {
+                                eprintln!("[AsyncPluginHost] Peer invoke requires UUID message ID");
+                                let err_frame = Frame::err(
+                                    frame.id.clone(),
+                                    "INVALID_REQ_ID",
+                                    "Peer invoke requires UUID message ID",
+                                );
+                                let _ = writer_tx.send(WriterCommand::WriteFrame(err_frame)).await;
+                                continue;
+                            }
+                        };
+
+                        match router.begin_request(&cap_urn, &req_id_bytes) {
+                            Ok(handle) => {
+                                // Store handle for forwarding subsequent frames
+                                let mut state_guard = state.lock().await;
+                                state_guard.peer_handles.insert(frame.id.clone(), handle);
+                            }
+                            Err(e) => {
+                                eprintln!("[AsyncPluginHost] Router rejected request: {}", e);
+                                let err_frame = Frame::err(
+                                    frame.id.clone(),
+                                    "ROUTER_ERROR",
+                                    &format!("{}", e),
+                                );
+                                let _ = writer_tx.send(WriterCommand::WriteFrame(err_frame)).await;
+                            }
+                        }
+
+                        continue;
+                    }
+
                     // Route frame to appropriate pending request with STRICT stream tracking
                     let request_id = frame.id.clone();
                     let frame_id_str = frame.id.to_uuid_string().unwrap_or_else(|| format!("{:?}", frame.id));
                     let should_remove = {
                         let mut state_guard = state.lock().await;
-                        let pending_ids: Vec<_> = state_guard.pending.keys()
-                            .map(|k| k.to_uuid_string().unwrap_or_else(|| format!("{:?}", k)))
-                            .collect();
-                        eprintln!("[AsyncPluginHost] Reader loop: looking for request_id={} in pending=[{}]", frame_id_str, pending_ids.join(", "));
 
-                        if let Some(req_state) = state_guard.pending.get_mut(&frame.id) {
+                        // Check if this is for an active peer request handle
+                        if let Some(mut handle) = state_guard.peer_handles.remove(&frame.id) {
+                            // Forward frame to router handle
+                            eprintln!("[AsyncPluginHost] Forwarding frame to peer handle: type={:?}", frame.frame_type);
+                            handle.forward_frame(frame.clone());
+
+                            // If END frame, spawn task to forward responses back to plugin
+                            let should_remove = frame.frame_type == FrameType::End;
+                            if should_remove {
+                                let peer_req_id = frame.id.clone();
+                                let response_rx = handle.response_receiver();
+                                let writer_tx_clone = writer_tx.clone();
+
+                                // Spawn thread to handle blocking crossbeam receiver
+                                std::thread::spawn(move || {
+                                    let rt = tokio::runtime::Runtime::new().unwrap();
+                                    rt.block_on(async move {
+                                        let stream_id = uuid::Uuid::new_v4().to_string();
+                                        let mut stream_started = false;
+                                        let mut seq = 0u64;
+
+                                        // Read responses and forward to plugin
+                                        for chunk_result in response_rx.iter() {
+                                            match chunk_result {
+                                                Ok(chunk) => {
+                                                    if !stream_started {
+                                                        let start_frame = Frame::stream_start(
+                                                            peer_req_id.clone(),
+                                                            stream_id.clone(),
+                                                            String::from("media:bytes"),
+                                                        );
+                                                        let _ = writer_tx_clone.send(WriterCommand::WriteFrame(start_frame)).await;
+                                                        stream_started = true;
+                                                    }
+
+                                                    let chunk_frame = Frame::chunk(peer_req_id.clone(), stream_id.clone(), seq, chunk.payload);
+                                                    let _ = writer_tx_clone.send(WriterCommand::WriteFrame(chunk_frame)).await;
+                                                    seq += 1;
+                                                }
+                                                Err(e) => {
+                                                    let err_frame = Frame::err(peer_req_id.clone(), "PEER_ERROR", &format!("{:?}", e));
+                                                    let _ = writer_tx_clone.send(WriterCommand::WriteFrame(err_frame)).await;
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        if stream_started {
+                                            let stream_end_frame = Frame::stream_end(peer_req_id.clone(), stream_id.clone());
+                                            let _ = writer_tx_clone.send(WriterCommand::WriteFrame(stream_end_frame)).await;
+                                        }
+
+                                        let end_frame = Frame::end(peer_req_id.clone(), None);
+                                        let _ = writer_tx_clone.send(WriterCommand::WriteFrame(end_frame)).await;
+                                    })
+                                });
+                            } else {
+                                // Not END frame - put handle back
+                                state_guard.peer_handles.insert(frame.id.clone(), handle);
+                            }
+
+                            should_remove
+                        } else {
+                            // Not a peer request - check outgoing requests
+                            let pending_ids: Vec<_> = state_guard.pending.keys()
+                                .map(|k| k.to_uuid_string().unwrap_or_else(|| format!("{:?}", k)))
+                                .collect();
+                            eprintln!("[AsyncPluginHost] Reader loop: looking for request_id={} in pending=[{}]", frame_id_str, pending_ids.join(", "));
+
+                            if let Some(req_state) = state_guard.pending.get_mut(&frame.id) {
                             eprintln!("[AsyncPluginHost] Reader loop: found matching request, routing frame");
 
                             let remove = match frame.frame_type {
@@ -511,22 +671,69 @@ impl AsyncPluginHost {
                                 }
                             };
                             remove
-                        } else {
-                            eprintln!("[AsyncPluginHost] Reader loop: NO MATCH for request_id={}, frame dropped!", frame_id_str);
-                            false
+                            } else {
+                                eprintln!("[AsyncPluginHost] Reader loop: NO MATCH for request_id={}, frame dropped!", frame_id_str);
+                                false
+                            }
                         }
                     };
 
-                    // Remove completed request
+                    // Remove completed request (either outgoing or peer request)
                     if should_remove {
                         let mut state_guard = state.lock().await;
                         state_guard.pending.remove(&request_id);
+                        state_guard.peer_handles.remove(&request_id);
                     }
                 }
             }
         }
     }
 
+
+    /// Parse CapArgumentValue array from CBOR payload.
+    ///
+    /// The payload should be a CBOR array of maps with "media_urn" and "value" fields.
+    fn parse_arguments_from_cbor(payload: &[u8]) -> Result<Vec<crate::CapArgumentValue>, AsyncHostError> {
+        let cbor_value: ciborium::Value = ciborium::from_reader(payload)
+            .map_err(|e| AsyncHostError::Protocol(format!("Failed to parse CBOR arguments: {}", e)))?;
+
+        let args_array = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => return Err(AsyncHostError::Protocol("Arguments must be a CBOR array".to_string())),
+        };
+
+        let mut arguments = Vec::new();
+        for arg in args_array {
+            if let ciborium::Value::Map(map) = arg {
+                let mut media_urn: Option<String> = None;
+                let mut value: Option<Vec<u8>> = None;
+
+                for (k, v) in map {
+                    if let ciborium::Value::Text(key) = k {
+                        match key.as_str() {
+                            "media_urn" => {
+                                if let ciborium::Value::Text(s) = v {
+                                    media_urn = Some(s);
+                                }
+                            }
+                            "value" => {
+                                if let ciborium::Value::Bytes(b) = v {
+                                    value = Some(b);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                if let (Some(urn), Some(val)) = (media_urn, value) {
+                    arguments.push(crate::CapArgumentValue::new(&urn, val));
+                }
+            }
+        }
+
+        Ok(arguments)
+    }
 
     /// Send a cap request with multiple argument streams.
     ///

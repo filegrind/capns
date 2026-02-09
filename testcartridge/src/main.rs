@@ -316,6 +316,9 @@ fn handle_edge2(
         .get("media:node2;textable")
         .ok_or_else(|| RuntimeError::MissingArgument("node2 input required".to_string()))?;
 
+    eprintln!("[edge2] Input bytes: {:?}", input);
+    eprintln!("[edge2] Input as string: {}", String::from_utf8_lossy(input));
+
     let suffix = args
         .get("media:edge2arg1;textable;form=scalar")
         .map(|b| String::from_utf8_lossy(b).to_string())
@@ -323,6 +326,8 @@ fn handle_edge2(
 
     let input_str = String::from_utf8_lossy(input);
     let result = format!("{}{}", input_str, suffix);
+
+    eprintln!("[edge2] Result: {}", result);
 
     // Emit CBOR Value directly (handlers MUST emit CBOR Values)
     let cbor_value = ciborium::Value::Bytes(result.into_bytes());
@@ -556,10 +561,18 @@ fn handle_peer(
         edge1_response.extend_from_slice(&chunk);
     }
 
+    // Decode edge1 CBOR response to get raw bytes
+    let edge1_value: ciborium::Value = ciborium::from_reader(&edge1_response[..])
+        .map_err(|e| RuntimeError::Deserialize(format!("Failed to decode edge1 response: {}", e)))?;
+    let edge1_bytes = match edge1_value {
+        ciborium::Value::Bytes(b) => b,
+        _ => return Err(RuntimeError::Deserialize("Expected Bytes from edge1".to_string())),
+    };
+
     // Call edge2 via PeerInvoker (node2 → node3)
     let edge2_urn = "cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\"";
     let edge2_rx = peer.invoke(edge2_urn, &[
-        capns::CapArgumentValue::new("media:node2;textable", edge1_response)
+        capns::CapArgumentValue::new("media:node2;textable", edge1_bytes)
     ])?;
 
     // Collect edge2 response chunks and emit as CBOR

@@ -429,3 +429,115 @@ async fn test010_cap_not_found() {
         other => panic!("Expected CapNotFound, got: {:?}", other),
     }
 }
+
+// =============================================================================
+// Phase 2: Peer Invoke Testing (TEST403)
+// =============================================================================
+
+// TEST403: Test peer invoke round-trip (testcartridge calls itself)
+#[tokio::test]
+async fn test403_peer_invoke_roundtrip() {
+    use capns::{PluginHost, CapArgumentValue};
+    use capns::local_plugin_router::LocalPluginRouter;
+    use tokio::process::Command;
+    use std::process::Stdio;
+    use std::sync::Arc;
+
+    let testcartridge = testcartridge_bin();
+
+    // Create LocalPluginRouter for routing peer invoke requests
+    let router = Arc::new(LocalPluginRouter::new());
+    let router_arc: Arc<dyn capns::cap_router::CapRouter> = router.clone();
+
+    // Spawn testcartridge
+    let mut child = Command::new(&testcartridge)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn testcartridge");
+
+    let stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+
+    // Create host with router
+    let host = PluginHost::new_with_router(stdin, stdout, router_arc)
+        .await
+        .expect("Failed to create host");
+
+    // Get manifest to discover all caps
+    let manifest_bytes = host.plugin_manifest();
+    let manifest: capns::CapManifest = serde_json::from_slice(manifest_bytes)
+        .expect("Failed to parse manifest");
+
+    eprintln!("[TEST403] Discovered {} caps from testcartridge", manifest.caps.len());
+
+    // Register all caps with the router (pointing to this same host)
+    let host_arc = Arc::new(host);
+    for cap in &manifest.caps {
+        let cap_urn = cap.urn.to_string();
+        eprintln!("[TEST403] Registering cap: {}", cap_urn);
+        router.register_plugin(&cap_urn, Arc::clone(&host_arc)).await;
+    }
+
+    // Now call test-peer, which will peer invoke test-edge1 and test-edge2
+    let test_peer_urn = r#"cap:in="media:node1;textable";op=test_peer;out="media:node5;textable""#;
+    let input_data = b"CHAIN".to_vec();
+    let arguments = vec![
+        CapArgumentValue::new("media:node1;textable", input_data),
+    ];
+
+    eprintln!("[TEST403] Calling test-peer with input: CHAIN");
+
+    let mut response = host_arc
+        .request_with_arguments(test_peer_urn, &arguments)
+        .await
+        .expect("Failed to call test-peer");
+
+    // Collect response chunks
+    let mut result_data = Vec::new();
+    while let Some(chunk_result) = response.recv().await {
+        match chunk_result {
+            Ok(chunk) => {
+                eprintln!("[TEST403] Received chunk: {} bytes", chunk.payload.len());
+                result_data.extend_from_slice(&chunk.payload);
+            }
+            Err(e) => {
+                panic!("Peer invoke failed: {:?}", e);
+            }
+        }
+    }
+
+    // Shutdown host (try_unwrap to get ownership)
+    match Arc::try_unwrap(host_arc) {
+        Ok(host) => host.shutdown().await,
+        Err(_) => eprintln!("[TEST403] Warning: Could not unwrap host Arc, skipping shutdown"),
+    }
+
+    // Debug: print raw bytes
+    eprintln!("[TEST403] Raw response bytes: {:?}", &result_data[..std::cmp::min(result_data.len(), 30)]);
+
+    // Decode CBOR response
+    let cbor_value: ciborium::Value = ciborium::from_reader(&result_data[..])
+        .expect("Failed to decode CBOR response");
+
+    eprintln!("[TEST403] Decoded CBOR value: {:?}", cbor_value);
+
+    // Extract bytes from CBOR value
+    let result_bytes = match cbor_value {
+        ciborium::Value::Bytes(b) => b,
+        _ => panic!("Expected CBOR Bytes, got: {:?}", cbor_value),
+    };
+
+    let result_str = String::from_utf8(result_bytes)
+        .expect("Invalid UTF-8 in result");
+
+    eprintln!("[TEST403] Final result: {}", result_str);
+
+    // Expected flow:
+    // 1. test-peer receives "CHAIN"
+    // 2. Calls peer.invoke(test-edge1, "CHAIN") → "[PREPEND]CHAIN"
+    // 3. Calls peer.invoke(test-edge2, "[PREPEND]CHAIN") → "[PREPEND]CHAIN[APPEND]"
+    // 4. Returns final result
+    assert_eq!(result_str, "[PREPEND]CHAIN[APPEND]",
+        "Peer invoke chain should prepend and append correctly");
+}

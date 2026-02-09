@@ -64,6 +64,9 @@ pub mod plugin_runtime;
 pub mod plugin_repo;
 pub mod async_plugin_host;
 pub mod cap_router;
+// TODO: PluginRepoRouter needs download client implementation
+// pub mod plugin_repo_router;
+pub mod local_plugin_router;
 
 // Integration tests for CBOR protocol
 #[cfg(test)]

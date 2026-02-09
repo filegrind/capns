@@ -2,96 +2,88 @@
 //!
 //! When a plugin sends a peer invoke REQ (calling another cap), the host needs to route
 //! that request to an appropriate handler. This module provides a trait-based abstraction
-//! for different routing strategies:
+//! for different routing strategies.
 //!
-//! - PluginRepoRouter: Default implementation that queries plugin repository
-//! - DevBinsRouter: For macino's --dev-bins local development workflow
-//! - Custom implementations for testing or specialized routing logic
+//! The router receives frames (REQ, STREAM_START, CHUNK, STREAM_END, END) and delegates
+//! them to the appropriate target plugin, then forwards responses back.
 
 use crate::async_plugin_host::{AsyncHostError, ResponseChunk};
-use crate::CapArgumentValue;
-use crossbeam_channel::Receiver;
+use crate::cbor_frame::Frame;
+use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
+
+/// Handle for an active peer invoke request.
+///
+/// The AsyncPluginHost creates this by calling router.begin_request(), then forwards
+/// incoming frames (STREAM_START, CHUNK, STREAM_END, END) to the handle. The handle
+/// provides a receiver for response chunks.
+pub trait PeerRequestHandle: Send {
+    /// Forward an incoming frame (STREAM_START, CHUNK, STREAM_END, or END) to the target.
+    /// The router forwards these directly to the target plugin.
+    fn forward_frame(&mut self, frame: Frame);
+
+    /// Get a receiver for response chunks from the target plugin.
+    /// The host reads from this and forwards responses back to the requesting plugin.
+    fn response_receiver(&self) -> Receiver<Result<ResponseChunk, AsyncHostError>>;
+}
 
 /// Trait for routing cap invocation requests to appropriate handlers.
 ///
-/// When a plugin issues a peer invoke (via PeerInvoker), the host receives a REQ frame.
-/// The CapRouter determines how to handle that request - whether to route it to an
-/// existing plugin, spawn a new plugin from the repository, or handle it locally.
+/// When a plugin issues a peer invoke, the host receives a REQ frame and calls begin_request().
+/// The router returns a handle that the host uses to forward incoming argument streams and
+/// receive responses.
 ///
-/// # Thread Safety
-/// Implementations must be Send + Sync as they're shared across async tasks.
-///
-/// # Example
+/// # Example Flow
 /// ```ignore
-/// // Create router
-/// let router = PluginRepoRouter::new(repo_client);
+/// // 1. Plugin sends REQ frame
+/// let handle = router.begin_request(cap_urn, req_id)?;
 ///
-/// // Route a peer invoke request
-/// let response_rx = router.route_request(
-///     "cap:in=\"media:pdf;bytes\";op=extract-text;out=\"media:text;textable\"",
-///     vec![CapArgumentValue::new("media:pdf;bytes", pdf_data)],
-/// )?;
+/// // 2. Host forwards argument streams to handle
+/// handle.forward_frame(stream_start_frame);
+/// handle.forward_frame(chunk_frame);
+/// handle.forward_frame(stream_end_frame);
+/// handle.forward_frame(end_frame);
 ///
-/// // Collect response
-/// for chunk_result in response_rx.iter() {
+/// // 3. Host reads responses from handle and forwards back to plugin
+/// for chunk_result in handle.response_receiver().iter() {
 ///     let chunk = chunk_result?;
-///     process_chunk(chunk);
+///     send_to_plugin(chunk);
 /// }
 /// ```
 pub trait CapRouter: Send + Sync {
-    /// Route a cap invocation request to an appropriate handler.
+    /// Begin routing a peer invoke request.
     ///
     /// # Arguments
-    /// * `cap_urn` - The cap URN being requested (e.g., "cap:in=\"media:pdf\";op=extract-text;...")
-    /// * `arguments` - Arguments for the cap invocation
+    /// * `cap_urn` - The cap URN being requested
+    /// * `req_id` - The request ID from the REQ frame
     ///
     /// # Returns
-    /// A receiver that yields response chunks or errors. The receiver will be closed
-    /// when the response is complete (END frame received).
+    /// A handle for forwarding frames and receiving responses.
     ///
     /// # Errors
     /// - `NoHandler` - No plugin provides the requested cap
     /// - `PluginSpawnFailed` - Failed to download/start a plugin
-    /// - `PluginError` - Plugin returned an error during execution
-    fn route_request(
+    fn begin_request(
         &self,
         cap_urn: &str,
-        arguments: Vec<CapArgumentValue>,
-    ) -> Result<Receiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError>;
+        req_id: &[u8; 16],
+    ) -> Result<Box<dyn PeerRequestHandle>, AsyncHostError>;
 }
 
 /// No-op router that rejects all peer invoke requests.
-///
-/// Used as a default when peer invocation is not supported or desired.
-/// Useful for:
-/// - Testing plugins that shouldn't invoke peers
-/// - Sandboxed execution environments
-/// - Debugging to prevent cascading plugin calls
-///
-/// # Example
-/// ```
-/// use capns::NoPeerRouter;
-///
-/// let router = NoPeerRouter;
-/// let host = AsyncPluginHost::with_router(stdin, stdout, router).await?;
-/// ```
 pub struct NoPeerRouter;
 
 impl CapRouter for NoPeerRouter {
-    fn route_request(
+    fn begin_request(
         &self,
         cap_urn: &str,
-        _arguments: Vec<CapArgumentValue>,
-    ) -> Result<Receiver<Result<ResponseChunk, AsyncHostError>>, AsyncHostError> {
+        _req_id: &[u8; 16],
+    ) -> Result<Box<dyn PeerRequestHandle>, AsyncHostError> {
         Err(AsyncHostError::PeerInvokeNotSupported(cap_urn.to_string()))
     }
 }
 
 /// Arc wrapper for trait objects to enable cloning.
-///
-/// Since CapRouter is a trait, we can't clone trait objects directly.
-/// This wrapper allows AsyncPluginHost to store and share routers across tasks.
 pub type ArcCapRouter = Arc<dyn CapRouter>;
 
 #[cfg(test)]
@@ -101,9 +93,10 @@ mod tests {
     #[test]
     fn test_no_peer_router_rejects_all() {
         let router = NoPeerRouter;
-        let result = router.route_request(
+        let req_id = [0u8; 16];
+        let result = router.begin_request(
             "cap:in=\"media:void\";op=test;out=\"media:void\"",
-            vec![],
+            &req_id,
         );
 
         assert!(result.is_err());

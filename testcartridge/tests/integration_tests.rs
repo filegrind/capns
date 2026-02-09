@@ -86,12 +86,16 @@ fn test402_large_payload_1mb() {
     }
 }
 
-// TEST403: Plugin chain via PeerInvoker (requires CBOR mode, skip for now)
+// TEST403: Plugin chain via PeerInvoker
+// This test is run via macino's integration test suite using --dev-bins
+// Macino spawns testcartridge and routes peer invoke requests through its router
+// The test-peer cap in testcartridge invokes test-edge1 and test-edge2 via PeerInvoker
+// See macino/tests/ for the actual integration test
 #[test]
-#[ignore] // Requires running in CBOR mode with host
+#[ignore] // Run via macino integration tests, not standalone
 fn test403_peer_invoke_chain() {
-    // This would require AsyncPluginHost to orchestrate
-    // Skip for CLI-only integration tests
+    // Tested via: macino test --dev-bins ./target/release/testcartridge
+    // Expected: test-peer invokes test-edge1 → test-edge2 chain successfully
 }
 
 // TEST404: Multi-argument cap (test-edge5)
