@@ -191,7 +191,7 @@ struct StreamState {
 /// Per-request state tracking (host -> plugin responses)
 struct RequestState {
     sender: mpsc::UnboundedSender<Result<ResponseChunk, AsyncHostError>>,
-    streams: HashMap<String, StreamState>,  // stream_id -> state
+    streams: Vec<(String, StreamState)>,  // (stream_id, state) - ordered
     ended: bool,  // true after END frame - any stream activity after is FATAL
 }
 
@@ -477,48 +477,55 @@ impl AsyncPluginHost {
                                 let response_rx = handle.response_receiver();
                                 let writer_tx_clone = writer_tx.clone();
 
-                                // Spawn thread to handle blocking crossbeam receiver
-                                std::thread::spawn(move || {
-                                    let rt = tokio::runtime::Runtime::new().unwrap();
-                                    rt.block_on(async move {
-                                        let stream_id = uuid::Uuid::new_v4().to_string();
-                                        let mut stream_started = false;
-                                        let mut seq = 0u64;
+                                // Use spawn_blocking for the blocking crossbeam receiver,
+                                // then forward frames via the async writer channel
+                                tokio::task::spawn(async move {
+                                    let stream_id = uuid::Uuid::new_v4().to_string();
+                                    let mut stream_started = false;
+                                    let mut seq = 0u64;
 
-                                        // Read responses and forward to plugin
+                                    // Wrap blocking crossbeam recv in spawn_blocking
+                                    let (frame_tx, mut frame_rx) = tokio::sync::mpsc::unbounded_channel();
+                                    let peer_req_id_inner = peer_req_id.clone();
+                                    let stream_id_inner = stream_id.clone();
+                                    tokio::task::spawn_blocking(move || {
+                                        let mut seq_inner = 0u64;
+                                        let mut started = false;
                                         for chunk_result in response_rx.iter() {
                                             match chunk_result {
                                                 Ok(chunk) => {
-                                                    if !stream_started {
+                                                    if !started {
                                                         let start_frame = Frame::stream_start(
-                                                            peer_req_id.clone(),
-                                                            stream_id.clone(),
+                                                            peer_req_id_inner.clone(),
+                                                            stream_id_inner.clone(),
                                                             String::from("media:bytes"),
                                                         );
-                                                        let _ = writer_tx_clone.send(WriterCommand::WriteFrame(start_frame)).await;
-                                                        stream_started = true;
+                                                        if frame_tx.send(WriterCommand::WriteFrame(start_frame)).is_err() { return; }
+                                                        started = true;
                                                     }
-
-                                                    let chunk_frame = Frame::chunk(peer_req_id.clone(), stream_id.clone(), seq, chunk.payload);
-                                                    let _ = writer_tx_clone.send(WriterCommand::WriteFrame(chunk_frame)).await;
-                                                    seq += 1;
+                                                    let chunk_frame = Frame::chunk(peer_req_id_inner.clone(), stream_id_inner.clone(), seq_inner, chunk.payload);
+                                                    if frame_tx.send(WriterCommand::WriteFrame(chunk_frame)).is_err() { return; }
+                                                    seq_inner += 1;
                                                 }
                                                 Err(e) => {
-                                                    let err_frame = Frame::err(peer_req_id.clone(), "PEER_ERROR", &format!("{:?}", e));
-                                                    let _ = writer_tx_clone.send(WriterCommand::WriteFrame(err_frame)).await;
-                                                    break;
+                                                    let err_frame = Frame::err(peer_req_id_inner.clone(), "PEER_ERROR", &format!("{:?}", e));
+                                                    let _ = frame_tx.send(WriterCommand::WriteFrame(err_frame));
+                                                    return;
                                                 }
                                             }
                                         }
-
-                                        if stream_started {
-                                            let stream_end_frame = Frame::stream_end(peer_req_id.clone(), stream_id.clone());
-                                            let _ = writer_tx_clone.send(WriterCommand::WriteFrame(stream_end_frame)).await;
+                                        if started {
+                                            let stream_end_frame = Frame::stream_end(peer_req_id_inner.clone(), stream_id_inner.clone());
+                                            let _ = frame_tx.send(WriterCommand::WriteFrame(stream_end_frame));
                                         }
+                                        let end_frame = Frame::end(peer_req_id_inner.clone(), None);
+                                        let _ = frame_tx.send(WriterCommand::WriteFrame(end_frame));
+                                    });
 
-                                        let end_frame = Frame::end(peer_req_id.clone(), None);
-                                        let _ = writer_tx_clone.send(WriterCommand::WriteFrame(end_frame)).await;
-                                    })
+                                    // Forward frames from blocking task to async writer
+                                    while let Some(cmd) = frame_rx.recv().await {
+                                        let _ = writer_tx_clone.send(cmd).await;
+                                    }
                                 });
                             } else {
                                 // Not END frame - put handle back
@@ -537,24 +544,24 @@ impl AsyncPluginHost {
                             eprintln!("[AsyncPluginHost] Reader loop: found matching request, routing frame");
 
                             let remove = match frame.frame_type {
-                                FrameType::Chunk => {
+                                FrameType::Chunk => 'handle: {
                                     // STRICT: Validate chunk has stream_id and stream is active
                                     let stream_id = match frame.stream_id.as_ref() {
                                         Some(id) => id,
                                         None => {
                                             let _ = req_state.sender.send(Err(AsyncHostError::ChunkMissingStreamId));
-                                            return; // Fatal: malformed chunk
+                                            break 'handle true; // Remove this request, loop continues
                                         }
                                     };
 
                                     // FAIL HARD: Request already ended
                                     if req_state.ended {
                                         let _ = req_state.sender.send(Err(AsyncHostError::StreamAfterRequestEnd));
-                                        return; // Fatal: chunk after END
+                                        break 'handle true;
                                     }
 
                                     // FAIL HARD: Unknown or inactive stream
-                                    match req_state.streams.get(stream_id) {
+                                    match req_state.streams.iter().find(|(id, _)| id == stream_id).map(|(_, s)| s) {
                                         Some(stream_state) if stream_state.active => {
                                             // ✅ Valid chunk for active stream
                                             let is_eof = frame.is_eof();
@@ -571,12 +578,12 @@ impl AsyncPluginHost {
                                         Some(_stream_state) => {
                                             // FAIL HARD: Chunk for ended stream
                                             let _ = req_state.sender.send(Err(AsyncHostError::ChunkAfterStreamEnd(stream_id.clone())));
-                                            return; // Fatal: chunk after StreamEnd
+                                            break 'handle true;
                                         }
                                         None => {
                                             // FAIL HARD: Unknown stream
                                             let _ = req_state.sender.send(Err(AsyncHostError::UnknownStreamId(stream_id.clone())));
-                                            return; // Fatal: unknown stream
+                                            break 'handle true;
                                         }
                                     }
                                 }
@@ -604,63 +611,63 @@ impl AsyncPluginHost {
                                     req_state.ended = true;
                                     true
                                 }
-                                FrameType::StreamStart => {
+                                FrameType::StreamStart => 'handle: {
                                     // STRICT: Track new stream, FAIL HARD on violations
                                     let stream_id = match frame.stream_id.as_ref() {
                                         Some(id) => id.clone(),
                                         None => {
                                             let _ = req_state.sender.send(Err(AsyncHostError::StreamStartMissingId));
-                                            return; // Fatal: malformed StreamStart
+                                            break 'handle true;
                                         }
                                     };
                                     let media_urn = match frame.media_urn.as_ref() {
                                         Some(urn) => urn.clone(),
                                         None => {
                                             let _ = req_state.sender.send(Err(AsyncHostError::StreamStartMissingUrn));
-                                            return; // Fatal: malformed StreamStart
+                                            break 'handle true;
                                         }
                                     };
 
                                     // FAIL HARD: Request already ended
                                     if req_state.ended {
                                         let _ = req_state.sender.send(Err(AsyncHostError::StreamAfterRequestEnd));
-                                        return; // Fatal: stream after END
+                                        break 'handle true;
                                     }
 
                                     // FAIL HARD: Duplicate stream ID
-                                    if req_state.streams.contains_key(&stream_id) {
+                                    if req_state.streams.iter().any(|(id, _)| id == &stream_id) {
                                         let _ = req_state.sender.send(Err(AsyncHostError::DuplicateStreamId(stream_id)));
-                                        return; // Fatal: duplicate stream
+                                        break 'handle true;
                                     }
 
                                     // ✅ Track new stream
-                                    req_state.streams.insert(stream_id.clone(), StreamState {
+                                    req_state.streams.push((stream_id.clone(), StreamState {
                                         media_urn: media_urn.clone(),
                                         active: true,
-                                    });
+                                    }));
                                     eprintln!("[AsyncPluginHost] Reader loop: StreamStart tracked stream_id={} media_urn={} (total={})",
                                         stream_id, media_urn, req_state.streams.len());
                                     false
                                 }
-                                FrameType::StreamEnd => {
+                                FrameType::StreamEnd => 'handle: {
                                     // STRICT: Mark stream as ended, FAIL HARD on violations
                                     let stream_id = match frame.stream_id.as_ref() {
                                         Some(id) => id.clone(),
                                         None => {
                                             let _ = req_state.sender.send(Err(AsyncHostError::Protocol("StreamEnd missing stream_id".to_string())));
-                                            return; // Fatal: malformed StreamEnd
+                                            break 'handle true;
                                         }
                                     };
 
                                     // FAIL HARD: Unknown stream
-                                    match req_state.streams.get_mut(&stream_id) {
+                                    match req_state.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
                                         Some(stream_state) => {
                                             stream_state.active = false;
                                             eprintln!("[AsyncPluginHost] Reader loop: StreamEnd marked stream_id={} as ended", stream_id);
                                         }
                                         None => {
                                             let _ = req_state.sender.send(Err(AsyncHostError::UnknownStreamId(stream_id)));
-                                            return; // Fatal: StreamEnd for unknown stream
+                                            break 'handle true;
                                         }
                                     }
                                     false
@@ -758,7 +765,7 @@ impl AsyncPluginHost {
         let (sender, receiver) = mpsc::unbounded_channel();
         state.pending.insert(request_id.clone(), RequestState {
             sender,
-            streams: HashMap::new(),
+            streams: Vec::new(),
             ended: false,
         });
 

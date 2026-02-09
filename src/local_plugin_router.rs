@@ -55,8 +55,7 @@ impl Default for LocalPluginRouter {
 struct LocalPluginRequestHandle {
     cap_urn: String,
     plugin: Arc<AsyncPluginHost>,
-    streams: Arc<Mutex<HashMap<String, Vec<u8>>>>,  // stream_id -> accumulated data
-    media_urns: Arc<Mutex<HashMap<String, String>>>,  // stream_id -> media_urn
+    streams: Arc<Mutex<Vec<(String, String, Vec<u8>)>>>,  // (stream_id, media_urn, data) - ordered
     response_tx: Sender<Result<ResponseChunk, AsyncHostError>>,
     response_rx: Receiver<Result<ResponseChunk, AsyncHostError>>,
 }
@@ -67,8 +66,7 @@ impl LocalPluginRequestHandle {
         Self {
             cap_urn,
             plugin,
-            streams: Arc::new(Mutex::new(HashMap::new())),
-            media_urns: Arc::new(Mutex::new(HashMap::new())),
+            streams: Arc::new(Mutex::new(Vec::new())),
             response_tx,
             response_rx,
         }
@@ -83,15 +81,15 @@ impl PeerRequestHandle for LocalPluginRequestHandle {
                 let media_urn = frame.media_urn.unwrap_or_default();
                 eprintln!("[LocalPluginRequestHandle] STREAM_START: stream_id={} media_urn={}", stream_id, media_urn);
 
-                self.streams.lock().unwrap().insert(stream_id.clone(), Vec::new());
-                self.media_urns.lock().unwrap().insert(stream_id, media_urn);
+                self.streams.lock().unwrap().push((stream_id, media_urn, Vec::new()));
             }
             FrameType::Chunk => {
                 let stream_id = frame.stream_id.unwrap_or_default();
                 if let Some(payload) = frame.payload {
-                    if let Some(stream_data) = self.streams.lock().unwrap().get_mut(&stream_id) {
-                        stream_data.extend_from_slice(&payload);
-                        eprintln!("[LocalPluginRequestHandle] CHUNK: stream_id={} total_size={}", stream_id, stream_data.len());
+                    let mut streams = self.streams.lock().unwrap();
+                    if let Some((_, _, ref mut data)) = streams.iter_mut().find(|(id, _, _)| id == &stream_id) {
+                        data.extend_from_slice(&payload);
+                        eprintln!("[LocalPluginRequestHandle] CHUNK: stream_id={} total_size={}", stream_id, data.len());
                     }
                 }
             }
@@ -104,19 +102,16 @@ impl PeerRequestHandle for LocalPluginRequestHandle {
 
                 // Build CapArgumentValues from accumulated streams
                 let streams = self.streams.lock().unwrap();
-                let media_urns = self.media_urns.lock().unwrap();
 
                 let arguments: Vec<CapArgumentValue> = streams.iter()
-                    .filter_map(|(stream_id, data)| {
-                        media_urns.get(stream_id).map(|urn| {
-                            CapArgumentValue::new(urn.clone(), data.clone())
-                        })
+                    .map(|(_stream_id, media_urn, data)| {
+                        CapArgumentValue::new(media_urn.clone(), data.clone())
                     })
                     .collect();
 
                 eprintln!("[LocalPluginRequestHandle] Executing cap with {} arguments", arguments.len());
 
-                // Execute on plugin in separate thread
+                // Execute on plugin in separate thread (sync context for crossbeam channel)
                 let plugin = Arc::clone(&self.plugin);
                 let cap_urn = self.cap_urn.clone();
                 let response_tx = self.response_tx.clone();
@@ -162,7 +157,7 @@ impl CapRouter for LocalPluginRouter {
         // Create channel for responses
         let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
 
-        // Find plugin in separate thread
+        // Find plugin in separate thread (sync trait method needs async lookup)
         let cap_urn_for_find = cap_urn.clone();
         let cap_urn_for_handle = cap_urn.clone();
         std::thread::spawn(move || {

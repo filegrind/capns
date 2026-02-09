@@ -8,7 +8,7 @@
 //! Each frame is a CBOR map with integer keys:
 //! ```text
 //! {
-//!   0: version (u8, always 1)
+//!   0: version (u8, always 2)
 //!   1: frame_type (u8)
 //!   2: id (bytes[16] or uint)
 //!   3: seq (u64)
@@ -35,8 +35,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Protocol version. Always 1 for this implementation.
-pub const PROTOCOL_VERSION: u8 = 1;
+/// Protocol version. Version 2: Result-based emitters, negotiated chunk limits, per-request errors.
+pub const PROTOCOL_VERSION: u8 = 2;
 
 /// Default maximum frame size (3.5 MB) - safe margin below 3.75MB limit
 /// Larger payloads automatically use CHUNK frames
@@ -159,7 +159,7 @@ impl Default for Limits {
 /// A CBOR protocol frame
 #[derive(Debug, Clone)]
 pub struct Frame {
-    /// Protocol version (always 1)
+    /// Protocol version (always 2)
     pub version: u8,
     /// Frame type
     pub frame_type: FrameType,
@@ -831,10 +831,10 @@ mod tests {
         assert_eq!(limits.max_chunk, 262_144, "default max_chunk = 256 KB");
     }
 
-    // TEST199: Test PROTOCOL_VERSION is 1
+    // TEST199: Test PROTOCOL_VERSION is 2
     #[test]
     fn test_protocol_version_constant() {
-        assert_eq!(PROTOCOL_VERSION, 1);
+        assert_eq!(PROTOCOL_VERSION, 2);
     }
 
     // TEST200: Test integer key constants match the protocol specification

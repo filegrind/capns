@@ -1319,4 +1319,37 @@ mod tests {
         let result = decode_frame(&garbage);
         assert!(result.is_err(), "garbage bytes must produce decode error");
     }
+
+    // TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn
+    #[test]
+    fn test_stream_start_roundtrip() {
+        let id = MessageId::new_uuid();
+        let stream_id = "stream-abc-123".to_string();
+        let media_urn = "media:bytes".to_string();
+
+        let frame = Frame::stream_start(id.clone(), stream_id.clone(), media_urn.clone());
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.frame_type, FrameType::StreamStart);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.stream_id.as_deref(), Some("stream-abc-123"));
+        assert_eq!(decoded.media_urn.as_deref(), Some("media:bytes"));
+    }
+
+    // TEST390: StreamEnd encode/decode roundtrip preserves stream_id, no media_urn
+    #[test]
+    fn test_stream_end_roundtrip() {
+        let id = MessageId::new_uuid();
+        let stream_id = "stream-xyz-789".to_string();
+
+        let frame = Frame::stream_end(id.clone(), stream_id.clone());
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.frame_type, FrameType::StreamEnd);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.stream_id.as_deref(), Some("stream-xyz-789"));
+        assert!(decoded.media_urn.is_none(), "StreamEnd should not have media_urn");
+    }
 }

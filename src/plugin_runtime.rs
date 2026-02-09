@@ -103,25 +103,21 @@ pub trait StreamEmitter: Send + Sync {
     /// Emit a CBOR value as output.
     /// Handlers MUST construct and emit CBOR Values (Bytes, Text, Array, or Map).
     /// NO RAW BYTES - this enforces structured output.
-    fn emit_cbor(&self, value: &ciborium::Value);
+    fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError>;
 
     /// Emit a JSON value as a chunk.
     /// The value is serialized to JSON bytes and sent as CBOR bytes.
-    fn emit(&self, payload: serde_json::Value) {
-        match serde_json::to_vec(&payload) {
-            Ok(bytes) => {
-                let cbor_value = ciborium::Value::Bytes(bytes);
-                self.emit_cbor(&cbor_value);
-            }
-            Err(e) => {
-                eprintln!("[PluginRuntime] Failed to serialize payload: {}", e);
-            }
-        }
+    fn emit(&self, payload: serde_json::Value) -> Result<(), RuntimeError> {
+        let bytes = serde_json::to_vec(&payload)
+            .map_err(|e| RuntimeError::Handler(format!("Failed to serialize payload: {}", e)))?;
+        let cbor_value = ciborium::Value::Bytes(bytes);
+        self.emit_cbor(&cbor_value)
     }
 
     /// Emit a status/progress message.
+    /// Uses LOG frames (side-channel), keeps void return — best-effort.
     fn emit_status(&self, operation: &str, details: &str) {
-        self.emit(serde_json::json!({
+        let _ = self.emit(serde_json::json!({
             "type": "status",
             "operation": operation,
             "details": details
@@ -200,10 +196,11 @@ struct ThreadSafeEmitter<W: Write + Send> {
     media_urn: String,  // Response media URN
     stream_started: AtomicBool,  // Track if STREAM_START was sent
     seq: Mutex<u64>,
+    max_chunk: usize,  // Negotiated max chunk size
 }
 
 impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
-    fn emit_cbor(&self, value: &ciborium::Value) {
+    fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
         // In CBOR mode: encode CBOR Value to bytes, then wrap in protocol frames
         // Supported types: Bytes, Text, Array, Map (all CBOR types)
         // NO FALLBACK - fail hard on serialization error
@@ -211,7 +208,7 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
         // First, encode the CBOR value to bytes
         let mut raw_bytes = Vec::new();
         ciborium::into_writer(value, &mut raw_bytes)
-            .expect("FATAL: Failed to encode CBOR value for transmission");
+            .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR value: {}", e)))?;
 
         // STREAM MULTIPLEXING PROTOCOL: Send STREAM_START before first chunk
         if !self.stream_started.swap(true, Ordering::SeqCst) {
@@ -222,19 +219,16 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
             );
 
             let mut writer = self.writer.lock().unwrap();
-            if let Err(e) = writer.write(&start_frame) {
-                eprintln!("[PluginRuntime] Failed to write STREAM_START: {}", e);
-                return;
-            }
+            writer.write(&start_frame)
+                .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write STREAM_START: {}", e))))?;
             drop(writer); // Release lock before continuing
         }
 
-        // AUTO-CHUNKING: Split large payloads into max_chunk sized chunks
-        const MAX_CHUNK: usize = 262144; // 256KB
+        // AUTO-CHUNKING: Split large payloads into negotiated max_chunk sized chunks
         let mut offset = 0;
 
         while offset < raw_bytes.len() {
-            let chunk_size = (raw_bytes.len() - offset).min(MAX_CHUNK);
+            let chunk_size = (raw_bytes.len() - offset).min(self.max_chunk);
             let chunk_data = raw_bytes[offset..offset + chunk_size].to_vec();
 
             let seq = {
@@ -247,14 +241,14 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
             let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, chunk_data);
 
             let mut writer = self.writer.lock().unwrap();
-            if let Err(e) = writer.write(&frame) {
-                eprintln!("[PluginRuntime] Failed to write chunk: {}", e);
-                return; // Stop on first error
-            }
+            writer.write(&frame)
+                .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
             drop(writer);
 
             offset += chunk_size;
         }
+
+        Ok(())
     }
 
     fn log(&self, level: &str, message: &str) {
@@ -306,7 +300,7 @@ impl Default for CliStreamEmitter {
 }
 
 impl StreamEmitter for CliStreamEmitter {
-    fn emit_cbor(&self, value: &ciborium::Value) {
+    fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
 
@@ -337,14 +331,14 @@ impl StreamEmitter for CliStreamEmitter {
                                     ciborium::Value::Text(text) => {
                                         let _ = handle.write_all(text.as_bytes());
                                     }
-                                    _ => panic!("FATAL: Map 'value' field is not bytes/text"),
+                                    _ => return Err(RuntimeError::Handler("Map 'value' field is not bytes/text".to_string())),
                                 }
                             } else {
-                                panic!("FATAL: Map in array has no 'value' field");
+                                return Err(RuntimeError::Handler("Map in array has no 'value' field".to_string()));
                             }
                         }
                         _ => {
-                            panic!("FATAL: Array contains unsupported element type");
+                            return Err(RuntimeError::Handler("Array contains unsupported element type".to_string()));
                         }
                     }
                 }
@@ -369,14 +363,14 @@ impl StreamEmitter for CliStreamEmitter {
                         ciborium::Value::Text(text) => {
                             let _ = handle.write_all(text.as_bytes());
                         }
-                        _ => panic!("FATAL: Map 'value' field is not bytes/text"),
+                        _ => return Err(RuntimeError::Handler("Map 'value' field is not bytes/text".to_string())),
                     }
                 } else {
-                    panic!("FATAL: Map has no 'value' field");
+                    return Err(RuntimeError::Handler("Map has no 'value' field".to_string()));
                 }
             }
             _ => {
-                panic!("FATAL: Handler emitted unsupported CBOR type");
+                return Err(RuntimeError::Handler("Handler emitted unsupported CBOR type".to_string()));
             }
         }
 
@@ -384,6 +378,7 @@ impl StreamEmitter for CliStreamEmitter {
             let _ = handle.write_all(b"\n");
         }
         let _ = handle.flush();
+        Ok(())
     }
 
     /// In CLI mode, status messages go to stderr so only the final response is on stdout.
@@ -450,7 +445,7 @@ struct PendingStream {
 /// Uses stream multiplexing protocol to track response streams.
 struct PendingPeerRequest {
     sender: Sender<Result<Vec<u8>, RuntimeError>>,
-    streams: HashMap<String, PendingStream>,  // stream_id -> accumulated chunks
+    streams: Vec<(String, PendingStream)>,  // (stream_id, accumulated chunks) - ordered
     ended: bool,  // true after END frame
 }
 
@@ -458,6 +453,7 @@ struct PendingPeerRequest {
 struct PeerInvokerImpl<W: Write + Send> {
     writer: Arc<Mutex<FrameWriter<W>>>,
     pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
+    max_chunk: usize,  // Negotiated max chunk size
 }
 
 /// Extract the effective payload from a CBOR arguments payload.
@@ -833,13 +829,13 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
             let mut pending = self.pending_requests.lock().unwrap();
             pending.insert(request_id.clone(), PendingPeerRequest {
                 sender,
-                streams: HashMap::new(),
+                streams: Vec::new(),
                 ended: false,
             });
         }
 
         // STREAM MULTIPLEXING PROTOCOL: Send REQ + streams for each argument + END
-        const MAX_CHUNK: usize = 262144; // 256KB chunks
+        let max_chunk = self.max_chunk;
 
         {
             let mut writer = self.writer.lock().unwrap();
@@ -875,7 +871,7 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
                 let mut offset = 0;
                 let mut seq = 0u64;
                 while offset < arg.value.len() {
-                    let chunk_size = (arg.value.len() - offset).min(MAX_CHUNK);
+                    let chunk_size = (arg.value.len() - offset).min(max_chunk);
                     let chunk_data = arg.value[offset..offset + chunk_size].to_vec();
 
                     let chunk_frame = Frame::chunk(
@@ -1210,7 +1206,7 @@ impl PluginRuntime {
 
         // Create channel and send each argument as separate StreamChunks
         let (tx, rx) = std::sync::mpsc::channel();
-        const MAX_CHUNK: usize = 262144; // 256KB chunks
+        let max_chunk = Limits::default().max_chunk;
 
         for arg in arguments {
             if let ciborium::Value::Map(arg_map) = arg {
@@ -1269,10 +1265,10 @@ impl PluginRuntime {
                         };
                         tx.send(stream_chunk).map_err(|_| RuntimeError::Handler("Failed to send chunk".to_string()))?;
                     } else {
-                        // Non-empty value - chunk into MAX_CHUNK pieces
+                        // Non-empty value - chunk into max_chunk pieces
                         let mut offset = 0;
                         while offset < bytes.len() {
-                            let chunk_size = (bytes.len() - offset).min(MAX_CHUNK);
+                            let chunk_size = (bytes.len() - offset).min(max_chunk);
                             let chunk_data = bytes[offset..offset + chunk_size].to_vec();
                             let is_last = offset + chunk_size >= bytes.len();
 
@@ -1322,7 +1318,7 @@ impl PluginRuntime {
     fn build_payload_from_streaming_stdin(&self, cap: &Cap) -> Result<Vec<u8>, RuntimeError> {
         let stdin = io::stdin();
         let locked = stdin.lock();
-        self.build_payload_from_streaming_reader(cap, locked)
+        self.build_payload_from_streaming_reader(cap, locked, Limits::default().max_chunk)
     }
 
     /// Build payload from streaming reader (testable version).
@@ -1342,6 +1338,7 @@ impl PluginRuntime {
         &self,
         cap: &Cap,
         mut reader: R,
+        max_chunk: usize,
     ) -> Result<Vec<u8>, RuntimeError> {
         eprintln!("[PluginRuntime] CLI mode: streaming PURE BINARY from reader (NOT CBOR)");
 
@@ -1355,13 +1352,10 @@ impl PluginRuntime {
             cap_urn: cap.urn_string(),
             chunks: Vec::new(),
         };
-
-        // Stream reader in chunks - convert to virtual CHUNK frames on-the-fly
-        const MAX_CHUNK: usize = 262144; // Same as CBOR mode
         let mut total_bytes = 0;
 
         loop {
-            let mut buffer = vec![0u8; MAX_CHUNK];
+            let mut buffer = vec![0u8; max_chunk];
             match reader.read(&mut buffer) {
                 Ok(0) => {
                     // EOF - simulate END frame
@@ -1778,7 +1772,7 @@ impl PluginRuntime {
         struct PendingIncomingRequest {
             cap_urn: String,
             handler: HandlerFn,
-            streams: HashMap<String, PendingStream>,  // stream_id -> stream data
+            streams: Vec<(String, PendingStream)>,  // (stream_id, stream data) - ordered
             ended: bool,  // true after END frame - any stream activity after is FATAL
         }
         let pending_incoming: Arc<Mutex<HashMap<MessageId, PendingIncomingRequest>>> =
@@ -1846,7 +1840,7 @@ impl PluginRuntime {
                     pending.insert(frame.id.clone(), PendingIncomingRequest {
                         cap_urn: cap_urn.clone(),
                         handler,
-                        streams: HashMap::new(),  // Streams added via STREAM_START
+                        streams: Vec::new(),  // Streams added via STREAM_START
                         ended: false,
                     });
                     drop(pending);
@@ -1882,7 +1876,7 @@ impl PluginRuntime {
                         }
 
                         // Append chunk to the appropriate stream with STRICT validation
-                        match pending_req.streams.get_mut(&stream_id) {
+                        match pending_req.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
                             Some(stream) if !stream.complete => {
                                 // ✅ Valid chunk for active stream
                                 if let Some(payload) = frame.payload {
@@ -1928,7 +1922,7 @@ impl PluginRuntime {
                             continue;
                         }
 
-                        match pending_req.streams.get_mut(&stream_id) {
+                        match pending_req.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
                             Some(stream) if !stream.complete => {
                                 // ✅ Valid chunk for active stream
                                 if let Some(payload) = frame.payload {
@@ -2021,7 +2015,7 @@ impl PluginRuntime {
                         }
 
                         // FAIL HARD: Duplicate stream ID
-                        if pending_req.streams.contains_key(&stream_id) {
+                        if pending_req.streams.iter().any(|(id, _)| id == &stream_id) {
                             incoming.remove(&frame.id); // Remove to unblock host
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
                                 &format!("Duplicate stream_id: {}", stream_id));
@@ -2033,11 +2027,11 @@ impl PluginRuntime {
                         }
 
                         // ✅ Track new stream
-                        pending_req.streams.insert(stream_id.clone(), PendingStream {
+                        pending_req.streams.push((stream_id.clone(), PendingStream {
                             media_urn: media_urn.clone(),
                             chunks: vec![],
                             complete: false,
-                        });
+                        }));
                         eprintln!("[PluginRuntime] Stream added: {} (total streams: {})",
                             stream_id, pending_req.streams.len());
                         drop(incoming);
@@ -2048,12 +2042,12 @@ impl PluginRuntime {
                     // Not an incoming request - check if it's a peer response stream
                     let mut peer_pending = pending_peer_requests.lock().unwrap();
                     if let Some(pending_req) = peer_pending.get_mut(&req_id) {
-                        if !pending_req.ended && !pending_req.streams.contains_key(&stream_id) {
-                            pending_req.streams.insert(stream_id.clone(), PendingStream {
+                        if !pending_req.ended && !pending_req.streams.iter().any(|(id, _)| id == &stream_id) {
+                            pending_req.streams.push((stream_id.clone(), PendingStream {
                                 media_urn: media_urn.clone(),
                                 chunks: vec![],
                                 complete: false,
-                            });
+                            }));
                             eprintln!("[PluginRuntime] Peer response stream added: {}", stream_id);
                         }
                     }
@@ -2077,7 +2071,7 @@ impl PluginRuntime {
                     // STRICT: Mark stream as complete with validation
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.get_mut(&frame.id) {
-                        match pending_req.streams.get_mut(&stream_id) {
+                        match pending_req.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
                             Some(stream) => {
                                 stream.complete = true;
                                 eprintln!("[PluginRuntime] Incoming stream marked complete: {}", stream_id);
@@ -2102,7 +2096,7 @@ impl PluginRuntime {
                     // Not an incoming request - check if it's a peer response stream
                     let mut peer_pending = pending_peer_requests.lock().unwrap();
                     if let Some(pending_req) = peer_pending.get_mut(&frame.id) {
-                        if let Some(stream) = pending_req.streams.get_mut(&stream_id) {
+                        if let Some(stream) = pending_req.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
                             stream.complete = true;
                             eprintln!("[PluginRuntime] Peer response stream marked complete: {}", stream_id);
                         }
@@ -2123,6 +2117,7 @@ impl PluginRuntime {
                         let writer_clone = Arc::clone(&frame_writer);
                         let pending_clone = Arc::clone(&pending_peer_requests);
                         let manifest_clone = self.manifest.clone(); // Pass manifest for file-path conversion
+                        let max_chunk = negotiated_limits.max_chunk;
 
                         eprintln!("[PluginRuntime] END: req_id={:?} streams={}", request_id, streams.len());
 
@@ -2150,11 +2145,13 @@ impl PluginRuntime {
                                 media_urn,
                                 stream_started: AtomicBool::new(false),
                                 seq: Mutex::new(0),
+                                max_chunk,
                             };
 
                             let peer_invoker = PeerInvokerImpl {
                                 writer: Arc::clone(&writer_clone),
                                 pending_requests: Arc::clone(&pending_clone),
+                                max_chunk,
                             };
 
                             // FILE-PATH AUTO-CONVERSION: Check each stream and convert file paths to file contents
@@ -4485,7 +4482,7 @@ mod tests {
         let mock_stdin = Cursor::new(pdf_content.clone());
 
         // Build payload from streaming reader (what CLI piped mode does)
-        let payload = runtime.build_payload_from_streaming_reader(&cap, mock_stdin).unwrap();
+        let payload = runtime.build_payload_from_streaming_reader(&cap, mock_stdin, Limits::default().max_chunk).unwrap();
 
         // Verify payload is CBOR array with correct structure
         let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
@@ -4768,5 +4765,157 @@ mod tests {
         assert_eq!(media_urn, "media:bytes", "media_urn should be converted to stdin source");
 
         std::fs::remove_dir_all(temp_dir).ok();
+    }
+
+    // TEST395: Small payload (< max_chunk) produces correct CBOR arguments
+    #[test]
+    fn test_build_payload_small() {
+        use std::io::Cursor;
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![],
+        );
+
+        let runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
+        let data = b"small payload";
+        let reader = Cursor::new(data.to_vec());
+
+        let payload = runtime.build_payload_from_streaming_reader(&cap, reader, Limits::default().max_chunk).unwrap();
+
+        // Verify CBOR structure
+        let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
+        match cbor_val {
+            ciborium::Value::Array(arr) => {
+                assert_eq!(arr.len(), 1, "Should have one argument");
+                match &arr[0] {
+                    ciborium::Value::Map(map) => {
+                        let value = map.iter()
+                            .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
+                            .map(|(_, v)| v)
+                            .unwrap();
+                        match value {
+                            ciborium::Value::Bytes(b) => {
+                                assert_eq!(b, &data.to_vec(), "Payload bytes should match");
+                            }
+                            _ => panic!("Expected Bytes"),
+                        }
+                    }
+                    _ => panic!("Expected Map"),
+                }
+            }
+            _ => panic!("Expected Array"),
+        }
+    }
+
+    // TEST396: Large payload (> max_chunk) accumulates across chunks correctly
+    #[test]
+    fn test_build_payload_large() {
+        use std::io::Cursor;
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![],
+        );
+
+        let runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
+        // Use small max_chunk to force multi-chunk
+        let data: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
+        let reader = Cursor::new(data.clone());
+
+        let payload = runtime.build_payload_from_streaming_reader(&cap, reader, 100).unwrap();
+
+        let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
+        let arr = match cbor_val {
+            ciborium::Value::Array(a) => a,
+            _ => panic!("Expected Array"),
+        };
+        let map = match &arr[0] {
+            ciborium::Value::Map(m) => m,
+            _ => panic!("Expected Map"),
+        };
+        let value = map.iter()
+            .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
+            .map(|(_, v)| v)
+            .unwrap();
+        match value {
+            ciborium::Value::Bytes(b) => {
+                assert_eq!(b.len(), 1000, "All bytes should be accumulated");
+                assert_eq!(b, &data, "Data should match exactly");
+            }
+            _ => panic!("Expected Bytes"),
+        }
+    }
+
+    // TEST397: Empty reader produces valid empty CBOR arguments
+    #[test]
+    fn test_build_payload_empty() {
+        use std::io::Cursor;
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![],
+        );
+
+        let runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
+        let reader = Cursor::new(Vec::<u8>::new());
+
+        let payload = runtime.build_payload_from_streaming_reader(&cap, reader, Limits::default().max_chunk).unwrap();
+
+        let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
+        let arr = match cbor_val {
+            ciborium::Value::Array(a) => a,
+            _ => panic!("Expected Array"),
+        };
+        let map = match &arr[0] {
+            ciborium::Value::Map(m) => m,
+            _ => panic!("Expected Map"),
+        };
+        let value = map.iter()
+            .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
+            .map(|(_, v)| v)
+            .unwrap();
+        match value {
+            ciborium::Value::Bytes(b) => {
+                assert!(b.is_empty(), "Empty reader should produce empty bytes");
+            }
+            _ => panic!("Expected Bytes"),
+        }
+    }
+
+    // TEST398: IO error from reader propagates as RuntimeError::Io
+    #[test]
+    fn test_build_payload_io_error() {
+        struct ErrorReader;
+        impl std::io::Read for ErrorReader {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "simulated read error"))
+            }
+        }
+
+        let cap = create_test_cap(
+            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "Process",
+            "process",
+            vec![],
+        );
+
+        let runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
+        let result = runtime.build_payload_from_streaming_reader(&cap, ErrorReader, Limits::default().max_chunk);
+
+        assert!(result.is_err(), "IO error should propagate");
+        match result {
+            Err(RuntimeError::Io(e)) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe);
+            }
+            Err(e) => panic!("Expected RuntimeError::Io, got: {:?}", e),
+            Ok(_) => panic!("Expected error"),
+        }
     }
 }
