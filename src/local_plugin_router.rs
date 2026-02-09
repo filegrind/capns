@@ -198,4 +198,80 @@ mod tests {
         let router = LocalPluginRouter::new();
         assert!(router.routes.try_read().is_ok());
     }
+
+    // TEST385: LocalPluginRouter starts with empty routes
+    #[test]
+    fn test_router_empty_initially() {
+        let router = LocalPluginRouter::new();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        runtime.block_on(async {
+            let routes = router.routes.read().await;
+            assert_eq!(routes.len(), 0, "Router should start empty");
+        });
+    }
+
+    // TEST386: LocalPluginRouter::Default creates empty router
+    #[test]
+    fn test_router_default() {
+        let router = LocalPluginRouter::default();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        runtime.block_on(async {
+            let routes = router.routes.read().await;
+            assert_eq!(routes.len(), 0, "Default router should be empty");
+        });
+    }
+
+    // TEST387: LocalPluginRouter::find_plugin returns None for empty router
+    #[test]
+    fn test_find_plugin_empty_router() {
+        let router = LocalPluginRouter::new();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        runtime.block_on(async {
+            let found = router.find_plugin("cap:in=\"media:void\";op=missing;out=\"media:void\"").await;
+            assert!(found.is_none(), "Should return None for empty router");
+        });
+    }
+
+    // TEST388: CapRouter::begin_request called with NoPeerRouter fails with correct error
+    #[test]
+    fn test_no_peer_router_returns_error() {
+        use crate::cap_router::{CapRouter, NoPeerRouter};
+        let router = NoPeerRouter;
+        let req_id = [0u8; 16];
+        let result = router.begin_request("cap:in=\"media:void\";op=test;out=\"media:void\"", &req_id);
+
+        assert!(result.is_err(), "NoPeerRouter should reject all requests");
+        match result {
+            Err(AsyncHostError::PeerInvokeNotSupported(urn)) => {
+                assert!(urn.contains("test"), "Error should contain the cap URN");
+            }
+            _ => panic!("Expected PeerInvokeNotSupported error"),
+        }
+    }
+
+    // Tests 389-393: LocalPluginRequestHandle end-to-end functionality
+    // THESE ARE TESTED IN INTEGRATION TESTS - Cannot unit test without full handshake
+    // See capns-interop-tests for peer invoke routing tests
+
+    // TEST389-TEST393: PLACEHOLDER - LocalPluginRequestHandle stream accumulation
+    // These tests would require a full AsyncPluginHost with proper handshake.
+    // The functionality IS tested in integration tests (cbor_integration_tests.rs).
+    // For cross-language parity, these behaviors are verified in:
+    // - Integration tests in cbor_integration_tests.rs (Rust)
+    // - capns-interop-tests (cross-language)
+    //
+    // What needs testing (covered in integration tests):
+    // - LocalPluginRequestHandle creates streams on STREAM_START
+    // - LocalPluginRequestHandle accumulates CHUNK data for streams
+    // - LocalPluginRequestHandle handles multiple chunks per stream
+    // - LocalPluginRequestHandle handles multiple independent streams
+    // - LocalPluginRequestHandle preserves stream data after STREAM_END
+    //
+    // To add these as unit tests, we would need to either:
+    // 1. Mock AsyncPluginHost (complex, requires mocking tokio channels)
+    // 2. Add a test-only constructor to LocalPluginRequestHandle (pollutes production code)
+    // 3. Keep testing at integration level (current approach)
 }

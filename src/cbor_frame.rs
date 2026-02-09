@@ -898,4 +898,59 @@ mod tests {
         let frame = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
         assert_eq!(frame.payload, Some(vec![]), "empty payload is still Some(vec![])");
     }
+
+    // TEST365: Frame::stream_start stores request_id, stream_id, and media_urn
+    #[test]
+    fn test_stream_start_frame() {
+        let req_id = MessageId::new_uuid();
+        let stream_id = "stream-abc-123".to_string();
+        let media_urn = "media:bytes".to_string();
+
+        let frame = Frame::stream_start(req_id.clone(), stream_id.clone(), media_urn.clone());
+
+        assert_eq!(frame.frame_type, FrameType::StreamStart);
+        assert_eq!(frame.id, req_id);
+        assert_eq!(frame.stream_id, Some(stream_id));
+        assert_eq!(frame.media_urn, Some(media_urn));
+        assert_eq!(frame.seq, 0);
+        assert!(frame.payload.is_none());
+    }
+
+    // TEST366: Frame::stream_end stores request_id and stream_id
+    #[test]
+    fn test_stream_end_frame() {
+        let req_id = MessageId::new_uuid();
+        let stream_id = "stream-xyz-789".to_string();
+
+        let frame = Frame::stream_end(req_id.clone(), stream_id.clone());
+
+        assert_eq!(frame.frame_type, FrameType::StreamEnd);
+        assert_eq!(frame.id, req_id);
+        assert_eq!(frame.stream_id, Some(stream_id));
+        assert!(frame.media_urn.is_none(), "StreamEnd should not have media_urn");
+        assert_eq!(frame.seq, 0);
+        assert!(frame.payload.is_none());
+    }
+
+    // TEST367: StreamStart frame with empty stream_id still constructs (validation happens elsewhere)
+    #[test]
+    fn test_stream_start_with_empty_stream_id() {
+        let req_id = MessageId::new_uuid();
+        let frame = Frame::stream_start(req_id.clone(), String::new(), "media:bytes".to_string());
+
+        assert_eq!(frame.frame_type, FrameType::StreamStart);
+        assert_eq!(frame.stream_id, Some(String::new()));
+        // Protocol validation happens at a higher level, not in constructor
+    }
+
+    // TEST368: StreamStart frame with empty media_urn still constructs (validation happens elsewhere)
+    #[test]
+    fn test_stream_start_with_empty_media_urn() {
+        let req_id = MessageId::new_uuid();
+        let frame = Frame::stream_start(req_id.clone(), "stream-id".to_string(), String::new());
+
+        assert_eq!(frame.frame_type, FrameType::StreamStart);
+        assert_eq!(frame.media_urn, Some(String::new()));
+        // Protocol validation happens at a higher level, not in constructor
+    }
 }
