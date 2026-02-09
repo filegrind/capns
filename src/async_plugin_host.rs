@@ -30,7 +30,9 @@
 //! let host = AsyncPluginHost::new(stdin, stdout).await?;
 //!
 //! // Send request and receive response
-//! let response = host.call("cap:op=test", b"payload", "application/json").await?;
+//! use capns::CapArgumentValue;
+//! let args = vec![CapArgumentValue::new("media:bytes", b"payload".to_vec())];
+//! let response = host.call_with_arguments("cap:op=test", &args).await?;
 //! ```
 
 use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};

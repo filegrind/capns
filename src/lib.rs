@@ -28,7 +28,8 @@
 //! let stdout = child.stdout.take().unwrap();
 //!
 //! let host = PluginHost::new(stdin, stdout).await?;
-//! let response = host.call("cap:op=test", b"payload", "application/json").await?;
+//! let args = vec![CapArgumentValue::new("media:bytes", b"payload".to_vec())];
+//! let response = host.call_with_arguments("cap:op=test", &args).await?;
 //! host.shutdown().await;
 //! ```
 //!
