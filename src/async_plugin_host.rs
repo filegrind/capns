@@ -94,6 +94,12 @@ pub enum AsyncHostError {
 
     #[error("Receive error: channel closed")]
     RecvError,
+
+    #[error("Peer invoke not supported for cap: {0}")]
+    PeerInvokeNotSupported(String),
+
+    #[error("No handler found for cap: {0}")]
+    NoHandler(String),
 }
 
 impl From<CborError> for AsyncHostError {

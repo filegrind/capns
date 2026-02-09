@@ -43,7 +43,6 @@ fn test400_filepath_conversion_scalar() {
 
 // TEST401: File-path array with glob expansion (test-edge3)
 #[test]
-#[ignore] // Glob expansion not yet implemented
 fn test401_filepath_array_glob() {
     let temp = TempDir::new().unwrap();
     fs::write(temp.path().join("file1.txt"), "CONTENT1").unwrap();
@@ -56,6 +55,10 @@ fn test401_filepath_array_glob() {
         .output()
         .expect("Failed to execute");
 
+    if !output.status.success() {
+        eprintln!("STDOUT: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("STDERR: {}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
 
     let result = String::from_utf8(output.stdout).unwrap();
@@ -92,10 +95,7 @@ fn test403_peer_invoke_chain() {
 }
 
 // TEST404: Multi-argument cap (test-edge5)
-// TODO: Multi-input caps (in2, in3) not fully supported yet
-// Each file-path arg maps to the primary in_spec instead of its corresponding input
 #[test]
-#[ignore]
 fn test404_multi_argument() {
     let temp = TempDir::new().unwrap();
     let file1 = temp.path().join("arg1.txt");
@@ -113,6 +113,10 @@ fn test404_multi_argument() {
         .output()
         .expect("Failed to execute");
 
+    if !output.status.success() {
+        eprintln!("STDOUT: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("STDERR: {}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
 
     let result = String::from_utf8(output.stdout).unwrap();

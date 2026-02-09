@@ -151,7 +151,7 @@ fn build_manifest() -> CapManifest {
         "Merge node2 and node3 inputs into single node5 output".to_string(),
     );
     edge5.add_arg(CapArg::with_description(
-        "media:file-path;textable;form=scalar",
+        "media:file-path;node2;textable;form=scalar",
         true,
         vec![
             ArgSource::Stdin { stdin: "media:node2;textable".to_string() },
@@ -160,7 +160,7 @@ fn build_manifest() -> CapManifest {
         "Path to the first input text file (node2)".to_string(),
     ));
     edge5.add_arg(CapArg::with_description(
-        "media:file-path;textable;form=scalar",
+        "media:file-path;node3;textable;form=scalar",
         true,
         vec![
             ArgSource::Stdin { stdin: "media:node3;textable".to_string() },
@@ -294,13 +294,9 @@ fn handle_edge1(
     let input_str = String::from_utf8_lossy(input);
     let result = format!("{}{}", prefix, input_str);
 
-    // Emit as CBOR bytes (required - handlers must always emit CBOR)
+    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
     let cbor_value = ciborium::Value::Bytes(result.into_bytes());
-    let mut output = Vec::new();
-    ciborium::into_writer(&cbor_value, &mut output)
-        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
-
-    emitter.emit_bytes(&output);
+    emitter.emit_cbor(&cbor_value);
     Ok(())
 }
 
@@ -328,13 +324,9 @@ fn handle_edge2(
     let input_str = String::from_utf8_lossy(input);
     let result = format!("{}{}", input_str, suffix);
 
-    // Emit as CBOR bytes (required - handlers must always emit CBOR)
+    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
     let cbor_value = ciborium::Value::Bytes(result.into_bytes());
-    let mut output = Vec::new();
-    ciborium::into_writer(&cbor_value, &mut output)
-        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
-
-    emitter.emit_bytes(&output);
+    emitter.emit_cbor(&cbor_value);
     Ok(())
 }
 
@@ -380,13 +372,9 @@ fn handle_edge3(
         }
     }
 
-    // Emit as CBOR array
+    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
     let result_array = ciborium::Value::Array(results);
-    let mut output = Vec::new();
-    ciborium::into_writer(&result_array, &mut output)
-        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
-
-    emitter.emit_bytes(&output);
+    emitter.emit_cbor(&result_array);
     Ok(())
 }
 
@@ -430,7 +418,8 @@ fn handle_edge4(
     }
 
     let result = parts.join(&separator);
-    emitter.emit_bytes(result.as_bytes());
+    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
+    emitter.emit_cbor(&cbor_value);
     Ok(())
 }
 
@@ -463,7 +452,8 @@ fn handle_edge5(
     let input2_str = String::from_utf8_lossy(input2);
     let result = format!("{}{}{}", input1_str, separator, input2_str);
 
-    emitter.emit_bytes(result.as_bytes());
+    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
+    emitter.emit_cbor(&cbor_value);
     Ok(())
 }
 
@@ -502,13 +492,9 @@ fn handle_edge6(
         results.push(ciborium::Value::Bytes(item.into_bytes()));
     }
 
-    // Emit as CBOR array
+    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
     let result_array = ciborium::Value::Array(results);
-    let mut output = Vec::new();
-    ciborium::into_writer(&result_array, &mut output)
-        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
-
-    emitter.emit_bytes(&output);
+    emitter.emit_cbor(&result_array);
     Ok(())
 }
 
@@ -535,13 +521,9 @@ fn handle_large(
         payload.push((i % 256) as u8);
     }
 
-    // Emit as CBOR bytes (required - handlers must always emit CBOR)
+    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
     let cbor_value = ciborium::Value::Bytes(payload);
-    let mut output = Vec::new();
-    ciborium::into_writer(&cbor_value, &mut output)
-        .map_err(|e| RuntimeError::Serialize(format!("CBOR serialization failed: {}", e)))?;
-
-    emitter.emit_bytes(&output);
+    emitter.emit_cbor(&cbor_value);
     Ok(())
 }
 
@@ -580,11 +562,18 @@ fn handle_peer(
         capns::CapArgumentValue::new("media:node2;textable", edge1_response)
     ])?;
 
-    // Collect edge2 response chunks and emit
+    // Collect edge2 response chunks and emit as CBOR
+    // Peer responses are CBOR-encoded, decode and emit as Value
+    let mut response_data = Vec::new();
     for chunk_result in edge2_rx.iter() {
         let chunk = chunk_result.map_err(|e| RuntimeError::PeerRequest(format!("edge2 failed: {}", e)))?;
-        emitter.emit_bytes(&chunk);
+        response_data.extend_from_slice(&chunk);
     }
+
+    // Decode the CBOR response and emit as Value
+    let cbor_value: ciborium::Value = ciborium::from_reader(&response_data[..])
+        .map_err(|e| RuntimeError::Deserialize(format!("Failed to decode peer response: {}", e)))?;
+    emitter.emit_cbor(&cbor_value);
 
     Ok(())
 }

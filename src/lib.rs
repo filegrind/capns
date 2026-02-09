@@ -63,6 +63,7 @@ pub mod cbor_io;
 pub mod plugin_runtime;
 pub mod plugin_repo;
 pub mod async_plugin_host;
+pub mod cap_router;
 
 // Integration tests for CBOR protocol
 #[cfg(test)]

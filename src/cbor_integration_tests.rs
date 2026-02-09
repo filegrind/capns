@@ -680,14 +680,16 @@ mod tests {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register::<serde_json::Value, _>("cap:op=echo", |req, emitter, _peer| {
-            // Stream response
+            // Stream response as CBOR
             let bytes = serde_json::to_vec(&req).unwrap_or_default();
-            emitter.emit_bytes(&bytes);
+            let cbor_value = ciborium::Value::Bytes(bytes);
+            emitter.emit_cbor(&cbor_value);
             Ok(())
         });
 
         runtime.register::<serde_json::Value, _>("cap:op=transform", |_req, emitter, _peer| {
-            emitter.emit_bytes(b"transformed");
+            let cbor_value = ciborium::Value::Bytes(b"transformed".to_vec());
+            emitter.emit_cbor(&cbor_value);
             Ok(())
         });
 
