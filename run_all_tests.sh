@@ -62,23 +62,34 @@ run_tests() {
     # Run tests and capture output
     if $test_cmd 2>&1 | tee /tmp/test_output_$$.txt; then
         # Extract test counts from output
-        local result=$(tail -20 /tmp/test_output_$$.txt | grep "test result:" | tail -1)
-        if [ -n "$result" ]; then
+        # Sum up all "test result:" lines (excluding doc-tests with 0 passed)
+        local total_passed=0
+        local total_failed=0
+
+        while IFS= read -r result; do
             local passed=$(echo "$result" | grep -oE "[0-9]+ passed" | grep -oE "[0-9]+")
             local failed=$(echo "$result" | grep -oE "[0-9]+ failed" | grep -oE "[0-9]+")
 
             if [ -z "$passed" ]; then passed=0; fi
             if [ -z "$failed" ]; then failed=0; fi
 
-            TOTAL_TESTS=$((TOTAL_TESTS + passed + failed))
-            PASSED_TESTS=$((PASSED_TESTS + passed))
-
-            if [ "$failed" -eq 0 ]; then
-                echo -e "${GREEN}✓ $project_name: $passed tests passed${NC}"
-            else
-                echo -e "${RED}✗ $project_name: $failed tests FAILED${NC}"
-                FAILED_PROJECTS+=("$project_name")
+            # Skip doc-test results with 0 passed and 0 failed (no real tests)
+            if [ "$passed" -gt 0 ] || [ "$failed" -gt 0 ]; then
+                total_passed=$((total_passed + passed))
+                total_failed=$((total_failed + failed))
             fi
+        done < <(grep "test result:" /tmp/test_output_$$.txt)
+
+        TOTAL_TESTS=$((TOTAL_TESTS + total_passed + total_failed))
+        PASSED_TESTS=$((PASSED_TESTS + total_passed))
+
+        if [ "$total_failed" -eq 0 ] && [ "$total_passed" -gt 0 ]; then
+            echo -e "${GREEN}✓ $project_name: $total_passed tests passed${NC}"
+        elif [ "$total_failed" -gt 0 ]; then
+            echo -e "${RED}✗ $project_name: $total_failed tests FAILED${NC}"
+            FAILED_PROJECTS+=("$project_name")
+        else
+            echo -e "${YELLOW}⊘ $project_name: No tests found${NC}"
         fi
     else
         echo -e "${RED}✗ $project_name: Tests failed to run${NC}"
