@@ -373,11 +373,34 @@ impl AsyncPluginHost {
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        let mut relay_reader = AsyncFrameReader::new(relay_read);
         let (outbound_tx, outbound_rx) = mpsc::unbounded_channel::<Frame>();
 
         // Spawn outbound writer task (runtime → relay)
         let outbound_writer = tokio::spawn(Self::outbound_writer_loop(relay_write, outbound_rx));
+
+        // Spawn relay reader task — reads frames from the relay and sends them
+        // through a channel. This MUST be a dedicated task because read_exact is
+        // NOT cancel-safe: if a partially-complete read_exact is dropped (e.g.,
+        // by tokio::select! choosing another branch), the bytes already read are
+        // lost and the byte stream desynchronizes.
+        let (relay_tx, mut relay_rx) = mpsc::unbounded_channel::<Result<Frame, AsyncHostError>>();
+        let relay_reader_task = tokio::spawn(async move {
+            let mut reader = AsyncFrameReader::new(relay_read);
+            loop {
+                match reader.read().await {
+                    Ok(Some(frame)) => {
+                        if relay_tx.send(Ok(frame)).is_err() {
+                            break; // Main loop dropped
+                        }
+                    }
+                    Ok(None) => break, // Relay closed cleanly
+                    Err(e) => {
+                        let _ = relay_tx.send(Err(e.into()));
+                        break;
+                    }
+                }
+            }
+        });
 
         let mut event_rx = self.event_rx.take().expect("run() must only be called once");
 
@@ -404,16 +427,16 @@ impl AsyncPluginHost {
                     }
                 }
 
-                // Frames from relay (engine → plugins)
-                frame_result = relay_reader.read() => {
-                    match frame_result {
-                        Ok(Some(frame)) => {
+                // Frames from relay reader task (cancel-safe: channel recv is cancel-safe)
+                relay_result = relay_rx.recv() => {
+                    match relay_result {
+                        Some(Ok(frame)) => {
                             if let Err(e) = self.handle_relay_frame(frame, &outbound_tx, &resource_fn).await {
                                 break Err(e);
                             }
                         }
-                        Ok(None) => break Ok(()), // Relay closed cleanly
-                        Err(e) => break Err(e.into()),
+                        Some(Err(e)) => break Err(e),
+                        None => break Ok(()), // Relay reader task exited (clean EOF)
                     }
                 }
 
@@ -426,6 +449,7 @@ impl AsyncPluginHost {
 
         // Cleanup: kill all managed plugin processes
         self.kill_all_plugins().await;
+        relay_reader_task.abort();
         outbound_writer.abort();
 
         result
