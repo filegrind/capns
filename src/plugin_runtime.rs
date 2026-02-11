@@ -2373,9 +2373,14 @@ impl PluginRuntime {
                     drop(pending);
                 }
 
-                // Relay-level frames should never reach a plugin runtime.
-                // If they do, it's a protocol error — ignore them silently.
-                FrameType::RelayNotify | FrameType::RelayState => {}
+                // Relay-level frames must never reach a plugin runtime.
+                // If they do, it's a bug in the relay layer — fail hard.
+                FrameType::RelayNotify | FrameType::RelayState => {
+                    return Err(CborError::Protocol(format!(
+                        "Relay frame {:?} must not reach plugin runtime",
+                        frame.frame_type
+                    )).into());
+                }
             }
         }
 

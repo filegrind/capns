@@ -750,11 +750,11 @@ impl AsyncPluginHost {
             }
         }
 
-        // Try URN-level matching via accepts()
+        // Try URN-level matching: request is the pattern, registered cap is the instance
         if let Ok(request_urn) = crate::CapUrn::from_string(cap_urn) {
             for (registered_cap, plugin_idx) in &self.cap_table {
                 if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
-                    if registered_urn.is_compatible_with(&request_urn) {
+                    if request_urn.accepts(&registered_urn) {
                         return Some(*plugin_idx);
                     }
                 }

@@ -318,81 +318,11 @@ impl CapUrn {
     }
 
     /// Check if this cap is more specific than another
-    pub fn is_more_specific_than(&self, other: &CapUrn) -> bool {
-        // First check if they're compatible
-        if !self.is_compatible_with(other) {
-            return false;
-        }
-
-        self.specificity() > other.specificity()
-    }
-
-    /// Check if this cap is compatible with another
     ///
-    /// Two caps are compatible if they can potentially match
-    /// the same types of requests (considering wildcards and missing tags as wildcards)
-    /// Direction specs are compatible if either is a subtype of the other via TaggedUrn matching
-    pub fn is_compatible_with(&self, other: &CapUrn) -> bool {
-        // Check in_urn compatibility: either direction of MediaUrn::accepts succeeds
-        if self.in_urn != "*" && other.in_urn != "*" {
-            let self_in = MediaUrn::from_string(&self.in_urn)
-                .unwrap_or_else(|e| panic!("CU2: self in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
-            let other_in = MediaUrn::from_string(&other.in_urn)
-                .unwrap_or_else(|e| panic!("CU2: other in_spec '{}' is not a valid MediaUrn: {}", other.in_urn, e));
-            // Bidirectional: either could be instance/pattern
-            let fwd = self_in.conforms_to(&other_in)
-                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
-            let rev = other_in.conforms_to(&self_in)
-                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
-            if !fwd && !rev {
-                return false;
-            }
-        }
-
-        // Check out_urn compatibility
-        if self.out_urn != "*" && other.out_urn != "*" {
-            let self_out = MediaUrn::from_string(&self.out_urn)
-                .unwrap_or_else(|e| panic!("CU2: self out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
-            let other_out = MediaUrn::from_string(&other.out_urn)
-                .unwrap_or_else(|e| panic!("CU2: other out_spec '{}' is not a valid MediaUrn: {}", other.out_urn, e));
-            // Bidirectional: either could be instance/pattern
-            let fwd = self_out.conforms_to(&other_out)
-                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
-            let rev = other_out.conforms_to(&self_out)
-                .expect("CU2: media URN prefix mismatch in direction spec compatibility");
-            if !fwd && !rev {
-                return false;
-            }
-        }
-
-        // Get all unique tag keys from both caps
-        let mut all_keys = self
-            .tags
-            .keys()
-            .cloned()
-            .collect::<std::collections::HashSet<_>>();
-        all_keys.extend(other.tags.keys().cloned());
-
-        for key in all_keys {
-            match (self.tags.get(&key), other.tags.get(&key)) {
-                (Some(v1), Some(v2)) => {
-                    // Both have the tag - they must match or one must be wildcard
-                    if v1 != "*" && v2 != "*" && v1 != v2 {
-                        return false;
-                    }
-                }
-                (Some(_), None) | (None, Some(_)) => {
-                    // One has the tag, the other doesn't - missing tag is wildcard, so compatible
-                    continue;
-                }
-                (None, None) => {
-                    // Neither has the tag - shouldn't happen in this loop
-                    continue;
-                }
-            }
-        }
-
-        true
+    /// Compares specificity scores. Only meaningful when both caps
+    /// already matched the same request.
+    pub fn is_more_specific_than(&self, other: &CapUrn) -> bool {
+        self.specificity() > other.specificity()
     }
 
     /// Create a wildcard version by replacing specific values with wildcards
@@ -624,11 +554,11 @@ impl CapMatcher {
         matches
     }
 
-    /// Check if two cap sets are compatible
+    /// Check if two cap sets overlap (any pair where one accepts the other)
     pub fn are_compatible(caps1: &[CapUrn], caps2: &[CapUrn]) -> bool {
         caps1
             .iter()
-            .any(|c1| caps2.iter().any(|c2| c1.is_compatible_with(c2)))
+            .any(|c1| caps2.iter().any(|c2| c1.accepts(c2) || c2.accepts(c1)))
     }
 }
 
@@ -1142,29 +1072,35 @@ mod tests {
         assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
     }
 
-    // TEST024: Test compatibility checking (missing tags = wildcards, different directions = incompatible)
+    // TEST024: Test directional accepts (missing tags = wildcards, different direction specs rejected)
     #[test]
-    fn test_compatibility() {
+    fn test_directional_accepts() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate;ext=pdf")).unwrap();
         let cap2 = CapUrn::from_string(&test_urn("op=generate;format=*")).unwrap();
         let cap3 = CapUrn::from_string(&test_urn("type=image;op=extract")).unwrap();
 
-        assert!(cap1.is_compatible_with(&cap2));
-        assert!(cap2.is_compatible_with(&cap1));
-        assert!(!cap1.is_compatible_with(&cap3));
+        // cap1 accepts cap2 as request (cap1 has no constraint on format)
+        assert!(cap1.accepts(&cap2));
+        // cap2 accepts cap1 as request (cap2 has no constraint on ext)
+        assert!(cap2.accepts(&cap1));
+        // cap1 does NOT accept cap3 (op mismatch: generate vs extract)
+        assert!(!cap1.accepts(&cap3));
+        assert!(!cap3.accepts(&cap1));
 
-        // Missing tags are treated as wildcards for compatibility
+        // General cap accepts specific request (missing tags = wildcards)
         let cap4 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
-        assert!(cap1.is_compatible_with(&cap4));
-        assert!(cap4.is_compatible_with(&cap1));
+        assert!(cap4.accepts(&cap1));
+        // Specific cap also accepts general request (only checks request's tags)
+        assert!(cap1.accepts(&cap4));
 
-        // Different direction specs are incompatible
+        // Different direction specs: neither accepts the other
         let cap5 = CapUrn::from_string(&format!(
             "cap:in=media:bytes;out=\"{}\";op=generate",
             MEDIA_OBJECT
         ))
         .unwrap();
-        assert!(!cap1.is_compatible_with(&cap5));
+        assert!(!cap1.accepts(&cap5));
+        assert!(!cap5.accepts(&cap1));
     }
 
     // TEST025: Test find_best_match returns most specific matching cap
