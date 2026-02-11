@@ -53,71 +53,109 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
         Arc::clone(&self.resource_state)
     }
 
-    /// Run the relay. This processes frames bidirectionally:
+    /// Run the relay bidirectionally using two threads.
     ///
-    /// - `socket_read`/`socket_write`: Connection to the master relay
-    /// - `notify_rx`: Channel to receive RelayNotify frames to inject toward the master
-    ///
-    /// The relay intercepts:
-    /// - Incoming RelayState frames: stores payload, does NOT forward to local side
-    /// - Outgoing RelayNotify frames: injected via `notify_rx`, sent to socket
-    ///
-    /// All other frames pass through transparently.
+    /// - Thread 1 (socket → local): Reads from socket, intercepts RelayState, forwards others to local
+    /// - Thread 2 (local → socket): Reads from local, drops relay frames, forwards others to socket
     ///
     /// Blocks until one side closes or an error occurs.
-    pub fn run<SR: Read, SW: Write>(
-        &mut self,
+    /// Consumes self to split local reader/writer across threads.
+    pub fn run<SR: Read + Send + 'static, SW: Write + Send + 'static>(
+        self,
         mut socket_read: FrameReader<SR>,
         mut socket_write: FrameWriter<SW>,
         initial_notify: Option<(&[u8], &Limits)>,
-    ) -> Result<(), CborError> {
+    ) -> Result<(), CborError>
+    where
+        R: Send + 'static,
+        W: Send + 'static,
+    {
         // Send initial RelayNotify if provided
         if let Some((manifest, limits)) = initial_notify {
             let notify = Frame::relay_notify(manifest, limits);
             socket_write.write(&notify)?;
         }
 
-        // Bidirectional forwarding. Since we're sync, we alternate reads.
-        // In production, this would be two threads. For now, we use non-blocking
-        // patterns or separate threads at the call site.
-        //
-        // This single-threaded version reads one frame from each side per iteration.
-        // The caller should wrap socket and local streams appropriately.
-        loop {
-            // Try reading from socket (master → slave direction)
-            match socket_read.read() {
-                Ok(Some(frame)) => {
-                    if frame.frame_type == FrameType::RelayState {
-                        // Intercept: store resource state, don't forward
-                        if let Some(payload) = frame.payload {
-                            *self.resource_state.lock().unwrap() = payload;
-                        }
-                    } else if frame.frame_type == FrameType::RelayNotify {
-                        // RelayNotify from master? Protocol error — ignore silently
-                    } else {
-                        // Pass through to local side (PluginHostRuntime)
-                        self.local_writer.write(&frame)?;
-                    }
-                }
-                Ok(None) => return Ok(()), // Socket closed
-                Err(e) => return Err(e),
-            }
+        let resource_state = self.resource_state;
+        let mut local_writer = self.local_writer;
+        let mut local_reader = self.local_reader;
 
-            // Try reading from local side (slave → master direction)
-            match self.local_reader.read() {
-                Ok(Some(frame)) => {
-                    if frame.frame_type == FrameType::RelayNotify
-                        || frame.frame_type == FrameType::RelayState
-                    {
-                        // Relay frames from local side should not happen — ignore
-                    } else {
-                        // Pass through to socket (toward master/engine)
-                        socket_write.write(&frame)?;
+        let first_error: Arc<Mutex<Option<CborError>>> = Arc::new(Mutex::new(None));
+
+        // Thread 1: socket → local (master sends frames to slave's PluginHost)
+        let err1 = Arc::clone(&first_error);
+        let rs1 = Arc::clone(&resource_state);
+        let t1 = std::thread::spawn(move || {
+            loop {
+                match socket_read.read() {
+                    Ok(Some(frame)) => {
+                        if frame.frame_type == FrameType::RelayState {
+                            if let Some(payload) = frame.payload {
+                                *rs1.lock().unwrap() = payload;
+                            }
+                        } else if frame.frame_type == FrameType::RelayNotify {
+                            // RelayNotify from master — ignore
+                        } else {
+                            if let Err(e) = local_writer.write(&frame) {
+                                let mut guard = err1.lock().unwrap();
+                                if guard.is_none() {
+                                    *guard = Some(e);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                    Ok(None) => return, // Socket closed
+                    Err(e) => {
+                        let mut guard = err1.lock().unwrap();
+                        if guard.is_none() {
+                            *guard = Some(e);
+                        }
+                        return;
                     }
                 }
-                Ok(None) => return Ok(()), // Local side closed
-                Err(e) => return Err(e),
             }
+        });
+
+        // Thread 2: local → socket (PluginHost sends frames to master)
+        let err2 = Arc::clone(&first_error);
+        let t2 = std::thread::spawn(move || {
+            loop {
+                match local_reader.read() {
+                    Ok(Some(frame)) => {
+                        if frame.frame_type == FrameType::RelayNotify
+                            || frame.frame_type == FrameType::RelayState
+                        {
+                            // Relay frames from local side — drop
+                        } else {
+                            if let Err(e) = socket_write.write(&frame) {
+                                let mut guard = err2.lock().unwrap();
+                                if guard.is_none() {
+                                    *guard = Some(e);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                    Ok(None) => return, // Local side closed
+                    Err(e) => {
+                        let mut guard = err2.lock().unwrap();
+                        if guard.is_none() {
+                            *guard = Some(e);
+                        }
+                        return;
+                    }
+                }
+            }
+        });
+
+        t1.join().ok();
+        t2.join().ok();
+
+        let err = first_error.lock().unwrap().take();
+        match err {
+            Some(e) => Err(e),
+            None => Ok(()),
         }
     }
 

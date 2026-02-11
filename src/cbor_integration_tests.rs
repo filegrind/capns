@@ -577,15 +577,15 @@ mod tests {
         plugin_b.join().unwrap();
     }
 
-    // TEST432: REQ for unknown cap returns error (NoHandler)
+    // TEST432: REQ for unknown cap returns ERR frame (not fatal)
     #[tokio::test]
-    async fn test_req_for_unknown_cap_returns_error() {
+    async fn test_req_for_unknown_cap_returns_err_frame() {
         use crate::async_plugin_host::AsyncPluginHost;
 
         let manifest = r#"{"name":"OnePlugin","version":"1.0","caps":[{"urn":"cap:op=known"}]}"#;
 
         let (p_read, p_write, p_from_rt, p_to_rt) = create_plugin_pair();
-        let (rt_relay_read, rt_relay_write, eng_write, _eng_read) = create_relay_pair();
+        let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
@@ -602,20 +602,34 @@ mod tests {
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         let req_id = MessageId::new_uuid();
+        let req_id_clone = req_id.clone();
         let engine_send = tokio::spawn(async move {
             let mut w = AsyncFrameWriter::new(eng_write);
-            // Runtime may exit before we write END, so ignore broken pipe
-            let _ = w.write(&Frame::req(req_id.clone(), "cap:op=unknown", vec![], "text/plain")).await;
-            let _ = w.write(&Frame::end(req_id, None)).await;
+            w.write(&Frame::req(req_id_clone.clone(), "cap:op=unknown", vec![], "text/plain")).await.unwrap();
+            w.write(&Frame::end(req_id_clone, None)).await.unwrap();
         });
 
-        let result = runtime.run(rt_relay_read, rt_relay_write, || vec![]).await;
-        assert!(result.is_err(), "Should fail with NoHandler");
-        let err_str = format!("{}", result.unwrap_err());
-        assert!(err_str.contains("unknown") || err_str.contains("No handler"),
-            "Error should mention no handler, got: {}", err_str);
+        // Read ERR frame from the host on the engine side
+        let engine_recv = tokio::spawn(async move {
+            let mut r = AsyncFrameReader::new(eng_read);
+            let frame = r.read().await.unwrap().expect("Expected ERR frame");
+            assert_eq!(frame.frame_type, FrameType::Err, "Should get ERR for unknown cap");
+            assert_eq!(frame.id, req_id, "ERR should reference the original request ID");
+            let meta = frame.meta.as_ref().expect("ERR should have meta");
+            let code = meta.get("code").and_then(|v| v.as_text()).unwrap_or("");
+            assert_eq!(code, "NO_HANDLER", "Error code should be NO_HANDLER, got: {}", code);
+        });
+
+        // Host run should NOT return an error — it sends ERR frame and continues
+        let run_handle = tokio::spawn(async move {
+            runtime.run(rt_relay_read, rt_relay_write, || vec![]).await
+        });
 
         engine_send.await.unwrap();
+        engine_recv.await.unwrap();
+
+        // Host is still running (waiting for more frames). Drop is fine — relay EOF will close it.
+        drop(run_handle);
         plugin_handle.join().unwrap();
     }
 }

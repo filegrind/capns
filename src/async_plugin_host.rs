@@ -444,13 +444,30 @@ impl AsyncPluginHost {
     ) -> Result<(), AsyncHostError> {
         match frame.frame_type {
             FrameType::Req => {
-                let cap_urn = frame.cap.as_ref().ok_or_else(|| {
-                    AsyncHostError::Protocol("REQ from relay missing cap URN".to_string())
-                })?.clone();
+                let cap_urn = match frame.cap.as_ref() {
+                    Some(c) => c.clone(),
+                    None => {
+                        return Err(AsyncHostError::Protocol(
+                            "REQ from relay missing cap URN".to_string(),
+                        ));
+                    }
+                };
 
-                let plugin_idx = self.find_plugin_for_cap(&cap_urn).ok_or_else(|| {
-                    AsyncHostError::NoHandler(cap_urn.clone())
-                })?;
+                let plugin_idx = match self.find_plugin_for_cap(&cap_urn) {
+                    Some(idx) => idx,
+                    None => {
+                        // No plugin handles this cap — send ERR back and continue.
+                        let err = Frame::err(
+                            frame.id.clone(),
+                            "NO_HANDLER",
+                            &format!("no plugin handles cap: {}", cap_urn),
+                        );
+                        outbound_tx
+                            .send(err)
+                            .map_err(|_| AsyncHostError::SendError)?;
+                        return Ok(());
+                    }
+                };
 
                 // Spawn on demand if not running
                 if !self.plugins[plugin_idx].running {
