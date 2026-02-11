@@ -7,7 +7,7 @@
 //! 4. Passing data between nodes
 
 use crate::{ResolvedEdge, ResolvedGraph};
-use capns::{PluginHost, PluginRepo};
+use capns::PluginRepo;
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -103,7 +103,7 @@ impl PluginManager {
 
     /// Discover manifest from a binary by running it and doing handshake
     async fn discover_manifest(&self, bin_path: &Path) -> Result<capns::CapManifest, ExecutionError> {
-        use capns::PluginHost;
+        use capns::{AsyncFrameReader, AsyncFrameWriter, handshake_async};
         use tokio::process::Command;
 
         let mut child = Command::new(bin_path)
@@ -118,16 +118,17 @@ impl PluginManager {
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
 
-        let host = PluginHost::new(stdin, stdout)
+        let mut reader = AsyncFrameReader::new(stdout);
+        let mut writer = AsyncFrameWriter::new(stdin);
+
+        let result = handshake_async(&mut reader, &mut writer)
             .await
             .map_err(|e| ExecutionError::HostError(format!("Handshake failed: {:?}", e)))?;
 
-        let manifest_bytes = host.plugin_manifest();
-        let manifest: capns::CapManifest = serde_json::from_slice(manifest_bytes)
+        let manifest: capns::CapManifest = serde_json::from_slice(&result.manifest)
             .map_err(|e| ExecutionError::HostError(format!("Failed to parse manifest: {}", e)))?;
 
-        // Shutdown host
-        host.shutdown().await;
+        let _ = child.kill().await;
 
         Ok(manifest)
     }
@@ -443,7 +444,10 @@ impl ExecutionContext {
         Ok(output)
     }
 
-    /// Execute a plugin binary
+    /// Execute a plugin binary using raw CBOR frame protocol.
+    ///
+    /// Spawns the plugin, performs HELLO handshake, sends REQ with arguments
+    /// using stream multiplexing, collects response, then kills the process.
     async fn execute_plugin(
         &self,
         plugin_path: &Path,
@@ -451,7 +455,10 @@ impl ExecutionContext {
         input_data: &NodeData,
         edge: &ResolvedEdge,
     ) -> Result<NodeData, ExecutionError> {
-        use capns::CapArgumentValue;
+        use capns::{
+            CapArgumentValue, AsyncFrameReader, AsyncFrameWriter,
+            Frame, FrameType, MessageId, handshake_async,
+        };
 
         // Spawn plugin process
         let mut child = Command::new(plugin_path)
@@ -462,17 +469,19 @@ impl ExecutionContext {
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
 
-        // Create plugin host
-        let mut host = PluginHost::new(stdin, stdout)
+        let mut reader = AsyncFrameReader::new(stdout);
+        let mut writer = AsyncFrameWriter::new(stdin);
+
+        // HELLO handshake
+        let result = handshake_async(&mut reader, &mut writer)
             .await
-            .map_err(|e| ExecutionError::HostError(format!("{:?}", e)))?;
+            .map_err(|e| ExecutionError::HostError(format!("Handshake failed: {:?}", e)))?;
+        writer.set_limits(result.limits.clone());
+        let max_chunk = result.limits.max_chunk as usize;
 
         // Prepare argument based on input data type
-        // PluginRuntime handles file-path auto-conversion automatically
         let (media_urn, value) = match input_data {
             NodeData::FilePath(path) => {
-                // File path → send as MEDIA_FILE_PATH
-                // PluginRuntime will read file and convert to bytes if cap expects bytes
                 let path_str = path.to_str().ok_or_else(|| ExecutionError::PluginExecutionFailed {
                     cap_urn: cap_urn.to_string(),
                     details: "Invalid UTF-8 in file path".to_string(),
@@ -480,30 +489,91 @@ impl ExecutionContext {
                 (capns::MEDIA_FILE_PATH.to_string(), path_str.as_bytes().to_vec())
             }
             NodeData::Bytes(bytes) => {
-                // Bytes → send with cap's in spec, PluginRuntime passes through
                 (edge.in_media.clone(), bytes.clone())
             }
             NodeData::Text(text) => {
-                // Text → send with cap's in spec, PluginRuntime passes through
                 (edge.in_media.clone(), text.as_bytes().to_vec())
             }
         };
 
         let arguments = vec![CapArgumentValue::new(media_urn, value)];
+        let request_id = MessageId::new_uuid();
 
-        // Call with CBOR-encoded arguments
-        let response = host
-            .call_with_arguments(cap_urn, &arguments)
-            .await
-            .map_err(|e| ExecutionError::HostError(format!("{:?}", e)))?;
+        // Send REQ with stream-multiplexed arguments
+        {
+            // REQ (empty payload)
+            let req = Frame::req(request_id.clone(), cap_urn, vec![], "application/cbor");
+            writer.write(&req).await
+                .map_err(|e| ExecutionError::HostError(format!("Failed to send REQ: {:?}", e)))?;
 
-        // Get concatenated response data (CBOR-encoded)
-        let cbor_bytes = response.concatenated();
+            // Each argument as a stream
+            for arg in &arguments {
+                let stream_id = uuid::Uuid::new_v4().to_string();
 
-        // Decode CBOR to extract raw bytes
-        // Handlers emit ciborium::Value which gets CBOR-encoded over the wire
-        // We need to decode this before passing to the next cap
-        let output_value: ciborium::Value = ciborium::from_reader(&cbor_bytes[..])
+                let start = Frame::stream_start(request_id.clone(), stream_id.clone(), arg.media_urn.clone());
+                writer.write(&start).await
+                    .map_err(|e| ExecutionError::HostError(format!("Failed to send STREAM_START: {:?}", e)))?;
+
+                let mut offset = 0;
+                let mut seq = 0u64;
+                while offset < arg.value.len() {
+                    let end = (offset + max_chunk).min(arg.value.len());
+                    let chunk = Frame::chunk(request_id.clone(), stream_id.clone(), seq, arg.value[offset..end].to_vec());
+                    writer.write(&chunk).await
+                        .map_err(|e| ExecutionError::HostError(format!("Failed to send CHUNK: {:?}", e)))?;
+                    offset = end;
+                    seq += 1;
+                }
+
+                let end_stream = Frame::stream_end(request_id.clone(), stream_id);
+                writer.write(&end_stream).await
+                    .map_err(|e| ExecutionError::HostError(format!("Failed to send STREAM_END: {:?}", e)))?;
+            }
+
+            // END frame
+            let end = Frame::end(request_id.clone(), None);
+            writer.write(&end).await
+                .map_err(|e| ExecutionError::HostError(format!("Failed to send END: {:?}", e)))?;
+        }
+
+        // Read response frames
+        let mut collected = Vec::new();
+        loop {
+            let frame = reader.read().await
+                .map_err(|e| ExecutionError::HostError(format!("Failed to read response: {:?}", e)))?
+                .ok_or_else(|| ExecutionError::HostError("Plugin closed connection before response".to_string()))?;
+
+            if frame.id != request_id { continue; }
+
+            match frame.frame_type {
+                FrameType::Chunk => {
+                    if let Some(payload) = &frame.payload {
+                        collected.extend_from_slice(payload);
+                    }
+                }
+                FrameType::StreamStart | FrameType::StreamEnd => {}
+                FrameType::End => {
+                    if let Some(payload) = &frame.payload {
+                        collected.extend_from_slice(payload);
+                    }
+                    break;
+                }
+                FrameType::Err => {
+                    let message = frame.meta.as_ref()
+                        .and_then(|m| m.get("message"))
+                        .and_then(|v| match v { ciborium::Value::Text(s) => Some(s.clone()), _ => None })
+                        .unwrap_or_else(|| "Unknown error".to_string());
+                    return Err(ExecutionError::HostError(format!("Plugin error: {}", message)));
+                }
+                _ => {}
+            }
+        }
+
+        // Kill plugin
+        let _ = child.kill().await;
+
+        // Decode CBOR response
+        let output_value: ciborium::Value = ciborium::from_reader(&collected[..])
             .map_err(|e| ExecutionError::HostError(format!("Failed to decode CBOR response: {}", e)))?;
 
         let output_bytes = match output_value {
@@ -514,9 +584,6 @@ impl ExecutionContext {
                 output_value
             ))),
         };
-
-        // Shutdown host
-        host.shutdown().await;
 
         Ok(NodeData::Bytes(output_bytes))
     }

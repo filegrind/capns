@@ -13,24 +13,16 @@
 //! - **Plugin Runtime** (`plugin_runtime`): For plugin binaries - handles all I/O
 //! - **PluginHost** (`async_plugin_host`): For host callers - async communication with plugins
 //!
-//! ## Usage
+//! ## Architecture
 //!
 //! ```ignore
-//! use capns::PluginHost;
-//! use tokio::process::Command;
+//! // Engine side: RelayMaster connects to the runtime via socket
+//! let master = AsyncRelayMaster::connect(socket_read, socket_write).await?;
 //!
-//! let mut child = Command::new("./my-plugin")
-//!     .stdin(Stdio::piped())
-//!     .stdout(Stdio::piped())
-//!     .spawn()?;
-//!
-//! let stdin = child.stdin.take().unwrap();
-//! let stdout = child.stdout.take().unwrap();
-//!
-//! let host = PluginHost::new(stdin, stdout).await?;
-//! let args = vec![CapArgumentValue::new("media:bytes", b"payload".to_vec())];
-//! let response = host.call_with_arguments("cap:op=test", &args).await?;
-//! host.shutdown().await;
+//! // Runtime side: AsyncPluginHost manages multiple plugins
+//! let mut runtime = AsyncPluginHost::new();
+//! runtime.register_plugin(Path::new("./my-plugin"), &["cap:op=test".into()]);
+//! runtime.run(relay_read, relay_write, || vec![]).await?;
 //! ```
 //!
 //! ## Protocol Overview
@@ -39,9 +31,10 @@
 //!
 //! 1. Host sends HELLO, plugin responds with HELLO (negotiate limits)
 //! 2. Host sends REQ frames to invoke caps
-//! 3. Plugin responds with CHUNK frames (streaming) or RES frame (single)
+//! 3. Plugin responds with STREAM_START/CHUNK/STREAM_END/END frames
 //! 4. Plugin sends END frame when complete, or ERR on error
 //! 5. Plugin can send LOG frames for progress/status
+//! 6. Relay-specific: RelayNotify (slave→master) and RelayState (master→slave)
 
 pub mod cap_urn;
 pub mod media_urn;
@@ -65,7 +58,7 @@ pub mod plugin_runtime;
 pub mod plugin_repo;
 pub mod async_plugin_host;
 pub mod cap_router;
-pub mod local_plugin_router;
+pub mod plugin_relay;
 
 // Integration tests for CBOR protocol
 #[cfg(test)]
@@ -114,3 +107,6 @@ pub use async_plugin_host::{
 // Also export with explicit Async prefix for clarity when needed
 pub use async_plugin_host::AsyncPluginHost;
 pub use async_plugin_host::AsyncHostError;
+
+// Relay exports
+pub use plugin_relay::{RelaySlave, RelayMaster, AsyncRelayMaster};

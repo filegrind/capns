@@ -2372,6 +2372,10 @@ impl PluginRuntime {
                     }
                     drop(pending);
                 }
+
+                // Relay-level frames should never reach a plugin runtime.
+                // If they do, it's a protocol error — ignore them silently.
+                FrameType::RelayNotify | FrameType::RelayState => {}
             }
         }
 

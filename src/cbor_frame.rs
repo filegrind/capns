@@ -68,6 +68,10 @@ pub enum FrameType {
     StreamStart = 8,
     /// End a specific stream (multiplexed streaming)
     StreamEnd = 9,
+    /// Relay capability advertisement (slave → master). Carries aggregate manifest + limits.
+    RelayNotify = 10,
+    /// Relay host system resources + cap demands (master → slave). Carries opaque resource payload.
+    RelayState = 11,
 }
 
 impl FrameType {
@@ -83,6 +87,8 @@ impl FrameType {
             7 => Some(FrameType::Heartbeat),
             8 => Some(FrameType::StreamStart),
             9 => Some(FrameType::StreamEnd),
+            10 => Some(FrameType::RelayNotify),
+            11 => Some(FrameType::RelayState),
             _ => None,
         }
     }
@@ -370,6 +376,86 @@ impl Frame {
         frame
     }
 
+    /// Create a RelayNotify frame for capability advertisement (slave → master).
+    /// Carries the aggregate manifest of all plugin capabilities and negotiated limits.
+    ///
+    /// # Arguments
+    /// * `manifest` - Aggregate manifest bytes (JSON-encoded list of all plugin caps)
+    /// * `limits` - Protocol limits for the relay connection
+    pub fn relay_notify(manifest: &[u8], limits: &Limits) -> Self {
+        let mut meta = BTreeMap::new();
+        meta.insert(
+            "manifest".to_string(),
+            ciborium::Value::Bytes(manifest.to_vec()),
+        );
+        meta.insert(
+            "max_frame".to_string(),
+            ciborium::Value::Integer((limits.max_frame as i64).into()),
+        );
+        meta.insert(
+            "max_chunk".to_string(),
+            ciborium::Value::Integer((limits.max_chunk as i64).into()),
+        );
+
+        let mut frame = Self::new(FrameType::RelayNotify, MessageId::Uint(0));
+        frame.meta = Some(meta);
+        frame
+    }
+
+    /// Create a RelayState frame for host system resources + cap demands (master → slave).
+    /// Carries an opaque resource payload whose format is defined by the host.
+    ///
+    /// # Arguments
+    /// * `resources` - Opaque resource payload (CBOR or JSON encoded by the host)
+    pub fn relay_state(resources: &[u8]) -> Self {
+        let mut frame = Self::new(FrameType::RelayState, MessageId::Uint(0));
+        frame.payload = Some(resources.to_vec());
+        frame
+    }
+
+    /// Extract manifest from RelayNotify metadata.
+    /// Returns None if not a RelayNotify frame or no manifest present.
+    pub fn relay_notify_manifest(&self) -> Option<&[u8]> {
+        if self.frame_type != FrameType::RelayNotify {
+            return None;
+        }
+        self.meta.as_ref().and_then(|m| {
+            m.get("manifest").and_then(|v| {
+                if let ciborium::Value::Bytes(bytes) = v {
+                    Some(bytes.as_slice())
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    /// Extract limits from RelayNotify metadata.
+    /// Returns None if not a RelayNotify frame or limits are missing.
+    pub fn relay_notify_limits(&self) -> Option<Limits> {
+        if self.frame_type != FrameType::RelayNotify {
+            return None;
+        }
+        let meta = self.meta.as_ref()?;
+        let max_frame = meta.get("max_frame").and_then(|v| {
+            if let ciborium::Value::Integer(i) = v {
+                let n: i128 = (*i).into();
+                if n > 0 && n <= usize::MAX as i128 { Some(n as usize) } else { None }
+            } else {
+                None
+            }
+        })?;
+        let max_chunk = meta.get("max_chunk").and_then(|v| {
+            if let ciborium::Value::Integer(i) = v {
+                let n: i128 = (*i).into();
+                if n > 0 && n <= usize::MAX as i128 { Some(n as usize) } else { None }
+            } else {
+                None
+            }
+        })?;
+        Some(Limits { max_frame, max_chunk })
+    }
+
     /// Check if this is the final frame in a stream
     pub fn is_eof(&self) -> bool {
         self.eof.unwrap_or(false)
@@ -541,6 +627,8 @@ mod tests {
             FrameType::Heartbeat,
             FrameType::StreamStart,
             FrameType::StreamEnd,
+            FrameType::RelayNotify,
+            FrameType::RelayState,
         ] {
             let v = t as u8;
             let recovered = FrameType::from_u8(v).expect("should recover frame type");
@@ -551,7 +639,7 @@ mod tests {
     // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     #[test]
     fn test_invalid_frame_type() {
-        assert!(FrameType::from_u8(10).is_none(), "value 10 is one past StreamEnd");
+        assert!(FrameType::from_u8(12).is_none(), "value 12 is one past RelayState");
         assert!(FrameType::from_u8(100).is_none());
         assert!(FrameType::from_u8(255).is_none());
     }
@@ -569,6 +657,8 @@ mod tests {
         assert_eq!(FrameType::Heartbeat as u8, 7);
         assert_eq!(FrameType::StreamStart as u8, 8);
         assert_eq!(FrameType::StreamEnd as u8, 9);
+        assert_eq!(FrameType::RelayNotify as u8, 10);
+        assert_eq!(FrameType::RelayState as u8, 11);
     }
 
     // TEST174: Test MessageId::new_uuid generates valid UUID that roundtrips through string conversion
@@ -952,5 +1042,58 @@ mod tests {
         assert_eq!(frame.frame_type, FrameType::StreamStart);
         assert_eq!(frame.media_urn, Some(String::new()));
         // Protocol validation happens at a higher level, not in constructor
+    }
+
+    // TEST399: Verify RelayNotify frame type discriminant roundtrips through u8 (value 10)
+    #[test]
+    fn test_relay_notify_discriminant_roundtrip() {
+        let v = FrameType::RelayNotify as u8;
+        assert_eq!(v, 10);
+        let recovered = FrameType::from_u8(v).expect("10 must map to RelayNotify");
+        assert_eq!(recovered, FrameType::RelayNotify);
+    }
+
+    // TEST400: Verify RelayState frame type discriminant roundtrips through u8 (value 11)
+    #[test]
+    fn test_relay_state_discriminant_roundtrip() {
+        let v = FrameType::RelayState as u8;
+        assert_eq!(v, 11);
+        let recovered = FrameType::from_u8(v).expect("11 must map to RelayState");
+        assert_eq!(recovered, FrameType::RelayState);
+    }
+
+    // TEST401: Verify relay_notify factory stores manifest and limits, and accessors extract them
+    #[test]
+    fn test_relay_notify_frame() {
+        let manifest = b"{\"caps\":[\"cap:op=test\"]}";
+        let limits = Limits { max_frame: 2_000_000, max_chunk: 128_000 };
+        let frame = Frame::relay_notify(manifest, &limits);
+
+        assert_eq!(frame.frame_type, FrameType::RelayNotify);
+        assert_eq!(frame.id, MessageId::Uint(0));
+        assert_eq!(frame.relay_notify_manifest(), Some(manifest.as_slice()));
+
+        let extracted_limits = frame.relay_notify_limits().expect("must have limits");
+        assert_eq!(extracted_limits.max_frame, 2_000_000);
+        assert_eq!(extracted_limits.max_chunk, 128_000);
+    }
+
+    // TEST402: Verify relay_state factory stores resource payload in frame payload field
+    #[test]
+    fn test_relay_state_frame() {
+        let resources = b"{\"memory_mb\":4096,\"cpu_percent\":50}";
+        let frame = Frame::relay_state(resources);
+
+        assert_eq!(frame.frame_type, FrameType::RelayState);
+        assert_eq!(frame.id, MessageId::Uint(0));
+        assert_eq!(frame.payload, Some(resources.to_vec()));
+        assert!(frame.meta.is_none(), "RelayState carries data in payload, not meta");
+    }
+
+    // TEST403: Verify from_u8 returns None for value 12 (one past RelayState)
+    #[test]
+    fn test_invalid_frame_type_past_relay_state() {
+        assert!(FrameType::from_u8(12).is_none(), "12 is past the last valid frame type");
+        assert!(FrameType::from_u8(2).is_none(), "2 (old Res) is still invalid");
     }
 }

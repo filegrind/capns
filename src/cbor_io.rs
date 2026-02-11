@@ -1320,6 +1320,38 @@ mod tests {
         assert!(result.is_err(), "garbage bytes must produce decode error");
     }
 
+    // TEST399a: RelayNotify encode/decode roundtrip preserves manifest and limits
+    #[test]
+    fn test_relay_notify_roundtrip() {
+        let manifest = b"{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}";
+        let limits = crate::cbor_frame::Limits { max_frame: 2_000_000, max_chunk: 128_000 };
+        let frame = Frame::relay_notify(manifest, &limits);
+
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.frame_type, FrameType::RelayNotify);
+        assert_eq!(decoded.id, MessageId::Uint(0));
+        assert_eq!(decoded.relay_notify_manifest(), Some(manifest.as_slice()));
+        let decoded_limits = decoded.relay_notify_limits().expect("must have limits");
+        assert_eq!(decoded_limits.max_frame, 2_000_000);
+        assert_eq!(decoded_limits.max_chunk, 128_000);
+    }
+
+    // TEST400a: RelayState encode/decode roundtrip preserves resource payload
+    #[test]
+    fn test_relay_state_roundtrip() {
+        let resources = b"{\"memory_mb\":8192,\"cpu_cores\":8}";
+        let frame = Frame::relay_state(resources);
+
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.frame_type, FrameType::RelayState);
+        assert_eq!(decoded.id, MessageId::Uint(0));
+        assert_eq!(decoded.payload, Some(resources.to_vec()));
+    }
+
     // TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn
     #[test]
     fn test_stream_start_roundtrip() {
