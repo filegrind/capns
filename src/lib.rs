@@ -59,6 +59,7 @@ pub mod plugin_repo;
 pub mod async_plugin_host;
 pub mod cap_router;
 pub mod plugin_relay;
+pub mod relay_switch;
 
 // Integration tests for CBOR protocol
 #[cfg(test)]
@@ -110,3 +111,4 @@ pub use async_plugin_host::AsyncHostError;
 
 // Relay exports
 pub use plugin_relay::{RelaySlave, RelayMaster, AsyncRelayMaster};
+pub use relay_switch::{RelaySwitch, RelaySwitchError};

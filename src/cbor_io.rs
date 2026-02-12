@@ -469,6 +469,7 @@ impl<R: Read> FrameReader<R> {
 }
 
 /// CBOR frame writer with buffering
+#[derive(Debug)]
 pub struct FrameWriter<W: Write> {
     writer: W,
     limits: Limits,
