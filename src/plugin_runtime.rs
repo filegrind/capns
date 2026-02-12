@@ -2274,7 +2274,7 @@ impl PluginRuntime {
                             };
 
                             // Convert streams, applying file-path auto-conversion
-                            let mut converted_streams: Vec<(String, String, Vec<u8>)> = Vec::new(); // (stream_id, media_urn, data)
+                            let mut converted_streams: Vec<(String, String, Vec<Vec<u8>>)> = Vec::new(); // (stream_id, media_urn, chunks)
 
                             for (stream_id, mut stream) in streams {
                                 let stream_urn = match MediaUrn::from_string(&stream.media_urn) {
@@ -2370,7 +2370,7 @@ impl PluginRuntime {
                                         };
 
                                         eprintln!("[PluginRuntime] Read {} bytes from '{}'", file_bytes.len(), path_str);
-                                        converted_streams.push((stream_id, stdin_urn, file_bytes));
+                                        converted_streams.push((stream_id, stdin_urn, vec![file_bytes]));
                                     } else {
                                         // form=list - not yet implemented
                                         let err_frame = Frame::err(request_id.clone(), "NOT_IMPLEMENTED", "File-path form=list conversion not yet implemented in CBOR mode");
@@ -2379,24 +2379,26 @@ impl PluginRuntime {
                                         return;
                                     }
                                 } else {
-                                    // Not a file-path - pass through as-is
-                                    let data = stream.chunks.concat();
-                                    converted_streams.push((stream_id, stream.media_urn, data));
+                                    // Not a file-path - pass through chunks as-is (each chunk is already CBOR-encoded)
+                                    converted_streams.push((stream_id, stream.media_urn, stream.chunks));
                                 }
                             }
 
                             // Send all streams as CBOR Frame messages (after conversion)
+                            // Each chunk is already CBOR-encoded and must be sent individually
                             let (tx, rx) = crossbeam_channel::unbounded();
-                            for (stream_id, media_urn, data) in converted_streams {
+                            for (stream_id, media_urn, chunks) in converted_streams {
                                 // Send STREAM_START
                                 let start_frame = Frame::stream_start(request_id.clone(), stream_id.clone(), media_urn);
                                 if tx.send(start_frame).is_err() {
                                     break;
                                 }
-                                // Send CHUNK
-                                let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, data);
-                                if tx.send(chunk_frame).is_err() {
-                                    break;
+                                // Send each CHUNK individually (each is already a complete CBOR value)
+                                for (seq, chunk_data) in chunks.iter().enumerate() {
+                                    let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq as u64, chunk_data.clone());
+                                    if tx.send(chunk_frame).is_err() {
+                                        break;
+                                    }
                                 }
                                 // Send STREAM_END
                                 let end_frame = Frame::stream_end(request_id.clone(), stream_id);
