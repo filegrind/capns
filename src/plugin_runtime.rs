@@ -192,14 +192,15 @@ struct ThreadSafeEmitter<W: Write + Send> {
 
 impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
     fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
-        // In CBOR mode: encode CBOR Value to bytes, then wrap in protocol frames
-        // Supported types: Bytes, Text, Array, Map (all CBOR types)
-        // NO FALLBACK - fail hard on serialization error
-
-        // First, encode the CBOR value to bytes
-        let mut raw_bytes = Vec::new();
-        ciborium::into_writer(value, &mut raw_bytes)
-            .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR value: {}", e)))?;
+        // CHUNK payloads = complete, independently decodable CBOR values
+        //
+        // Streams might never end (logs, video, real-time data), so each CHUNK must be
+        // processable immediately without waiting for END frame.
+        //
+        // For Value::Bytes/Text: split raw data, encode each chunk as complete Value
+        // For other types: encode once (typically small)
+        //
+        // Each CHUNK payload can be decoded independently: cbor2.loads(chunk.payload)
 
         // STREAM MULTIPLEXING PROTOCOL: Send STREAM_START before first chunk
         if !self.stream_started.swap(true, Ordering::SeqCst) {
@@ -215,28 +216,146 @@ impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
             drop(writer); // Release lock before continuing
         }
 
-        // AUTO-CHUNKING: Split large payloads into negotiated max_chunk sized chunks
-        let mut offset = 0;
+        // Split large byte/text data, encode each chunk as complete CBOR value
+        match value {
+            ciborium::Value::Bytes(bytes) => {
+                // Split bytes BEFORE encoding, encode each chunk as Value::Bytes
+                let mut offset = 0;
+                while offset < bytes.len() {
+                    let chunk_size = (bytes.len() - offset).min(self.max_chunk);
+                    let chunk_bytes = bytes[offset..offset + chunk_size].to_vec();
 
-        while offset < raw_bytes.len() {
-            let chunk_size = (raw_bytes.len() - offset).min(self.max_chunk);
-            let chunk_data = raw_bytes[offset..offset + chunk_size].to_vec();
+                    // Encode as complete Value::Bytes - independently decodable
+                    let chunk_value = ciborium::Value::Bytes(chunk_bytes);
+                    let mut cbor_payload = Vec::new();
+                    ciborium::into_writer(&chunk_value, &mut cbor_payload)
+                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode chunk: {}", e)))?;
 
-            let seq = {
-                let mut seq_guard = self.seq.lock().unwrap();
-                let current = *seq_guard;
-                *seq_guard += 1;
-                current
-            };
+                    let seq = {
+                        let mut seq_guard = self.seq.lock().unwrap();
+                        let current = *seq_guard;
+                        *seq_guard += 1;
+                        current
+                    };
 
-            let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, chunk_data);
+                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
 
-            let mut writer = self.writer.lock().unwrap();
-            writer.write(&frame)
-                .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
-            drop(writer);
+                    let mut writer = self.writer.lock().unwrap();
+                    writer.write(&frame)
+                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
+                    drop(writer);
 
-            offset += chunk_size;
+                    offset += chunk_size;
+                }
+            }
+            ciborium::Value::Text(text) => {
+                // Split text BEFORE encoding, encode each chunk as Value::Text
+                let text_bytes = text.as_bytes();
+                let mut offset = 0;
+                while offset < text_bytes.len() {
+                    // Ensure we split on UTF-8 character boundaries
+                    let mut chunk_size = (text_bytes.len() - offset).min(self.max_chunk);
+                    while chunk_size > 0 && !text.is_char_boundary(offset + chunk_size) {
+                        chunk_size -= 1;
+                    }
+                    if chunk_size == 0 {
+                        return Err(RuntimeError::Handler("Cannot split text on character boundary".to_string()));
+                    }
+
+                    let chunk_text = text[offset..offset + chunk_size].to_string();
+
+                    // Encode as complete Value::Text - independently decodable
+                    let chunk_value = ciborium::Value::Text(chunk_text);
+                    let mut cbor_payload = Vec::new();
+                    ciborium::into_writer(&chunk_value, &mut cbor_payload)
+                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode chunk: {}", e)))?;
+
+                    let seq = {
+                        let mut seq_guard = self.seq.lock().unwrap();
+                        let current = *seq_guard;
+                        *seq_guard += 1;
+                        current
+                    };
+
+                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
+
+                    let mut writer = self.writer.lock().unwrap();
+                    writer.write(&frame)
+                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
+                    drop(writer);
+
+                    offset += chunk_size;
+                }
+            }
+            ciborium::Value::Array(elements) => {
+                // Array: send each element as independent CBOR chunk
+                // Allows receiver to reconstruct elements without waiting for entire array
+                for element in elements {
+                    // Encode each element as complete CBOR value
+                    let mut cbor_payload = Vec::new();
+                    ciborium::into_writer(element, &mut cbor_payload)
+                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode array element: {}", e)))?;
+
+                    let seq = {
+                        let mut seq_guard = self.seq.lock().unwrap();
+                        let current = *seq_guard;
+                        *seq_guard += 1;
+                        current
+                    };
+
+                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
+
+                    let mut writer = self.writer.lock().unwrap();
+                    writer.write(&frame)
+                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
+                    drop(writer);
+                }
+            }
+            ciborium::Value::Map(entries) => {
+                // Map: send each entry as independent CBOR chunk
+                // Receiver must wait for all entries before reconstructing map
+                for (key, val) in entries {
+                    // Encode each key-value pair as a 2-element array: [key, value]
+                    let entry = ciborium::Value::Array(vec![key.clone(), val.clone()]);
+                    let mut cbor_payload = Vec::new();
+                    ciborium::into_writer(&entry, &mut cbor_payload)
+                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode map entry: {}", e)))?;
+
+                    let seq = {
+                        let mut seq_guard = self.seq.lock().unwrap();
+                        let current = *seq_guard;
+                        *seq_guard += 1;
+                        current
+                    };
+
+                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
+
+                    let mut writer = self.writer.lock().unwrap();
+                    writer.write(&frame)
+                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
+                    drop(writer);
+                }
+            }
+            _ => {
+                // For other types (Integer, Float, Bool, Null, Tag): encode as single chunk
+                // These have single-value semantics and are typically small
+                let mut cbor_payload = Vec::new();
+                ciborium::into_writer(value, &mut cbor_payload)
+                    .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR value: {}", e)))?;
+
+                let seq = {
+                    let mut seq_guard = self.seq.lock().unwrap();
+                    let current = *seq_guard;
+                    *seq_guard += 1;
+                    current
+                };
+
+                let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
+
+                let mut writer = self.writer.lock().unwrap();
+                writer.write(&frame)
+                    .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
+            }
         }
 
         Ok(())
@@ -838,18 +957,28 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
                     RuntimeError::PeerRequest(format!("Failed to send STREAM_START: {}", e))
                 })?;
 
-                // CHUNK(s): Send argument data in chunks
+                // CHUNK(s): Send argument data as CBOR-encoded chunks
+                // Each CHUNK payload MUST be independently decodable CBOR
                 let mut offset = 0;
                 let mut seq = 0u64;
                 while offset < arg.value.len() {
                     let chunk_size = (arg.value.len() - offset).min(max_chunk);
-                    let chunk_data = arg.value[offset..offset + chunk_size].to_vec();
+                    let chunk_bytes = arg.value[offset..offset + chunk_size].to_vec();
+
+                    // CBOR-encode chunk as Value::Bytes - independently decodable
+                    let chunk_value = ciborium::Value::Bytes(chunk_bytes);
+                    let mut cbor_payload = Vec::new();
+                    ciborium::into_writer(&chunk_value, &mut cbor_payload)
+                        .map_err(|e| {
+                            self.pending_requests.lock().unwrap().remove(&request_id);
+                            RuntimeError::PeerRequest(format!("Failed to encode chunk: {}", e))
+                        })?;
 
                     let chunk_frame = Frame::chunk(
                         request_id.clone(),
                         stream_id.clone(),
                         seq,
-                        chunk_data
+                        cbor_payload
                     );
                     writer.write(&chunk_frame).map_err(|e| {
                         self.pending_requests.lock().unwrap().remove(&request_id);
