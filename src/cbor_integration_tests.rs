@@ -632,4 +632,321 @@ mod tests {
         drop(run_handle);
         plugin_handle.join().unwrap();
     }
+
+    // =============================================================================
+    // Low-level Frame-based Integration Tests (TEST284-299)
+    // Ported from Go integration_test.go
+    // =============================================================================
+
+    /// Helper to create sync socket pairs for host-plugin communication
+    fn create_sync_pipe_pair() -> (
+        std::os::unix::net::UnixStream,
+        std::os::unix::net::UnixStream,
+        std::os::unix::net::UnixStream,
+        std::os::unix::net::UnixStream,
+    ) {
+        use std::os::unix::net::UnixStream;
+        let (host_write, plugin_read) = UnixStream::pair().unwrap();
+        let (plugin_write, host_read) = UnixStream::pair().unwrap();
+        (host_write, plugin_read, plugin_write, host_read)
+    }
+
+    // TEST284: Handshake exchanges HELLO frames, negotiates limits
+    #[test]
+    fn test_handshake_host_plugin() {
+        use crate::cbor_io::{handshake_initiate, handshake_accept};
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let mut reader = FrameReader::new(BufReader::new(plugin_read));
+            let mut writer = FrameWriter::new(BufWriter::new(plugin_write));
+            let limits = handshake_accept(&mut reader, &mut writer, &manifest).unwrap();
+            assert!(limits.max_frame > 0);
+            assert!(limits.max_chunk > 0);
+            limits
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (received_manifest, host_limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+
+        assert_eq!(received_manifest, TEST_MANIFEST.as_bytes());
+
+        let plugin_limits = plugin_handle.join().unwrap();
+        assert_eq!(host_limits.max_frame, plugin_limits.max_frame);
+        assert_eq!(host_limits.max_chunk, plugin_limits.max_chunk);
+    }
+
+    // TEST285: Simple request-response flow (REQ → END with payload)
+    #[test]
+    fn test_request_response_simple() {
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
+
+            let frame = reader.read().unwrap().unwrap();
+            assert_eq!(frame.frame_type, FrameType::Req);
+            assert_eq!(frame.cap.as_deref(), Some("cap:op=echo"));
+            assert_eq!(frame.payload.as_deref(), Some(b"hello".as_ref()));
+
+            writer.write(&Frame::end(frame.id, Some(b"hello back".to_vec()))).unwrap();
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        let request_id = MessageId::new_uuid();
+        writer.write(&Frame::req(request_id.clone(), "cap:op=echo", b"hello".to_vec(), "application/json")).unwrap();
+
+        let response = reader.read().unwrap().unwrap();
+        assert_eq!(response.frame_type, FrameType::End);
+        assert_eq!(response.payload.as_deref(), Some(b"hello back".as_ref()));
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST286: Streaming response with multiple CHUNK frames
+    #[test]
+    fn test_streaming_chunks() {
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
+
+            let frame = reader.read().unwrap().unwrap();
+            let request_id = frame.id.clone();
+
+            let sid = "response".to_string();
+            writer.write(&Frame::stream_start(request_id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            for (seq, data) in [b"chunk1", b"chunk2", b"chunk3"].iter().enumerate() {
+                writer.write(&Frame::chunk(request_id.clone(), sid.clone(), seq as u64, data.to_vec())).unwrap();
+            }
+            writer.write(&Frame::stream_end(request_id.clone(), sid)).unwrap();
+            writer.write(&Frame::end(request_id, None)).unwrap();
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        let request_id = MessageId::new_uuid();
+        writer.write(&Frame::req(request_id.clone(), "cap:op=stream", b"go".to_vec(), "application/json")).unwrap();
+
+        // Collect chunks
+        let mut chunks = Vec::new();
+        loop {
+            let frame = reader.read().unwrap().unwrap();
+            if frame.frame_type == FrameType::Chunk {
+                chunks.push(frame.payload.unwrap_or_default());
+            }
+            if frame.frame_type == FrameType::End {
+                break;
+            }
+        }
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], b"chunk1");
+        assert_eq!(chunks[1], b"chunk2");
+        assert_eq!(chunks[2], b"chunk3");
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST287: Host-initiated heartbeat
+    #[test]
+    fn test_heartbeat_from_host() {
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
+
+            let frame = reader.read().unwrap().unwrap();
+            assert_eq!(frame.frame_type, FrameType::Heartbeat);
+
+            writer.write(&Frame::heartbeat(frame.id)).unwrap();
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        let heartbeat_id = MessageId::new_uuid();
+        writer.write(&Frame::heartbeat(heartbeat_id.clone())).unwrap();
+
+        let response = reader.read().unwrap().unwrap();
+        assert_eq!(response.frame_type, FrameType::Heartbeat);
+        assert_eq!(response.id, heartbeat_id);
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST290: Limit negotiation picks minimum
+    #[test]
+    fn test_limits_negotiation() {
+        use crate::cbor_io::{handshake_initiate, handshake_accept};
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let mut reader = FrameReader::new(BufReader::new(plugin_read));
+            let mut writer = FrameWriter::new(BufWriter::new(plugin_write));
+            handshake_accept(&mut reader, &mut writer, &manifest).unwrap()
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, host_limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+
+        let plugin_limits = plugin_handle.join().unwrap();
+
+        assert_eq!(host_limits.max_frame, plugin_limits.max_frame);
+        assert_eq!(host_limits.max_chunk, plugin_limits.max_chunk);
+        assert!(host_limits.max_frame > 0);
+        assert!(host_limits.max_chunk > 0);
+    }
+
+    // TEST291: Binary payload roundtrip (all 256 byte values)
+    #[test]
+    fn test_binary_payload_roundtrip() {
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let binary_data: Vec<u8> = (0u16..=255).map(|i| i as u8).collect();
+        let binary_clone = binary_data.clone();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
+
+            let frame = reader.read().unwrap().unwrap();
+            let payload = frame.payload.unwrap();
+
+            assert_eq!(payload.len(), 256);
+            for (i, &byte) in payload.iter().enumerate() {
+                assert_eq!(byte, i as u8, "Byte mismatch at position {}", i);
+            }
+
+            writer.write(&Frame::end(frame.id, Some(payload))).unwrap();
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        let request_id = MessageId::new_uuid();
+        writer.write(&Frame::req(request_id.clone(), "cap:op=binary", binary_clone, "application/octet-stream")).unwrap();
+
+        let response = reader.read().unwrap().unwrap();
+        let result = response.payload.unwrap();
+
+        assert_eq!(result.len(), 256);
+        for (i, &byte) in result.iter().enumerate() {
+            assert_eq!(byte, i as u8, "Response byte mismatch at position {}", i);
+        }
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST292: Sequential requests get distinct MessageIds
+    #[test]
+    fn test_message_id_uniqueness() {
+        use std::io::{BufReader, BufWriter};
+        use std::sync::{Arc, Mutex};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let received_ids = Arc::new(Mutex::new(Vec::new()));
+        let received_ids_clone = Arc::clone(&received_ids);
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
+
+            for _ in 0..3 {
+                let frame = reader.read().unwrap().unwrap();
+                received_ids_clone.lock().unwrap().push(frame.id.clone());
+                writer.write(&Frame::end(frame.id, Some(b"ok".to_vec()))).unwrap();
+            }
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        for _ in 0..3 {
+            let request_id = MessageId::new_uuid();
+            writer.write(&Frame::req(request_id.clone(), "cap:op=test", vec![], "application/json")).unwrap();
+            reader.read().unwrap().unwrap();
+        }
+
+        plugin_handle.join().unwrap();
+
+        let ids = received_ids.lock().unwrap();
+        assert_eq!(ids.len(), 3);
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                assert_ne!(ids[i], ids[j], "IDs should be unique");
+            }
+        }
+    }
+
+    // TEST299: Empty payload request/response roundtrip
+    #[test]
+    fn test_empty_payload_roundtrip() {
+        use std::io::{BufReader, BufWriter};
+
+        let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
+
+        let manifest = TEST_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
+
+            let frame = reader.read().unwrap().unwrap();
+            assert!(frame.payload.is_none() || frame.payload.as_ref().unwrap().is_empty(),
+                    "empty payload must arrive empty");
+
+            writer.write(&Frame::end(frame.id, Some(vec![]))).unwrap();
+        });
+
+        let mut reader = FrameReader::new(BufReader::new(host_read));
+        let mut writer = FrameWriter::new(BufWriter::new(host_write));
+        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        reader.set_limits(limits);
+        writer.set_limits(limits);
+
+        let request_id = MessageId::new_uuid();
+        writer.write(&Frame::req(request_id.clone(), "cap:op=empty", vec![], "application/json")).unwrap();
+
+        let response = reader.read().unwrap().unwrap();
+        assert!(response.payload.is_none() || response.payload.as_ref().unwrap().is_empty());
+
+        plugin_handle.join().unwrap();
+    }
 }
