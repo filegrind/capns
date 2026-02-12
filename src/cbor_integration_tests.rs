@@ -7,7 +7,7 @@
 #[cfg(test)]
 mod tests {
     use crate::cbor_frame::{Frame, FrameType, MessageId};
-    use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
+    use crate::cbor_io::{FrameReader, FrameWriter, handshake, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
     use crate::plugin_runtime::PluginRuntime;
     use std::io::{BufReader, BufWriter};
 
@@ -654,7 +654,7 @@ mod tests {
     // TEST284: Handshake exchanges HELLO frames, negotiates limits
     #[test]
     fn test_handshake_host_plugin() {
-        use crate::cbor_io::{handshake_initiate, handshake_accept};
+        use crate::cbor_io::{handshake, handshake_accept};
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -671,7 +671,9 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (received_manifest, host_limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let received_manifest = handshake_result.manifest;
+        let host_limits = handshake_result.limits;
 
         assert_eq!(received_manifest, TEST_MANIFEST.as_bytes());
 
@@ -701,7 +703,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let limits = handshake_result.limits;
         reader.set_limits(limits);
         writer.set_limits(limits);
 
@@ -740,7 +743,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let limits = handshake_result.limits;
         reader.set_limits(limits);
         writer.set_limits(limits);
 
@@ -786,7 +790,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let limits = handshake_result.limits;
         reader.set_limits(limits);
         writer.set_limits(limits);
 
@@ -803,7 +808,7 @@ mod tests {
     // TEST290: Limit negotiation picks minimum
     #[test]
     fn test_limits_negotiation() {
-        use crate::cbor_io::{handshake_initiate, handshake_accept};
+        use crate::cbor_io::{handshake, handshake_accept};
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -817,7 +822,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, host_limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let host_limits = handshake_result.limits;
 
         let plugin_limits = plugin_handle.join().unwrap();
 
@@ -854,7 +860,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let limits = handshake_result.limits;
         reader.set_limits(limits);
         writer.set_limits(limits);
 
@@ -896,7 +903,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let limits = handshake_result.limits;
         reader.set_limits(limits);
         writer.set_limits(limits);
 
@@ -937,7 +945,8 @@ mod tests {
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
         let mut writer = FrameWriter::new(BufWriter::new(host_write));
-        let (_, limits) = handshake_initiate(&mut reader, &mut writer).unwrap();
+        let handshake_result = handshake(&mut reader, &mut writer).unwrap();
+        let limits = handshake_result.limits;
         reader.set_limits(limits);
         writer.set_limits(limits);
 
