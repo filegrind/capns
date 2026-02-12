@@ -623,19 +623,19 @@ fn extract_effective_payload(
 
             eprintln!("[PluginRuntime] Checking arg: media_urn={:?}, has_value={}", media_urn, value_ref.is_some());
 
-            // Check if this is a file-path argument using proper URN matching
+            // Check if this is a file-path argument using pattern matching
             if let (Some(ref urn_str), Some(value)) = (media_urn, value_ref) {
                 let arg_urn = MediaUrn::from_string(urn_str)
                     .map_err(|e| RuntimeError::Handler(format!("Invalid argument media URN '{}': {}", urn_str, e)))?;
 
-                // Check if it's a file-path at all
+                // Check if it's a file-path using pattern matching (pattern accepts instance)
                 let is_file_path = file_path_base.accepts(&arg_urn)
                     .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
 
                 eprintln!("[PluginRuntime] is_file_path={}", is_file_path);
 
                 if is_file_path {
-                    // Determine if it's scalar or list - MUST be one or the other
+                    // Determine if it's scalar or list using specific patterns
                     let is_scalar = file_path_scalar.accepts(&arg_urn)
                         .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
                     let is_list = file_path_list.accepts(&arg_urn)
@@ -1336,27 +1336,12 @@ impl PluginRuntime {
                                 }
                             }
                             "value" => {
-                                // Value can be Bytes (scalar) or Array (list)
-                                match v {
-                                    ciborium::Value::Bytes(b) => {
-                                        // Scalar value - pass raw bytes
-                                        value_bytes = Some(b);
-                                    }
-                                    ciborium::Value::Array(_) => {
-                                        // List value - encode as CBOR for handler to decode
-                                        let mut cbor_bytes = Vec::new();
-                                        ciborium::into_writer(&v, &mut cbor_bytes)
-                                            .map_err(|e| RuntimeError::Serialize(format!("Failed to encode array: {}", e)))?;
-                                        value_bytes = Some(cbor_bytes);
-                                    }
-                                    _ => {
-                                        // Other CBOR types - encode as CBOR
-                                        let mut cbor_bytes = Vec::new();
-                                        ciborium::into_writer(&v, &mut cbor_bytes)
-                                            .map_err(|e| RuntimeError::Serialize(format!("Failed to encode value: {}", e)))?;
-                                        value_bytes = Some(cbor_bytes);
-                                    }
-                                }
+                                // ALL values must be CBOR-encoded before sending as CHUNK payloads
+                                // Protocol: CHUNK payloads contain CBOR-encoded data (encode once, no double-wrapping)
+                                let mut cbor_bytes = Vec::new();
+                                ciborium::into_writer(&v, &mut cbor_bytes)
+                                    .map_err(|e| RuntimeError::Serialize(format!("Failed to encode value: {}", e)))?;
+                                value_bytes = Some(cbor_bytes);
                             }
                             _ => {}
                         }
@@ -1531,6 +1516,7 @@ impl PluginRuntime {
         let mut arguments: Vec<CapArgumentValue> = Vec::new();
 
         // Check for stdin data if cap accepts stdin
+        // Non-blocking check - if no data ready immediately, returns None
         let stdin_data = if cap.accepts_stdin() {
             self.read_stdin_if_available()?
         } else {
@@ -1684,22 +1670,62 @@ impl PluginRuntime {
     }
 
     /// Read stdin if data is available (non-blocking check).
+    /// Returns None immediately if stdin is a terminal or no data is ready.
     fn read_stdin_if_available(&self) -> Result<Option<Vec<u8>>, RuntimeError> {
         use std::io::IsTerminal;
+        use std::os::fd::AsRawFd;
 
         let stdin = io::stdin();
+
         // Don't read from stdin if it's a terminal (interactive)
         if stdin.is_terminal() {
             return Ok(None);
         }
 
-        let mut data = Vec::new();
-        stdin.lock().read_to_end(&mut data)?;
+        // Non-blocking check: use poll() to see if data is ready (Unix only for now)
+        #[cfg(unix)]
+        {
+            use std::time::Duration;
+            let fd = stdin.as_raw_fd();
 
-        if data.is_empty() {
+            // Create pollfd structure for stdin
+            let mut pollfd = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+
+            // Poll with 0 timeout = non-blocking check
+            let poll_result = unsafe {
+                libc::poll(&mut pollfd as *mut libc::pollfd, 1, 0)
+            };
+
+            if poll_result < 0 {
+                return Err(RuntimeError::Io(io::Error::last_os_error()));
+            }
+
+            // No data ready - return None immediately without blocking
+            if poll_result == 0 || (pollfd.revents & libc::POLLIN) == 0 {
+                return Ok(None);
+            }
+
+            // Data is ready - read it
+            let mut data = Vec::new();
+            stdin.lock().read_to_end(&mut data)?;
+
+            if data.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(data))
+            }
+        }
+
+        // Windows fallback: just try is_terminal check
+        #[cfg(not(unix))]
+        {
+            // On Windows, if not a terminal, assume no data for CLI mode
+            // This is conservative but prevents hangs
             Ok(None)
-        } else {
-            Ok(Some(data))
         }
     }
 
