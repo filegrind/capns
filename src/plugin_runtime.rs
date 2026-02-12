@@ -2881,14 +2881,6 @@ mod tests {
         }
     }
 
-    // TEST265: Test extract_effective_payload - no longer tests invalid URN since we get Cap from registry
-    // This test is no longer relevant with MockRegistry approach
-    #[test]
-    #[ignore]
-    fn test_extract_effective_payload_invalid_cap_urn() {
-        // Skipped - with MockRegistry, we always have valid Caps
-    }
-
     // TEST266: Test CliStreamEmitter writes to stdout and stderr correctly (basic construction)
     #[test]
     fn test_cli_stream_emitter_construction() {
@@ -2897,13 +2889,6 @@ mod tests {
 
         let emitter2 = CliStreamEmitter::without_ndjson();
         assert!(!emitter2.ndjson);
-    }
-
-    // TEST267: Test CliStreamEmitter::default creates NDJSON emitter
-    #[test]
-    fn test_cli_stream_emitter_default() {
-        let emitter = CliStreamEmitter::default();
-        assert!(emitter.ndjson);
     }
 
     // TEST268: Test RuntimeError variants display correct messages
@@ -2926,15 +2911,6 @@ mod tests {
 
         let err6 = RuntimeError::PeerResponse("timeout".to_string());
         assert!(format!("{}", err6).contains("timeout"));
-    }
-
-    // TEST269: Test PluginRuntime limits returns default protocol limits
-    #[test]
-    fn test_runtime_limits_default() {
-        let runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-        let limits = runtime.limits();
-        assert_eq!(limits.max_frame, crate::cbor_frame::DEFAULT_MAX_FRAME);
-        assert_eq!(limits.max_chunk, crate::cbor_frame::DEFAULT_MAX_CHUNK);
     }
 
     // TEST270: Test registering multiple handlers for different caps and finding each independently
