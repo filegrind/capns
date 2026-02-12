@@ -17,10 +17,10 @@ use capns::{
     ArgSource, Cap, CapArg, CapManifest, CapUrn, PeerInvoker, PluginRuntime, RuntimeError,
     StreamEmitter,
 };
-use capns::plugin_runtime::StreamChunk;
+use capns::cbor_frame::{Frame, FrameType};
+use crossbeam_channel::Receiver;
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::mpsc::Receiver;
 
 // =============================================================================
 // Manifest Building
@@ -267,18 +267,79 @@ fn build_manifest() -> CapManifest {
 // Handler Implementations
 // =============================================================================
 
+/// Helper to collect CBOR frames into a HashMap of media_urn → bytes.
+/// Processes STREAM_START, CHUNK, STREAM_END, END frames.
+/// Returns error if ERR frame is encountered.
+fn collect_args_by_media_urn(frames: Receiver<Frame>) -> Result<HashMap<String, Vec<u8>>, RuntimeError> {
+    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut current_stream: Option<(String, String)> = None; // (stream_id, media_urn)
+
+    for frame in frames {
+        match frame.frame_type {
+            FrameType::StreamStart => {
+                let stream_id = frame.stream_id.ok_or_else(|| {
+                    RuntimeError::Handler("STREAM_START missing stream_id".to_string())
+                })?;
+                let media_urn = frame.media_urn.ok_or_else(|| {
+                    RuntimeError::Handler("STREAM_START missing media_urn".to_string())
+                })?;
+                current_stream = Some((stream_id, media_urn.clone()));
+                args.entry(media_urn).or_insert_with(Vec::new);
+            }
+            FrameType::Chunk => {
+                if let Some((_, media_urn)) = &current_stream {
+                    if let Some(payload) = frame.payload {
+                        args.entry(media_urn.clone())
+                            .or_insert_with(Vec::new)
+                            .extend_from_slice(&payload);
+                    }
+                }
+            }
+            FrameType::StreamEnd => {
+                current_stream = None;
+            }
+            FrameType::End => break,
+            FrameType::Err => {
+                let code = frame.error_code().unwrap_or("UNKNOWN");
+                let message = frame.error_message().unwrap_or("Unknown error");
+                return Err(RuntimeError::Handler(format!("[{}] {}", code, message)));
+            }
+            _ => {} // Ignore other frame types
+        }
+    }
+
+    Ok(args)
+}
+
+/// Helper to collect CHUNK frames from peer response into bytes.
+fn collect_peer_response(frames: Receiver<Frame>) -> Result<Vec<u8>, RuntimeError> {
+    let mut data = Vec::new();
+    for frame in frames {
+        match frame.frame_type {
+            FrameType::Chunk => {
+                if let Some(payload) = frame.payload {
+                    data.extend_from_slice(&payload);
+                }
+            }
+            FrameType::End => break,
+            FrameType::Err => {
+                let code = frame.error_code().unwrap_or("UNKNOWN");
+                let message = frame.error_message().unwrap_or("Unknown error");
+                return Err(RuntimeError::PeerRequest(format!("[{}] {}", code, message)));
+            }
+            _ => {} // Ignore STREAM_START, STREAM_END
+        }
+    }
+    Ok(data)
+}
+
 fn handle_edge1(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
     // Collect all argument streams by media_urn
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     // REQUIRED: node1 bytes (file-path already converted)
     let input = args
@@ -301,16 +362,11 @@ fn handle_edge1(
 }
 
 fn handle_edge2(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     let input = args
         .get("media:node2;textable")
@@ -336,16 +392,11 @@ fn handle_edge2(
 }
 
 fn handle_edge3(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     // Input is a list of node1 items (file-path array already expanded and converted)
     let input_list = args
@@ -384,16 +435,11 @@ fn handle_edge3(
 }
 
 fn handle_edge4(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     let input_list = args
         .get("media:node4;textable;form=list")
@@ -429,16 +475,11 @@ fn handle_edge4(
 }
 
 fn handle_edge5(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     let input1 = args
         .get("media:node2;textable")
@@ -463,16 +504,11 @@ fn handle_edge5(
 }
 
 fn handle_edge6(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     let input = args
         .get("media:node1;textable")
@@ -504,16 +540,11 @@ fn handle_edge6(
 }
 
 fn handle_large(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     _peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     let size = args
         .get("media:payload-size;textable;numeric;form=scalar")
@@ -533,16 +564,11 @@ fn handle_large(
 }
 
 fn handle_peer(
-    stream_chunks: Receiver<StreamChunk>,
+    frames: Receiver<Frame>,
     emitter: &dyn StreamEmitter,
     peer: &dyn PeerInvoker,
 ) -> Result<(), RuntimeError> {
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for chunk in stream_chunks.iter() {
-        args.entry(chunk.media_urn.clone())
-            .or_insert_with(Vec::new)
-            .extend_from_slice(&chunk.data);
-    }
+    let args = collect_args_by_media_urn(frames)?;
 
     let input = args
         .get("media:node1;textable")
@@ -554,14 +580,10 @@ fn handle_peer(
         capns::CapArgumentValue::new("media:node1;textable", input.to_vec())
     ])?;
 
-    // Collect edge1 response chunks
-    let mut edge1_response = Vec::new();
-    for chunk_result in edge1_rx.iter() {
-        let chunk = chunk_result.map_err(|e| RuntimeError::PeerRequest(format!("edge1 failed: {}", e)))?;
-        edge1_response.extend_from_slice(&chunk);
-    }
+    // Collect edge1 response frames (raw CBOR bytes)
+    let edge1_response = collect_peer_response(edge1_rx)?;
 
-    // Decode edge1 CBOR response to get raw bytes
+    // Decode edge1 CBOR response to get raw bytes (point of consumption)
     let edge1_value: ciborium::Value = ciborium::from_reader(&edge1_response[..])
         .map_err(|e| RuntimeError::Deserialize(format!("Failed to decode edge1 response: {}", e)))?;
     let edge1_bytes = match edge1_value {
@@ -575,18 +597,13 @@ fn handle_peer(
         capns::CapArgumentValue::new("media:node2;textable", edge1_bytes)
     ])?;
 
-    // Collect edge2 response chunks and emit as CBOR
-    // Peer responses are CBOR-encoded, decode and emit as Value
-    let mut response_data = Vec::new();
-    for chunk_result in edge2_rx.iter() {
-        let chunk = chunk_result.map_err(|e| RuntimeError::PeerRequest(format!("edge2 failed: {}", e)))?;
-        response_data.extend_from_slice(&chunk);
-    }
+    // Collect edge2 response frames (raw CBOR bytes)
+    let response_data = collect_peer_response(edge2_rx)?;
 
-    // Decode the CBOR response and emit as Value
+    // Decode and re-emit (point of consumption → point of production)
     let cbor_value: ciborium::Value = ciborium::from_reader(&response_data[..])
         .map_err(|e| RuntimeError::Deserialize(format!("Failed to decode peer response: {}", e)))?;
-    emitter.emit_cbor(&cbor_value);
+    emitter.emit_cbor(&cbor_value)?;
 
     Ok(())
 }
