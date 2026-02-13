@@ -7,14 +7,14 @@
 //! The router receives frames (REQ, STREAM_START, CHUNK, STREAM_END, END) and delegates
 //! them to the appropriate target plugin, then forwards responses back.
 
-use crate::async_plugin_host::{AsyncHostError, ResponseChunk};
+use crate::plugin_host_runtime::{AsyncHostError, ResponseChunk};
 use crate::cbor_frame::Frame;
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
 
 /// Handle for an active peer invoke request.
 ///
-/// The AsyncPluginHost creates this by calling router.begin_request(), then forwards
+/// The PluginHostRuntime creates this by calling router.begin_request(), then forwards
 /// incoming frames (STREAM_START, CHUNK, STREAM_END, END) to the handle. The handle
 /// provides a receiver for response chunks.
 pub trait PeerRequestHandle: Send {

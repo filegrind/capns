@@ -99,6 +99,13 @@ impl CapUrn {
             .ok_or(CapUrnError::MissingOutSpec)?
             .clone();
 
+        // Validate that in and out specs are valid media URNs
+        use crate::media_urn::MediaUrn;
+        MediaUrn::from_string(&in_urn)
+            .map_err(|e| CapUrnError::InvalidInSpec(format!("Invalid media URN for in spec '{}': {}", in_urn, e)))?;
+        MediaUrn::from_string(&out_urn)
+            .map_err(|e| CapUrnError::InvalidOutSpec(format!("Invalid media URN for out spec '{}': {}", out_urn, e)))?;
+
         // Collect remaining tags (excluding in/out)
         let tags: BTreeMap<String, String> = tagged
             .tags
@@ -422,6 +429,10 @@ pub enum CapUrnError {
     MissingOutSpec,
     /// Error code 12: Empty value provided (use "*" for wildcard)
     EmptyValue(String),
+    /// Error code 13: Invalid media URN in 'in' spec
+    InvalidInSpec(String),
+    /// Error code 14: Invalid media URN in 'out' spec
+    InvalidOutSpec(String),
 }
 
 impl CapUrnError {
@@ -493,6 +504,12 @@ impl fmt::Display for CapUrnError {
                     "Empty value for key '{}' (use '*' for wildcard)",
                     key
                 )
+            }
+            CapUrnError::InvalidInSpec(msg) => {
+                write!(f, "Invalid 'in' spec: {}", msg)
+            }
+            CapUrnError::InvalidOutSpec(msg) => {
+                write!(f, "Invalid 'out' spec: {}", msg)
             }
         }
     }

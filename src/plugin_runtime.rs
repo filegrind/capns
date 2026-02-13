@@ -97,17 +97,156 @@ pub enum RuntimeError {
 }
 
 /// A streaming emitter that writes chunks immediately to the output.
-/// Thread-safe for use in concurrent handlers.
-/// Handlers emit CBOR values via emit_cbor() or logs via emit_log().
-pub trait StreamEmitter: Send + Sync {
-    /// Emit a CBOR value as output.
-    /// The value is CBOR-encoded once and sent as raw CBOR bytes in CHUNK frames.
-    /// No double-encoding: one CBOR layer from handler to consumer.
-    fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError>;
+/// Stream emitter utility - helps handlers produce output streams.
+/// Handlers create StreamEmitter instances for each output stream they want to produce.
+/// StreamEmitter manages STREAM_START, CHUNK framing, and adds routing_id (XID) if provided.
+///
+/// Example:
+/// ```ignore
+/// // Response to incoming request with XID
+/// let emitter = StreamEmitter::new(sender, stream_id, req_id, Some(xid));
+/// emitter.emit_cbor(&value)?;
+///
+/// // Peer request (no XID)
+/// let emitter = StreamEmitter::new(sender, stream_id, req_id, None);
+/// emitter.emit_cbor(&value)?;
+/// ```
+pub struct StreamEmitter<'a> {
+    sender: &'a dyn FrameSender,
+    stream_id: String,
+    request_id: MessageId,
+    routing_id: Option<MessageId>,  // XID for responses, None for peer requests
+    stream_started: AtomicBool,
+    seq: Mutex<u64>,
+    max_chunk: usize,
+}
 
-    /// Emit a log message at the given level.
-    /// Sends a LOG frame (side-channel, does not affect response stream).
-    fn emit_log(&self, level: &str, message: &str);
+impl<'a> StreamEmitter<'a> {
+    /// Create a new StreamEmitter for a specific output stream.
+    ///
+    /// # Arguments
+    /// * `sender` - FrameSender to send frames
+    /// * `stream_id` - Unique stream identifier
+    /// * `request_id` - Request ID (RID)
+    /// * `routing_id` - Routing ID (XID) if this is a response to an incoming request, None for peer requests
+    /// * `max_chunk` - Maximum chunk size
+    pub fn new(
+        sender: &'a dyn FrameSender,
+        stream_id: String,
+        request_id: MessageId,
+        routing_id: Option<MessageId>,
+        max_chunk: usize,
+    ) -> Self {
+        Self {
+            sender,
+            stream_id,
+            request_id,
+            routing_id,
+            stream_started: AtomicBool::new(false),
+            seq: Mutex::new(0),
+            max_chunk,
+        }
+    }
+
+    /// Emit a CBOR value as output.
+    /// Automatically sends STREAM_START before first chunk.
+    /// The value is CBOR-encoded once and sent as raw CBOR bytes in CHUNK frames.
+    pub fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
+        // Send STREAM_START before first chunk
+        if !self.stream_started.swap(true, Ordering::SeqCst) {
+            let mut start_frame = Frame::stream_start(
+                self.request_id.clone(),
+                self.stream_id.clone(),
+                "*".to_string()  // Media URN - handler can override if needed
+            );
+            start_frame.routing_id = self.routing_id.clone();
+            self.sender.send(&start_frame)?;
+        }
+
+        // Split and send chunks (implementation same as before)
+        self.emit_chunks(value)
+    }
+
+    /// Emit a log message.
+    pub fn emit_log(&self, level: &str, message: &str) {
+        let mut frame = Frame::log(self.request_id.clone(), level, message);
+        frame.routing_id = self.routing_id.clone();
+        let _ = self.sender.send(&frame);
+    }
+
+    /// Send STREAM_END for this stream.
+    pub fn end_stream(&self) -> Result<(), RuntimeError> {
+        let mut frame = Frame::stream_end(self.request_id.clone(), self.stream_id.clone());
+        frame.routing_id = self.routing_id.clone();
+        self.sender.send(&frame)
+    }
+
+    /// Helper to send chunks for a CBOR value
+    fn emit_chunks(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
+        // Implementation same as old ThreadSafeEmitter::emit_cbor
+        match value {
+            ciborium::Value::Bytes(bytes) => {
+                let mut offset = 0;
+                while offset < bytes.len() {
+                    let chunk_size = (bytes.len() - offset).min(self.max_chunk);
+                    let chunk_bytes = bytes[offset..offset + chunk_size].to_vec();
+                    let chunk_value = ciborium::Value::Bytes(chunk_bytes);
+                    self.send_chunk(&chunk_value)?;
+                    offset += chunk_size;
+                }
+            }
+            ciborium::Value::Text(text) => {
+                let text_bytes = text.as_bytes();
+                let mut offset = 0;
+                while offset < text_bytes.len() {
+                    let mut chunk_size = (text_bytes.len() - offset).min(self.max_chunk);
+                    while chunk_size > 0 && !text.is_char_boundary(offset + chunk_size) {
+                        chunk_size -= 1;
+                    }
+                    if chunk_size == 0 {
+                        return Err(RuntimeError::Handler("Cannot split text on character boundary".to_string()));
+                    }
+                    let chunk_text = text[offset..offset + chunk_size].to_string();
+                    let chunk_value = ciborium::Value::Text(chunk_text);
+                    self.send_chunk(&chunk_value)?;
+                    offset += chunk_size;
+                }
+            }
+            ciborium::Value::Array(elements) => {
+                for element in elements {
+                    self.send_chunk(element)?;
+                }
+            }
+            ciborium::Value::Map(entries) => {
+                for (key, val) in entries {
+                    let entry = ciborium::Value::Array(vec![key.clone(), val.clone()]);
+                    self.send_chunk(&entry)?;
+                }
+            }
+            _ => {
+                self.send_chunk(value)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Send a single chunk
+    fn send_chunk(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
+        let mut cbor_payload = Vec::new();
+        ciborium::into_writer(value, &mut cbor_payload)
+            .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR: {}", e)))?;
+
+        let seq = {
+            let mut seq_guard = self.seq.lock().unwrap();
+            let current = *seq_guard;
+            *seq_guard += 1;
+            current
+        };
+
+        let mut frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
+        frame.routing_id = self.routing_id.clone();
+        self.sender.send(&frame)
+    }
 }
 
 /// Allows handlers to invoke caps on the peer (host).
@@ -177,199 +316,20 @@ impl PeerInvoker for NoPeerInvoker {
     }
 }
 
-/// Thread-safe implementation of StreamEmitter that writes CBOR frames.
-/// Uses Arc<Mutex<>> for safe concurrent access from multiple handler threads.
-/// Implements stream multiplexing protocol: sends STREAM_START before first chunk.
-struct ThreadSafeEmitter<W: Write + Send> {
-    writer: Arc<Mutex<FrameWriter<W>>>,
-    request_id: MessageId,
-    stream_id: String,  // Response stream ID
-    media_urn: String,  // Response media URN
-    stream_started: AtomicBool,  // Track if STREAM_START was sent
-    seq: Mutex<u64>,
-    max_chunk: usize,  // Negotiated max chunk size
+/// Channel-based frame sender for plugin output.
+/// ALL frames (peer requests AND responses) go through a single output channel.
+/// PluginRuntime has a writer thread that drains this channel and writes to stdout.
+struct ChannelFrameSender {
+    tx: crossbeam_channel::Sender<Frame>,
 }
 
-impl<W: Write + Send> StreamEmitter for ThreadSafeEmitter<W> {
-    fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
-        // CHUNK payloads = complete, independently decodable CBOR values
-        //
-        // Streams might never end (logs, video, real-time data), so each CHUNK must be
-        // processable immediately without waiting for END frame.
-        //
-        // For Value::Bytes/Text: split raw data, encode each chunk as complete Value
-        // For other types: encode once (typically small)
-        //
-        // Each CHUNK payload can be decoded independently: cbor2.loads(chunk.payload)
-
-        // STREAM MULTIPLEXING PROTOCOL: Send STREAM_START before first chunk
-        if !self.stream_started.swap(true, Ordering::SeqCst) {
-            let start_frame = Frame::stream_start(
-                self.request_id.clone(),
-                self.stream_id.clone(),
-                self.media_urn.clone()
-            );
-
-            let mut writer = self.writer.lock().unwrap();
-            writer.write(&start_frame)
-                .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write STREAM_START: {}", e))))?;
-            drop(writer); // Release lock before continuing
-        }
-
-        // Split large byte/text data, encode each chunk as complete CBOR value
-        match value {
-            ciborium::Value::Bytes(bytes) => {
-                // Split bytes BEFORE encoding, encode each chunk as Value::Bytes
-                let mut offset = 0;
-                while offset < bytes.len() {
-                    let chunk_size = (bytes.len() - offset).min(self.max_chunk);
-                    let chunk_bytes = bytes[offset..offset + chunk_size].to_vec();
-
-                    // Encode as complete Value::Bytes - independently decodable
-                    let chunk_value = ciborium::Value::Bytes(chunk_bytes);
-                    let mut cbor_payload = Vec::new();
-                    ciborium::into_writer(&chunk_value, &mut cbor_payload)
-                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode chunk: {}", e)))?;
-
-                    let seq = {
-                        let mut seq_guard = self.seq.lock().unwrap();
-                        let current = *seq_guard;
-                        *seq_guard += 1;
-                        current
-                    };
-
-                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
-
-                    let mut writer = self.writer.lock().unwrap();
-                    writer.write(&frame)
-                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
-                    drop(writer);
-
-                    offset += chunk_size;
-                }
-            }
-            ciborium::Value::Text(text) => {
-                // Split text BEFORE encoding, encode each chunk as Value::Text
-                let text_bytes = text.as_bytes();
-                let mut offset = 0;
-                while offset < text_bytes.len() {
-                    // Ensure we split on UTF-8 character boundaries
-                    let mut chunk_size = (text_bytes.len() - offset).min(self.max_chunk);
-                    while chunk_size > 0 && !text.is_char_boundary(offset + chunk_size) {
-                        chunk_size -= 1;
-                    }
-                    if chunk_size == 0 {
-                        return Err(RuntimeError::Handler("Cannot split text on character boundary".to_string()));
-                    }
-
-                    let chunk_text = text[offset..offset + chunk_size].to_string();
-
-                    // Encode as complete Value::Text - independently decodable
-                    let chunk_value = ciborium::Value::Text(chunk_text);
-                    let mut cbor_payload = Vec::new();
-                    ciborium::into_writer(&chunk_value, &mut cbor_payload)
-                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode chunk: {}", e)))?;
-
-                    let seq = {
-                        let mut seq_guard = self.seq.lock().unwrap();
-                        let current = *seq_guard;
-                        *seq_guard += 1;
-                        current
-                    };
-
-                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
-
-                    let mut writer = self.writer.lock().unwrap();
-                    writer.write(&frame)
-                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
-                    drop(writer);
-
-                    offset += chunk_size;
-                }
-            }
-            ciborium::Value::Array(elements) => {
-                // Array: send each element as independent CBOR chunk
-                // Allows receiver to reconstruct elements without waiting for entire array
-                for element in elements {
-                    // Encode each element as complete CBOR value
-                    let mut cbor_payload = Vec::new();
-                    ciborium::into_writer(element, &mut cbor_payload)
-                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode array element: {}", e)))?;
-
-                    let seq = {
-                        let mut seq_guard = self.seq.lock().unwrap();
-                        let current = *seq_guard;
-                        *seq_guard += 1;
-                        current
-                    };
-
-                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
-
-                    let mut writer = self.writer.lock().unwrap();
-                    writer.write(&frame)
-                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
-                    drop(writer);
-                }
-            }
-            ciborium::Value::Map(entries) => {
-                // Map: send each entry as independent CBOR chunk
-                // Receiver must wait for all entries before reconstructing map
-                for (key, val) in entries {
-                    // Encode each key-value pair as a 2-element array: [key, value]
-                    let entry = ciborium::Value::Array(vec![key.clone(), val.clone()]);
-                    let mut cbor_payload = Vec::new();
-                    ciborium::into_writer(&entry, &mut cbor_payload)
-                        .map_err(|e| RuntimeError::Handler(format!("Failed to encode map entry: {}", e)))?;
-
-                    let seq = {
-                        let mut seq_guard = self.seq.lock().unwrap();
-                        let current = *seq_guard;
-                        *seq_guard += 1;
-                        current
-                    };
-
-                    let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
-
-                    let mut writer = self.writer.lock().unwrap();
-                    writer.write(&frame)
-                        .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
-                    drop(writer);
-                }
-            }
-            _ => {
-                // For other types (Integer, Float, Bool, Null, Tag): encode as single chunk
-                // These have single-value semantics and are typically small
-                let mut cbor_payload = Vec::new();
-                ciborium::into_writer(value, &mut cbor_payload)
-                    .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR value: {}", e)))?;
-
-                let seq = {
-                    let mut seq_guard = self.seq.lock().unwrap();
-                    let current = *seq_guard;
-                    *seq_guard += 1;
-                    current
-                };
-
-                let frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
-
-                let mut writer = self.writer.lock().unwrap();
-                writer.write(&frame)
-                    .map_err(|e| RuntimeError::Io(io::Error::new(io::ErrorKind::Other, format!("Failed to write chunk: {}", e))))?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn emit_log(&self, level: &str, message: &str) {
-        let frame = Frame::log(self.request_id.clone(), level, message);
-
-        let mut writer = self.writer.lock().unwrap();
-        if let Err(e) = writer.write(&frame) {
-            eprintln!("[PluginRuntime] Failed to write log: {}", e);
-        }
+impl FrameSender for ChannelFrameSender {
+    fn send(&self, frame: &Frame) -> Result<(), RuntimeError> {
+        self.tx.send(frame.clone())
+            .map_err(|_| RuntimeError::Handler("Output channel closed".to_string()))
     }
 }
+
 
 /// CLI-mode emitter that writes directly to stdout.
 /// Used when the plugin is invoked via CLI (with arguments).
@@ -396,8 +356,9 @@ impl Default for CliStreamEmitter {
     }
 }
 
-impl StreamEmitter for CliStreamEmitter {
-    fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
+impl CliStreamEmitter {
+    /// Emit a CBOR value to stdout (CLI mode)
+    pub fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
 
@@ -484,6 +445,59 @@ impl StreamEmitter for CliStreamEmitter {
     }
 }
 
+/// CLI-mode frame sender that extracts payloads from frames and outputs to stdout.
+/// Adapts FrameSender trait for CLI mode using CliStreamEmitter.
+pub struct CliFrameSender {
+    emitter: CliStreamEmitter,
+}
+
+impl CliFrameSender {
+    pub fn new(emitter: CliStreamEmitter) -> Self {
+        Self { emitter }
+    }
+}
+
+impl FrameSender for CliFrameSender {
+    fn send(&self, frame: &Frame) -> Result<(), RuntimeError> {
+        match frame.frame_type {
+            FrameType::Chunk => {
+                // Extract CBOR payload from CHUNK frame and emit to stdout
+                if let Some(ref payload) = frame.payload {
+                    // Decode CBOR payload
+                    let value: ciborium::Value = ciborium::from_reader(&payload[..])
+                        .map_err(|e| RuntimeError::Handler(format!("Failed to decode CBOR payload: {}", e)))?;
+
+                    // Emit to stdout via CliStreamEmitter
+                    self.emitter.emit_cbor(&value)?;
+                }
+                Ok(())
+            }
+            FrameType::Log => {
+                // Extract log message and emit to stderr
+                let level = frame.log_level().unwrap_or("INFO");
+                let message = frame.log_message().unwrap_or("");
+                self.emitter.emit_log(level, message);
+                Ok(())
+            }
+            FrameType::StreamStart | FrameType::StreamEnd | FrameType::End => {
+                // Ignore framing messages in CLI mode
+                Ok(())
+            }
+            FrameType::Err => {
+                // Output error to stderr
+                let code = frame.error_code().unwrap_or("ERROR");
+                let msg = frame.error_message().unwrap_or("Unknown error");
+                eprintln!("[ERROR] [{}] {}", code, msg);
+                Err(RuntimeError::Handler(format!("[{}] {}", code, msg)))
+            }
+            _ => {
+                // Fail hard on unexpected frame types
+                Err(RuntimeError::Handler(format!("Unexpected frame type in CLI mode: {:?}", frame.frame_type)))
+            }
+        }
+    }
+}
+
 // StreamChunk removed - handlers now receive bare CBOR Frame objects directly
 
 /// Handler function type - must be Send + Sync for concurrent execution.
@@ -504,9 +518,17 @@ impl StreamEmitter for CliStreamEmitter {
 /// Handler function that processes CBOR frames.
 /// Receives bare Frame objects for both input arguments and peer responses.
 /// Handler has full streaming control - decides when to consume frames and when to produce output.
+/// Handler function signature: receives incoming frames and can send frames directly.
+/// Handlers construct Frame objects with XID for responses, without XID for peer requests.
 pub type HandlerFn = Arc<
-    dyn Fn(Receiver<Frame>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync,
+    dyn Fn(Receiver<Frame>, &dyn FrameSender, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync,
 >;
+
+/// Allows handlers to send frames directly.
+pub trait FrameSender: Send + Sync {
+    /// Send a frame directly. Handler controls all frame fields including routing_id (XID).
+    fn send(&self, frame: &Frame) -> Result<(), RuntimeError>;
+}
 
 /// Stream data accumulator for multiplexed protocol
 #[derive(Clone)]
@@ -524,11 +546,12 @@ struct PendingStream {
 struct PendingPeerRequest {
     sender: Sender<Frame>,  // Channel to send response frames to handler
     ended: bool,  // true after END frame (close channel)
+    expected_response_media_urns: Vec<String>,  // Expected response media URNs (from cap out spec)
 }
 
 /// Implementation of PeerInvoker that sends REQ frames to the host.
-struct PeerInvokerImpl<W: Write + Send> {
-    writer: Arc<Mutex<FrameWriter<W>>>,
+struct PeerInvokerImpl {
+    output_tx: crossbeam_channel::Sender<Frame>,
     pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
     max_chunk: usize,  // Negotiated max chunk size
 }
@@ -903,7 +926,7 @@ fn extract_effective_payload(
     Ok(serialized)
 }
 
-impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
+impl PeerInvoker for PeerInvokerImpl {
     fn invoke(
         &self,
         cap_urn: &str,
@@ -911,6 +934,16 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
     ) -> Result<Receiver<Frame>, RuntimeError> {
         // Generate a new message ID for this request
         let request_id = MessageId::new_uuid();
+
+        // Parse cap URN to get expected response media URNs (from out spec)
+        let parsed_cap = CapUrn::from_string(cap_urn).map_err(|e| {
+            RuntimeError::PeerRequest(format!("Invalid cap URN: {}", e))
+        })?;
+
+        let expected_response_media_urns = vec![parsed_cap.out_spec().to_string()];
+
+        eprintln!("[PeerInvoker.invoke] cap={}, expected_response_media_urns={:?}",
+            cap_urn, expected_response_media_urns);
 
         // Create a bounded channel for response frames
         let (sender, receiver) = bounded(64);
@@ -921,89 +954,88 @@ impl<W: Write + Send> PeerInvoker for PeerInvokerImpl<W> {
             pending.insert(request_id.clone(), PendingPeerRequest {
                 sender,
                 ended: false,
+                expected_response_media_urns,
             });
+            eprintln!("[PeerInvoker.invoke] Registered pending_peer_requests[{:?}]", request_id);
         }
 
         // STREAM MULTIPLEXING PROTOCOL: Send REQ + streams for each argument + END
+        // All frames go through the single output channel
         let max_chunk = self.max_chunk;
 
-        {
-            let mut writer = self.writer.lock().unwrap();
+        // 1. Send REQ with empty payload
+        let req_frame = Frame::req(
+            request_id.clone(),
+            cap_urn,
+            vec![], // Empty payload - arguments come as streams
+            "application/cbor",
+        );
+        self.output_tx.send(req_frame).map_err(|_| {
+            self.pending_requests.lock().unwrap().remove(&request_id);
+            RuntimeError::PeerRequest("Output channel closed".to_string())
+        })?;
 
-            // 1. Send REQ with empty payload
-            let req_frame = Frame::req(
+        // 2. Send each argument as an independent stream
+        for arg in arguments {
+            let stream_id = uuid::Uuid::new_v4().to_string();
+
+            // STREAM_START: Announce new stream
+            let start_frame = Frame::stream_start(
                 request_id.clone(),
-                cap_urn,
-                vec![], // Empty payload - arguments come as streams
-                "application/cbor",
+                stream_id.clone(),
+                arg.media_urn.clone()
             );
-            writer.write(&req_frame).map_err(|e| {
+            self.output_tx.send(start_frame).map_err(|_| {
                 self.pending_requests.lock().unwrap().remove(&request_id);
-                RuntimeError::PeerRequest(format!("Failed to send REQ frame: {}", e))
+                RuntimeError::PeerRequest("Output channel closed".to_string())
             })?;
 
-            // 2. Send each argument as an independent stream
-            for arg in arguments {
-                let stream_id = uuid::Uuid::new_v4().to_string();
+            // CHUNK(s): Send argument data as CBOR-encoded chunks
+            // Each CHUNK payload MUST be independently decodable CBOR
+            let mut offset = 0;
+            let mut seq = 0u64;
+            while offset < arg.value.len() {
+                let chunk_size = (arg.value.len() - offset).min(max_chunk);
+                let chunk_bytes = arg.value[offset..offset + chunk_size].to_vec();
 
-                // STREAM_START: Announce new stream
-                let start_frame = Frame::stream_start(
-                    request_id.clone(),
-                    stream_id.clone(),
-                    arg.media_urn.clone()
-                );
-                writer.write(&start_frame).map_err(|e| {
-                    self.pending_requests.lock().unwrap().remove(&request_id);
-                    RuntimeError::PeerRequest(format!("Failed to send STREAM_START: {}", e))
-                })?;
-
-                // CHUNK(s): Send argument data as CBOR-encoded chunks
-                // Each CHUNK payload MUST be independently decodable CBOR
-                let mut offset = 0;
-                let mut seq = 0u64;
-                while offset < arg.value.len() {
-                    let chunk_size = (arg.value.len() - offset).min(max_chunk);
-                    let chunk_bytes = arg.value[offset..offset + chunk_size].to_vec();
-
-                    // CBOR-encode chunk as Value::Bytes - independently decodable
-                    let chunk_value = ciborium::Value::Bytes(chunk_bytes);
-                    let mut cbor_payload = Vec::new();
-                    ciborium::into_writer(&chunk_value, &mut cbor_payload)
-                        .map_err(|e| {
-                            self.pending_requests.lock().unwrap().remove(&request_id);
-                            RuntimeError::PeerRequest(format!("Failed to encode chunk: {}", e))
-                        })?;
-
-                    let chunk_frame = Frame::chunk(
-                        request_id.clone(),
-                        stream_id.clone(),
-                        seq,
-                        cbor_payload
-                    );
-                    writer.write(&chunk_frame).map_err(|e| {
+                // CBOR-encode chunk as Value::Bytes - independently decodable
+                let chunk_value = ciborium::Value::Bytes(chunk_bytes);
+                let mut cbor_payload = Vec::new();
+                ciborium::into_writer(&chunk_value, &mut cbor_payload)
+                    .map_err(|e| {
                         self.pending_requests.lock().unwrap().remove(&request_id);
-                        RuntimeError::PeerRequest(format!("Failed to send CHUNK: {}", e))
+                        RuntimeError::PeerRequest(format!("Failed to encode chunk: {}", e))
                     })?;
 
-                    offset += chunk_size;
-                    seq += 1;
-                }
-
-                // STREAM_END: Close this stream
-                let end_frame = Frame::stream_end(request_id.clone(), stream_id);
-                writer.write(&end_frame).map_err(|e| {
+                let chunk_frame = Frame::chunk(
+                    request_id.clone(),
+                    stream_id.clone(),
+                    seq,
+                    cbor_payload
+                );
+                self.output_tx.send(chunk_frame).map_err(|_| {
                     self.pending_requests.lock().unwrap().remove(&request_id);
-                    RuntimeError::PeerRequest(format!("Failed to send STREAM_END: {}", e))
+                    RuntimeError::PeerRequest("Output channel closed".to_string())
                 })?;
+
+                offset += chunk_size;
+                seq += 1;
             }
 
-            // 3. END: Close the entire request
-            let request_end = Frame::end(request_id.clone(), None);
-            writer.write(&request_end).map_err(|e| {
+            // STREAM_END: Close this stream
+            let end_frame = Frame::stream_end(request_id.clone(), stream_id);
+            self.output_tx.send(end_frame).map_err(|_| {
                 self.pending_requests.lock().unwrap().remove(&request_id);
-                RuntimeError::PeerRequest(format!("Failed to send END frame: {}", e))
+                RuntimeError::PeerRequest("Output channel closed".to_string())
             })?;
         }
+
+        // 3. END: Close the entire request
+        let request_end = Frame::end(request_id.clone(), None);
+        self.output_tx.send(request_end).map_err(|_| {
+            self.pending_requests.lock().unwrap().remove(&request_id);
+            RuntimeError::PeerRequest("Output channel closed".to_string())
+        })?;
 
         Ok(receiver)
     }
@@ -1100,16 +1132,14 @@ impl PluginRuntime {
     /// **Peer invocation**: Use the `peer` parameter to invoke caps on the host.
     /// This is useful for sandboxed plugins that need to delegate operations
     /// (like network access) to the host.
-    /// Register a streaming handler with automatic deserialization.
-    ///
-    /// NOTE: This method accumulates chunks to deserialize the complete request.
-    /// For true streaming without deserialization, use register_raw instead.
+    // DEPRECATED: Use register_raw instead for full streaming control
+    /*
     pub fn register<Req, F>(&mut self, cap_urn: &str, handler: F)
     where
         Req: serde::de::DeserializeOwned + 'static,
-        F: Fn(Req, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
+        F: Fn(Req, ...) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
-        let streaming_handler = move |frames: Receiver<Frame>, emitter: &dyn StreamEmitter, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
+        let streaming_handler = move |frames: Receiver<Frame>, sender: &dyn FrameSender, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
             // Accumulate all CHUNK frame payloads
             let mut accumulated = Vec::new();
             for frame in frames {
@@ -1138,20 +1168,22 @@ impl PluginRuntime {
 
         self.handlers.insert(cap_urn.to_string(), Arc::new(streaming_handler));
     }
+    */
 
     /// Register a raw handler for a cap URN.
     ///
-    /// The handler receives bare CBOR Frame objects for streaming input.
-    /// Frames include REQ, STREAM_START, CHUNK, STREAM_END, END.
-    /// Handler has full control over when to consume frames and when to produce output.
+    /// The handler receives bare CBOR Frame objects for streaming input and sends frames directly.
+    /// Handler constructs and sends ALL frames including STREAM_START, CHUNK, STREAM_END, END.
+    /// Handler controls routing_id (XID): set for responses, omit for peer requests.
     ///
     /// Benefits:
+    /// - Full control over all frame fields including routing_id
     /// - True streaming - process frames as they arrive
     /// - No forced accumulation
     /// - Perfect for infinite streams (video, audio, real-time data)
     pub fn register_raw<F>(&mut self, cap_urn: &str, handler: F)
     where
-        F: Fn(Receiver<Frame>, &dyn StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
+        F: Fn(Receiver<Frame>, &dyn FrameSender, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
         self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
     }
@@ -1302,8 +1334,9 @@ impl PluginRuntime {
             ));
         };
 
-        // Create CLI-mode emitter (no newlines for binary safety) and no-op peer invoker
-        let emitter = CliStreamEmitter::without_ndjson();
+        // Create CLI-mode frame sender and no-op peer invoker
+        let cli_emitter = CliStreamEmitter::without_ndjson();
+        let frame_sender = CliFrameSender::new(cli_emitter);
         let peer = NoPeerInvoker;
 
         // STREAM MULTIPLEXING: Parse CBOR arguments and create separate streams
@@ -1387,12 +1420,12 @@ impl PluginRuntime {
         tx.send(end_frame).map_err(|_| RuntimeError::Handler("Failed to send END".to_string()))?;
         drop(tx); // Close channel
 
-        // Invoke streaming handler
-        let result = handler(rx, &emitter, &peer);
+        // Invoke handler with CLI frame sender
+        let result = handler(rx, &frame_sender, &peer);
 
         match result {
             Ok(()) => {
-                // Handler emitted output via StreamEmitter
+                eprintln!("[PluginRuntime] CLI handler completed successfully");
                 Ok(())
             }
             Err(e) => {
@@ -1883,26 +1916,54 @@ impl PluginRuntime {
 
     /// Run in Plugin CBOR mode - binary frame protocol via stdin/stdout.
     fn run_cbor_mode(&self) -> Result<(), RuntimeError> {
+        eprintln!("[PluginRuntime] Starting CBOR mode");
         let stdin = io::stdin();
         let stdout = io::stdout();
+        eprintln!("[PluginRuntime] Got stdin/stdout handles");
 
         // Lock stdin for reading (single reader thread)
         let reader = BufReader::new(stdin.lock());
-        // Use Stdout directly (not StdoutLock) so it can be shared across threads.
-        // BufWriter provides buffering, our Mutex provides thread safety.
+        eprintln!("[PluginRuntime] Created buffered reader");
+
+        // Use direct stdout for writer (will be moved to writer thread)
         let writer = BufWriter::new(stdout);
 
         let mut frame_reader = FrameReader::new(reader);
-        let frame_writer = Arc::new(Mutex::new(FrameWriter::new(writer)));
+        let mut frame_writer = FrameWriter::new(writer);
+        eprintln!("[PluginRuntime] Created frame reader/writer");
 
         // Perform handshake - send our manifest in the HELLO response
-        let negotiated_limits = {
-            let mut writer_guard = frame_writer.lock().unwrap();
-            let limits = handshake_accept(&mut frame_reader, &mut writer_guard, &self.manifest_data)?;
-            frame_reader.set_limits(limits);
-            writer_guard.set_limits(limits);
-            limits
-        };
+        eprintln!("[PluginRuntime] Starting handshake (manifest {} bytes)", self.manifest_data.len());
+        let negotiated_limits = handshake_accept(&mut frame_reader, &mut frame_writer, &self.manifest_data)?;
+        eprintln!("[PluginRuntime] Handshake successful, limits: {:?}", negotiated_limits);
+        frame_reader.set_limits(negotiated_limits);
+        frame_writer.set_limits(negotiated_limits);
+
+        // Create output channel - ALL frames (peer requests + responses) go through here
+        let (output_tx, output_rx) = crossbeam_channel::unbounded::<Frame>();
+
+        // Spawn writer thread to drain output channel and write frames to stdout
+        let writer_handle = std::thread::spawn(move || {
+            eprintln!("[PluginRuntime/writer] Writer thread started");
+            let mut frame_count = 0;
+            for frame in output_rx {
+                frame_count += 1;
+                eprintln!("[PluginRuntime/writer] Writing frame #{}: {:?} (id={:?})", frame_count, frame.frame_type, frame.id);
+                if let Err(e) = frame_writer.write(&frame) {
+                    eprintln!("[PluginRuntime/writer] Failed to write frame: {}", e);
+                    break;
+                }
+                eprintln!("[PluginRuntime/writer] Frame #{} written successfully", frame_count);
+            }
+            // CRITICAL: Flush buffered output before exiting!
+            eprintln!("[PluginRuntime/writer] Flushing buffered output ({} frames written)", frame_count);
+            if let Err(e) = frame_writer.inner_mut().flush() {
+                eprintln!("[PluginRuntime/writer] ERROR: Failed to flush output: {}", e);
+            } else {
+                eprintln!("[PluginRuntime/writer] Flush successful");
+            }
+            eprintln!("[PluginRuntime/writer] Writer thread exiting after writing {} frames", frame_count);
+        });
 
         // Track pending peer requests (plugin invoking host caps)
         let pending_peer_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>> =
@@ -1911,6 +1972,7 @@ impl PluginRuntime {
         // Track incoming requests with multiplexed streams
         #[derive(Clone)]
         struct PendingIncomingRequest {
+            req_frame: Frame,  // Original REQ frame (with routing_id/XID)
             cap_urn: String,
             handler: HandlerFn,
             streams: Vec<(String, PendingStream)>,  // (stream_id, stream data) - ordered
@@ -1942,8 +2004,7 @@ impl PluginRuntime {
                                 "INVALID_REQUEST",
                                 "Request missing cap URN",
                             );
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
+                            let _ = output_tx.send(err_frame.clone());
                             continue;
                         }
                     };
@@ -1956,8 +2017,7 @@ impl PluginRuntime {
                                 "NO_HANDLER",
                                 &format!("No handler registered for cap: {}", cap_urn),
                             );
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
+                            let _ = output_tx.send(err_frame.clone());
                             continue;
                         }
                     };
@@ -1971,14 +2031,14 @@ impl PluginRuntime {
                             "PROTOCOL_ERROR",
                             "REQ frame must have empty payload - use STREAM_START for arguments"
                         );
-                        let mut writer = frame_writer.lock().unwrap();
-                        let _ = writer.write(&err_frame);
+                        let _ = output_tx.send(err_frame.clone());
                         continue;
                     }
 
                     // Start tracking this request - streams will be added via STREAM_START
                     let mut pending = pending_incoming.lock().unwrap();
                     pending.insert(frame.id.clone(), PendingIncomingRequest {
+                        req_frame: frame.clone(),  // Save original REQ frame with routing_id
                         cap_urn: cap_urn.clone(),
                         handler,
                         streams: Vec::new(),  // Streams added via STREAM_START
@@ -1986,7 +2046,8 @@ impl PluginRuntime {
                     });
                     drop(pending);
 
-                    eprintln!("[PluginRuntime] REQ: req_id={:?} cap={} - waiting for streams", frame.id, cap_urn);
+                    eprintln!("[PluginRuntime] REQ: req_id={:?} cap={} XID={:?} - waiting for streams",
+                        frame.id, cap_urn, frame.routing_id);
                     continue; // Wait for STREAM_START/CHUNK/STREAM_END/END frames
                 }
                 FrameType::Chunk => {
@@ -1997,34 +2058,53 @@ impl PluginRuntime {
                             // FATAL: Remove request to unblock host
                             pending_incoming.lock().unwrap().remove(&frame.id);
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "CHUNK missing stream_id");
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
+                            let _ = output_tx.send(err_frame.clone());
                             continue;
                         }
                     };
 
-                    // Check peer response FIRST (same reason as STREAM_START/STREAM_END)
-                    let pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = pending.get(&frame.id) {
-                        eprintln!("[PluginRuntime] CHUNK is peer response (id={:?}), forwarding to handler", frame.id);
-                        if !pending_req.ended {
-                            let _ = pending_req.sender.send(frame.clone());
+                    eprintln!("[PluginRuntime] CHUNK: req_id={:?} stream_id={}", frame.id, stream_id);
+
+                    // Route by stream_id: Check if stream exists in incoming request's streams
+                    let mut is_incoming_stream = false;
+                    {
+                        let incoming = pending_incoming.lock().unwrap();
+                        if let Some(pending_req) = incoming.get(&frame.id) {
+                            if pending_req.streams.iter().any(|(sid, _)| sid == &stream_id) {
+                                is_incoming_stream = true;
+                            }
+                        }
+                    }
+
+                    if is_incoming_stream {
+                        eprintln!("[PluginRuntime] CHUNK belongs to incoming request stream, routing to incoming handler");
+                        // Fall through to incoming handler below
+                    } else {
+                        // Not in incoming streams → check if it's a peer response
+                        let pending = pending_peer_requests.lock().unwrap();
+                        if let Some(pending_req) = pending.get(&frame.id) {
+                            eprintln!("[PluginRuntime] CHUNK is peer response, forwarding to peer handler");
+                            if !pending_req.ended {
+                                let _ = pending_req.sender.send(frame.clone());
+                            }
+                            drop(pending);
+                            continue;
                         }
                         drop(pending);
+
+                        eprintln!("[PluginRuntime] CHUNK for unknown stream (req_id={:?}, stream_id={}), ignoring",
+                            frame.id, stream_id);
                         continue;
                     }
-                    drop(pending);
 
-                    // Not a peer response - check if this is a chunk for an incoming request
+                    // Process as incoming request chunk
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.get_mut(&frame.id) {
                         // FAIL HARD: Request already ended
                         if pending_req.ended {
                             incoming.remove(&frame.id); // Remove to unblock host
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "CHUNK after request END");
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
-                            drop(writer);
+                            let _ = output_tx.send(err_frame.clone());
                             drop(incoming);
                             continue;
                         }
@@ -2042,9 +2122,7 @@ impl PluginRuntime {
                                 incoming.remove(&frame.id); // Remove to unblock host
                                 let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
                                     &format!("CHUNK after STREAM_END for stream_id={}", stream_id));
-                                let mut writer = frame_writer.lock().unwrap();
-                                let _ = writer.write(&err_frame);
-                                drop(writer);
+                                let _ = output_tx.send(err_frame.clone());
                                 drop(incoming);
                                 continue;
                             }
@@ -2053,9 +2131,7 @@ impl PluginRuntime {
                                 incoming.remove(&frame.id); // Remove to unblock host
                                 let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
                                     &format!("CHUNK for unknown stream_id={}", stream_id));
-                                let mut writer = frame_writer.lock().unwrap();
-                                let _ = writer.write(&err_frame);
-                                drop(writer);
+                                let _ = output_tx.send(err_frame.clone());
                                 drop(incoming);
                                 continue;
                             }
@@ -2070,25 +2146,41 @@ impl PluginRuntime {
                 FrameType::Heartbeat => {
                     // Respond to heartbeat immediately - never blocked by handlers
                     let response = Frame::heartbeat(frame.id);
-                    let mut writer = frame_writer.lock().unwrap();
-                    writer.write(&response)?;
+                    let _ = output_tx.send(response.clone());
                 }
                 FrameType::Hello => {
                     // Unexpected HELLO after handshake - protocol error
                     let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "Unexpected HELLO after handshake");
-                    let mut writer = frame_writer.lock().unwrap();
-                    writer.write(&err_frame)?;
+                    let _ = output_tx.send(err_frame.clone());
                 }
                 // FrameType::Res REMOVED - old protocol no longer supported
                 // Responses now use stream multiplexing: STREAM_START + CHUNK + STREAM_END + END
                 FrameType::Err => {
-                    // Error frame from host - could be response to peer request
-                    let mut pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = pending.remove(&frame.id) {
-                        // Send the ERR frame to the handler, then close channel
+                    eprintln!("[PluginRuntime] ERR: req_id={:?} code={:?} msg={:?}",
+                        frame.id, frame.error_code(), frame.error_message());
+
+                    // Error could be for incoming request or peer response
+                    // Check peer response first
+                    let mut pending_peer = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending_peer.remove(&frame.id) {
+                        eprintln!("[PluginRuntime] ERR is peer response error, forwarding to peer handler");
                         let _ = pending_req.sender.send(frame.clone());
                         // Dropping pending_req.sender closes the channel
+                        drop(pending_peer);
+                        continue;
                     }
+                    drop(pending_peer);
+
+                    // Check if it's for incoming request - send error response and cleanup
+                    let mut pending_inc = pending_incoming.lock().unwrap();
+                    if let Some(_) = pending_inc.remove(&frame.id) {
+                        eprintln!("[PluginRuntime] ERR for incoming request, already handled by host (no handler invocation)");
+                        drop(pending_inc);
+                        continue;
+                    }
+                    drop(pending_inc);
+
+                    eprintln!("[PluginRuntime] ERR for unknown request (req_id={:?}), ignoring", frame.id);
                 }
                 FrameType::Log => {
                     // Log frames from host - shouldn't normally receive these, ignore
@@ -2101,8 +2193,7 @@ impl PluginRuntime {
                         Some(id) => id.clone(),
                         None => {
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_START missing stream_id");
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
+                            let _ = output_tx.send(err_frame.clone());
                             continue;
                         }
                     };
@@ -2110,8 +2201,7 @@ impl PluginRuntime {
                         Some(urn) => urn.clone(),
                         None => {
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_START missing media_urn");
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
+                            let _ = output_tx.send(err_frame.clone());
                             continue;
                         }
                     };
@@ -2119,15 +2209,45 @@ impl PluginRuntime {
                     eprintln!("[PluginRuntime] STREAM_START: req_id={:?} stream_id={} media_urn={}",
                         req_id, stream_id, media_urn);
 
-                    // Check peer response FIRST (takes priority over incoming requests)
+                    // Route by media_urn: Check if this matches expected peer response
                     let peer_pending = pending_peer_requests.lock().unwrap();
                     if let Some(pending_req) = peer_pending.get(&req_id) {
-                        if !pending_req.ended {
-                            eprintln!("[PluginRuntime] STREAM_START is peer response, forwarding to handler");
+                        // Check if media_urn matches expected response media URNs
+                        let is_peer_response = pending_req.expected_response_media_urns.iter()
+                            .any(|expected_urn| {
+                                // Parse both URNs and use semantic comparison
+                                // MediaUrn::accepts handles wildcards and all other cases
+                                match (MediaUrn::from_string(expected_urn), MediaUrn::from_string(&media_urn)) {
+                                    (Ok(expected_media), Ok(actual_media)) => {
+                                        match expected_media.accepts(&actual_media) {
+                                            Ok(true) => true,
+                                            Ok(false) => false,
+                                            Err(e) => {
+                                                eprintln!("[PluginRuntime] MediaUrn::accepts failed: {}", e);
+                                                false
+                                            }
+                                        }
+                                    }
+                                    (Err(e), _) => {
+                                        eprintln!("[PluginRuntime] Failed to parse expected_urn '{}': {}", expected_urn, e);
+                                        false
+                                    }
+                                    (_, Err(e)) => {
+                                        eprintln!("[PluginRuntime] Failed to parse media_urn '{}': {}", media_urn, e);
+                                        false
+                                    }
+                                }
+                            });
+
+                        if is_peer_response && !pending_req.ended {
+                            eprintln!("[PluginRuntime] STREAM_START is peer response (media_urn matches expected), forwarding to peer handler");
                             let _ = pending_req.sender.send(frame.clone());
+                            drop(peer_pending);
+                            continue;
+                        } else if !is_peer_response {
+                            eprintln!("[PluginRuntime] STREAM_START media_urn does NOT match peer response (expected: {:?}), routing as incoming request",
+                                pending_req.expected_response_media_urns);
                         }
-                        drop(peer_pending);
-                        continue;
                     }
                     drop(peer_pending);
 
@@ -2138,9 +2258,7 @@ impl PluginRuntime {
                         if pending_req.ended {
                             incoming.remove(&frame.id); // Remove to unblock host
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_START after request END");
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
-                            drop(writer);
+                            let _ = output_tx.send(err_frame.clone());
                             drop(incoming);
                             continue;
                         }
@@ -2150,9 +2268,7 @@ impl PluginRuntime {
                             incoming.remove(&frame.id); // Remove to unblock host
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
                                 &format!("Duplicate stream_id: {}", stream_id));
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
-                            drop(writer);
+                            let _ = output_tx.send(err_frame.clone());
                             drop(incoming);
                             continue;
                         }
@@ -2177,27 +2293,46 @@ impl PluginRuntime {
                         Some(id) => id.clone(),
                         None => {
                             let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "STREAM_END missing stream_id");
-                            let mut writer = frame_writer.lock().unwrap();
-                            let _ = writer.write(&err_frame);
+                            let _ = output_tx.send(err_frame.clone());
                             continue;
                         }
                     };
 
-                    eprintln!("[PluginRuntime] STREAM_END: stream_id={}", stream_id);
+                    eprintln!("[PluginRuntime] STREAM_END: req_id={:?} stream_id={}", frame.id, stream_id);
 
-                    // Check peer response FIRST (same reason as STREAM_START)
-                    let peer_pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = peer_pending.get(&frame.id) {
-                        if !pending_req.ended {
-                            eprintln!("[PluginRuntime] STREAM_END is peer response, forwarding to handler");
-                            let _ = pending_req.sender.send(frame.clone());
+                    // Route by stream_id: Check if stream exists in incoming request's streams
+                    let mut is_incoming_stream = false;
+                    {
+                        let incoming = pending_incoming.lock().unwrap();
+                        if let Some(pending_req) = incoming.get(&frame.id) {
+                            if pending_req.streams.iter().any(|(sid, _)| sid == &stream_id) {
+                                is_incoming_stream = true;
+                            }
+                        }
+                    }
+
+                    if is_incoming_stream {
+                        eprintln!("[PluginRuntime] STREAM_END belongs to incoming request stream");
+                        // Fall through to incoming handler below
+                    } else {
+                        // Not in incoming streams → check if it's a peer response
+                        let peer_pending = pending_peer_requests.lock().unwrap();
+                        if let Some(pending_req) = peer_pending.get(&frame.id) {
+                            if !pending_req.ended {
+                                eprintln!("[PluginRuntime] STREAM_END is peer response, forwarding to peer handler");
+                                let _ = pending_req.sender.send(frame.clone());
+                            }
+                            drop(peer_pending);
+                            continue;
                         }
                         drop(peer_pending);
+
+                        eprintln!("[PluginRuntime] STREAM_END for unknown stream (req_id={:?}, stream_id={}), ignoring",
+                            frame.id, stream_id);
                         continue;
                     }
-                    drop(peer_pending);
 
-                    // Not a peer response - check incoming requests
+                    // Process as incoming request stream end
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.get_mut(&frame.id) {
                         match pending_req.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
@@ -2212,9 +2347,7 @@ impl PluginRuntime {
                                 incoming.remove(&frame.id); // Remove to unblock host
                                 let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
                                     &format!("STREAM_END for unknown stream_id={}", stream_id));
-                                let mut writer = frame_writer.lock().unwrap();
-                                let _ = writer.write(&err_frame);
-                                drop(writer);
+                                let _ = output_tx.send(err_frame.clone());
                                 drop(incoming);
                                 continue;
                             }
@@ -2236,19 +2369,36 @@ impl PluginRuntime {
                 FrameType::End => {
                     // NEW PROTOCOL: END signals all streams for request are complete
 
-                    // Check peer response FIRST (critical - same ID exists in both contexts)
-                    let mut peer_pending = pending_peer_requests.lock().unwrap();
-                    if let Some(mut pending_req) = peer_pending.remove(&frame.id) {
-                        eprintln!("[PluginRuntime] END is peer response, forwarding to handler and closing channel");
-                        pending_req.ended = true;
-                        let _ = pending_req.sender.send(frame.clone());
-                        // Sender dropped here, closes channel to signal completion
+                    eprintln!("[PluginRuntime] END: req_id={:?} XID={:?}", frame.id, frame.routing_id);
+
+                    // Route by checking which context exists
+                    // Priority: Check if incoming request has streams (indicates incoming request END)
+                    let has_incoming_streams = {
+                        let incoming = pending_incoming.lock().unwrap();
+                        incoming.get(&frame.id).map_or(false, |req| !req.streams.is_empty())
+                    };
+
+                    if has_incoming_streams {
+                        eprintln!("[PluginRuntime] END for incoming request (has {} streams)", has_incoming_streams);
+                        // Fall through to incoming request handler below
+                    } else {
+                        // Check if it's a peer response END
+                        let mut peer_pending = pending_peer_requests.lock().unwrap();
+                        if let Some(mut pending_req) = peer_pending.remove(&frame.id) {
+                            eprintln!("[PluginRuntime] END is peer response, forwarding to peer handler and closing channel");
+                            pending_req.ended = true;
+                            let _ = pending_req.sender.send(frame.clone());
+                            // Sender dropped here, closes channel to signal completion
+                            drop(peer_pending);
+                            continue;
+                        }
                         drop(peer_pending);
+
+                        eprintln!("[PluginRuntime] END for unknown request (req_id={:?}), ignoring", frame.id);
                         continue;
                     }
-                    drop(peer_pending);
 
-                    // Not a peer response - handle as incoming request completion
+                    // Process as incoming request END - invoke handler
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.remove(&frame.id) {
                         drop(incoming);
@@ -2256,8 +2406,9 @@ impl PluginRuntime {
                         let handler = pending_req.handler.clone();
                         let streams = pending_req.streams;
                         let cap_urn = pending_req.cap_urn.clone();
+                        let req_frame = pending_req.req_frame.clone();  // Original REQ frame with routing_id
                         let request_id = frame.id.clone();
-                        let writer_clone = Arc::clone(&frame_writer);
+                        let output_tx_clone = output_tx.clone();
                         let pending_clone = Arc::clone(&pending_peer_requests);
                         let manifest_clone = self.manifest.clone(); // Pass manifest for file-path conversion
                         let max_chunk = negotiated_limits.max_chunk;
@@ -2265,34 +2416,13 @@ impl PluginRuntime {
                         eprintln!("[PluginRuntime] END: req_id={:?} streams={}", request_id, streams.len());
 
                         let handle = thread::spawn(move || {
-                            // Generate stream ID for plugin's response output
-                            let response_stream_id = uuid::Uuid::new_v4().to_string();
-
-                            // FAIL HARD: Extract output media URN from cap_urn - must be valid
-                            let cap = match crate::cap_urn::CapUrn::from_string(&cap_urn) {
-                                Ok(c) => c,
-                                Err(e) => {
-                                    let err_frame = Frame::err(request_id.clone(), "INVALID_CAP_URN", &format!("Failed to parse cap_urn: {}", e));
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
-                                    return;
-                                }
-                            };
-
-                            let media_urn = cap.out_spec().to_string();
-
-                            let emitter = ThreadSafeEmitter {
-                                writer: Arc::clone(&writer_clone),
-                                request_id: request_id.clone(),
-                                stream_id: response_stream_id,
-                                media_urn,
-                                stream_started: AtomicBool::new(false),
-                                seq: Mutex::new(0),
-                                max_chunk,
+                            // Create frame sender - ALL frames go through single output channel
+                            let frame_sender = ChannelFrameSender {
+                                tx: output_tx_clone.clone(),
                             };
 
                             let peer_invoker = PeerInvokerImpl {
-                                writer: Arc::clone(&writer_clone),
+                                output_tx: output_tx_clone.clone(),
                                 pending_requests: Arc::clone(&pending_clone),
                                 max_chunk,
                             };
@@ -2303,8 +2433,7 @@ impl PluginRuntime {
                                 Ok(p) => p,
                                 Err(e) => {
                                     let err_frame = Frame::err(request_id.clone(), "FILE_PATH_PATTERN_ERROR", &format!("Failed to create file-path pattern: {}", e));
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
+                                    let _ = output_tx_clone.send(err_frame.clone());
                                     return;
                                 }
                             };
@@ -2313,8 +2442,7 @@ impl PluginRuntime {
                                 Ok(p) => p,
                                 Err(e) => {
                                     let err_frame = Frame::err(request_id.clone(), "FILE_PATH_PATTERN_ERROR", &format!("Failed to create file-path;form=scalar pattern: {}", e));
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
+                                    let _ = output_tx_clone.send(err_frame.clone());
                                     return;
                                 }
                             };
@@ -2323,8 +2451,7 @@ impl PluginRuntime {
                                 Ok(p) => p,
                                 Err(e) => {
                                     let err_frame = Frame::err(request_id.clone(), "FILE_PATH_PATTERN_ERROR", &format!("Failed to create file-path;form=list pattern: {}", e));
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
+                                    let _ = output_tx_clone.send(err_frame.clone());
                                     return;
                                 }
                             };
@@ -2337,8 +2464,7 @@ impl PluginRuntime {
                                     Ok(u) => u,
                                     Err(e) => {
                                         let err_frame = Frame::err(request_id.clone(), "INVALID_STREAM_URN", &format!("Invalid stream media URN '{}': {}", stream.media_urn, e));
-                                        let mut writer = writer_clone.lock().unwrap();
-                                        let _ = writer.write(&err_frame);
+                                        let _ = output_tx_clone.send(err_frame.clone());
                                         return;
                                     }
                                 };
@@ -2348,8 +2474,7 @@ impl PluginRuntime {
                                     Ok(result) => result,
                                     Err(e) => {
                                         let err_frame = Frame::err(request_id.clone(), "URN_MATCH_ERROR", &format!("Failed to check file-path pattern: {}", e));
-                                        let mut writer = writer_clone.lock().unwrap();
-                                        let _ = writer.write(&err_frame);
+                                        let _ = output_tx_clone.send(err_frame.clone());
                                         return;
                                     }
                                 };
@@ -2361,15 +2486,13 @@ impl PluginRuntime {
 
                                     if !is_scalar && !is_list {
                                         let err_frame = Frame::err(request_id.clone(), "FILE_PATH_FORM_ERROR", &format!("File-path '{}' must be form=scalar or form=list", stream.media_urn));
-                                        let mut writer = writer_clone.lock().unwrap();
-                                        let _ = writer.write(&err_frame);
+                                        let _ = output_tx_clone.send(err_frame.clone());
                                         return;
                                     }
 
                                     if is_scalar && is_list {
                                         let err_frame = Frame::err(request_id.clone(), "FILE_PATH_FORM_ERROR", &format!("File-path '{}' cannot be both scalar and list", stream.media_urn));
-                                        let mut writer = writer_clone.lock().unwrap();
-                                        let _ = writer.write(&err_frame);
+                                        let _ = output_tx_clone.send(err_frame.clone());
                                         return;
                                     }
 
@@ -2403,8 +2526,7 @@ impl PluginRuntime {
                                         Some(urn) => urn,
                                         None => {
                                             let err_frame = Frame::err(request_id.clone(), "NO_STDIN_SOURCE", &format!("File-path argument '{}' has no stdin source defined", stream.media_urn));
-                                            let mut writer = writer_clone.lock().unwrap();
-                                            let _ = writer.write(&err_frame);
+                                            let _ = output_tx_clone.send(err_frame.clone());
                                             return;
                                         }
                                     };
@@ -2419,8 +2541,7 @@ impl PluginRuntime {
                                             Ok(bytes) => bytes,
                                             Err(e) => {
                                                 let err_frame = Frame::err(request_id.clone(), "FILE_READ_ERROR", &format!("Failed to read file '{}': {}", path_str, e));
-                                                let mut writer = writer_clone.lock().unwrap();
-                                                let _ = writer.write(&err_frame);
+                                                let _ = output_tx_clone.send(err_frame.clone());
                                                 return;
                                             }
                                         };
@@ -2430,8 +2551,7 @@ impl PluginRuntime {
                                     } else {
                                         // form=list - not yet implemented
                                         let err_frame = Frame::err(request_id.clone(), "NOT_IMPLEMENTED", "File-path form=list conversion not yet implemented in CBOR mode");
-                                        let mut writer = writer_clone.lock().unwrap();
-                                        let _ = writer.write(&err_frame);
+                                        let _ = output_tx_clone.send(err_frame.clone());
                                         return;
                                     }
                                 } else {
@@ -2443,6 +2563,11 @@ impl PluginRuntime {
                             // Send all streams as CBOR Frame messages (after conversion)
                             // Each chunk is already CBOR-encoded and must be sent individually
                             let (tx, rx) = crossbeam_channel::unbounded();
+
+                            // FIRST: Send original REQ frame with routing_id (XID) so handler can extract it for responses
+                            let request_routing_id = req_frame.routing_id.clone();  // Save for error handling
+                            let _ = tx.send(req_frame);
+
                             for (stream_id, media_urn, chunks) in converted_streams {
                                 // Send STREAM_START
                                 let start_frame = Frame::stream_start(request_id.clone(), stream_id.clone(), media_urn);
@@ -2467,38 +2592,20 @@ impl PluginRuntime {
                             let _ = tx.send(end_frame);
                             drop(tx);
 
-                            let result = handler(rx, &emitter, &peer_invoker);
+                            // Handler constructs and sends ALL frames directly (including END)
+                            // request_routing_id captured earlier from incoming request's routing_id
+                            let result = handler(rx, &frame_sender, &peer_invoker);
 
                             match result {
                                 Ok(()) => {
-                                    eprintln!("[PluginRuntime] Handler succeeded, sending response END");
-                                    let mut writer = writer_clone.lock().unwrap();
-
-                                    // STREAM MULTIPLEXING PROTOCOL: Send STREAM_END then END
-                                    // Only send STREAM_END if STREAM_START was sent (stream_started == true)
-                                    if emitter.stream_started.load(Ordering::SeqCst) {
-                                        eprintln!("[PluginRuntime] Sending STREAM_END for response stream");
-                                        let stream_end = Frame::stream_end(request_id.clone(), emitter.stream_id.clone());
-                                        match writer.write(&stream_end) {
-                                            Ok(()) => eprintln!("[PluginRuntime] STREAM_END sent successfully"),
-                                            Err(e) => eprintln!("[PluginRuntime] ERROR writing STREAM_END: {}", e),
-                                        }
-                                    } else {
-                                        eprintln!("[PluginRuntime] No STREAM_START was sent, skipping STREAM_END");
-                                    }
-
-                                    eprintln!("[PluginRuntime] Sending response END frame");
-                                    let end_frame = Frame::end(request_id.clone(), None);
-                                    match writer.write(&end_frame) {
-                                        Ok(()) => eprintln!("[PluginRuntime] Response END sent successfully"),
-                                        Err(e) => eprintln!("[PluginRuntime] ERROR writing END: {}", e),
-                                    }
-                                    eprintln!("[PluginRuntime] Response frames sent");
+                                    eprintln!("[PluginRuntime] Handler completed successfully");
                                 }
                                 Err(e) => {
-                                    let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
-                                    let mut writer = writer_clone.lock().unwrap();
-                                    let _ = writer.write(&err_frame);
+                                    eprintln!("[PluginRuntime] Handler error: {}", e);
+                                    // Send ERR frame with routing_id if this was a response to incoming request
+                                    let mut err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
+                                    err_frame.routing_id = request_routing_id;
+                                    let _ = frame_sender.send(&err_frame);
                                 }
                             }
                         });
@@ -2530,10 +2637,24 @@ impl PluginRuntime {
             }
         }
 
-        // Wait for all active handlers to complete before exiting
+        // Graceful shutdown: ensure all output frames are written before exiting
+        eprintln!("[PluginRuntime] Main loop exited (stdin closed), shutting down gracefully");
+
+        // 1. Drop output_tx to signal writer thread that no more frames will come
+        drop(output_tx);
+        eprintln!("[PluginRuntime] Dropped output_tx, waiting for writer thread to finish");
+
+        // 2. Wait for writer thread to drain the channel and finish writing
+        if let Err(e) = writer_handle.join() {
+            eprintln!("[PluginRuntime] Writer thread panicked: {:?}", e);
+        }
+        eprintln!("[PluginRuntime] Writer thread finished");
+
+        // 3. Wait for all active handlers to complete
         for handle in active_handlers {
             let _ = handle.join();
         }
+        eprintln!("[PluginRuntime] All handlers completed");
 
         Ok(())
     }

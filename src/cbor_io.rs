@@ -132,6 +132,14 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CborError> {
         map.push((Value::Integer(keys::MEDIA_URN.into()), Value::Text(media_urn.clone())));
     }
 
+    if let Some(ref routing_id) = frame.routing_id {
+        let routing_id_value = match routing_id {
+            MessageId::Uuid(bytes) => Value::Bytes(bytes.to_vec()),
+            MessageId::Uint(n) => Value::Integer((*n as i64).into()),
+        };
+        map.push((Value::Integer(keys::ROUTING_ID.into()), routing_id_value));
+    }
+
     let value = Value::Map(map);
     let mut buf = Vec::new();
     ciborium::into_writer(&value, &mut buf)
@@ -279,10 +287,28 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
         _ => None,
     });
 
+    let routing_id = lookup.get(&keys::ROUTING_ID).map(|v| match v {
+        Value::Bytes(bytes) => {
+            if bytes.len() == 16 {
+                let mut arr = [0u8; 16];
+                arr.copy_from_slice(bytes);
+                MessageId::Uuid(arr)
+            } else {
+                MessageId::Uint(0)
+            }
+        }
+        Value::Integer(i) => {
+            let n: i128 = (*i).into();
+            MessageId::Uint(n as u64)
+        }
+        _ => MessageId::Uint(0),
+    });
+
     Ok(Frame {
         version,
         frame_type,
         id,
+        routing_id,
         stream_id,
         media_urn,
         seq,
@@ -630,9 +656,12 @@ pub fn handshake_accept<R: Read, W: Write>(
     manifest: &[u8],
 ) -> Result<Limits, CborError> {
     // Read their HELLO first (host initiates)
+    eprintln!("[handshake_accept] Waiting for host HELLO");
     let their_frame = reader.read()?.ok_or_else(|| {
+        eprintln!("[handshake_accept] ERROR: Connection closed before receiving HELLO");
         CborError::Handshake("connection closed before receiving HELLO".to_string())
     })?;
+    eprintln!("[handshake_accept] Received frame type: {:?}", their_frame.frame_type);
 
     if their_frame.frame_type != FrameType::Hello {
         return Err(CborError::Handshake(format!(
@@ -651,8 +680,10 @@ pub fn handshake_accept<R: Read, W: Write>(
     };
 
     // Send our HELLO with manifest
+    eprintln!("[handshake_accept] Sending HELLO with manifest ({} bytes)", manifest.len());
     let our_hello = Frame::hello_with_manifest(limits.max_frame, limits.max_chunk, manifest);
     writer.write(&our_hello)?;
+    eprintln!("[handshake_accept] HELLO sent successfully");
 
     // Update both reader and writer with negotiated limits
     reader.set_limits(limits);
@@ -735,13 +766,17 @@ pub async fn handshake_async<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     writer: &mut AsyncFrameWriter<W>,
 ) -> Result<HandshakeResult, CborError> {
     // Send our HELLO
+    eprintln!("[handshake_async] Sending HELLO to plugin");
     let our_hello = Frame::hello(DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK);
     writer.write(&our_hello).await?;
+    eprintln!("[handshake_async] HELLO sent, waiting for response");
 
     // Read their HELLO (should include manifest)
     let their_frame = reader.read().await?.ok_or_else(|| {
+        eprintln!("[handshake_async] ERROR: Connection closed before receiving HELLO");
         CborError::Handshake("connection closed before receiving HELLO".to_string())
     })?;
+    eprintln!("[handshake_async] Received frame type: {:?}", their_frame.frame_type);
 
     if their_frame.frame_type != FrameType::Hello {
         return Err(CborError::Handshake(format!(

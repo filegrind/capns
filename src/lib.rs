@@ -11,7 +11,7 @@
 //! - **CBOR Frame Types** (`cbor_frame`): Frame definitions with integer keys
 //! - **CBOR I/O** (`cbor_io`): Streaming CBOR read/write with handshake
 //! - **Plugin Runtime** (`plugin_runtime`): For plugin binaries - handles all I/O
-//! - **PluginHost** (`async_plugin_host`): For host callers - async communication with plugins
+//! - **PluginHost** (`plugin_host_runtime`): For host callers - async communication with plugins
 //!
 //! ## Architecture
 //!
@@ -19,8 +19,8 @@
 //! // Engine side: RelayMaster connects to the runtime via socket
 //! let master = AsyncRelayMaster::connect(socket_read, socket_write).await?;
 //!
-//! // Runtime side: AsyncPluginHost manages multiple plugins
-//! let mut runtime = AsyncPluginHost::new();
+//! // Runtime side: PluginHostRuntime manages multiple plugins
+//! let mut runtime = PluginHostRuntime::new();
 //! runtime.register_plugin(Path::new("./my-plugin"), &["cap:op=test".into()]);
 //! runtime.run(relay_read, relay_write, || vec![]).await?;
 //! ```
@@ -56,7 +56,7 @@ pub mod cbor_frame;
 pub mod cbor_io;
 pub mod plugin_runtime;
 pub mod plugin_repo;
-pub mod async_plugin_host;
+pub mod plugin_host_runtime;
 pub mod cap_router;
 pub mod plugin_relay;
 pub mod relay_switch;
@@ -89,7 +89,7 @@ pub use cbor_io::{
     AsyncFrameReader, AsyncFrameWriter, handshake_async,
     read_frame_async, write_frame_async,
 };
-pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter, PeerInvoker, NoPeerInvoker, CliStreamEmitter};
+pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter};
 pub use plugin_repo::{
     PluginRepo, PluginRepoError,
     PluginCapSummary, PluginInfo, PluginSuggestion, PluginRegistryResponse,
@@ -97,8 +97,8 @@ pub use plugin_repo::{
 };
 
 // PluginHost is the primary API for host-side plugin communication (async/tokio-native)
-pub use async_plugin_host::{
-    AsyncPluginHost as PluginHost,
+pub use plugin_host_runtime::{
+    PluginHostRuntime as PluginHost,
     AsyncHostError as HostError,
     PluginResponse,
     ResponseChunk,
@@ -106,8 +106,8 @@ pub use async_plugin_host::{
 };
 
 // Also export with explicit Async prefix for clarity when needed
-pub use async_plugin_host::AsyncPluginHost;
-pub use async_plugin_host::AsyncHostError;
+pub use plugin_host_runtime::PluginHostRuntime;
+pub use plugin_host_runtime::AsyncHostError;
 
 // Relay exports
 pub use plugin_relay::{RelaySlave, RelayMaster, AsyncRelayMaster};

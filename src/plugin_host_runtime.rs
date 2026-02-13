@@ -1,12 +1,12 @@
 //! Async Plugin Host Runtime — Multi-plugin management with frame routing
 //!
-//! The AsyncPluginHost manages multiple plugin binaries, routing CBOR protocol
+//! The PluginHostRuntime manages multiple plugin binaries, routing CBOR protocol
 //! frames between a relay connection (to the engine) and individual plugin processes.
 //!
 //! ## Architecture
 //!
 //! ```text
-//! Relay (engine) ←→ AsyncPluginHost ←→ Plugin A (stdin/stdout)
+//! Relay (engine) ←→ PluginHostRuntime ←→ Plugin A (stdin/stdout)
 //!                                   ←→ Plugin B (stdin/stdout)
 //!                                   ←→ Plugin C (stdin/stdout)
 //! ```
@@ -196,8 +196,8 @@ struct ManagedPlugin {
     manifest: Vec<u8>,
     /// Negotiated limits for this plugin.
     limits: Limits,
-    /// Cap URNs this plugin handles (from manifest after HELLO).
-    caps: Vec<String>,
+    /// Caps this plugin handles (from manifest after HELLO).
+    caps: Vec<crate::Cap>,
     /// Known caps from registration (before HELLO, used for routing).
     known_caps: Vec<String>,
     /// Whether the plugin is currently running and healthy.
@@ -230,15 +230,18 @@ impl ManagedPlugin {
         }
     }
 
-    fn new_attached(manifest: Vec<u8>, limits: Limits, caps: Vec<String>) -> Self {
+    fn new_attached(manifest: Vec<u8>, limits: Limits, caps: Vec<crate::Cap>) -> Self {
+        // Extract URN strings for known_caps (used for pre-HELLO routing)
+        let known_caps: Vec<String> = caps.iter().map(|c| c.urn.to_string()).collect();
+
         Self {
             path: PathBuf::new(),
             process: None,
             writer_tx: None,
             manifest,
             limits,
-            caps: caps.clone(),
-            known_caps: caps,
+            caps,
+            known_caps,
             running: true,
             reader_handle: None,
             writer_handle: None,
@@ -257,18 +260,17 @@ impl ManagedPlugin {
 /// Routes CBOR protocol frames between a relay connection (engine) and
 /// individual plugin processes. Handles HELLO handshake, heartbeat health
 /// monitoring, spawn-on-demand, crash recovery, and capability advertisement.
-pub struct AsyncPluginHost {
+pub struct PluginHostRuntime {
     /// Managed plugin binaries.
     plugins: Vec<ManagedPlugin>,
     /// Routing: cap_urn → plugin index (for finding which plugin handles a cap).
     cap_table: Vec<(String, usize)>,
-    /// Routing: req_id → plugin index (for in-flight request frame correlation).
-    request_routing: HashMap<MessageId, usize>,
-    /// Request IDs initiated by plugins (peer invokes). These are tracked separately
-    /// because when a plugin sends END for a peer invoke, that's the end of the
-    /// *outgoing request body*, NOT the final response. The routing entry must survive
-    /// until the relay sends back the response (END/ERR).
-    peer_requests: HashSet<MessageId>,
+    /// List 1: OUTGOING_RIDS - tracks peer requests sent by plugins (RID → plugin_idx).
+    /// When responses arrive from relay, route to this plugin.
+    outgoing_rids: HashMap<MessageId, usize>,
+    /// List 2: INCOMING_RXIDS - tracks incoming requests from relay ((XID, RID) → plugin_idx).
+    /// Continuations for these requests are routed by this table.
+    incoming_rxids: HashMap<(MessageId, MessageId), usize>,
     /// Aggregate capabilities (serialized JSON manifest of all plugin caps).
     capabilities: Vec<u8>,
     /// Channel sender for plugin events (shared with reader tasks).
@@ -277,7 +279,7 @@ pub struct AsyncPluginHost {
     event_rx: Option<mpsc::UnboundedReceiver<PluginEvent>>,
 }
 
-impl AsyncPluginHost {
+impl PluginHostRuntime {
     /// Create a new plugin host runtime.
     ///
     /// After creation, register plugins with `register_plugin()` or
@@ -287,8 +289,8 @@ impl AsyncPluginHost {
         Self {
             plugins: Vec::new(),
             cap_table: Vec::new(),
-            request_routing: HashMap::new(),
-            peer_requests: HashSet::new(),
+            outgoing_rids: HashMap::new(),
+            incoming_rxids: HashMap::new(),
             capabilities: Vec::new(),
             event_tx,
             event_rx: Some(event_rx),
@@ -384,22 +386,30 @@ impl AsyncPluginHost {
         // by tokio::select! choosing another branch), the bytes already read are
         // lost and the byte stream desynchronizes.
         let (relay_tx, mut relay_rx) = mpsc::unbounded_channel::<Result<Frame, AsyncHostError>>();
+        let mut relay_connected = true; // Track relay connection state
         let relay_reader_task = tokio::spawn(async move {
             let mut reader = AsyncFrameReader::new(relay_read);
+            eprintln!("[PluginHostRuntime/relay_reader] Starting relay reader loop");
             loop {
                 match reader.read().await {
                     Ok(Some(frame)) => {
                         if relay_tx.send(Ok(frame)).is_err() {
+                            eprintln!("[PluginHostRuntime/relay_reader] Main loop dropped, exiting");
                             break; // Main loop dropped
                         }
                     }
-                    Ok(None) => break, // Relay closed cleanly
+                    Ok(None) => {
+                        eprintln!("[PluginHostRuntime/relay_reader] EOF from relay, relay connection closed!");
+                        break; // Relay closed cleanly
+                    }
                     Err(e) => {
+                        eprintln!("[PluginHostRuntime/relay_reader] Read error from relay: {}", e);
                         let _ = relay_tx.send(Err(e.into()));
                         break;
                     }
                 }
             }
+            eprintln!("[PluginHostRuntime/relay_reader] Relay reader task exiting");
         });
 
         let mut event_rx = self.event_rx.take().expect("run() must only be called once");
@@ -409,18 +419,14 @@ impl AsyncPluginHost {
 
         // Send discovery RelayNotify if plugins were pre-attached
         // At this point all async tasks are spawned and running, so the frame will be delivered
+        // self.capabilities is already a JSON array of capability URN strings: ["cap:...", "cap:..."]
+        eprintln!("[PluginHostRuntime.run] Initial capabilities: {} bytes: {:?}",
+                  self.capabilities.len(),
+                  std::str::from_utf8(&self.capabilities).unwrap_or("<invalid UTF-8>"));
         if !self.capabilities.is_empty() {
-            if let Ok(caps_json) = serde_json::from_slice::<serde_json::Value>(&self.capabilities) {
-                if let Some(caps_array) = caps_json.get("caps").and_then(|v| v.as_array()) {
-                    let notify_manifest = serde_json::json!({
-                        "capabilities": caps_array,
-                    });
-                    if let Ok(manifest_bytes) = serde_json::to_vec(&notify_manifest) {
-                        let notify_frame = Frame::relay_notify(&manifest_bytes, &Limits::default());
-                        let _ = outbound_tx.send(notify_frame);
-                    }
-                }
-            }
+            let notify_frame = Frame::relay_notify(&self.capabilities, &Limits::default());
+            let _ = outbound_tx.send(notify_frame);
+            eprintln!("[PluginHostRuntime.run] Sent initial RelayNotify with {} bytes", self.capabilities.len());
         }
 
         let result = loop {
@@ -431,28 +437,43 @@ impl AsyncPluginHost {
                 Some(event) = event_rx.recv() => {
                     match event {
                         PluginEvent::Frame { plugin_idx, frame } => {
+                            eprintln!("[PluginHostRuntime.run] Processing plugin {} frame: {:?} (id={:?})", plugin_idx, frame.frame_type, frame.id);
                             if let Err(e) = self.handle_plugin_frame(plugin_idx, frame, &outbound_tx) {
+                                eprintln!("[PluginHostRuntime.run] handle_plugin_frame returned error: {}", e);
                                 break Err(e);
                             }
+                            eprintln!("[PluginHostRuntime.run] handle_plugin_frame completed successfully, continuing loop");
                         }
                         PluginEvent::Death { plugin_idx } => {
+                            eprintln!("[PluginHostRuntime.run] Processing plugin {} death event", plugin_idx);
                             if let Err(e) = self.handle_plugin_death(plugin_idx, &outbound_tx).await {
+                                eprintln!("[PluginHostRuntime.run] handle_plugin_death returned error: {}", e);
                                 break Err(e);
                             }
+                            eprintln!("[PluginHostRuntime.run] handle_plugin_death completed successfully, continuing loop");
                         }
                     }
                 }
 
                 // Frames from relay reader task (cancel-safe: channel recv is cancel-safe)
-                relay_result = relay_rx.recv() => {
+                relay_result = relay_rx.recv(), if relay_connected => {
                     match relay_result {
                         Some(Ok(frame)) => {
+                            eprintln!("[PluginHostRuntime.run] Processing relay frame: {:?} (id={:?})", frame.frame_type, frame.id);
                             if let Err(e) = self.handle_relay_frame(frame, &outbound_tx, &resource_fn).await {
+                                eprintln!("[PluginHostRuntime.run] handle_relay_frame returned error: {}", e);
                                 break Err(e);
                             }
+                            eprintln!("[PluginHostRuntime.run] handle_relay_frame completed successfully, continuing loop");
                         }
-                        Some(Err(e)) => break Err(e),
-                        None => break Ok(()), // Relay reader task exited (clean EOF)
+                        Some(Err(e)) => {
+                            eprintln!("[PluginHostRuntime.run] Relay error: {} - disconnecting relay but keeping plugins alive", e);
+                            relay_connected = false; // Disable relay branch, continue processing plugins
+                        }
+                        None => {
+                            eprintln!("[PluginHostRuntime.run] Relay disconnected (EOF) - keeping plugins alive!");
+                            relay_connected = false; // Disable relay branch, continue processing plugins
+                        }
                     }
                 }
 
@@ -484,6 +505,17 @@ impl AsyncPluginHost {
     ) -> Result<(), AsyncHostError> {
         match frame.frame_type {
             FrameType::Req => {
+                // PATH C: REQ coming FROM relay
+                // MUST have XID (else FATAL - only switch can assign XIDs)
+                let xid = match frame.routing_id.as_ref() {
+                    Some(xid) => xid.clone(),
+                    None => {
+                        return Err(AsyncHostError::Protocol(
+                            "REQ from relay missing XID - all frames from relay must have XID".to_string(),
+                        ));
+                    }
+                };
+
                 let cap_urn = match frame.cap.as_ref() {
                     Some(c) => c.clone(),
                     None => {
@@ -493,9 +525,14 @@ impl AsyncPluginHost {
                     }
                 };
 
+                eprintln!("[PluginHostRuntime.handle_relay_frame] REQ from relay: cap={}, RID={:?}, XID={:?}",
+                    cap_urn, frame.id, xid);
+
+                // Route by cap URN to find handler plugin
                 let plugin_idx = match self.find_plugin_for_cap(&cap_urn) {
                     Some(idx) => idx,
                     None => {
+                        eprintln!("[PluginHostRuntime.handle_relay_frame] No handler for cap: {}", cap_urn);
                         // No plugin handles this cap — send ERR back and continue.
                         let err = Frame::err(
                             frame.id.clone(),
@@ -509,63 +546,87 @@ impl AsyncPluginHost {
                     }
                 };
 
+                eprintln!("[PluginHostRuntime.handle_relay_frame] Routing REQ to plugin {} (cap matched)", plugin_idx);
+
                 // Spawn on demand if not running
                 if !self.plugins[plugin_idx].running {
+                    eprintln!("[PluginHostRuntime.handle_relay_frame] Plugin {} not running, spawning on demand", plugin_idx);
                     self.spawn_plugin(plugin_idx, resource_fn).await?;
                     self.rebuild_capabilities(Some(outbound_tx)); // Send RelayNotify to relay
                 }
 
-                // Register request routing
-                self.request_routing.insert(frame.id.clone(), plugin_idx);
+                // Record in List 2: INCOMING_RXIDS (XID, RID) → plugin_idx
+                self.incoming_rxids.insert((xid.clone(), frame.id.clone()), plugin_idx);
+                eprintln!("[PluginHostRuntime.handle_relay_frame] Recorded incoming_rxids[({:?}, {:?})] = {}",
+                    xid, frame.id, plugin_idx);
 
-                // Check if this is a peer request (plugin → relay → back to plugin)
-                // If the ID is already in peer_requests, it means a plugin sent it originally,
-                // so responses need to go back through the relay (not to engine).
-                // If the ID is NOT in peer_requests, it's an engine request, and responses
-                // should go to the engine.
-                // Note: peer_requests already contains this ID if a plugin called peer.invoke()
-                // with this ID, so we don't need to insert it again here.
-
-                // Forward to plugin
+                // Forward to plugin WITH XID
                 self.send_to_plugin(plugin_idx, frame)
             }
 
             FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd
             | FrameType::End | FrameType::Err => {
-                // If there's no routing entry, the request was already cleaned up
-                // (e.g., plugin died and death handler already sent ERR + removed entry).
-                // Just drop the frame silently — the engine already got an ERR.
-                let plugin_idx = match self.request_routing.get(&frame.id).copied() {
-                    Some(idx) => idx,
-                    None => return Ok(()), // Already cleaned up
+                // PATH C: Continuation frame from relay
+                // MUST have XID (else FATAL)
+                let xid = match frame.routing_id.as_ref() {
+                    Some(xid) => xid.clone(),
+                    None => {
+                        return Err(AsyncHostError::Protocol(
+                            format!("{:?} from relay missing XID - all frames from relay must have XID",
+                                frame.frame_type),
+                        ));
+                    }
+                };
+
+                eprintln!("[PluginHostRuntime.handle_relay_frame] Continuation {:?} from relay: RID={:?}, XID={:?}",
+                    frame.frame_type, frame.id, xid);
+
+                // Route using two-list strategy:
+                // 1. Check List 1: OUTGOING_RIDS first (peer responses)
+                // 2. Else check List 2: INCOMING_RXIDS (incoming request continuations)
+                let plugin_idx = if let Some(&idx) = self.outgoing_rids.get(&frame.id) {
+                    eprintln!("[PluginHostRuntime.handle_relay_frame] Matched outgoing_rids[{:?}] → plugin {} (peer response)",
+                        frame.id, idx);
+                    idx
+                } else if let Some(&idx) = self.incoming_rxids.get(&(xid.clone(), frame.id.clone())) {
+                    eprintln!("[PluginHostRuntime.handle_relay_frame] Matched incoming_rxids[({:?}, {:?})] → plugin {} (incoming continuation)",
+                        xid, frame.id, idx);
+                    idx
+                } else {
+                    eprintln!("[PluginHostRuntime.handle_relay_frame] No routing found for RID={:?}, XID={:?} (already cleaned up)",
+                        frame.id, xid);
+                    return Ok(()); // Already cleaned up
                 };
 
                 let is_terminal = frame.frame_type == FrameType::End
                     || frame.frame_type == FrameType::Err;
 
-                eprintln!("[AsyncPluginHost.handle_relay_frame] Routing {:?} (id={:?}) to plugin {}, is_peer={}",
-                    frame.frame_type, frame.id, plugin_idx, self.peer_requests.contains(&frame.id));
-
                 // If the plugin is dead, send ERR to engine and clean up routing.
                 if self.send_to_plugin(plugin_idx, frame.clone()).is_err() {
+                    eprintln!("[PluginHostRuntime.handle_relay_frame] Plugin {} died, sending ERR", plugin_idx);
                     let err = Frame::err(
                         frame.id.clone(),
                         "PLUGIN_DIED",
                         "Plugin exited while processing request",
                     );
                     let _ = outbound_tx.send(err);
-                    self.request_routing.remove(&frame.id);
-                    self.peer_requests.remove(&frame.id);
+
+                    // Cleanup from both lists (only one will match)
+                    self.outgoing_rids.remove(&frame.id);
+                    self.incoming_rxids.remove(&(xid.clone(), frame.id.clone()));
                     return Ok(());
                 }
 
-                // Only remove routing on terminal frames if this is a PEER response
-                // (engine responding to a plugin's peer invoke). For engine-initiated
-                // requests, the relay END is just the end of the request body — the
-                // plugin still needs to respond, so routing must survive.
-                if is_terminal && self.peer_requests.contains(&frame.id) {
-                    self.request_routing.remove(&frame.id);
-                    self.peer_requests.remove(&frame.id);
+                // Cleanup on terminal frames
+                if is_terminal {
+                    // If in outgoing_rids → peer response END, remove
+                    if self.outgoing_rids.contains_key(&frame.id) {
+                        eprintln!("[PluginHostRuntime.handle_relay_frame] Terminal peer response, removing outgoing_rids[{:?}]",
+                            frame.id);
+                        self.outgoing_rids.remove(&frame.id);
+                    }
+                    // NOTE: DO NOT remove from incoming_rxids here! The handler still needs to send its response.
+                    // incoming_rxids is cleaned up when the handler's response END is sent (in handle_plugin_frame).
                 }
 
                 Ok(())
@@ -629,39 +690,57 @@ impl AsyncPluginHost {
                 ),
             )),
 
-            // REQ from plugin = peer invoke. Register routing for the response path.
-            // Mark as peer-initiated so we don't prematurely remove routing when the
-            // plugin sends END (which is the end of the outgoing request body, not
-            // the final response).
+            // PATH A: REQ from plugin (peer invoke)
+            // MUST have RID, MUST NOT have XID (plugins never send XID)
             FrameType::Req => {
-                self.request_routing.insert(frame.id.clone(), plugin_idx);
-                self.peer_requests.insert(frame.id.clone());
+                if frame.routing_id.is_some() {
+                    return Err(AsyncHostError::Protocol(format!(
+                        "Plugin {} sent REQ with XID - plugins must never send XID",
+                        plugin_idx
+                    )));
+                }
+
+                eprintln!("[PluginHostRuntime.handle_plugin_frame] Peer REQ from plugin {}: RID={:?}, cap={:?}",
+                    plugin_idx, frame.id, frame.cap);
+
+                // Record in List 1: OUTGOING_RIDS
+                self.outgoing_rids.insert(frame.id.clone(), plugin_idx);
+                eprintln!("[PluginHostRuntime.handle_plugin_frame] Recorded outgoing_rids[{:?}] = {}",
+                    frame.id, plugin_idx);
+
+                // Forward as-is to relay (no XID - will be assigned by RelaySwitch)
                 outbound_tx
                     .send(frame)
                     .map_err(|_| AsyncHostError::SendError)
             }
 
-            // Everything else: pass through to relay (toward engine).
-            // For END/ERR, also clean up routing if this was a response to an engine request.
-            // But NOT for peer-initiated requests — the plugin's END is the end of the
-            // outgoing request body, and the relay's response hasn't arrived yet.
+            // PATH A: Continuation frames from plugin (request body or response)
+            // When responding to relay requests, frames WILL have XID (routing_id)
+            // When responding to direct requests, frames will NOT have XID
+            // NO routing decisions - only one destination (relay)
             _ => {
+                eprintln!("[PluginHostRuntime.handle_plugin_frame] {:?} from plugin {}: RID={:?}",
+                    frame.frame_type, plugin_idx, frame.id);
+
                 let is_terminal = frame.frame_type == FrameType::End
                     || frame.frame_type == FrameType::Err;
 
+                // Cleanup: If terminal frame responding to incoming request, remove from INCOMING_RXIDS
+                // This tells us the handler finished responding to this incoming request
                 if is_terminal {
-                    if !self.peer_requests.contains(&frame.id) {
-                        // Engine-initiated request: plugin's END/ERR is the final response.
-                        if let Some(&idx) = self.request_routing.get(&frame.id) {
-                            if idx == plugin_idx {
-                                self.request_routing.remove(&frame.id);
-                            }
-                        }
+                    let incoming_keys: Vec<_> = self.incoming_rxids.iter()
+                        .filter(|((_, rid), &idx)| rid == &frame.id && idx == plugin_idx)
+                        .map(|(k, _)| k.clone())
+                        .collect();
+
+                    for key in incoming_keys {
+                        eprintln!("[PluginHostRuntime.handle_plugin_frame] Response END to incoming request, removing incoming_rxids[{:?}]", key);
+                        self.incoming_rxids.remove(&key);
                     }
-                    // Peer-initiated: don't remove routing — the relay's response
-                    // (END/ERR from engine) will clean up in handle_relay_frame().
+                    // Note: OUTGOING_RIDS cleanup happens in handle_relay_frame when peer response arrives
                 }
 
+                // Forward as-is to relay (no routing, no XID manipulation)
                 outbound_tx
                     .send(frame)
                     .map_err(|_| AsyncHostError::SendError)
@@ -675,8 +754,10 @@ impl AsyncPluginHost {
         plugin_idx: usize,
         outbound_tx: &mpsc::UnboundedSender<Frame>,
     ) -> Result<(), AsyncHostError> {
+        eprintln!("[PluginHostRuntime.handle_plugin_death] Plugin {} death detected", plugin_idx);
         let plugin = &mut self.plugins[plugin_idx];
         plugin.running = false;
+        eprintln!("[PluginHostRuntime.handle_plugin_death] Closing writer to plugin {} (this closes stdin)", plugin_idx);
         plugin.writer_tx = None;
 
         // Kill the process if it's still around
@@ -686,22 +767,46 @@ impl AsyncPluginHost {
         plugin.process = None;
 
         // Send ERR for all pending requests routed to this plugin
-        let failed_req_ids: Vec<MessageId> = self
-            .request_routing
+        // Check List 2: INCOMING_RXIDS (incoming requests being handled)
+        let failed_incoming_keys: Vec<(MessageId, MessageId)> = self
+            .incoming_rxids
             .iter()
             .filter(|(_, &idx)| idx == plugin_idx)
-            .map(|(id, _)| id.clone())
+            .map(|(key, _)| key.clone())
             .collect();
 
-        for req_id in &failed_req_ids {
+        // Check List 1: OUTGOING_RIDS (peer requests waiting for responses)
+        let failed_outgoing_rids: Vec<MessageId> = self
+            .outgoing_rids
+            .iter()
+            .filter(|(_, &idx)| idx == plugin_idx)
+            .map(|(rid, _)| rid.clone())
+            .collect();
+
+        eprintln!("[PluginHostRuntime.handle_plugin_death] Plugin {} died, failing {} incoming and {} outgoing requests",
+            plugin_idx, failed_incoming_keys.len(), failed_outgoing_rids.len());
+
+        for (xid, rid) in &failed_incoming_keys {
+            let mut err_frame = Frame::err(
+                rid.clone(),
+                "PLUGIN_DIED",
+                &format!("Plugin {} exited unexpectedly", plugin.path.display()),
+            );
+            err_frame.routing_id = Some(xid.clone());
+            let _ = outbound_tx.send(err_frame);
+            self.incoming_rxids.remove(&(xid.clone(), rid.clone()));
+        }
+
+        for rid in &failed_outgoing_rids {
+            // Outgoing requests don't have XID yet (or if response has arrived, it has XID from relay)
+            // Send ERR without XID (will be assigned by relay/switch if needed)
             let err_frame = Frame::err(
-                req_id.clone(),
+                rid.clone(),
                 "PLUGIN_DIED",
                 &format!("Plugin {} exited unexpectedly", plugin.path.display()),
             );
             let _ = outbound_tx.send(err_frame);
-            self.request_routing.remove(req_id);
-            self.peer_requests.remove(req_id);
+            self.outgoing_rids.remove(rid);
         }
 
         // Remove caps temporarily (will be re-added on relaunch)
@@ -810,26 +915,41 @@ impl AsyncPluginHost {
     }
 
     /// Find which plugin handles a given cap URN.
+    /// Chooses the MOST SPECIFIC matching cap URN (highest specificity score).
+    /// If multiple matches have the same highest specificity, chooses one (deterministic).
     fn find_plugin_for_cap(&self, cap_urn: &str) -> Option<usize> {
-        // Try exact match first
-        for (registered_cap, plugin_idx) in &self.cap_table {
-            if registered_cap == cap_urn {
-                return Some(*plugin_idx);
-            }
-        }
+        let request_urn = match crate::CapUrn::from_string(cap_urn) {
+            Ok(u) => u,
+            Err(_) => return None,
+        };
 
-        // Try URN-level matching: request is the pattern, registered cap is the instance
-        if let Ok(request_urn) = crate::CapUrn::from_string(cap_urn) {
-            for (registered_cap, plugin_idx) in &self.cap_table {
-                if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
-                    if request_urn.accepts(&registered_urn) {
-                        return Some(*plugin_idx);
-                    }
+        // Collect ALL matching plugins with their specificity scores
+        let mut matches: Vec<(usize, usize)> = Vec::new(); // (plugin_idx, specificity)
+
+        for (registered_cap, plugin_idx) in &self.cap_table {
+            if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
+                // Request is pattern, registered cap is instance
+                if request_urn.accepts(&registered_urn) {
+                    let specificity = registered_urn.specificity();
+                    matches.push((*plugin_idx, specificity));
                 }
             }
         }
 
-        None
+        if matches.is_empty() {
+            return None;
+        }
+
+        // Find maximum specificity
+        let max_specificity = matches.iter().map(|(_, s)| *s).max().unwrap();
+
+        // Filter to only those with max specificity and take first
+        // Multiple matches with same max specificity will route to the first one (deterministic)
+        matches
+            .iter()
+            .filter(|(_, s)| *s == max_specificity)
+            .map(|(idx, _)| *idx)
+            .next()
     }
 
     // =========================================================================
@@ -864,23 +984,43 @@ impl AsyncPluginHost {
                 }
                 plugin.running = false;
 
-                // Send ERR for pending requests
-                let failed_req_ids: Vec<MessageId> = self
-                    .request_routing
+                // Send ERR for pending requests (both new lists)
+                let failed_incoming_keys: Vec<(MessageId, MessageId)> = self
+                    .incoming_rxids
                     .iter()
                     .filter(|(_, &idx)| idx == plugin_idx)
-                    .map(|(id, _)| id.clone())
+                    .map(|(key, _)| key.clone())
                     .collect();
 
-                for req_id in &failed_req_ids {
+                let failed_outgoing_rids: Vec<MessageId> = self
+                    .outgoing_rids
+                    .iter()
+                    .filter(|(_, &idx)| idx == plugin_idx)
+                    .map(|(rid, _)| rid.clone())
+                    .collect();
+
+                eprintln!("[PluginHostRuntime.heartbeat] Plugin {} unhealthy, failing {} incoming and {} outgoing requests",
+                    plugin_idx, failed_incoming_keys.len(), failed_outgoing_rids.len());
+
+                for (xid, rid) in &failed_incoming_keys {
+                    let mut err_frame = Frame::err(
+                        rid.clone(),
+                        "PLUGIN_UNHEALTHY",
+                        "Plugin stopped responding to heartbeats",
+                    );
+                    err_frame.routing_id = Some(xid.clone());
+                    let _ = outbound_tx.send(err_frame);
+                    self.incoming_rxids.remove(&(xid.clone(), rid.clone()));
+                }
+
+                for rid in &failed_outgoing_rids {
                     let err_frame = Frame::err(
-                        req_id.clone(),
+                        rid.clone(),
                         "PLUGIN_UNHEALTHY",
                         "Plugin stopped responding to heartbeats",
                     );
                     let _ = outbound_tx.send(err_frame);
-                    self.request_routing.remove(req_id);
-                    self.peer_requests.remove(req_id);
+                    self.outgoing_rids.remove(rid);
                 }
 
                 continue;
@@ -913,49 +1053,47 @@ impl AsyncPluginHost {
                 continue; // Permanently removed
             }
             // Use real caps if available (from HELLO), otherwise known_caps
-            let caps = if plugin.running && !plugin.caps.is_empty() {
-                &plugin.caps
+            if plugin.running && !plugin.caps.is_empty() {
+                // Extract URN strings from Cap objects
+                for cap in &plugin.caps {
+                    self.cap_table.push((cap.urn.to_string(), idx));
+                }
             } else {
-                &plugin.known_caps
-            };
-            for cap in caps {
-                self.cap_table.push((cap.clone(), idx));
+                // Use known_caps (URN strings)
+                for cap_urn in &plugin.known_caps {
+                    self.cap_table.push((cap_urn.clone(), idx));
+                }
             }
         }
     }
 
-    /// Rebuild the aggregate capabilities JSON from all running, healthy plugins.
-    /// Rebuild aggregate capabilities from all running plugins.
+    /// Rebuild the aggregate capabilities from all running, healthy plugins.
     ///
     /// If outbound_tx is Some (i.e., running in relay mode), sends a RelayNotify
     /// frame with the updated capabilities. This allows RelaySwitch/RelayMaster
     /// to track capability changes dynamically as plugins connect/disconnect/fail.
     fn rebuild_capabilities(&mut self, outbound_tx: Option<&mpsc::UnboundedSender<Frame>>) {
-        let mut all_caps = Vec::new();
+        // Collect capability URN strings from all running plugins
+        let mut cap_urns = Vec::new();
         for plugin in &self.plugins {
             if plugin.running && !plugin.hello_failed {
                 for cap in &plugin.caps {
-                    all_caps.push(cap.clone());
+                    cap_urns.push(cap.urn.to_string());
                 }
             }
         }
-        // Simple JSON array of cap URN strings
-        let json = serde_json::json!({ "caps": all_caps });
-        self.capabilities = serde_json::to_vec(&json).unwrap_or_default();
+
+        // For internal use, store as simple JSON array of URN strings
+        self.capabilities = serde_json::to_vec(&cap_urns)
+            .expect("Failed to serialize capability URNs");
 
         // Send RelayNotify to relay if in relay mode
-        // This allows RelaySwitch/RelayMaster to track dynamic capability changes
-        // as plugins connect/disconnect/fail.
+        // RelayNotify contains just the capability URN strings, not a full manifest
         if let Some(tx) = outbound_tx {
-            // Build capabilities JSON for RelayNotify (same format as initial handshake)
-            let caps_json = serde_json::json!({
-                "capabilities": all_caps,
-            });
-            if let Ok(caps_bytes) = serde_json::to_vec(&caps_json) {
-                // Use default limits for update frames (connection already established)
-                let notify_frame = Frame::relay_notify(&caps_bytes, &Limits::default());
-                let _ = tx.send(notify_frame); // Ignore error if relay closed
-            }
+            let caps_bytes = serde_json::to_vec(&cap_urns)
+                .expect("Failed to serialize capability URNs for RelayNotify");
+            let notify_frame = Frame::relay_notify(&caps_bytes, &Limits::default());
+            let _ = tx.send(notify_frame); // Ignore error if relay closed
         }
     }
 
@@ -1013,9 +1151,13 @@ impl AsyncPluginHost {
         event_tx: mpsc::UnboundedSender<PluginEvent>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
+            eprintln!("[PluginReader {}] Starting reader loop", plugin_idx);
+            let mut frame_count = 0;
             loop {
                 match reader.read().await {
                     Ok(Some(frame)) => {
+                        frame_count += 1;
+                        eprintln!("[PluginReader {}] Read frame #{}: {:?} (id={:?})", plugin_idx, frame_count, frame.frame_type, frame.id);
                         if event_tx
                             .send(PluginEvent::Frame {
                                 plugin_idx,
@@ -1023,21 +1165,26 @@ impl AsyncPluginHost {
                             })
                             .is_err()
                         {
+                            eprintln!("[PluginReader {}] Event channel closed, main loop dropped", plugin_idx);
                             break; // Runtime dropped
                         }
+                        eprintln!("[PluginReader {}] Frame #{} sent to main loop", plugin_idx, frame_count);
                     }
                     Ok(None) => {
                         // EOF — plugin closed stdout
+                        eprintln!("[PluginReader {}] EOF from plugin stdout (after {} frames), sending Death event", plugin_idx, frame_count);
                         let _ = event_tx.send(PluginEvent::Death { plugin_idx });
                         break;
                     }
-                    Err(_) => {
+                    Err(e) => {
                         // Read error — treat as death
+                        eprintln!("[PluginReader {}] Read error (after {} frames): {}, sending Death event", plugin_idx, frame_count, e);
                         let _ = event_tx.send(PluginEvent::Death { plugin_idx });
                         break;
                     }
                 }
             }
+            eprintln!("[PluginReader {}] Reader task exiting (read {} frames total)", plugin_idx, frame_count);
         })
     }
 
@@ -1056,7 +1203,7 @@ impl AsyncPluginHost {
     }
 }
 
-impl Drop for AsyncPluginHost {
+impl Drop for PluginHostRuntime {
     fn drop(&mut self) {
         // Drop cannot be async, so we close channels (triggering writer exit)
         // and abort reader tasks. Writer tasks exit naturally when writer_tx
@@ -1083,23 +1230,16 @@ impl Drop for AsyncPluginHost {
 /// ```json
 /// {"name": "...", "caps": [{"urn": "cap:op=test", ...}, ...]}
 /// ```
-fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<String>, AsyncHostError> {
-    let value: serde_json::Value = serde_json::from_slice(manifest).map_err(|e| {
-        AsyncHostError::Protocol(format!("Invalid manifest JSON: {}", e))
+fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<crate::Cap>, AsyncHostError> {
+    use crate::CapManifest;
+
+    // Deserialize directly into CapManifest - fail hard if invalid
+    let manifest_obj: CapManifest = serde_json::from_slice(manifest).map_err(|e| {
+        AsyncHostError::Protocol(format!("Invalid CapManifest from plugin: {}", e))
     })?;
 
-    let caps = value
-        .get("caps")
-        .and_then(|c| c.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|cap| cap.get("urn").and_then(|u| u.as_str()))
-                .map(|s| s.to_string())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(caps)
+    // Return the Cap objects directly
+    Ok(manifest_obj.caps)
 }
 
 // =============================================================================
@@ -1263,7 +1403,7 @@ mod tests {
     // TEST413: Register plugin adds entries to cap_table
     #[test]
     fn test_register_plugin_adds_to_cap_table() {
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.register_plugin(Path::new("/usr/bin/test-plugin"), &[
             "cap:op=convert".to_string(),
             "cap:op=analyze".to_string(),
@@ -1281,10 +1421,10 @@ mod tests {
     // TEST414: capabilities() returns empty JSON initially (no running plugins)
     #[test]
     fn test_capabilities_empty_initially() {
-        let runtime = AsyncPluginHost::new();
+        let runtime = PluginHostRuntime::new();
         assert!(runtime.capabilities().is_empty(), "No plugins registered = empty capabilities");
 
-        let mut runtime2 = AsyncPluginHost::new();
+        let mut runtime2 = PluginHostRuntime::new();
         runtime2.register_plugin(Path::new("/usr/bin/test"), &["cap:op=test".to_string()]);
         // Plugin registered but not running — capabilities still empty
         assert!(runtime2.capabilities().is_empty(),
@@ -1294,7 +1434,7 @@ mod tests {
     // TEST415: REQ for known cap triggers spawn attempt (verified by expected spawn error for non-existent binary)
     #[tokio::test]
     async fn test_req_for_known_cap_triggers_spawn() {
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.register_plugin(
             Path::new("/nonexistent/plugin/binary"),
             &["cap:op=test".to_string()],
@@ -1372,7 +1512,7 @@ mod tests {
             handshake_accept(&mut reader, &mut writer, &manifest_bytes).unwrap();
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         let idx = runtime.attach_plugin(plugin_read, plugin_write).await.unwrap();
 
         assert_eq!(idx, 0);
@@ -1450,7 +1590,7 @@ mod tests {
         });
 
         // Setup runtime
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(pa_read, pa_write).await.unwrap();
         runtime.attach_plugin(pb_read, pb_write).await.unwrap();
 
@@ -1546,7 +1686,7 @@ mod tests {
             drop(w); // Close to signal EOF
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Relay pipes
@@ -1638,7 +1778,7 @@ mod tests {
             drop(w);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Relay
@@ -1759,7 +1899,7 @@ mod tests {
             drop(w);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Relay
@@ -1844,7 +1984,7 @@ mod tests {
             drop(r);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Before death: caps should include "cap:op=die"
@@ -1916,7 +2056,7 @@ mod tests {
             drop(r);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Relay
@@ -2037,7 +2177,7 @@ mod tests {
             drop(w);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(pa_read, pa_write).await.unwrap();
         runtime.attach_plugin(pb_read, pb_write).await.unwrap();
 
@@ -2152,7 +2292,7 @@ mod tests {
             drop(w);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Relay
@@ -2218,7 +2358,7 @@ mod tests {
     // TEST425: find_plugin_for_cap returns None for unregistered cap
     #[test]
     fn test_find_plugin_for_cap_unknown() {
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.register_plugin(Path::new("/test"), &["cap:op=known".to_string()]);
         assert!(runtime.find_plugin_for_cap("cap:op=known").is_some());
         assert!(runtime.find_plugin_for_cap("cap:op=unknown").is_none());

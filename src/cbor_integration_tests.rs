@@ -1,7 +1,7 @@
 //! Integration tests for CBOR plugin communication protocol.
 //!
 //! These tests verify the full path: engine → relay → runtime → plugin → response back.
-//! The AsyncPluginHost manages multiple plugins and routes frames between a relay
+//! The PluginHostRuntime manages multiple plugins and routes frames between a relay
 //! connection and individual plugin processes.
 
 #[cfg(test)]
@@ -102,7 +102,7 @@ mod tests {
     // TEST426: Full path: engine REQ → runtime → plugin → response back through relay
     #[tokio::test]
     async fn test_full_path_engine_req_to_plugin_response() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"EchoPlugin","version":"1.0","caps":[{"urn":"cap:op=echo"}]}"#;
 
@@ -135,7 +135,7 @@ mod tests {
             drop(writer);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         // Engine task: send request, wait for response, THEN close relay
@@ -180,7 +180,7 @@ mod tests {
     // TEST427: Plugin ERR frame flows back to engine through relay
     #[tokio::test]
     async fn test_plugin_error_flows_to_engine() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"ErrPlugin","version":"1.0","caps":[{"urn":"cap:op=fail"}]}"#;
 
@@ -196,7 +196,7 @@ mod tests {
             drop(writer);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         let req_id = MessageId::new_uuid();
@@ -239,7 +239,7 @@ mod tests {
     // TEST428: Binary data integrity through full relay path (256 byte values)
     #[tokio::test]
     async fn test_binary_integrity_through_relay() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"BinPlugin","version":"1.0","caps":[{"urn":"cap:op=binary"}]}"#;
 
@@ -278,7 +278,7 @@ mod tests {
             drop(writer);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         let req_id = MessageId::new_uuid();
@@ -323,7 +323,7 @@ mod tests {
     // TEST429: Streaming chunks flow through relay without accumulation
     #[tokio::test]
     async fn test_streaming_chunks_through_relay() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"StreamPlugin","version":"1.0","caps":[{"urn":"cap:op=stream"}]}"#;
 
@@ -352,7 +352,7 @@ mod tests {
             drop(writer);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         let req_id = MessageId::new_uuid();
@@ -396,7 +396,7 @@ mod tests {
     // TEST430: Peer invoke: plugin REQ flows to engine through relay
     #[tokio::test]
     async fn test_peer_invoke_flows_to_engine() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"PeerPlugin","version":"1.0","caps":[{"urn":"cap:op=peer"}]}"#;
 
@@ -438,7 +438,7 @@ mod tests {
             drop(writer);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         let req_id = MessageId::new_uuid();
@@ -488,7 +488,7 @@ mod tests {
     // TEST431: Two plugins routed independently by cap_urn
     #[tokio::test]
     async fn test_two_plugins_routed_independently() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest_a = r#"{"name":"PluginA","version":"1.0","caps":[{"urn":"cap:op=alpha"}]}"#;
         let manifest_b = r#"{"name":"PluginB","version":"1.0","caps":[{"urn":"cap:op=beta"}]}"#;
@@ -525,7 +525,7 @@ mod tests {
             drop(writer);
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(pa_read, pa_write).await.unwrap();
         runtime.attach_plugin(pb_read, pb_write).await.unwrap();
 
@@ -580,7 +580,7 @@ mod tests {
     // TEST432: REQ for unknown cap returns ERR frame (not fatal)
     #[tokio::test]
     async fn test_req_for_unknown_cap_returns_err_frame() {
-        use crate::async_plugin_host::AsyncPluginHost;
+        use crate::plugin_host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"OnePlugin","version":"1.0","caps":[{"urn":"cap:op=known"}]}"#;
 
@@ -598,7 +598,7 @@ mod tests {
             }
         });
 
-        let mut runtime = AsyncPluginHost::new();
+        let mut runtime = PluginHostRuntime::new();
         runtime.attach_plugin(p_read, p_write).await.unwrap();
 
         let req_id = MessageId::new_uuid();

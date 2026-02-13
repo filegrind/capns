@@ -171,6 +171,10 @@ pub struct Frame {
     pub frame_type: FrameType,
     /// Message ID for correlation (request ID)
     pub id: MessageId,
+    /// Routing ID assigned by RelaySwitch for routing decisions
+    /// Separates logical request ID (id) from routing concerns
+    /// RelaySwitch assigns this when REQ arrives, all response frames carry it
+    pub routing_id: Option<MessageId>,
     /// Stream ID for multiplexed streams (used in STREAM_START, CHUNK, STREAM_END)
     pub stream_id: Option<String>,
     /// Media URN for stream type identification (used in STREAM_START)
@@ -200,6 +204,7 @@ impl Frame {
             version: PROTOCOL_VERSION,
             frame_type,
             id,
+            routing_id: None,
             stream_id: None,
             media_urn: None,
             seq: 0,
@@ -605,8 +610,9 @@ pub mod keys {
     pub const OFFSET: u64 = 8;
     pub const EOF: u64 = 9;
     pub const CAP: u64 = 10;
-    pub const STREAM_ID: u64 = 11;     // Stream ID for multiplexed streams
+    pub const STREAM_ID: u64 = 11;      // Stream ID for multiplexed streams
     pub const MEDIA_URN: u64 = 12;      // Media URN for stream type identification
+    pub const ROUTING_ID: u64 = 13;     // Routing ID assigned by RelaySwitch
 }
 
 #[cfg(test)]
