@@ -97,8 +97,8 @@ impl From<std::io::Error> for RelaySwitchError {
 /// Routing entry tracking request source and destination.
 #[derive(Debug, Clone)]
 struct RoutingEntry {
-    /// Source master index (usize::MAX = engine)
-    source_master_idx: usize,
+    /// Source master index, or None if from external caller (execute_cap)
+    source_master_idx: Option<usize>,
     /// Destination master index (where request is being handled)
     destination_master_idx: usize,
 }
@@ -136,9 +136,11 @@ pub struct RelaySwitch {
     request_routing: HashMap<(MessageId, MessageId), RoutingEntry>,
     /// Peer-initiated request (xid, rid) pairs for cleanup tracking
     peer_requests: HashSet<(MessageId, MessageId)>,
-    /// Origin tracking: (xid, rid) → upstream connection index
-    /// Used to know where to send frames back (and strip XID on final leg)
-    origin_map: HashMap<(MessageId, MessageId), usize>,
+    /// Origin tracking: (xid, rid) → upstream connection index (None = external caller)
+    /// Used to know where to send frames back
+    origin_map: HashMap<(MessageId, MessageId), Option<usize>>,
+    /// Response channels for external execute_cap calls: (xid, rid) → sender
+    external_response_channels: HashMap<(MessageId, MessageId), mpsc::Sender<Frame>>,
     /// Aggregate capabilities (union of all masters)
     aggregate_capabilities: Vec<u8>,
     /// Negotiated limits (minimum across all masters)
@@ -154,9 +156,6 @@ pub struct RelaySwitch {
 // =============================================================================
 // IMPLEMENTATION
 // =============================================================================
-
-/// Sentinel value for source_master_idx indicating engine-initiated request
-const ENGINE_SOURCE: usize = usize::MAX;
 
 impl RelaySwitch {
     /// Create a new RelaySwitch with the given socket pairs.
@@ -224,6 +223,7 @@ impl RelaySwitch {
             request_routing: HashMap::new(),
             peer_requests: HashSet::new(),
             origin_map: HashMap::new(),
+            external_response_channels: HashMap::new(),
             aggregate_capabilities: Vec::new(),
             negotiated_limits: Limits::default(),
             frame_rx,
@@ -247,6 +247,104 @@ impl RelaySwitch {
     /// Get the negotiated limits (minimum across all masters).
     pub fn limits(&self) -> &Limits {
         &self.negotiated_limits
+    }
+
+    /// Execute a cap and return a receiver for streaming response frames.
+    ///
+    /// This is the high-level API for calling caps programmatically.
+    /// The returned receiver will receive all response frames (STREAM_START, CHUNK, END, ERR, etc.)
+    /// until the request completes.
+    ///
+    /// # Arguments
+    /// * `cap_urn` - The capability URN to execute
+    /// * `payload` - The request payload bytes
+    /// * `content_type` - The content type of the payload (e.g., "application/cbor", "application/json")
+    ///
+    /// # Returns
+    /// A receiver that streams response frames. The caller should read from this receiver
+    /// until it receives an END or ERR frame.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let receiver = switch.execute_cap(
+    ///     "cap:in=\"media:void\";op=test;out=\"media:void\"",
+    ///     vec![],
+    ///     "application/cbor"
+    /// )?;
+    ///
+    /// // Read responses until END
+    /// while let Ok(frame) = receiver.recv() {
+    ///     match frame.frame_type {
+    ///         FrameType::End => {
+    ///             println!("Got final response: {:?}", frame.payload);
+    ///             break;
+    ///         }
+    ///         FrameType::Err => {
+    ///             eprintln!("Got error: {:?}", frame.payload);
+    ///             break;
+    ///         }
+    ///         _ => {
+    ///             // Handle streaming frames
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn execute_cap(
+        &mut self,
+        cap_urn: &str,
+        payload: Vec<u8>,
+        content_type: &str,
+    ) -> Result<mpsc::Receiver<Frame>, RelaySwitchError> {
+        // Generate unique request ID
+        self.xid_counter += 1;
+        let rid = MessageId::Uint(self.xid_counter);
+
+        // Build REQ frame
+        let req_frame = Frame::req(rid.clone(), cap_urn, payload, content_type);
+
+        // Create response channel
+        let (tx, rx) = mpsc::channel();
+
+        // Send the REQ frame - this will assign XID and route it
+        // We need to register the response channel BEFORE sending, because
+        // responses might arrive immediately
+
+        // Find master that can handle this cap
+        let dest_idx = self.find_master_for_cap(cap_urn).ok_or_else(|| {
+            RelaySwitchError::NoHandler(cap_urn.to_string())
+        })?;
+
+        // Assign XID
+        self.xid_counter += 1;
+        let xid = MessageId::Uint(self.xid_counter);
+        let key = (xid.clone(), rid.clone());
+
+        // Register response channel BEFORE sending
+        self.external_response_channels.insert(key.clone(), tx);
+
+        // Record origin (None = external execute_cap caller)
+        self.origin_map.insert(key.clone(), None);
+
+        // Register routing
+        self.request_routing.insert(
+            key.clone(),
+            RoutingEntry {
+                source_master_idx: None,
+                destination_master_idx: dest_idx,
+            },
+        );
+
+        // Record RID → XID mapping for continuation frames (if caller sends them)
+        self.rid_to_xid.insert(rid.clone(), xid.clone());
+
+        // Build frame with XID
+        let mut frame_with_xid = req_frame;
+        frame_with_xid.routing_id = Some(xid);
+
+        // Forward to destination
+        self.masters[dest_idx].socket_writer.write(&frame_with_xid)?;
+
+        Ok(rx)
     }
 
     /// Send a frame to the appropriate master (engine → plugin direction).
@@ -282,14 +380,14 @@ impl RelaySwitch {
                 let rid = frame.id.clone();
                 let key = (xid.clone(), rid.clone());
 
-                // Record origin (where this request came from)
-                self.origin_map.insert(key.clone(), ENGINE_SOURCE);
+                // Record origin (None = external caller via send_to_master)
+                self.origin_map.insert(key.clone(), None);
 
                 // Register routing (xid, rid) → destination
                 self.request_routing.insert(
                     key,
                     RoutingEntry {
-                        source_master_idx: ENGINE_SOURCE,
+                        source_master_idx: None,
                         destination_master_idx: dest_idx,
                     },
                 );
@@ -507,13 +605,13 @@ impl RelaySwitch {
                 eprintln!("[RelaySwitch.handle_master_frame] Recorded rid_to_xid mapping: {:?} -> {:?}", rid, xid);
 
                 // Record origin (where this request came from)
-                self.origin_map.insert(key.clone(), source_idx);
+                self.origin_map.insert(key.clone(), Some(source_idx));
 
                 // Register routing
                 self.request_routing.insert(
                     key.clone(),
                     RoutingEntry {
-                        source_master_idx: source_idx,
+                        source_master_idx: Some(source_idx),
                         destination_master_idx: dest_idx,
                     },
                 );
@@ -563,41 +661,63 @@ impl RelaySwitch {
                     let is_terminal = frame.frame_type == FrameType::End
                         || frame.frame_type == FrameType::Err;
 
-                    eprintln!("[RelaySwitch.handle_master_frame] Routing response back to origin (origin_idx={})", origin_idx);
-
                     // Route back to origin
-                    if origin_idx == ENGINE_SOURCE {
-                        // Strip XID on final leg to engine
-                        frame.routing_id = None;
+                    match origin_idx {
+                        None => {
+                            // External caller (via send_to_master or execute_cap)
+                            // Check if there's a response channel registered
+                            if let Some(tx) = self.external_response_channels.get(&key) {
+                                // Send to external response channel (keep XID for now)
+                                if tx.send(frame.clone()).is_err() {
+                                    eprintln!("[RelaySwitch] External response channel closed, dropping frame");
+                                }
 
-                        eprintln!("[RelaySwitch.handle_master_frame] Returning {:?} to engine (payload len: {})",
-                                  frame.frame_type,
-                                  frame.payload.as_ref().map_or(0, |p| p.len()));
+                                // Cleanup on terminal frame
+                                if is_terminal {
+                                    self.external_response_channels.remove(&key);
+                                    self.request_routing.remove(&key);
+                                    self.origin_map.remove(&key);
+                                    self.peer_requests.remove(&key);
+                                    self.rid_to_xid.remove(&rid);
+                                }
 
-                        // Cleanup on terminal frame
-                        if is_terminal {
-                            self.request_routing.remove(&key);
-                            self.origin_map.remove(&key);
-                            self.peer_requests.remove(&key);
-                            self.rid_to_xid.remove(&rid);
+                                return Ok(None);
+                            } else {
+                                // No response channel (sent via send_to_master, not execute_cap)
+                                // Strip XID and return to caller (final leg)
+                                frame.routing_id = None;
+
+                                eprintln!("[RelaySwitch.handle_master_frame] Returning {:?} to external caller (payload len: {})",
+                                          frame.frame_type,
+                                          frame.payload.as_ref().map_or(0, |p| p.len()));
+
+                                // Cleanup on terminal frame
+                                if is_terminal {
+                                    self.request_routing.remove(&key);
+                                    self.origin_map.remove(&key);
+                                    self.peer_requests.remove(&key);
+                                    self.rid_to_xid.remove(&rid);
+                                }
+
+                                return Ok(Some(frame));
+                            }
                         }
+                        Some(master_idx) => {
+                            // Route back to source master (keep XID - still in relay network)
+                            eprintln!("[RelaySwitch.handle_master_frame] Routing response back to master {} (keeping XID for relay protocol)", master_idx);
 
-                        return Ok(Some(frame));
-                    } else {
-                        // Route to another master (strip XID on final leg)
-                        frame.routing_id = None;
+                            self.masters[master_idx].socket_writer.write(&frame)?;
 
-                        self.masters[origin_idx].socket_writer.write(&frame)?;
+                            // Cleanup on terminal frame
+                            if is_terminal {
+                                self.request_routing.remove(&key);
+                                self.origin_map.remove(&key);
+                                self.peer_requests.remove(&key);
+                                self.rid_to_xid.remove(&rid);
+                            }
 
-                        // Cleanup on terminal frame
-                        if is_terminal {
-                            self.request_routing.remove(&key);
-                            self.origin_map.remove(&key);
-                            self.peer_requests.remove(&key);
-                            self.rid_to_xid.remove(&rid);
+                            return Ok(None);
                         }
-
-                        return Ok(None);
                     }
                 } else {
                     // ========================================
@@ -700,7 +820,7 @@ impl RelaySwitch {
         for (key, source_idx) in dead_requests {
             let (xid, rid) = &key;
 
-            // Create ERR frame with RID (XID will be stripped on final leg if needed)
+            // Create ERR frame
             let mut err_frame = Frame::err(
                 rid.clone(),
                 "MASTER_DIED",
@@ -708,14 +828,21 @@ impl RelaySwitch {
             );
             err_frame.routing_id = Some(xid.clone());
 
-            if source_idx == ENGINE_SOURCE {
-                // Can't send back to engine in this sync API — caller must handle
-                // For now, just log it
-                eprintln!("Request {:?} failed: master died", rid);
-            } else {
-                // Send ERR back to source master (XID will be stripped at final hop)
-                if self.masters[source_idx].healthy {
-                    let _ = self.masters[source_idx].socket_writer.write(&err_frame);
+            match source_idx {
+                None => {
+                    // External caller - send to response channel if exists, otherwise log
+                    if let Some(tx) = self.external_response_channels.get(&key) {
+                        let _ = tx.send(err_frame);
+                        self.external_response_channels.remove(&key);
+                    } else {
+                        eprintln!("Request {:?} failed: master died (no response channel)", rid);
+                    }
+                }
+                Some(master_idx) => {
+                    // Send ERR back to source master
+                    if self.masters[master_idx].healthy {
+                        let _ = self.masters[master_idx].socket_writer.write(&err_frame);
+                    }
                 }
             }
 
