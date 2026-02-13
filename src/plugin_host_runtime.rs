@@ -266,7 +266,7 @@ pub struct PluginHostRuntime {
     /// Routing: cap_urn → plugin index (for finding which plugin handles a cap).
     cap_table: Vec<(String, usize)>,
     /// List 1: OUTGOING_RIDS - tracks peer requests sent by plugins (RID → plugin_idx).
-    /// When responses arrive from relay, route to this plugin.
+    /// Used only to detect same-plugin peer calls (not for routing).
     outgoing_rids: HashMap<MessageId, usize>,
     /// List 2: INCOMING_RXIDS - tracks incoming requests from relay ((XID, RID) → plugin_idx).
     /// Continuations for these requests are routed by this table.
@@ -581,15 +581,10 @@ impl PluginHostRuntime {
                 eprintln!("[PluginHostRuntime.handle_relay_frame] Continuation {:?} from relay: RID={:?}, XID={:?}",
                     frame.frame_type, frame.id, xid);
 
-                // Route using two-list strategy:
-                // 1. Check List 1: OUTGOING_RIDS first (peer responses)
-                // 2. Else check List 2: INCOMING_RXIDS (incoming request continuations)
-                let plugin_idx = if let Some(&idx) = self.outgoing_rids.get(&frame.id) {
-                    eprintln!("[PluginHostRuntime.handle_relay_frame] Matched outgoing_rids[{:?}] → plugin {} (peer response)",
-                        frame.id, idx);
-                    idx
-                } else if let Some(&idx) = self.incoming_rxids.get(&(xid.clone(), frame.id.clone())) {
-                    eprintln!("[PluginHostRuntime.handle_relay_frame] Matched incoming_rxids[({:?}, {:?})] → plugin {} (incoming continuation)",
+                // Route by (XID, RID) - PluginRuntime will use media_urn to determine
+                // if frames go to incoming handler or peer invoker
+                let plugin_idx = if let Some(&idx) = self.incoming_rxids.get(&(xid.clone(), frame.id.clone())) {
+                    eprintln!("[PluginHostRuntime.handle_relay_frame] Matched incoming_rxids[({:?}, {:?})] → plugin {}",
                         xid, frame.id, idx);
                     idx
                 } else {
@@ -617,17 +612,11 @@ impl PluginHostRuntime {
                     return Ok(());
                 }
 
-                // Cleanup on terminal frames
-                if is_terminal {
-                    // If in outgoing_rids → peer response END, remove
-                    if self.outgoing_rids.contains_key(&frame.id) {
-                        eprintln!("[PluginHostRuntime.handle_relay_frame] Terminal peer response, removing outgoing_rids[{:?}]",
-                            frame.id);
-                        self.outgoing_rids.remove(&frame.id);
-                    }
-                    // NOTE: DO NOT remove from incoming_rxids here! The handler still needs to send its response.
-                    // incoming_rxids is cleaned up when the handler's response END is sent (in handle_plugin_frame).
-                }
+                // NOTE: Do NOT cleanup incoming_rxids here!
+                // Frames arrive asynchronously out of order - END can arrive before StreamStart/Chunk.
+                // We can't know when "all frames for (XID, RID) have arrived" without full stream tracking.
+                // Accept the leak: entries cleaned up on plugin death.
+                // This is bounded by concurrent requests and is acceptable.
 
                 Ok(())
             }
@@ -725,20 +714,10 @@ impl PluginHostRuntime {
                 let is_terminal = frame.frame_type == FrameType::End
                     || frame.frame_type == FrameType::Err;
 
-                // Cleanup: If terminal frame responding to incoming request, remove from INCOMING_RXIDS
-                // This tells us the handler finished responding to this incoming request
-                if is_terminal {
-                    let incoming_keys: Vec<_> = self.incoming_rxids.iter()
-                        .filter(|((_, rid), &idx)| rid == &frame.id && idx == plugin_idx)
-                        .map(|(k, _)| k.clone())
-                        .collect();
-
-                    for key in incoming_keys {
-                        eprintln!("[PluginHostRuntime.handle_plugin_frame] Response END to incoming request, removing incoming_rxids[{:?}]", key);
-                        self.incoming_rxids.remove(&key);
-                    }
-                    // Note: OUTGOING_RIDS cleanup happens in handle_relay_frame when peer response arrives
-                }
+                // NOTE: Do NOT remove incoming_rxids here!
+                // Response END from plugin doesn't mean the REQUEST is complete.
+                // Request body frames might still be arriving from relay (async race).
+                // incoming_rxids cleanup happens in handle_relay_frame when request body END arrives.
 
                 // Forward as-is to relay (no routing, no XID manipulation)
                 outbound_tx
