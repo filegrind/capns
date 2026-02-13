@@ -348,7 +348,7 @@ impl AsyncPluginHost {
 
         self.plugins.push(plugin);
         self.update_cap_table();
-        self.rebuild_capabilities();
+        self.rebuild_capabilities(None); // No relay during initialization
 
         Ok(plugin_idx)
     }
@@ -406,6 +406,22 @@ impl AsyncPluginHost {
 
         let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
         heartbeat_interval.tick().await; // skip initial tick
+
+        // Send discovery RelayNotify if plugins were pre-attached
+        // At this point all async tasks are spawned and running, so the frame will be delivered
+        if !self.capabilities.is_empty() {
+            if let Ok(caps_json) = serde_json::from_slice::<serde_json::Value>(&self.capabilities) {
+                if let Some(caps_array) = caps_json.get("caps").and_then(|v| v.as_array()) {
+                    let notify_manifest = serde_json::json!({
+                        "capabilities": caps_array,
+                    });
+                    if let Ok(manifest_bytes) = serde_json::to_vec(&notify_manifest) {
+                        let notify_frame = Frame::relay_notify(&manifest_bytes, &Limits::default());
+                        let _ = outbound_tx.send(notify_frame);
+                    }
+                }
+            }
+        }
 
         let result = loop {
             tokio::select! {
@@ -496,11 +512,19 @@ impl AsyncPluginHost {
                 // Spawn on demand if not running
                 if !self.plugins[plugin_idx].running {
                     self.spawn_plugin(plugin_idx, resource_fn).await?;
-                    self.rebuild_capabilities();
+                    self.rebuild_capabilities(Some(outbound_tx)); // Send RelayNotify to relay
                 }
 
                 // Register request routing
                 self.request_routing.insert(frame.id.clone(), plugin_idx);
+
+                // Check if this is a peer request (plugin → relay → back to plugin)
+                // If the ID is already in peer_requests, it means a plugin sent it originally,
+                // so responses need to go back through the relay (not to engine).
+                // If the ID is NOT in peer_requests, it's an engine request, and responses
+                // should go to the engine.
+                // Note: peer_requests already contains this ID if a plugin called peer.invoke()
+                // with this ID, so we don't need to insert it again here.
 
                 // Forward to plugin
                 self.send_to_plugin(plugin_idx, frame)
@@ -518,6 +542,9 @@ impl AsyncPluginHost {
 
                 let is_terminal = frame.frame_type == FrameType::End
                     || frame.frame_type == FrameType::Err;
+
+                eprintln!("[AsyncPluginHost.handle_relay_frame] Routing {:?} (id={:?}) to plugin {}, is_peer={}",
+                    frame.frame_type, frame.id, plugin_idx, self.peer_requests.contains(&frame.id));
 
                 // If the plugin is dead, send ERR to engine and clean up routing.
                 if self.send_to_plugin(plugin_idx, frame.clone()).is_err() {
@@ -679,7 +706,7 @@ impl AsyncPluginHost {
 
         // Remove caps temporarily (will be re-added on relaunch)
         self.update_cap_table();
-        self.rebuild_capabilities();
+        self.rebuild_capabilities(Some(outbound_tx)); // Send RelayNotify to relay
 
         Ok(())
     }
@@ -871,7 +898,7 @@ impl AsyncPluginHost {
 
         // Rebuild after potential cap changes
         self.update_cap_table();
-        self.rebuild_capabilities();
+        self.rebuild_capabilities(Some(outbound_tx)); // Send RelayNotify to relay
     }
 
     // =========================================================================
@@ -898,7 +925,12 @@ impl AsyncPluginHost {
     }
 
     /// Rebuild the aggregate capabilities JSON from all running, healthy plugins.
-    fn rebuild_capabilities(&mut self) {
+    /// Rebuild aggregate capabilities from all running plugins.
+    ///
+    /// If outbound_tx is Some (i.e., running in relay mode), sends a RelayNotify
+    /// frame with the updated capabilities. This allows RelaySwitch/RelayMaster
+    /// to track capability changes dynamically as plugins connect/disconnect/fail.
+    fn rebuild_capabilities(&mut self, outbound_tx: Option<&mpsc::UnboundedSender<Frame>>) {
         let mut all_caps = Vec::new();
         for plugin in &self.plugins {
             if plugin.running && !plugin.hello_failed {
@@ -910,6 +942,21 @@ impl AsyncPluginHost {
         // Simple JSON array of cap URN strings
         let json = serde_json::json!({ "caps": all_caps });
         self.capabilities = serde_json::to_vec(&json).unwrap_or_default();
+
+        // Send RelayNotify to relay if in relay mode
+        // This allows RelaySwitch/RelayMaster to track dynamic capability changes
+        // as plugins connect/disconnect/fail.
+        if let Some(tx) = outbound_tx {
+            // Build capabilities JSON for RelayNotify (same format as initial handshake)
+            let caps_json = serde_json::json!({
+                "capabilities": all_caps,
+            });
+            if let Ok(caps_bytes) = serde_json::to_vec(&caps_json) {
+                // Use default limits for update frames (connection already established)
+                let notify_frame = Frame::relay_notify(&caps_bytes, &Limits::default());
+                let _ = tx.send(notify_frame); // Ignore error if relay closed
+            }
+        }
     }
 
     /// Kill all managed plugin processes.

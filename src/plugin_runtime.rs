@@ -1985,6 +1985,7 @@ impl PluginRuntime {
                         ended: false,
                     });
                     drop(pending);
+
                     eprintln!("[PluginRuntime] REQ: req_id={:?} cap={} - waiting for streams", frame.id, cap_urn);
                     continue; // Wait for STREAM_START/CHUNK/STREAM_END/END frames
                 }
@@ -2002,7 +2003,19 @@ impl PluginRuntime {
                         }
                     };
 
-                    // STRICT: Check if this is a chunk for an incoming request with validation
+                    // Check peer response FIRST (same reason as STREAM_START/STREAM_END)
+                    let pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = pending.get(&frame.id) {
+                        eprintln!("[PluginRuntime] CHUNK is peer response (id={:?}), forwarding to handler", frame.id);
+                        if !pending_req.ended {
+                            let _ = pending_req.sender.send(frame.clone());
+                        }
+                        drop(pending);
+                        continue;
+                    }
+                    drop(pending);
+
+                    // Not a peer response - check if this is a chunk for an incoming request
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.get_mut(&frame.id) {
                         // FAIL HARD: Request already ended
@@ -2051,19 +2064,8 @@ impl PluginRuntime {
                         continue; // Wait for more chunks or STREAM_END/END
                     }
                     drop(incoming);
-
-                    // Not an incoming request chunk - must be a peer response chunk
-                    let pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = pending.get(&frame.id) {
-                        if pending_req.ended {
-                            // FAIL HARD: Response activity after END
-                            drop(pending);
-                            pending_peer_requests.lock().unwrap().remove(&frame.id);
-                            continue;
-                        }
-                        // Forward the frame directly to the handler
-                        let _ = pending_req.sender.send(frame.clone());
-                    }
+                    // Unknown request ID - frame dropped
+                    eprintln!("[PluginRuntime] CHUNK for unknown request (id={:?})", frame.id);
                 }
                 FrameType::Heartbeat => {
                     // Respond to heartbeat immediately - never blocked by handlers
@@ -2117,7 +2119,19 @@ impl PluginRuntime {
                     eprintln!("[PluginRuntime] STREAM_START: req_id={:?} stream_id={} media_urn={}",
                         req_id, stream_id, media_urn);
 
-                    // STRICT: Add stream with validation
+                    // Check peer response FIRST (takes priority over incoming requests)
+                    let peer_pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = peer_pending.get(&req_id) {
+                        if !pending_req.ended {
+                            eprintln!("[PluginRuntime] STREAM_START is peer response, forwarding to handler");
+                            let _ = pending_req.sender.send(frame.clone());
+                        }
+                        drop(peer_pending);
+                        continue;
+                    }
+                    drop(peer_pending);
+
+                    // Not a peer response - check incoming requests
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.get_mut(&req_id) {
                         // FAIL HARD: Request already ended
@@ -2155,16 +2169,6 @@ impl PluginRuntime {
                         continue;
                     }
                     drop(incoming);
-
-                    // Not an incoming request - must be a peer response stream
-                    let peer_pending = pending_peer_requests.lock().unwrap();
-                    if let Some(pending_req) = peer_pending.get(&req_id) {
-                        if !pending_req.ended {
-                            // Forward the STREAM_START frame to the handler
-                            let _ = pending_req.sender.send(frame.clone());
-                        }
-                    }
-                    drop(peer_pending);
                     continue;
                 }
                 FrameType::StreamEnd => {
@@ -2181,7 +2185,19 @@ impl PluginRuntime {
 
                     eprintln!("[PluginRuntime] STREAM_END: stream_id={}", stream_id);
 
-                    // STRICT: Mark stream as complete with validation
+                    // Check peer response FIRST (same reason as STREAM_START)
+                    let peer_pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pending_req) = peer_pending.get(&frame.id) {
+                        if !pending_req.ended {
+                            eprintln!("[PluginRuntime] STREAM_END is peer response, forwarding to handler");
+                            let _ = pending_req.sender.send(frame.clone());
+                        }
+                        drop(peer_pending);
+                        continue;
+                    }
+                    drop(peer_pending);
+
+                    // Not a peer response - check incoming requests
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.get_mut(&frame.id) {
                         match pending_req.streams.iter_mut().find(|(id, _)| id == &stream_id).map(|(_, s)| s) {
@@ -2219,6 +2235,20 @@ impl PluginRuntime {
                 }
                 FrameType::End => {
                     // NEW PROTOCOL: END signals all streams for request are complete
+
+                    // Check peer response FIRST (critical - same ID exists in both contexts)
+                    let mut peer_pending = pending_peer_requests.lock().unwrap();
+                    if let Some(mut pending_req) = peer_pending.remove(&frame.id) {
+                        eprintln!("[PluginRuntime] END is peer response, forwarding to handler and closing channel");
+                        pending_req.ended = true;
+                        let _ = pending_req.sender.send(frame.clone());
+                        // Sender dropped here, closes channel to signal completion
+                        drop(peer_pending);
+                        continue;
+                    }
+                    drop(peer_pending);
+
+                    // Not a peer response - handle as incoming request completion
                     let mut incoming = pending_incoming.lock().unwrap();
                     if let Some(pending_req) = incoming.remove(&frame.id) {
                         drop(incoming);
@@ -2441,17 +2471,29 @@ impl PluginRuntime {
 
                             match result {
                                 Ok(()) => {
+                                    eprintln!("[PluginRuntime] Handler succeeded, sending response END");
                                     let mut writer = writer_clone.lock().unwrap();
 
                                     // STREAM MULTIPLEXING PROTOCOL: Send STREAM_END then END
                                     // Only send STREAM_END if STREAM_START was sent (stream_started == true)
                                     if emitter.stream_started.load(Ordering::SeqCst) {
+                                        eprintln!("[PluginRuntime] Sending STREAM_END for response stream");
                                         let stream_end = Frame::stream_end(request_id.clone(), emitter.stream_id.clone());
-                                        let _ = writer.write(&stream_end);
+                                        match writer.write(&stream_end) {
+                                            Ok(()) => eprintln!("[PluginRuntime] STREAM_END sent successfully"),
+                                            Err(e) => eprintln!("[PluginRuntime] ERROR writing STREAM_END: {}", e),
+                                        }
+                                    } else {
+                                        eprintln!("[PluginRuntime] No STREAM_START was sent, skipping STREAM_END");
                                     }
 
+                                    eprintln!("[PluginRuntime] Sending response END frame");
                                     let end_frame = Frame::end(request_id.clone(), None);
-                                    let _ = writer.write(&end_frame);
+                                    match writer.write(&end_frame) {
+                                        Ok(()) => eprintln!("[PluginRuntime] Response END sent successfully"),
+                                        Err(e) => eprintln!("[PluginRuntime] ERROR writing END: {}", e),
+                                    }
+                                    eprintln!("[PluginRuntime] Response frames sent");
                                 }
                                 Err(e) => {
                                     let err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());

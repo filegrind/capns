@@ -123,11 +123,15 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
             loop {
                 match local_reader.read() {
                     Ok(Some(frame)) => {
-                        if frame.frame_type == FrameType::RelayNotify
-                            || frame.frame_type == FrameType::RelayState
-                        {
-                            // Relay frames from local side — drop
+                        // Forward all frames, including RelayNotify (capability updates)
+                        // RelayState is still dropped (deprecated/unused)
+                        if frame.frame_type == FrameType::RelayState {
+                            // Drop RelayState frames
                         } else {
+                            if frame.frame_type == FrameType::RelayNotify {
+                                eprintln!("[RelaySlave] Forwarding RelayNotify from local to socket");
+                            }
+                            // Forward frame to socket (including RelayNotify for capability updates)
                             if let Err(e) = socket_write.write(&frame) {
                                 let mut guard = err2.lock().unwrap();
                                 if guard.is_none() {
