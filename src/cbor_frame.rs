@@ -19,6 +19,9 @@
 //!   8: offset (u64, optional - byte offset in chunked stream)
 //!   9: eof (bool, optional - true on final chunk)
 //!   10: cap (tstr, optional - cap URN for requests)
+//!   14: index (u64, optional - chunk sequence index within stream, starts at 0)
+//!   15: chunk_count (u64, optional - total chunks in STREAM_END, by source's count)
+//!   16: checksum (u64, optional - FNV-1a hash of payload for CHUNK frames)
 //! }
 //! ```
 //!
@@ -195,6 +198,12 @@ pub struct Frame {
     pub eof: Option<bool>,
     /// Cap URN (for requests)
     pub cap: Option<String>,
+    /// Chunk sequence index within stream (CHUNK frames only, starts at 0)
+    pub index: Option<u64>,
+    /// Total chunk count (STREAM_END frames only, by source's reckoning)
+    pub chunk_count: Option<u64>,
+    /// FNV-1a checksum of payload (CHUNK frames only)
+    pub checksum: Option<u64>,
 }
 
 impl Frame {
@@ -215,6 +224,9 @@ impl Frame {
             offset: None,
             eof: None,
             cap: None,
+            index: None,
+            chunk_count: None,
+            checksum: None,
         }
     }
 
@@ -286,11 +298,13 @@ impl Frame {
     /// * `stream_id` - The stream ID this chunk belongs to
     /// * `seq` - Sequence number within the stream
     /// * `payload` - Chunk data
-    pub fn chunk(req_id: MessageId, stream_id: String, seq: u64, payload: Vec<u8>) -> Self {
+    pub fn chunk(req_id: MessageId, stream_id: String, seq: u64, payload: Vec<u8>, index: u64, checksum: u64) -> Self {
         let mut frame = Self::new(FrameType::Chunk, req_id);
         frame.stream_id = Some(stream_id);
         frame.seq = seq;
         frame.payload = Some(payload);
+        frame.index = Some(index);
+        frame.checksum = Some(checksum);
         frame
     }
 
@@ -304,12 +318,16 @@ impl Frame {
         offset: u64,
         total_len: Option<u64>,
         is_last: bool,
+        index: u64,
+        checksum: u64,
     ) -> Self {
         let mut frame = Self::new(FrameType::Chunk, req_id);
         frame.stream_id = Some(stream_id);
         frame.seq = seq;
         frame.payload = Some(payload);
         frame.offset = Some(offset);
+        frame.index = Some(index);
+        frame.checksum = Some(checksum);
         if seq == 0 {
             frame.len = total_len;
         }
@@ -375,9 +393,11 @@ impl Frame {
     /// # Arguments
     /// * `req_id` - The request ID this stream belongs to
     /// * `stream_id` - The stream being ended
-    pub fn stream_end(req_id: MessageId, stream_id: String) -> Self {
+    /// * `chunk_count` - Total number of chunks sent in this stream (by source's reckoning)
+    pub fn stream_end(req_id: MessageId, stream_id: String, chunk_count: u64) -> Self {
         let mut frame = Self::new(FrameType::StreamEnd, req_id);
         frame.stream_id = Some(stream_id);
+        frame.chunk_count = Some(chunk_count);
         frame
     }
 
@@ -589,6 +609,20 @@ impl Frame {
             })
         })
     }
+
+    /// Compute FNV-1a 64-bit checksum of bytes.
+    /// This is a simple, fast hash function suitable for detecting transmission errors.
+    pub fn compute_checksum(data: &[u8]) -> u64 {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+
+        let mut hash = FNV_OFFSET_BASIS;
+        for &byte in data {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        hash
+    }
 }
 
 impl Default for Frame {
@@ -613,6 +647,9 @@ pub mod keys {
     pub const STREAM_ID: u64 = 11;      // Stream ID for multiplexed streams
     pub const MEDIA_URN: u64 = 12;      // Media URN for stream type identification
     pub const ROUTING_ID: u64 = 13;     // Routing ID assigned by RelaySwitch
+    pub const INDEX: u64 = 14;          // Chunk sequence index within stream (starts at 0)
+    pub const CHUNK_COUNT: u64 = 15;    // Total chunk count in STREAM_END
+    pub const CHECKSUM: u64 = 16;       // FNV-1a checksum of payload for CHUNK frames
 }
 
 #[cfg(test)]
@@ -766,7 +803,9 @@ mod tests {
     fn test_chunk_frame() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-123".to_string();
-        let frame = Frame::chunk(id.clone(), stream_id.clone(), 3, b"data".to_vec());
+        let payload = b"data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        let frame = Frame::chunk(id.clone(), stream_id.clone(), 3, payload, 3, checksum);
         assert_eq!(frame.frame_type, FrameType::Chunk);
         assert_eq!(frame.id, id);
         assert_eq!(frame.stream_id, Some(stream_id));
@@ -821,17 +860,23 @@ mod tests {
     fn test_chunk_with_offset() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-456".to_string();
-        let first = Frame::chunk_with_offset(id.clone(), stream_id.clone(), 0, b"data".to_vec(), 0, Some(1000), false);
+        let payload1 = b"data".to_vec();
+        let checksum1 = Frame::compute_checksum(&payload1);
+        let first = Frame::chunk_with_offset(id.clone(), stream_id.clone(), 0, payload1, 0, Some(1000), false, 0, checksum1);
         assert_eq!(first.seq, 0);
         assert_eq!(first.offset, Some(0));
         assert_eq!(first.len, Some(1000), "first chunk must carry total len");
         assert!(!first.is_eof());
 
-        let mid = Frame::chunk_with_offset(id.clone(), stream_id.clone(), 3, b"mid".to_vec(), 500, Some(9999), false);
+        let payload2 = b"mid".to_vec();
+        let checksum2 = Frame::compute_checksum(&payload2);
+        let mid = Frame::chunk_with_offset(id.clone(), stream_id.clone(), 3, payload2, 500, Some(9999), false, 3, checksum2);
         assert!(mid.len.is_none(), "non-first chunk must not carry len, seq != 0");
         assert_eq!(mid.offset, Some(500));
 
-        let last = Frame::chunk_with_offset(id, stream_id, 5, b"last".to_vec(), 900, None, true);
+        let payload3 = b"last".to_vec();
+        let checksum3 = Frame::compute_checksum(&payload3);
+        let last = Frame::chunk_with_offset(id, stream_id, 5, payload3, 900, None, true, 5, checksum3);
         assert!(last.is_eof());
         assert!(last.len.is_none());
     }
@@ -1018,7 +1063,7 @@ mod tests {
         let req_id = MessageId::new_uuid();
         let stream_id = "stream-xyz-789".to_string();
 
-        let frame = Frame::stream_end(req_id.clone(), stream_id.clone());
+        let frame = Frame::stream_end(req_id.clone(), stream_id.clone(), 5);
 
         assert_eq!(frame.frame_type, FrameType::StreamEnd);
         assert_eq!(frame.id, req_id);
@@ -1101,5 +1146,61 @@ mod tests {
     fn test_invalid_frame_type_past_relay_state() {
         assert!(FrameType::from_u8(12).is_none(), "12 is past the last valid frame type");
         assert!(FrameType::from_u8(2).is_none(), "2 (old Res) is still invalid");
+    }
+
+    // TEST436: Verify FNV-1a checksum function produces consistent results
+    #[test]
+    fn test_compute_checksum() {
+        let data1 = b"hello world";
+        let data2 = b"hello world";
+        let data3 = b"hello world!";
+
+        let checksum1 = Frame::compute_checksum(data1);
+        let checksum2 = Frame::compute_checksum(data2);
+        let checksum3 = Frame::compute_checksum(data3);
+
+        assert_eq!(checksum1, checksum2, "same data produces same checksum");
+        assert_ne!(checksum1, checksum3, "different data produces different checksum");
+        assert_ne!(checksum1, 0, "checksum should not be zero for non-empty data");
+    }
+
+    // TEST437: Verify FNV-1a checksum handles empty data
+    #[test]
+    fn test_compute_checksum_empty() {
+        let empty = b"";
+        let checksum = Frame::compute_checksum(empty);
+        assert_eq!(checksum, 0xcbf29ce484222325, "empty data produces FNV offset basis");
+    }
+
+    // TEST438: Verify CHUNK frame can store index and checksum fields
+    #[test]
+    fn test_chunk_with_index_and_checksum() {
+        let id = MessageId::Uuid([1; 16]);
+        let stream_id = "test-stream".to_string();
+        let payload = b"chunk data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        let frame = Frame::chunk(id.clone(), stream_id.clone(), 5, payload.clone(), 3, checksum);
+
+        assert_eq!(frame.frame_type, FrameType::Chunk);
+        assert_eq!(frame.id, id);
+        assert_eq!(frame.stream_id, Some(stream_id));
+        assert_eq!(frame.seq, 5);
+        assert_eq!(frame.index, Some(3), "index should be set");
+        assert_eq!(frame.checksum, Some(checksum), "checksum should be set");
+    }
+
+    // TEST439: Verify STREAM_END frame can store chunk_count field
+    #[test]
+    fn test_stream_end_with_chunk_count() {
+        let id = MessageId::Uuid([1; 16]);
+        let stream_id = "test-stream".to_string();
+
+        let frame = Frame::stream_end(id.clone(), stream_id.clone(), 42);
+
+        assert_eq!(frame.frame_type, FrameType::StreamEnd);
+        assert_eq!(frame.id, id);
+        assert_eq!(frame.stream_id, Some(stream_id));
+        assert_eq!(frame.chunk_count, Some(42), "chunk_count should be set");
     }
 }

@@ -129,8 +129,9 @@ mod tests {
 
             let sid = "resp".to_string();
             writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, arg_data)).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid)).unwrap();
+            let checksum = Frame::compute_checksum(&arg_data);
+            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, arg_data, 0, checksum)).unwrap();
+            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
             writer.write(&Frame::end(req.id, None)).unwrap();
             drop(writer);
         });
@@ -147,8 +148,10 @@ mod tests {
             let sid = uuid::Uuid::new_v4().to_string();
             w.write(&Frame::req(req_id.clone(), "cap:op=echo", vec![], "text/plain")).await.unwrap();
             w.write(&Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string())).await.unwrap();
-            w.write(&Frame::chunk(req_id.clone(), sid.clone(), 0, b"hello world".to_vec())).await.unwrap();
-            w.write(&Frame::stream_end(req_id.clone(), sid)).await.unwrap();
+            let payload = b"hello world".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            w.write(&Frame::chunk(req_id.clone(), sid.clone(), 0, payload, 0, checksum)).await.unwrap();
+            w.write(&Frame::stream_end(req_id.clone(), sid, 1)).await.unwrap();
             w.write(&Frame::end(req_id.clone(), None)).await.unwrap();
 
             // Read response
@@ -272,8 +275,9 @@ mod tests {
 
             let sid = "resp".to_string();
             writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, received)).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid)).unwrap();
+            let checksum = Frame::compute_checksum(&received);
+            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, received, 0, checksum)).unwrap();
+            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
             writer.write(&Frame::end(req.id, None)).unwrap();
             drop(writer);
         });
@@ -289,8 +293,9 @@ mod tests {
             let sid = uuid::Uuid::new_v4().to_string();
             w.write(&Frame::req(req_id.clone(), "cap:op=binary", vec![], "application/octet-stream")).await.unwrap();
             w.write(&Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string())).await.unwrap();
-            w.write(&Frame::chunk(req_id.clone(), sid.clone(), 0, binary_clone)).await.unwrap();
-            w.write(&Frame::stream_end(req_id.clone(), sid)).await.unwrap();
+            let checksum = Frame::compute_checksum(&binary_clone);
+            w.write(&Frame::chunk(req_id.clone(), sid.clone(), 0, binary_clone, 0, checksum)).await.unwrap();
+            w.write(&Frame::stream_end(req_id.clone(), sid, 1)).await.unwrap();
             w.write(&Frame::end(req_id.clone(), None)).await.unwrap();
 
             let mut payload = Vec::new();
@@ -345,9 +350,10 @@ mod tests {
             writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
             for seq in 0u64..5 {
                 let data = format!("chunk{}", seq).into_bytes();
-                writer.write(&Frame::chunk(req.id.clone(), sid.clone(), seq, data)).unwrap();
+                let checksum = Frame::compute_checksum(&data);
+                writer.write(&Frame::chunk(req.id.clone(), sid.clone(), seq, data, seq, checksum)).unwrap();
             }
-            writer.write(&Frame::stream_end(req.id.clone(), sid)).unwrap();
+            writer.write(&Frame::stream_end(req.id.clone(), sid, 5)).unwrap();
             writer.write(&Frame::end(req.id, None)).unwrap();
             drop(writer);
         });
@@ -432,8 +438,10 @@ mod tests {
             // Send original response
             let sid = "resp".to_string();
             writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, b"done".to_vec())).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid)).unwrap();
+            let payload = b"done".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
+            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
             writer.write(&Frame::end(req.id, None)).unwrap();
             drop(writer);
         });
@@ -505,8 +513,10 @@ mod tests {
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "a".to_string();
             writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, b"from-alpha".to_vec())).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid)).unwrap();
+            let payload = b"from-alpha".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
+            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
             writer.write(&Frame::end(req.id, None)).unwrap();
             drop(writer);
         });
@@ -519,8 +529,10 @@ mod tests {
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "b".to_string();
             writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, b"from-beta".to_vec())).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid)).unwrap();
+            let payload = b"from-beta".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
+            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
             writer.write(&Frame::end(req.id, None)).unwrap();
             drop(writer);
         });
@@ -735,9 +747,11 @@ mod tests {
             let sid = "response".to_string();
             writer.write(&Frame::stream_start(request_id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
             for (seq, data) in [b"chunk1", b"chunk2", b"chunk3"].iter().enumerate() {
-                writer.write(&Frame::chunk(request_id.clone(), sid.clone(), seq as u64, data.to_vec())).unwrap();
+                let payload = data.to_vec();
+                let checksum = Frame::compute_checksum(&payload);
+                writer.write(&Frame::chunk(request_id.clone(), sid.clone(), seq as u64, payload, seq as u64, checksum)).unwrap();
             }
-            writer.write(&Frame::stream_end(request_id.clone(), sid)).unwrap();
+            writer.write(&Frame::stream_end(request_id.clone(), sid, 3)).unwrap();
             writer.write(&Frame::end(request_id, None)).unwrap();
         });
 

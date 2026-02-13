@@ -520,11 +520,15 @@ mod tests {
         let chunk_id_clone = chunk_id.clone();
         let runtime_write_handle = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(runtime_write_to_slave));
+            let payload = b"response".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
             let chunk = Frame::chunk(
                 chunk_id_clone,
                 "stream-1".to_string(),
                 0,
-                b"response".to_vec(),
+                payload,
+                0,
+                checksum,
             );
             writer.write(&chunk).unwrap();
             drop(writer);
@@ -642,11 +646,15 @@ mod tests {
             .unwrap();
 
             // Then: forward a normal CHUNK frame
+            let payload = b"data".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
             let chunk = Frame::chunk(
                 MessageId::new_uuid(),
                 "stream-1".to_string(),
                 0,
-                b"data".to_vec(),
+                payload,
+                0,
+                checksum,
             );
             socket_writer.write(&chunk).unwrap();
 
@@ -824,7 +832,9 @@ mod tests {
         let resp_id1_clone = resp_id1.clone();
         let runtime_write = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(runtime_writes_to_slave));
-            let chunk = Frame::chunk(resp_id1_clone, "s1".to_string(), 0, b"resp-a".to_vec());
+            let payload = b"resp-a".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            let chunk = Frame::chunk(resp_id1_clone, "s1".to_string(), 0, payload, 0, checksum);
             let end = Frame::end(resp_id1.clone(), None);
             writer.write(&chunk).unwrap();
             writer.write(&end).unwrap();

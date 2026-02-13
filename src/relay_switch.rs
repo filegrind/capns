@@ -1396,7 +1396,9 @@ mod tests {
         switch.send_to_master(req).unwrap();
 
         // Send CHUNK continuation
-        let chunk = Frame::chunk(req_id.clone(), "stream1".to_string(), 0, vec![1, 2, 3]);
+        let payload = vec![1, 2, 3];
+        let checksum = Frame::compute_checksum(&payload);
+        let chunk = Frame::chunk(req_id.clone(), "stream1".to_string(), 0, payload, 0, checksum);
         switch.send_to_master(chunk).unwrap();
 
         // Send END continuation

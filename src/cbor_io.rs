@@ -140,6 +140,27 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CborError> {
         map.push((Value::Integer(keys::ROUTING_ID.into()), routing_id_value));
     }
 
+    if let Some(index) = frame.index {
+        map.push((
+            Value::Integer(keys::INDEX.into()),
+            Value::Integer((index as i64).into()),
+        ));
+    }
+
+    if let Some(chunk_count) = frame.chunk_count {
+        map.push((
+            Value::Integer(keys::CHUNK_COUNT.into()),
+            Value::Integer((chunk_count as i64).into()),
+        ));
+    }
+
+    if let Some(checksum) = frame.checksum {
+        map.push((
+            Value::Integer(keys::CHECKSUM.into()),
+            Value::Integer((checksum as i64).into()),
+        ));
+    }
+
     let value = Value::Map(map);
     let mut buf = Vec::new();
     ciborium::into_writer(&value, &mut buf)
@@ -304,7 +325,31 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
         _ => MessageId::Uint(0),
     });
 
-    Ok(Frame {
+    let index = lookup.get(&keys::INDEX).and_then(|v| match v {
+        Value::Integer(i) => {
+            let n: i128 = (*i).into();
+            Some(n as u64)
+        }
+        _ => None,
+    });
+
+    let chunk_count = lookup.get(&keys::CHUNK_COUNT).and_then(|v| match v {
+        Value::Integer(i) => {
+            let n: i128 = (*i).into();
+            Some(n as u64)
+        }
+        _ => None,
+    });
+
+    let checksum = lookup.get(&keys::CHECKSUM).and_then(|v| match v {
+        Value::Integer(i) => {
+            let n: i128 = (*i).into();
+            Some(n as u64)
+        }
+        _ => None,
+    });
+
+    let frame = Frame {
         version,
         frame_type,
         id,
@@ -319,7 +364,30 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
         offset,
         eof,
         cap,
-    })
+        index,
+        chunk_count,
+        checksum,
+    };
+
+    // Validate required fields based on frame type
+    match frame.frame_type {
+        FrameType::Chunk => {
+            if frame.index.is_none() {
+                return Err(CborError::InvalidFrame("CHUNK frame missing required field: index".to_string()));
+            }
+            if frame.checksum.is_none() {
+                return Err(CborError::InvalidFrame("CHUNK frame missing required field: checksum".to_string()));
+            }
+        }
+        FrameType::StreamEnd => {
+            if frame.chunk_count.is_none() {
+                return Err(CborError::InvalidFrame("STREAM_END frame missing required field: chunk_count".to_string()));
+            }
+        }
+        _ => {} // Other frame types don't require these fields
+    }
+
+    Ok(frame)
 }
 
 /// Write a length-prefixed CBOR frame to a writer
@@ -551,7 +619,8 @@ impl<W: Write> FrameWriter<W> {
 
         if total_len == 0 {
             // Empty payload - send single chunk with eof
-            let mut frame = Frame::chunk(id, stream_id, 0, Vec::new());
+            let checksum = Frame::compute_checksum(&[]);
+            let mut frame = Frame::chunk(id, stream_id, 0, Vec::new(), 0, checksum);
             frame.content_type = Some(content_type.to_string());
             frame.len = Some(0);
             frame.offset = Some(0);
@@ -561,14 +630,16 @@ impl<W: Write> FrameWriter<W> {
 
         let mut seq = 0u64;
         let mut offset = 0usize;
+        let mut chunk_index = 0u64;
 
         while offset < total_len {
             let chunk_size = max_chunk.min(total_len - offset);
             let is_last = offset + chunk_size >= total_len;
 
             let chunk_data = data[offset..offset + chunk_size].to_vec();
+            let checksum = Frame::compute_checksum(&chunk_data);
 
-            let mut frame = Frame::chunk(id.clone(), stream_id.clone(), seq, chunk_data);
+            let mut frame = Frame::chunk(id.clone(), stream_id.clone(), seq, chunk_data, chunk_index, checksum);
             frame.offset = Some(offset as u64);
 
             // Set content_type and total len on first chunk
@@ -584,6 +655,7 @@ impl<W: Write> FrameWriter<W> {
             self.write(&frame)?;
 
             seq += 1;
+            chunk_index += 1;
             offset += chunk_size;
         }
 
@@ -902,7 +974,9 @@ mod tests {
     fn test_chunk_with_offset_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-test".to_string();
-        let original = Frame::chunk_with_offset(id.clone(), stream_id, 0, b"data".to_vec(), 100, Some(5000), true);
+        let payload = b"data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        let original = Frame::chunk_with_offset(id.clone(), stream_id, 0, payload, 100, Some(5000), true, 0, checksum);
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
@@ -965,7 +1039,9 @@ mod tests {
         let id3 = MessageId::new_uuid();
 
         let f1 = Frame::req(id1.clone(), "cap:op=first", b"one".to_vec(), "text/plain");
-        let f2 = Frame::chunk(id2.clone(), "stream-2".to_string(), 0, b"two".to_vec());
+        let payload2 = b"two".to_vec();
+        let checksum2 = Frame::compute_checksum(&payload2);
+        let f2 = Frame::chunk(id2.clone(), "stream-2".to_string(), 0, payload2, 0, checksum2);
         let f3 = Frame::end(id3.clone(), Some(b"three".to_vec()));
 
         write_frame(&mut buf, &f1, &limits).unwrap();
@@ -1411,7 +1487,7 @@ mod tests {
         let id = MessageId::new_uuid();
         let stream_id = "stream-xyz-789".to_string();
 
-        let frame = Frame::stream_end(id.clone(), stream_id.clone());
+        let frame = Frame::stream_end(id.clone(), stream_id.clone(), 10);
         let encoded = encode_frame(&frame).unwrap();
         let decoded = decode_frame(&encoded).unwrap();
 
@@ -1420,4 +1496,44 @@ mod tests {
         assert_eq!(decoded.stream_id.as_deref(), Some("stream-xyz-789"));
         assert!(decoded.media_urn.is_none(), "StreamEnd should not have media_urn");
     }
+
+    // TEST440: CHUNK frame with index and checksum roundtrips through encode/decode
+    #[test]
+    fn test_chunk_index_checksum_roundtrip() {
+        let id = MessageId::new_uuid();
+        let stream_id = "test-stream".to_string();
+        let payload = b"test chunk data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        let frame = Frame::chunk(id.clone(), stream_id.clone(), 5, payload.clone(), 3, checksum);
+
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.frame_type, FrameType::Chunk);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.stream_id, Some(stream_id));
+        assert_eq!(decoded.seq, 5);
+        assert_eq!(decoded.payload, Some(payload));
+        assert_eq!(decoded.index, Some(3), "index must roundtrip");
+        assert_eq!(decoded.checksum, Some(checksum), "checksum must roundtrip");
+    }
+
+    // TEST441: STREAM_END frame with chunk_count roundtrips through encode/decode
+    #[test]
+    fn test_stream_end_chunk_count_roundtrip() {
+        let id = MessageId::new_uuid();
+        let stream_id = "test-stream".to_string();
+
+        let frame = Frame::stream_end(id.clone(), stream_id.clone(), 42);
+
+        let encoded = encode_frame(&frame).unwrap();
+        let decoded = decode_frame(&encoded).unwrap();
+
+        assert_eq!(decoded.frame_type, FrameType::StreamEnd);
+        assert_eq!(decoded.id, id);
+        assert_eq!(decoded.stream_id, Some(stream_id));
+        assert_eq!(decoded.chunk_count, Some(42), "chunk_count must roundtrip");
+    }
+
 }

@@ -118,6 +118,8 @@ pub struct StreamEmitter<'a> {
     routing_id: Option<MessageId>,  // XID for responses, None for peer requests
     stream_started: AtomicBool,
     seq: Mutex<u64>,
+    chunk_index: Mutex<u64>,  // Chunk sequence index within stream, starts at 0
+    chunk_count: Mutex<u64>,  // Total chunks sent in this stream
     max_chunk: usize,
 }
 
@@ -144,6 +146,8 @@ impl<'a> StreamEmitter<'a> {
             routing_id,
             stream_started: AtomicBool::new(false),
             seq: Mutex::new(0),
+            chunk_index: Mutex::new(0),
+            chunk_count: Mutex::new(0),
             max_chunk,
         }
     }
@@ -176,7 +180,12 @@ impl<'a> StreamEmitter<'a> {
 
     /// Send STREAM_END for this stream.
     pub fn end_stream(&self) -> Result<(), RuntimeError> {
-        let mut frame = Frame::stream_end(self.request_id.clone(), self.stream_id.clone());
+        let chunk_count = {
+            let count_guard = self.chunk_count.lock().unwrap();
+            *count_guard
+        };
+
+        let mut frame = Frame::stream_end(self.request_id.clone(), self.stream_id.clone(), chunk_count);
         frame.routing_id = self.routing_id.clone();
         self.sender.send(&frame)
     }
@@ -243,7 +252,21 @@ impl<'a> StreamEmitter<'a> {
             current
         };
 
-        let mut frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload);
+        let index = {
+            let mut index_guard = self.chunk_index.lock().unwrap();
+            let current = *index_guard;
+            *index_guard += 1;
+            current
+        };
+
+        {
+            let mut count_guard = self.chunk_count.lock().unwrap();
+            *count_guard += 1;
+        }
+
+        let checksum = Frame::compute_checksum(&cbor_payload);
+
+        let mut frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload, index, checksum);
         frame.routing_id = self.routing_id.clone();
         self.sender.send(&frame)
     }
@@ -994,6 +1017,7 @@ impl PeerInvoker for PeerInvokerImpl {
             // Each CHUNK payload MUST be independently decodable CBOR
             let mut offset = 0;
             let mut seq = 0u64;
+            let mut chunk_index = 0u64;
             while offset < arg.value.len() {
                 let chunk_size = (arg.value.len() - offset).min(max_chunk);
                 let chunk_bytes = arg.value[offset..offset + chunk_size].to_vec();
@@ -1007,11 +1031,14 @@ impl PeerInvoker for PeerInvokerImpl {
                         RuntimeError::PeerRequest(format!("Failed to encode chunk: {}", e))
                     })?;
 
+                let checksum = Frame::compute_checksum(&cbor_payload);
                 let chunk_frame = Frame::chunk(
                     request_id.clone(),
                     stream_id.clone(),
                     seq,
-                    cbor_payload
+                    cbor_payload,
+                    chunk_index,
+                    checksum
                 );
                 self.output_tx.send(chunk_frame).map_err(|_| {
                     self.pending_requests.lock().unwrap().remove(&request_id);
@@ -1020,10 +1047,12 @@ impl PeerInvoker for PeerInvokerImpl {
 
                 offset += chunk_size;
                 seq += 1;
+                chunk_index += 1;
             }
 
             // STREAM_END: Close this stream
-            let end_frame = Frame::stream_end(request_id.clone(), stream_id);
+            let chunk_count = chunk_index;
+            let end_frame = Frame::stream_end(request_id.clone(), stream_id, chunk_count);
             self.output_tx.send(end_frame).map_err(|_| {
                 self.pending_requests.lock().unwrap().remove(&request_id);
                 RuntimeError::PeerRequest("Output channel closed".to_string())
@@ -1390,26 +1419,32 @@ impl PluginRuntime {
                     tx.send(start_frame).map_err(|_| RuntimeError::Handler("Failed to send STREAM_START".to_string()))?;
 
                     // Send CHUNK frame(s)
-                    if bytes.is_empty() {
+                    let chunk_count = if bytes.is_empty() {
                         // Empty value - send single empty chunk
-                        let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, vec![]);
+                        let checksum = Frame::compute_checksum(&[]);
+                        let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, vec![], 0, checksum);
                         tx.send(chunk_frame).map_err(|_| RuntimeError::Handler("Failed to send CHUNK".to_string()))?;
+                        1
                     } else {
                         // Non-empty value - chunk into max_chunk pieces
                         let mut offset = 0;
                         let mut seq = 0u64;
+                        let mut chunk_index = 0u64;
                         while offset < bytes.len() {
                             let chunk_size = (bytes.len() - offset).min(max_chunk);
                             let chunk_data = bytes[offset..offset + chunk_size].to_vec();
-                            let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq, chunk_data);
+                            let checksum = Frame::compute_checksum(&chunk_data);
+                            let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq, chunk_data, chunk_index, checksum);
                             tx.send(chunk_frame).map_err(|_| RuntimeError::Handler("Failed to send CHUNK".to_string()))?;
                             offset += chunk_size;
                             seq += 1;
+                            chunk_index += 1;
                         }
-                    }
+                        chunk_index
+                    };
 
                     // Send STREAM_END
-                    let end_frame = Frame::stream_end(request_id.clone(), stream_id.clone());
+                    let end_frame = Frame::stream_end(request_id.clone(), stream_id.clone(), chunk_count);
                     tx.send(end_frame).map_err(|_| RuntimeError::Handler("Failed to send STREAM_END".to_string()))?;
                 }
             }
@@ -2576,13 +2611,15 @@ impl PluginRuntime {
                                 }
                                 // Send each CHUNK individually (each is already a complete CBOR value)
                                 for (seq, chunk_data) in chunks.iter().enumerate() {
-                                    let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq as u64, chunk_data.clone());
+                                    let checksum = Frame::compute_checksum(chunk_data);
+                                    let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq as u64, chunk_data.clone(), seq as u64, checksum);
                                     if tx.send(chunk_frame).is_err() {
                                         break;
                                     }
                                 }
                                 // Send STREAM_END
-                                let end_frame = Frame::stream_end(request_id.clone(), stream_id);
+                                let chunk_count = chunks.len() as u64;
+                                let end_frame = Frame::stream_end(request_id.clone(), stream_id, chunk_count);
                                 if tx.send(end_frame).is_err() {
                                     break;
                                 }
@@ -2899,9 +2936,11 @@ mod tests {
         // Send STREAM_START
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
         // Send CHUNK
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"echo this".to_vec())).ok();
+        let payload = b"echo this".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
         // Send STREAM_END
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         // Send END
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
@@ -2932,8 +2971,10 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"{\"key\":\"hello\"}".to_vec())).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let payload = b"{\"key\":\"hello\"}".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         handler(rx, &emitter, &no_peer).unwrap();
@@ -2956,8 +2997,10 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"not json {{{{".to_vec())).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let payload = b"not json {{{{".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         let result = handler(rx, &emitter, &no_peer);
@@ -2999,8 +3042,10 @@ mod tests {
             let request_id = MessageId::new_uuid();
             let stream_id = "test-stream".to_string();
             tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-            tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"{}".to_vec())).ok();
-            tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+            let payload = b"{}".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+            tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
             tx.send(Frame::end(request_id, None)).ok();
             drop(tx);
             handler_clone(rx, &emitter, &no_peer).unwrap();
@@ -3280,8 +3325,10 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"".to_vec())).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let payload = b"".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         h_alpha(rx, &emitter, &no_peer).unwrap();
@@ -3291,8 +3338,10 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"".to_vec())).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let payload = b"".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         h_beta(rx, &emitter, &no_peer).unwrap();
@@ -3302,8 +3351,10 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"".to_vec())).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let payload = b"".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         h_gamma(rx, &emitter, &no_peer).unwrap();
@@ -3351,8 +3402,10 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, b"".to_vec())).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let payload = b"".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         handler(rx, &emitter, &no_peer).unwrap();
@@ -3571,8 +3624,9 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload)).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         handler(rx, &emitter, &peer).unwrap();
@@ -4149,8 +4203,9 @@ mod tests {
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), "media:bytes".to_string())).ok();
-        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload)).ok();
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let checksum = Frame::compute_checksum(&payload);
+        tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, payload, 0, checksum)).ok();
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         handler(rx, &emitter, &peer).unwrap();
@@ -4913,20 +4968,27 @@ mod tests {
         // Send CHUNK frames
         let mut offset = 0;
         let mut seq = 0u64;
+        let mut chunk_index = 0u64;
         while offset < payload_bytes.len() {
             let chunk_size = (payload_bytes.len() - offset).min(MAX_CHUNK);
+            let chunk_data = payload_bytes[offset..offset + chunk_size].to_vec();
+            let checksum = Frame::compute_checksum(&chunk_data);
             tx.send(Frame::chunk(
                 request_id.clone(),
                 stream_id.clone(),
                 seq,
-                payload_bytes[offset..offset + chunk_size].to_vec()
+                chunk_data,
+                chunk_index,
+                checksum
             )).ok();
             offset += chunk_size;
             seq += 1;
+            chunk_index += 1;
         }
 
         // Send STREAM_END and END
-        tx.send(Frame::stream_end(request_id.clone(), stream_id)).ok();
+        let chunk_count = chunk_index;
+        tx.send(Frame::stream_end(request_id.clone(), stream_id, chunk_count)).ok();
         tx.send(Frame::end(request_id, None)).ok();
         drop(tx);
         handler_func(rx, &emitter, &no_peer).unwrap();
