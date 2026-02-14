@@ -1241,7 +1241,7 @@ fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<crate::Cap>, AsyncHos
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::standard::caps::CAP_ECHO;
+    use crate::standard::caps::CAP_IDENTITY;
     use crate::CapUrn;
 
     // TEST235: Test ResponseChunk stores payload, seq, offset, len, and eof fields correctly
@@ -1514,13 +1514,13 @@ mod tests {
         assert!(runtime.plugins[0].running);
         assert_eq!(
             runtime.plugins[0].caps.iter().map(|c| c.urn_string()).collect::<Vec<_>>(),
-            vec![CAP_ECHO]
+            vec![CAP_IDENTITY]
         );
         assert!(!runtime.capabilities().is_empty());
 
         // Capabilities JSON should mention the cap
         let caps_str = std::str::from_utf8(runtime.capabilities()).unwrap();
-        assert!(caps_str.contains(CAP_ECHO), "Capabilities must include attached plugin's cap");
+        assert!(caps_str.contains(CAP_IDENTITY), "Capabilities must include attached plugin's cap");
 
         plugin_handle.join().unwrap();
     }

@@ -953,7 +953,7 @@ fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, Re
 mod tests {
     use super::*;
     use crate::cbor_frame::Frame;
-    use crate::standard::caps::CAP_ECHO;
+    use crate::standard::caps::CAP_IDENTITY;
     use std::os::unix::net::UnixStream;
 
     // TEST429: Cap routing logic (find_master_for_cap)

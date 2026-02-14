@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 /// Standard echo capability URN
 /// Accepts any media type as input and outputs any media type
-pub const CAP_ECHO: &str = "cap:in=media:;out=media:";
+pub const CAP_IDENTITY: &str = "cap:in=media:;out=media:";
 
 // =============================================================================
 // HELPER FUNCTIONS

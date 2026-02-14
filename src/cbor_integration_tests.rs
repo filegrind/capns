@@ -9,7 +9,7 @@ mod tests {
     use crate::cbor_frame::{Frame, FrameType, MessageId};
     use crate::cbor_io::{FrameReader, FrameWriter, handshake, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
     use crate::plugin_runtime::PluginRuntime;
-    use crate::standard::caps::CAP_ECHO;
+    use crate::standard::caps::CAP_IDENTITY;
     use std::io::{BufReader, BufWriter};
 
     /// Test manifest JSON - plugins MUST include manifest in HELLO response
@@ -20,7 +20,7 @@ mod tests {
     fn test_plugin_runtime_handler_registration() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register::<serde_json::Value, _>(CAP_ECHO, |req, emitter, _peer| {
+        runtime.register::<serde_json::Value, _>(CAP_IDENTITY, |req, emitter, _peer| {
             let bytes = serde_json::to_vec(&req).unwrap_or_default();
             let cbor_value = ciborium::Value::Bytes(bytes);
             emitter.emit_cbor(&cbor_value)?;
@@ -34,7 +34,7 @@ mod tests {
         });
 
         // Exact match
-        assert!(runtime.find_handler(CAP_ECHO).is_some());
+        assert!(runtime.find_handler(CAP_IDENTITY).is_some());
         assert!(runtime.find_handler("cap:in=\"media:void\";op=transform;out=\"media:void\"").is_some());
 
         // Non-existent
@@ -109,7 +109,7 @@ mod tests {
 
             let req = reader.read().unwrap().expect("Expected REQ");
             assert_eq!(req.frame_type, FrameType::Req);
-            assert_eq!(req.cap.as_deref(), Some(CAP_ECHO));
+            assert_eq!(req.cap.as_deref(), Some(CAP_IDENTITY));
 
             let mut arg_data = Vec::new();
             loop {
@@ -141,7 +141,7 @@ mod tests {
 
             let sid = uuid::Uuid::new_v4().to_string();
             let xid = MessageId::Uint(1);
-            let mut req_frame = Frame::req(req_id.clone(), CAP_ECHO, vec![], "text/plain");
+            let mut req_frame = Frame::req(req_id.clone(), CAP_IDENTITY, vec![], "text/plain");
             req_frame.routing_id = Some(xid.clone());
             w.write(&req_frame).await.unwrap();
             let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
@@ -681,7 +681,7 @@ mod tests {
 
             let frame = reader.read().unwrap().unwrap();
             assert_eq!(frame.frame_type, FrameType::Req);
-            assert_eq!(frame.cap.as_deref(), Some("CAP_ECHO"));
+            assert_eq!(frame.cap.as_deref(), Some("CAP_IDENTITY"));
             assert_eq!(frame.payload.as_deref(), Some(b"hello".as_ref()));
 
             writer.write(&Frame::end(frame.id, Some(b"hello back".to_vec()))).unwrap();
@@ -695,7 +695,7 @@ mod tests {
         writer.set_limits(limits);
 
         let request_id = MessageId::new_uuid();
-        writer.write(&Frame::req(request_id.clone(), "CAP_ECHO", b"hello".to_vec(), "application/json")).unwrap();
+        writer.write(&Frame::req(request_id.clone(), "CAP_IDENTITY", b"hello".to_vec(), "application/json")).unwrap();
 
         let response = reader.read().unwrap().unwrap();
         assert_eq!(response.frame_type, FrameType::End);
