@@ -44,7 +44,7 @@
 //! - Engine-initiated: plugin's END → cleanup immediately
 //! - Peer-initiated: engine's response END → cleanup (wait for final response)
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
+use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::cbor_io::{CborError, FrameReader, FrameWriter};
 use crate::plugin_relay::RelayMaster;
 use std::collections::{HashMap, HashSet};
@@ -108,6 +108,8 @@ struct RoutingEntry {
 struct MasterConnection {
     /// Writer for frames to slave
     socket_writer: FrameWriter<BufWriter<UnixStream>>,
+    /// Seq assigner for frames written to this master (output stage)
+    seq_assigner: SeqAssigner,
     /// Latest manifest from RelayNotify
     manifest: Vec<u8>,
     /// Latest limits from RelayNotify
@@ -206,6 +208,7 @@ impl RelaySwitch {
             // Start with empty manifest/caps - will be populated by RelayNotify
             masters.push(MasterConnection {
                 socket_writer,
+                seq_assigner: SeqAssigner::new(),
                 manifest: Vec::new(),
                 limits: Limits::default(),
                 caps: Vec::new(),
@@ -342,7 +345,7 @@ impl RelaySwitch {
         frame_with_xid.routing_id = Some(xid);
 
         // Forward to destination
-        self.masters[dest_idx].socket_writer.write(&frame_with_xid)?;
+        self.write_to_master_idx(dest_idx, &mut frame_with_xid)?;
 
         Ok(rx)
     }
@@ -396,7 +399,7 @@ impl RelaySwitch {
                 self.rid_to_xid.insert(rid, xid);
 
                 // Forward to destination with XID
-                self.masters[dest_idx].socket_writer.write(&frame)?;
+                self.write_to_master_idx(dest_idx, &mut frame)?;
                 Ok(())
             }
 
@@ -427,16 +430,7 @@ impl RelaySwitch {
                 let dest_idx = entry.destination_master_idx;
 
                 // Forward to destination
-                self.masters[dest_idx].socket_writer.write(&frame)?;
-
-                // Cleanup on terminal frames
-                let is_terminal = frame.frame_type == FrameType::End
-                    || frame.frame_type == FrameType::Err;
-
-                if is_terminal {
-                    // For engine-initiated requests, cleanup happens when plugin responds (in read_from_masters)
-                    // This is the request END, not the response END
-                }
+                self.write_to_master_idx(dest_idx, &mut frame)?;
 
                 Ok(())
             }
@@ -513,6 +507,22 @@ impl RelaySwitch {
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // FRAME OUTPUT (all writes to masters go through this)
+    // =========================================================================
+
+    /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
+    /// Cleans up seq tracking on terminal frames (END/ERR).
+    fn write_to_master_idx(&mut self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
+        let master = &mut self.masters[master_idx];
+        master.seq_assigner.assign(frame);
+        master.socket_writer.write(frame)?;
+        if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
+            master.seq_assigner.remove(&frame.id);
+        }
+        Ok(())
     }
 
     // =========================================================================
@@ -621,7 +631,7 @@ impl RelaySwitch {
 
                 // Forward to destination with XID
                 eprintln!("[RelaySwitch.handle_master_frame] Forwarding peer REQ to master {} (with XID={:?})", dest_idx, xid);
-                self.masters[dest_idx].socket_writer.write(&frame)?;
+                self.write_to_master_idx(dest_idx, &mut frame)?;
 
                 // Do NOT return to engine (internal routing)
                 eprintln!("[RelaySwitch.handle_master_frame] Peer REQ routed internally (not forwarded to engine)");
@@ -706,7 +716,7 @@ impl RelaySwitch {
                             // Route back to source master (keep XID - still in relay network)
                             eprintln!("[RelaySwitch.handle_master_frame] Routing response back to master {} (keeping XID for relay protocol)", master_idx);
 
-                            self.masters[master_idx].socket_writer.write(&frame)?;
+                            self.write_to_master_idx(master_idx, &mut frame)?;
 
                             // Cleanup on terminal frame
                             if is_terminal {
@@ -752,7 +762,7 @@ impl RelaySwitch {
                     let dest_idx = entry.destination_master_idx;
                     eprintln!("[RelaySwitch.handle_master_frame] Forwarding request continuation to master {} (with XID={:?})", dest_idx, xid);
 
-                    self.masters[dest_idx].socket_writer.write(&frame)?;
+                    self.write_to_master_idx(dest_idx, &mut frame)?;
                     return Ok(None);
                 }
             }
@@ -847,7 +857,7 @@ impl RelaySwitch {
                 Some(master_idx) => {
                     // Send ERR back to source master
                     if self.masters[master_idx].healthy {
-                        let _ = self.masters[master_idx].socket_writer.write(&err_frame);
+                        let _ = self.write_to_master_idx(master_idx, &mut err_frame);
                     }
                 }
             }
@@ -927,6 +937,7 @@ impl RelaySwitch {
             } else {
                 min_max_chunk
             },
+            ..Limits::default()
         };
     }
 }
@@ -952,7 +963,7 @@ fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cbor_frame::Frame;
+    use crate::cbor_frame::{Frame, SeqAssigner};
     use crate::standard::caps::CAP_IDENTITY;
     use std::os::unix::net::UnixStream;
 
@@ -1051,6 +1062,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
+            let mut seq = SeqAssigner::new();
 
             // Send initial RelayNotify (simple JSON array of URN strings)
             let caps = serde_json::json!(["cap:in=media:;out=media:"]);
@@ -1078,9 +1090,12 @@ mod tests {
             if let Some(frame) = reader.read().unwrap() {
                 if frame.frame_type == FrameType::End && req_id.is_some() {
                     // Send response with same XID
-                    let mut response = Frame::end(req_id.unwrap(), Some(vec![42]));
+                    let rid = req_id.unwrap();
+                    let mut response = Frame::end(rid.clone(), Some(vec![42]));
                     response.routing_id = xid;
+                    seq.assign(&mut response);
                     writer.write(&response).unwrap();
+                    seq.remove(&rid);
                 }
             }
         });
@@ -1127,6 +1142,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
+            let mut seq = SeqAssigner::new();
 
             let manifest = serde_json::json!( ["cap:in=media:;out=media:"]);
             let notify = Frame::relay_notify(
@@ -1139,9 +1155,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) => {
                         if frame.frame_type == FrameType::Req {
-                            let mut response = Frame::end(frame.id.clone(), Some(vec![1]));
+                            let rid = frame.id.clone();
+                            let mut response = Frame::end(rid.clone(), Some(vec![1]));
                             response.routing_id = frame.routing_id.clone();
+                            seq.assign(&mut response);
                             writer.write(&response).unwrap();
+                            seq.remove(&rid);
                         } else if frame.frame_type == FrameType::End {
                             // Read request END, continue
                         }
@@ -1155,6 +1174,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
+            let mut seq = SeqAssigner::new();
 
             let manifest = serde_json::json!( ["cap:in=\"media:void\";op=double;out=\"media:void\""]);
             let notify = Frame::relay_notify(
@@ -1167,9 +1187,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) => {
                         if frame.frame_type == FrameType::Req {
-                            let mut response = Frame::end(frame.id.clone(), Some(vec![2]));
+                            let rid = frame.id.clone();
+                            let mut response = Frame::end(rid.clone(), Some(vec![2]));
                             response.routing_id = frame.routing_id.clone();
+                            seq.assign(&mut response);
                             writer.write(&response).unwrap();
+                            seq.remove(&rid);
                         } else if frame.frame_type == FrameType::End {
                             // Read request END, continue
                         }
@@ -1288,6 +1311,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
+            let mut seq = SeqAssigner::new();
             let manifest = serde_json::json!( [same_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
@@ -1300,9 +1324,12 @@ mod tests {
             loop {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
-                        let mut response = Frame::end(frame.id.clone(), Some(vec![1]));
+                        let rid = frame.id.clone();
+                        let mut response = Frame::end(rid.clone(), Some(vec![1]));
                         response.routing_id = frame.routing_id.clone();
+                        seq.assign(&mut response);
                         writer.write(&response).unwrap();
+                        seq.remove(&rid);
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {
                         // Request END, continue
@@ -1317,6 +1344,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
+            let mut seq = SeqAssigner::new();
             let manifest = serde_json::json!( [same_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
@@ -1329,9 +1357,12 @@ mod tests {
             loop {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
-                        let mut response = Frame::end(frame.id.clone(), Some(vec![2]));
+                        let rid = frame.id.clone();
+                        let mut response = Frame::end(rid.clone(), Some(vec![2]));
                         response.routing_id = frame.routing_id.clone();
+                        seq.assign(&mut response);
                         writer.write(&response).unwrap();
+                        seq.remove(&rid);
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {
                         // Request END, continue
@@ -1402,6 +1433,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
+            let mut seq = SeqAssigner::new();
 
             let manifest = serde_json::json!( ["cap:in=\"media:void\";op=test;out=\"media:void\""]);
             let notify = Frame::relay_notify(
@@ -1427,9 +1459,12 @@ mod tests {
             assert_eq!(end.id, req.id);
 
             // Send response with XID
-            let mut response = Frame::end(req.id.clone(), Some(vec![42]));
+            let rid = req.id.clone();
+            let mut response = Frame::end(rid.clone(), Some(vec![42]));
             response.routing_id = xid;
+            seq.assign(&mut response);
             writer.write(&response).unwrap();
+            seq.remove(&rid);
         });
 
         rx.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -1576,6 +1611,7 @@ mod tests {
             let limits1 = Limits {
                 max_frame: 1_000_000,
                 max_chunk: 100_000,
+                ..Limits::default()
             };
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
@@ -1592,6 +1628,7 @@ mod tests {
             let limits2 = Limits {
                 max_frame: 2_000_000,  // Larger
                 max_chunk: 50_000,     // Smaller
+                ..Limits::default()
             };
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
@@ -1638,6 +1675,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
+            let mut seq = SeqAssigner::new();
             let manifest = serde_json::json!( [registered_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
@@ -1650,9 +1688,12 @@ mod tests {
             loop {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
-                        let mut response = Frame::end(frame.id.clone(), Some(vec![42]));
+                        let rid = frame.id.clone();
+                        let mut response = Frame::end(rid.clone(), Some(vec![42]));
                         response.routing_id = frame.routing_id.clone();
+                        seq.assign(&mut response);
                         writer.write(&response).unwrap();
+                        seq.remove(&rid);
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {
                         // Request END, continue

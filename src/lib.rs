@@ -81,7 +81,7 @@ pub use media_spec::*;
 pub use profile_schema_registry::{ProfileSchemaRegistry, ProfileSchemaError};
 
 // CBOR protocol exports
-pub use cbor_frame::{Frame, FrameType, MessageId, Limits, PROTOCOL_VERSION, DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK};
+pub use cbor_frame::{Frame, FrameType, MessageId, Limits, FlowKey, SeqAssigner, ReorderBuffer, PROTOCOL_VERSION, DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK, DEFAULT_MAX_REORDER_BUFFER};
 pub use cbor_io::{
     CborError, FrameReader, FrameWriter, HandshakeResult,
     encode_frame, decode_frame, read_frame, write_frame,

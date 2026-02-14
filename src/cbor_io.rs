@@ -15,7 +15,7 @@
 //!
 //! The CBOR payload is a map with integer keys (see cbor_frame.rs).
 
-use crate::cbor_frame::{keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_CHUNK, DEFAULT_MAX_FRAME};
+use crate::cbor_frame::{keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_CHUNK, DEFAULT_MAX_FRAME, DEFAULT_MAX_REORDER_BUFFER};
 use ciborium::Value;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
@@ -628,7 +628,6 @@ impl<W: Write> FrameWriter<W> {
             return self.write(&frame);
         }
 
-        let mut seq = 0u64;
         let mut offset = 0usize;
         let mut chunk_index = 0u64;
 
@@ -639,11 +638,11 @@ impl<W: Write> FrameWriter<W> {
             let chunk_data = data[offset..offset + chunk_size].to_vec();
             let checksum = Frame::compute_checksum(&chunk_data);
 
-            let mut frame = Frame::chunk(id.clone(), stream_id.clone(), seq, chunk_data, chunk_index, checksum);
+            let mut frame = Frame::chunk(id.clone(), stream_id.clone(), 0, chunk_data, chunk_index, checksum);
             frame.offset = Some(offset as u64);
 
-            // Set content_type and total len on first chunk
-            if seq == 0 {
+            // Set content_type and total len on first chunk (index-based, not seq-based)
+            if chunk_index == 0 {
                 frame.content_type = Some(content_type.to_string());
                 frame.len = Some(total_len as u64);
             }
@@ -654,7 +653,6 @@ impl<W: Write> FrameWriter<W> {
 
             self.write(&frame)?;
 
-            seq += 1;
             chunk_index += 1;
             offset += chunk_size;
         }
@@ -681,7 +679,7 @@ pub fn handshake<R: Read, W: Write>(
     writer: &mut FrameWriter<W>,
 ) -> Result<HandshakeResult, CborError> {
     // Send our HELLO
-    let our_hello = Frame::hello(DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK);
+    let our_hello = Frame::hello(&Limits::default());
     writer.write(&our_hello)?;
 
     // Read their HELLO (should include manifest)
@@ -705,10 +703,12 @@ pub fn handshake<R: Read, W: Write>(
     // Negotiate minimum of both
     let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
     let their_max_chunk = their_frame.hello_max_chunk().unwrap_or(DEFAULT_MAX_CHUNK);
+    let their_max_reorder_buffer = their_frame.hello_max_reorder_buffer().unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
 
     let limits = Limits {
         max_frame: DEFAULT_MAX_FRAME.min(their_max_frame),
         max_chunk: DEFAULT_MAX_CHUNK.min(their_max_chunk),
+        max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER.min(their_max_reorder_buffer),
     };
 
     // Update both reader and writer with negotiated limits
@@ -745,15 +745,17 @@ pub fn handshake_accept<R: Read, W: Write>(
     // Negotiate minimum of both
     let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
     let their_max_chunk = their_frame.hello_max_chunk().unwrap_or(DEFAULT_MAX_CHUNK);
+    let their_max_reorder_buffer = their_frame.hello_max_reorder_buffer().unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
 
     let limits = Limits {
         max_frame: DEFAULT_MAX_FRAME.min(their_max_frame),
         max_chunk: DEFAULT_MAX_CHUNK.min(their_max_chunk),
+        max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER.min(their_max_reorder_buffer),
     };
 
     // Send our HELLO with manifest
     eprintln!("[handshake_accept] Sending HELLO with manifest ({} bytes)", manifest.len());
-    let our_hello = Frame::hello_with_manifest(limits.max_frame, limits.max_chunk, manifest);
+    let our_hello = Frame::hello_with_manifest(&limits, manifest);
     writer.write(&our_hello)?;
     eprintln!("[handshake_accept] HELLO sent successfully");
 
@@ -839,7 +841,7 @@ pub async fn handshake_async<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
 ) -> Result<HandshakeResult, CborError> {
     // Send our HELLO
     eprintln!("[handshake_async] Sending HELLO to plugin");
-    let our_hello = Frame::hello(DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK);
+    let our_hello = Frame::hello(&Limits::default());
     writer.write(&our_hello).await?;
     eprintln!("[handshake_async] HELLO sent, waiting for response");
 
@@ -866,10 +868,12 @@ pub async fn handshake_async<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     // Negotiate minimum of both
     let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
     let their_max_chunk = their_frame.hello_max_chunk().unwrap_or(DEFAULT_MAX_CHUNK);
+    let their_max_reorder_buffer = their_frame.hello_max_reorder_buffer().unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
 
     let limits = Limits {
         max_frame: DEFAULT_MAX_FRAME.min(their_max_frame),
         max_chunk: DEFAULT_MAX_CHUNK.min(their_max_chunk),
+        max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER.min(their_max_reorder_buffer),
     };
 
     // Update both reader and writer with negotiated limits
@@ -901,16 +905,17 @@ mod tests {
         assert_eq!(decoded.content_type, original.content_type);
     }
 
-    // TEST206: Test HELLO frame encode/decode roundtrip preserves max_frame and max_chunk metadata
+    // TEST206: Test HELLO frame encode/decode roundtrip preserves max_frame, max_chunk, max_reorder_buffer
     #[test]
     fn test_hello_frame_roundtrip() {
-        let original = Frame::hello(500_000, 50_000);
+        let original = Frame::hello(&Limits { max_frame: 500_000, max_chunk: 50_000, max_reorder_buffer: 128 });
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
         assert_eq!(decoded.frame_type, FrameType::Hello);
         assert_eq!(decoded.hello_max_frame(), Some(500_000));
         assert_eq!(decoded.hello_max_chunk(), Some(50_000));
+        assert_eq!(decoded.hello_max_reorder_buffer(), Some(128));
     }
 
     // TEST207: Test ERR frame encode/decode roundtrip preserves error code and message
@@ -956,17 +961,18 @@ mod tests {
         assert_eq!(decoded.payload, Some(b"final".to_vec()));
     }
 
-    // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes
+    // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes and limits
     #[test]
     fn test_hello_with_manifest_roundtrip() {
         let manifest = b"{\"name\":\"Test\",\"version\":\"1.0\"}";
-        let original = Frame::hello_with_manifest(1_000_000, 100_000, manifest);
+        let original = Frame::hello_with_manifest(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: 48 }, manifest);
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
         assert_eq!(decoded.hello_manifest().unwrap(), manifest);
         assert_eq!(decoded.hello_max_frame(), Some(1_000_000));
         assert_eq!(decoded.hello_max_chunk(), Some(100_000));
+        assert_eq!(decoded.hello_max_reorder_buffer(), Some(48));
     }
 
     // TEST212: Test chunk_with_offset encode/decode roundtrip preserves offset, len, eof (with stream_id)
@@ -1072,6 +1078,7 @@ mod tests {
         let limits = Limits {
             max_frame: 100,
             max_chunk: 50,
+            ..Limits::default()
         };
 
         let id = MessageId::new_uuid();
@@ -1086,8 +1093,8 @@ mod tests {
     // TEST217: Test read_frame rejects incoming frames exceeding the negotiated max_frame limit
     #[test]
     fn test_read_frame_too_large() {
-        let write_limits = Limits { max_frame: 10_000_000, max_chunk: 1_000_000 };
-        let read_limits = Limits { max_frame: 50, max_chunk: 50 };
+        let write_limits = Limits { max_frame: 10_000_000, max_chunk: 1_000_000, ..Limits::default() };
+        let read_limits = Limits { max_frame: 50, max_chunk: 50, ..Limits::default() };
 
         // Write a frame with generous limits
         let id = MessageId::new_uuid();
@@ -1102,11 +1109,14 @@ mod tests {
     }
 
     // TEST218: Test write_chunked splits data into chunks respecting max_chunk and reconstructs correctly
+    // Chunks from write_chunked have seq=0. SeqAssigner at the output stage assigns final seq.
+    // Chunk ordering within a stream is tracked by chunk_index (index field).
     #[test]
     fn test_write_chunked() {
         let limits = Limits {
             max_frame: 1_000_000,
             max_chunk: 10, // Very small for testing
+            ..Limits::default()
         };
 
         let mut buf = Vec::new();
@@ -1135,7 +1145,9 @@ mod tests {
                 Some(f) => {
                     assert_eq!(f.frame_type, FrameType::Chunk);
                     assert_eq!(f.id, id);
-                    assert_eq!(f.seq, chunk_count);
+                    assert_eq!(f.seq, 0, "write_chunked produces seq=0; SeqAssigner assigns at output stage");
+                    // chunk_index tracks ordering within the chunked write
+                    assert_eq!(f.index, Some(chunk_count), "chunk_index must increment monotonically");
 
                     if chunk_count == 0 {
                         first_chunk_had_len = f.len.is_some();
@@ -1168,7 +1180,7 @@ mod tests {
     // TEST219: Test write_chunked with empty data produces a single EOF chunk
     #[test]
     fn test_write_chunked_empty_data() {
-        let limits = Limits { max_frame: 1_000_000, max_chunk: 100 };
+        let limits = Limits { max_frame: 1_000_000, max_chunk: 100, ..Limits::default() };
         let mut buf = Vec::new();
         let mut writer = FrameWriter::with_limits(&mut buf, limits);
 
@@ -1186,7 +1198,7 @@ mod tests {
     // TEST220: Test write_chunked with data exactly equal to max_chunk produces exactly one chunk
     #[test]
     fn test_write_chunked_exact_fit() {
-        let limits = Limits { max_frame: 1_000_000, max_chunk: 10 };
+        let limits = Limits { max_frame: 1_000_000, max_chunk: 10, ..Limits::default() };
         let mut buf = Vec::new();
         let mut writer = FrameWriter::with_limits(&mut buf, limits);
 
@@ -1316,7 +1328,7 @@ mod tests {
         let mut reader = FrameReader::new(Cursor::new(buf));
         let mut writer = FrameWriter::new(Vec::new());
 
-        let custom = Limits { max_frame: 500, max_chunk: 100 };
+        let custom = Limits { max_frame: 500, max_chunk: 100, ..Limits::default() };
         reader.set_limits(custom);
         writer.set_limits(custom);
 
@@ -1354,6 +1366,7 @@ mod tests {
         // Both sides must agree on limits
         assert_eq!(result.limits.max_frame, plugin_limits.max_frame);
         assert_eq!(result.limits.max_chunk, plugin_limits.max_chunk);
+        assert_eq!(result.limits.max_reorder_buffer, plugin_limits.max_reorder_buffer);
         assert_eq!(result.manifest, manifest.to_vec());
     }
 
@@ -1395,7 +1408,7 @@ mod tests {
             let mut reader = FrameReader::new(std::io::BufReader::new(plugin_std));
             let mut writer = FrameWriter::new(std::io::BufWriter::new(plugin_write_std));
             let _ = reader.read().unwrap(); // consume host HELLO
-            let no_manifest_hello = Frame::hello(1_000_000, 200_000);
+            let no_manifest_hello = Frame::hello(&Limits { max_frame: 1_000_000, max_chunk: 200_000, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER });
             writer.write(&no_manifest_hello).unwrap();
         });
 
@@ -1436,7 +1449,7 @@ mod tests {
     #[test]
     fn test_relay_notify_roundtrip() {
         let manifest = b"{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}";
-        let limits = crate::cbor_frame::Limits { max_frame: 2_000_000, max_chunk: 128_000 };
+        let limits = crate::cbor_frame::Limits { max_frame: 2_000_000, max_chunk: 128_000, ..crate::cbor_frame::Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
 
         let encoded = encode_frame(&frame).unwrap();
@@ -1534,6 +1547,93 @@ mod tests {
         assert_eq!(decoded.id, id);
         assert_eq!(decoded.stream_id, Some(stream_id));
         assert_eq!(decoded.chunk_count, Some(42), "chunk_count must roundtrip");
+    }
+
+    // TEST461: write_chunked produces frames with seq=0; SeqAssigner assigns at output stage
+    #[test]
+    fn test_write_chunked_seq_zero() {
+        let limits = Limits {
+            max_frame: 1_000_000,
+            max_chunk: 5,
+            ..Limits::default()
+        };
+        let mut buf = Vec::new();
+        let mut writer = FrameWriter::with_limits(&mut buf, limits);
+
+        let id = MessageId::new_uuid();
+        writer
+            .write_chunked(id.clone(), "s".to_string(), "application/octet-stream", b"abcdefghij")
+            .unwrap();
+
+        let mut cursor = Cursor::new(buf);
+        let mut reader = FrameReader::with_limits(&mut cursor, limits);
+
+        let mut frames = Vec::new();
+        loop {
+            match reader.read().unwrap() {
+                Some(f) => {
+                    let is_eof = f.is_eof();
+                    frames.push(f);
+                    if is_eof { break; }
+                }
+                None => break,
+            }
+        }
+
+        // 10 bytes / 5 max_chunk = 2 chunks
+        assert_eq!(frames.len(), 2);
+        for (i, f) in frames.iter().enumerate() {
+            assert_eq!(f.seq, 0, "chunk {} must have seq=0", i);
+            assert_eq!(f.index, Some(i as u64), "chunk {} must have index={}", i, i);
+        }
+    }
+
+    // TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides)
+    #[test]
+    fn test_handshake_negotiates_reorder_buffer() {
+        // Simulate plugin sending HELLO with max_reorder_buffer=32
+        let plugin_limits = Limits {
+            max_frame: DEFAULT_MAX_FRAME,
+            max_chunk: DEFAULT_MAX_CHUNK,
+            max_reorder_buffer: 32,
+        };
+        let manifest = br#"{"name":"test","version":"1.0","caps":[]}"#;
+
+        // Write plugin's HELLO with manifest to a buffer
+        let mut plugin_hello_buf = Vec::new();
+        {
+            let mut w = FrameWriter::new(&mut plugin_hello_buf);
+            let hello = Frame::hello_with_manifest(&plugin_limits, manifest);
+            w.write(&hello).unwrap();
+        }
+
+        // Write host's HELLO to a buffer (our default: max_reorder_buffer=64)
+        let mut host_hello_buf = Vec::new();
+        {
+            let mut w = FrameWriter::new(&mut host_hello_buf);
+            let hello = Frame::hello(&Limits::default());
+            w.write(&hello).unwrap();
+        }
+
+        // Host reads plugin's HELLO
+        let mut cursor = Cursor::new(plugin_hello_buf);
+        let their_frame = {
+            let mut r = FrameReader::new(&mut cursor);
+            r.read().unwrap().unwrap()
+        };
+        let their_reorder = their_frame.hello_max_reorder_buffer().unwrap();
+        assert_eq!(their_reorder, 32);
+        let negotiated = DEFAULT_MAX_REORDER_BUFFER.min(their_reorder);
+        assert_eq!(negotiated, 32, "must pick minimum (32 < 64)");
+
+        // Plugin reads host's HELLO
+        let mut cursor2 = Cursor::new(host_hello_buf);
+        let host_frame = {
+            let mut r = FrameReader::new(&mut cursor2);
+            r.read().unwrap().unwrap()
+        };
+        let host_reorder = host_frame.hello_max_reorder_buffer().unwrap();
+        assert_eq!(host_reorder, DEFAULT_MAX_REORDER_BUFFER);
     }
 
 }

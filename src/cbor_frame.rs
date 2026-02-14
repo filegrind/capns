@@ -48,6 +48,9 @@ pub const DEFAULT_MAX_FRAME: usize = 3_670_016;
 /// Default maximum chunk size (256 KB)
 pub const DEFAULT_MAX_CHUNK: usize = 262_144;
 
+/// Default maximum reorder buffer size (per-flow frame count)
+pub const DEFAULT_MAX_REORDER_BUFFER: usize = 64;
+
 /// Frame type discriminator
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -154,6 +157,8 @@ pub struct Limits {
     pub max_frame: usize,
     /// Maximum chunk payload size in bytes
     pub max_chunk: usize,
+    /// Maximum reorder buffer size per flow (frame count)
+    pub max_reorder_buffer: usize,
 }
 
 impl Default for Limits {
@@ -161,6 +166,7 @@ impl Default for Limits {
         Self {
             max_frame: DEFAULT_MAX_FRAME,
             max_chunk: DEFAULT_MAX_CHUNK,
+            max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER,
         }
     }
 }
@@ -182,7 +188,9 @@ pub struct Frame {
     pub stream_id: Option<String>,
     /// Media URN for stream type identification (used in STREAM_START)
     pub media_urn: Option<String>,
-    /// Sequence number within a stream
+    /// Sequence number within a flow (per request ID).
+    /// Assigned centrally by SeqAssigner at the output stage (writer thread).
+    /// Monotonically increasing for all frame types within the same RID.
     pub seq: u64,
     /// Content type of payload (MIME-like)
     pub content_type: Option<String>,
@@ -231,15 +239,19 @@ impl Frame {
     }
 
     /// Create a HELLO frame for handshake (host side - no manifest)
-    pub fn hello(max_frame: usize, max_chunk: usize) -> Self {
+    pub fn hello(limits: &Limits) -> Self {
         let mut meta = BTreeMap::new();
         meta.insert(
             "max_frame".to_string(),
-            ciborium::Value::Integer((max_frame as i64).into()),
+            ciborium::Value::Integer((limits.max_frame as i64).into()),
         );
         meta.insert(
             "max_chunk".to_string(),
-            ciborium::Value::Integer((max_chunk as i64).into()),
+            ciborium::Value::Integer((limits.max_chunk as i64).into()),
+        );
+        meta.insert(
+            "max_reorder_buffer".to_string(),
+            ciborium::Value::Integer((limits.max_reorder_buffer as i64).into()),
         );
         meta.insert(
             "version".to_string(),
@@ -254,15 +266,19 @@ impl Frame {
     /// Create a HELLO frame for handshake with manifest (plugin side).
     /// The manifest is JSON-encoded plugin metadata including name, version, and caps.
     /// This is the ONLY way for plugins to communicate their capabilities.
-    pub fn hello_with_manifest(max_frame: usize, max_chunk: usize, manifest: &[u8]) -> Self {
+    pub fn hello_with_manifest(limits: &Limits, manifest: &[u8]) -> Self {
         let mut meta = BTreeMap::new();
         meta.insert(
             "max_frame".to_string(),
-            ciborium::Value::Integer((max_frame as i64).into()),
+            ciborium::Value::Integer((limits.max_frame as i64).into()),
         );
         meta.insert(
             "max_chunk".to_string(),
-            ciborium::Value::Integer((max_chunk as i64).into()),
+            ciborium::Value::Integer((limits.max_chunk as i64).into()),
+        );
+        meta.insert(
+            "max_reorder_buffer".to_string(),
+            ciborium::Value::Integer((limits.max_reorder_buffer as i64).into()),
         );
         meta.insert(
             "version".to_string(),
@@ -328,7 +344,7 @@ impl Frame {
         frame.offset = Some(offset);
         frame.index = Some(index);
         frame.checksum = Some(checksum);
-        if seq == 0 {
+        if index == 0 {
             frame.len = total_len;
         }
         if is_last {
@@ -421,6 +437,10 @@ impl Frame {
             "max_chunk".to_string(),
             ciborium::Value::Integer((limits.max_chunk as i64).into()),
         );
+        meta.insert(
+            "max_reorder_buffer".to_string(),
+            ciborium::Value::Integer((limits.max_reorder_buffer as i64).into()),
+        );
 
         let mut frame = Self::new(FrameType::RelayNotify, MessageId::Uint(0));
         frame.meta = Some(meta);
@@ -478,7 +498,15 @@ impl Frame {
                 None
             }
         })?;
-        Some(Limits { max_frame, max_chunk })
+        let max_reorder_buffer = meta.get("max_reorder_buffer").and_then(|v| {
+            if let ciborium::Value::Integer(i) = v {
+                let n: i128 = (*i).into();
+                if n > 0 && n <= usize::MAX as i128 { Some(n as usize) } else { None }
+            } else {
+                None
+            }
+        }).unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
+        Some(Limits { max_frame, max_chunk, max_reorder_buffer })
     }
 
     /// Check if this is the final frame in a stream
@@ -592,6 +620,27 @@ impl Frame {
         })
     }
 
+    /// Extract max_reorder_buffer from HELLO metadata
+    pub fn hello_max_reorder_buffer(&self) -> Option<usize> {
+        if self.frame_type != FrameType::Hello {
+            return None;
+        }
+        self.meta.as_ref().and_then(|m| {
+            m.get("max_reorder_buffer").and_then(|v| {
+                if let ciborium::Value::Integer(i) = v {
+                    let n: i128 = (*i).into();
+                    if n > 0 && n <= usize::MAX as i128 {
+                        Some(n as usize)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
     /// Extract manifest from HELLO metadata (plugin side sends this).
     /// Returns None if no manifest present (host HELLO) or not a HELLO frame.
     /// The manifest is JSON-encoded plugin metadata.
@@ -623,11 +672,168 @@ impl Frame {
         }
         hash
     }
+
+    /// Returns true if this frame type participates in flow ordering (seq tracking).
+    /// Non-flow frames (Hello, Heartbeat, RelayNotify, RelayState) bypass seq assignment
+    /// and reorder buffers entirely.
+    pub fn is_flow_frame(&self) -> bool {
+        !matches!(
+            self.frame_type,
+            FrameType::Hello | FrameType::Heartbeat | FrameType::RelayNotify | FrameType::RelayState
+        )
+    }
 }
 
 impl Default for Frame {
     fn default() -> Self {
         Self::new(FrameType::Req, MessageId::default())
+    }
+}
+
+// =============================================================================
+// FLOW KEY — Composite key for frame ordering (RID + optional XID)
+// =============================================================================
+
+/// Composite key identifying a frame flow for seq ordering.
+/// Absence of XID (routing_id) is a valid separate flow from presence of XID.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FlowKey {
+    pub rid: MessageId,
+    pub xid: Option<MessageId>,
+}
+
+impl FlowKey {
+    /// Extract flow key from a frame.
+    pub fn from_frame(frame: &Frame) -> Self {
+        Self {
+            rid: frame.id.clone(),
+            xid: frame.routing_id.clone(),
+        }
+    }
+}
+
+// =============================================================================
+// SEQ ASSIGNER — Centralized seq assignment at output stages
+// =============================================================================
+
+use std::collections::HashMap;
+
+/// Assigns monotonically increasing seq numbers per request ID.
+/// Used at output stages (writer threads) to ensure each flow's frames
+/// carry a contiguous, gap-free seq sequence starting at 0.
+///
+/// Non-flow frames (Hello, Heartbeat, RelayNotify, RelayState) are skipped
+/// and their seq stays at 0.
+#[derive(Debug)]
+pub struct SeqAssigner {
+    counters: HashMap<MessageId, u64>,
+}
+
+impl SeqAssigner {
+    pub fn new() -> Self {
+        Self {
+            counters: HashMap::new(),
+        }
+    }
+
+    /// Assign the next seq number to a frame.
+    /// Non-flow frames are left unchanged (seq stays 0).
+    pub fn assign(&mut self, frame: &mut Frame) {
+        if !frame.is_flow_frame() {
+            return;
+        }
+        let counter = self.counters.entry(frame.id.clone()).or_insert(0);
+        frame.seq = *counter;
+        *counter += 1;
+    }
+
+    /// Remove tracking for a request ID (call after END/ERR delivery).
+    pub fn remove(&mut self, rid: &MessageId) {
+        self.counters.remove(rid);
+    }
+}
+
+// =============================================================================
+// REORDER BUFFER — Per-flow frame reordering at relay boundaries
+// =============================================================================
+
+use crate::cbor_io::CborError;
+
+/// Per-flow state for the reorder buffer.
+struct FlowState {
+    expected_seq: u64,
+    buffer: BTreeMap<u64, Frame>,
+}
+
+/// Reorder buffer for validating and reordering frames at relay boundaries.
+/// Keyed by FlowKey (RID + optional XID). Each flow tracks expected seq
+/// and buffers out-of-order frames until gaps are filled.
+///
+/// Protocol errors:
+/// - Stale/duplicate seq (frame.seq < expected_seq)
+/// - Buffer overflow (buffered frames exceed max_buffer_per_flow)
+pub struct ReorderBuffer {
+    flows: HashMap<FlowKey, FlowState>,
+    max_buffer_per_flow: usize,
+}
+
+impl ReorderBuffer {
+    pub fn new(max_buffer_per_flow: usize) -> Self {
+        Self {
+            flows: HashMap::new(),
+            max_buffer_per_flow,
+        }
+    }
+
+    /// Accept a frame into the reorder buffer.
+    /// Returns a Vec of frames ready for delivery (in seq order).
+    /// Non-flow frames bypass reordering and are returned immediately.
+    pub fn accept(&mut self, frame: Frame) -> Result<Vec<Frame>, CborError> {
+        if !frame.is_flow_frame() {
+            return Ok(vec![frame]);
+        }
+
+        let key = FlowKey::from_frame(&frame);
+        let state = self.flows.entry(key).or_insert_with(|| FlowState {
+            expected_seq: 0,
+            buffer: BTreeMap::new(),
+        });
+
+        if frame.seq == state.expected_seq {
+            // In-order: deliver this frame + drain consecutive buffered frames
+            let mut ready = vec![frame];
+            state.expected_seq += 1;
+            while let Some(buffered) = state.buffer.remove(&state.expected_seq) {
+                ready.push(buffered);
+                state.expected_seq += 1;
+            }
+            Ok(ready)
+        } else if frame.seq > state.expected_seq {
+            // Out-of-order: buffer it
+            if state.buffer.len() >= self.max_buffer_per_flow {
+                return Err(CborError::Protocol(format!(
+                    "reorder buffer overflow: flow has {} buffered frames (max {}), \
+                     expected seq {} but got seq {}",
+                    state.buffer.len(),
+                    self.max_buffer_per_flow,
+                    state.expected_seq,
+                    frame.seq,
+                )));
+            }
+            state.buffer.insert(frame.seq, frame);
+            Ok(vec![])
+        } else {
+            // Stale or duplicate
+            Err(CborError::Protocol(format!(
+                "stale/duplicate seq: expected >= {} but got {}",
+                state.expected_seq, frame.seq,
+            )))
+        }
+    }
+
+    /// Remove flow state after terminal frame delivery (END/ERR).
+    pub fn cleanup_flow(&mut self, key: &FlowKey) {
+        self.flows.remove(key);
     }
 }
 
@@ -759,7 +965,7 @@ mod tests {
     // TEST180: Test Frame::hello without manifest produces correct HELLO frame for host side
     #[test]
     fn test_hello_frame() {
-        let frame = Frame::hello(1_000_000, 100_000);
+        let frame = Frame::hello(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER });
         assert_eq!(frame.frame_type, FrameType::Hello);
         assert_eq!(frame.version, PROTOCOL_VERSION);
         assert_eq!(frame.hello_max_frame(), Some(1_000_000));
@@ -774,7 +980,7 @@ mod tests {
     #[test]
     fn test_hello_frame_with_manifest() {
         let manifest_json = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test","caps":[]}"#;
-        let frame = Frame::hello_with_manifest(1_000_000, 100_000, manifest_json.as_bytes());
+        let frame = Frame::hello_with_manifest(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER }, manifest_json.as_bytes());
         assert_eq!(frame.frame_type, FrameType::Hello);
         assert_eq!(frame.hello_max_frame(), Some(1_000_000));
         assert_eq!(frame.hello_max_chunk(), Some(100_000));
@@ -871,7 +1077,7 @@ mod tests {
         let payload2 = b"mid".to_vec();
         let checksum2 = Frame::compute_checksum(&payload2);
         let mid = Frame::chunk_with_offset(id.clone(), stream_id.clone(), 3, payload2, 500, Some(9999), false, 3, checksum2);
-        assert!(mid.len.is_none(), "non-first chunk must not carry len, seq != 0");
+        assert!(mid.len.is_none(), "non-first chunk must not carry len (index != 0)");
         assert_eq!(mid.offset, Some(500));
 
         let payload3 = b"last".to_vec();
@@ -900,7 +1106,7 @@ mod tests {
         assert!(req.error_code().is_none(), "REQ must have no error_code");
         assert!(req.error_message().is_none(), "REQ must have no error_message");
 
-        let hello = Frame::hello(1000, 500);
+        let hello = Frame::hello(&Limits { max_frame: 1000, max_chunk: 500, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER });
         assert!(hello.error_code().is_none());
     }
 
@@ -998,7 +1204,7 @@ mod tests {
     #[test]
     fn test_hello_manifest_binary_data() {
         let binary_manifest = vec![0x00, 0x01, 0xFF, 0xFE, 0x80];
-        let frame = Frame::hello_with_manifest(1000, 500, &binary_manifest);
+        let frame = Frame::hello_with_manifest(&Limits { max_frame: 1000, max_chunk: 500, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER }, &binary_manifest);
         assert_eq!(frame.hello_manifest().unwrap(), &binary_manifest);
     }
 
@@ -1117,7 +1323,7 @@ mod tests {
     #[test]
     fn test_relay_notify_frame() {
         let manifest = b"{\"caps\":[\"cap:op=test\"]}";
-        let limits = Limits { max_frame: 2_000_000, max_chunk: 128_000 };
+        let limits = Limits { max_frame: 2_000_000, max_chunk: 128_000, ..Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
 
         assert_eq!(frame.frame_type, FrameType::RelayNotify);
@@ -1202,5 +1408,365 @@ mod tests {
         assert_eq!(frame.id, id);
         assert_eq!(frame.stream_id, Some(stream_id));
         assert_eq!(frame.chunk_count, Some(42), "chunk_count should be set");
+    }
+
+    // =========================================================================
+    // SeqAssigner tests
+    // =========================================================================
+
+    // TEST442: SeqAssigner assigns seq 0,1,2,3 for consecutive frames with same RID
+    #[test]
+    fn test_seq_assigner_monotonic_same_rid() {
+        let mut assigner = SeqAssigner::new();
+        let rid = MessageId::new_uuid();
+
+        let mut f0 = Frame::new(FrameType::Req, rid.clone());
+        let mut f1 = Frame::new(FrameType::StreamStart, rid.clone());
+        let mut f2 = Frame::new(FrameType::Chunk, rid.clone());
+        let mut f3 = Frame::new(FrameType::End, rid.clone());
+
+        assigner.assign(&mut f0);
+        assigner.assign(&mut f1);
+        assigner.assign(&mut f2);
+        assigner.assign(&mut f3);
+
+        assert_eq!(f0.seq, 0);
+        assert_eq!(f1.seq, 1);
+        assert_eq!(f2.seq, 2);
+        assert_eq!(f3.seq, 3);
+    }
+
+    // TEST443: SeqAssigner maintains independent counters for different RIDs
+    #[test]
+    fn test_seq_assigner_independent_rids() {
+        let mut assigner = SeqAssigner::new();
+        let rid_a = MessageId::new_uuid();
+        let rid_b = MessageId::new_uuid();
+
+        let mut a0 = Frame::new(FrameType::Req, rid_a.clone());
+        let mut b0 = Frame::new(FrameType::Req, rid_b.clone());
+        let mut a1 = Frame::new(FrameType::Chunk, rid_a.clone());
+        let mut b1 = Frame::new(FrameType::Chunk, rid_b.clone());
+        let mut a2 = Frame::new(FrameType::End, rid_a.clone());
+
+        assigner.assign(&mut a0);
+        assigner.assign(&mut b0);
+        assigner.assign(&mut a1);
+        assigner.assign(&mut b1);
+        assigner.assign(&mut a2);
+
+        assert_eq!(a0.seq, 0);
+        assert_eq!(a1.seq, 1);
+        assert_eq!(a2.seq, 2);
+        assert_eq!(b0.seq, 0);
+        assert_eq!(b1.seq, 1);
+    }
+
+    // TEST444: SeqAssigner skips non-flow frames (Heartbeat, RelayNotify, RelayState, Hello)
+    #[test]
+    fn test_seq_assigner_skips_non_flow() {
+        let mut assigner = SeqAssigner::new();
+
+        let mut hello = Frame::new(FrameType::Hello, MessageId::Uint(0));
+        let mut hb = Frame::new(FrameType::Heartbeat, MessageId::new_uuid());
+        let mut notify = Frame::new(FrameType::RelayNotify, MessageId::Uint(0));
+        let mut state = Frame::new(FrameType::RelayState, MessageId::Uint(0));
+
+        assigner.assign(&mut hello);
+        assigner.assign(&mut hb);
+        assigner.assign(&mut notify);
+        assigner.assign(&mut state);
+
+        assert_eq!(hello.seq, 0, "Hello seq must stay 0");
+        assert_eq!(hb.seq, 0, "Heartbeat seq must stay 0");
+        assert_eq!(notify.seq, 0, "RelayNotify seq must stay 0");
+        assert_eq!(state.seq, 0, "RelayState seq must stay 0");
+    }
+
+    // TEST445: SeqAssigner.remove resets flow; next frame for that RID starts at seq 0
+    #[test]
+    fn test_seq_assigner_remove_resets() {
+        let mut assigner = SeqAssigner::new();
+        let rid = MessageId::new_uuid();
+
+        let mut f0 = Frame::new(FrameType::Req, rid.clone());
+        let mut f1 = Frame::new(FrameType::End, rid.clone());
+        assigner.assign(&mut f0);
+        assigner.assign(&mut f1);
+        assert_eq!(f1.seq, 1);
+
+        assigner.remove(&rid);
+
+        let mut f2 = Frame::new(FrameType::Req, rid.clone());
+        assigner.assign(&mut f2);
+        assert_eq!(f2.seq, 0, "after remove, seq must restart at 0");
+    }
+
+    // TEST446: SeqAssigner handles mixed frame types (REQ, CHUNK, LOG, END) for same RID
+    #[test]
+    fn test_seq_assigner_mixed_types() {
+        let mut assigner = SeqAssigner::new();
+        let rid = MessageId::new_uuid();
+
+        let mut req = Frame::new(FrameType::Req, rid.clone());
+        let mut log = Frame::log(rid.clone(), "info", "progress");
+        let mut chunk = Frame::new(FrameType::Chunk, rid.clone());
+        let mut end = Frame::end(rid.clone(), None);
+
+        assigner.assign(&mut req);
+        assigner.assign(&mut log);
+        assigner.assign(&mut chunk);
+        assigner.assign(&mut end);
+
+        assert_eq!(req.seq, 0);
+        assert_eq!(log.seq, 1);
+        assert_eq!(chunk.seq, 2);
+        assert_eq!(end.seq, 3);
+    }
+
+    // =========================================================================
+    // FlowKey tests
+    // =========================================================================
+
+    // TEST447: FlowKey::from_frame extracts (rid, Some(xid)) when routing_id present
+    #[test]
+    fn test_flow_key_with_xid() {
+        let rid = MessageId::new_uuid();
+        let xid = MessageId::new_uuid();
+        let mut frame = Frame::new(FrameType::Chunk, rid.clone());
+        frame.routing_id = Some(xid.clone());
+
+        let key = FlowKey::from_frame(&frame);
+        assert_eq!(key.rid, rid);
+        assert_eq!(key.xid, Some(xid));
+    }
+
+    // TEST448: FlowKey::from_frame extracts (rid, None) when routing_id absent
+    #[test]
+    fn test_flow_key_without_xid() {
+        let rid = MessageId::new_uuid();
+        let frame = Frame::new(FrameType::Req, rid.clone());
+
+        let key = FlowKey::from_frame(&frame);
+        assert_eq!(key.rid, rid);
+        assert_eq!(key.xid, None);
+    }
+
+    // TEST449: FlowKey equality: same rid+xid equal, different xid different key
+    #[test]
+    fn test_flow_key_equality() {
+        let rid = MessageId::new_uuid();
+        let xid1 = MessageId::new_uuid();
+        let xid2 = MessageId::new_uuid();
+
+        let key_with_xid1 = FlowKey { rid: rid.clone(), xid: Some(xid1.clone()) };
+        let key_with_xid1_dup = FlowKey { rid: rid.clone(), xid: Some(xid1.clone()) };
+        let key_with_xid2 = FlowKey { rid: rid.clone(), xid: Some(xid2) };
+        let key_no_xid = FlowKey { rid: rid.clone(), xid: None };
+
+        assert_eq!(key_with_xid1, key_with_xid1_dup, "same rid+xid must be equal");
+        assert_ne!(key_with_xid1, key_with_xid2, "different xid must not be equal");
+        assert_ne!(key_with_xid1, key_no_xid, "Some(xid) vs None must not be equal");
+    }
+
+    // TEST450: FlowKey hash: same keys hash equal (HashMap lookup)
+    #[test]
+    fn test_flow_key_hash_lookup() {
+        let rid = MessageId::new_uuid();
+        let xid = MessageId::new_uuid();
+
+        let key1 = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
+        let key2 = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
+
+        let mut map = std::collections::HashMap::new();
+        map.insert(key1, 42);
+        assert_eq!(map.get(&key2), Some(&42), "equal FlowKeys must hash to same bucket");
+    }
+
+    // =========================================================================
+    // ReorderBuffer tests
+    // =========================================================================
+
+    /// Helper: create a flow frame with a specific seq, rid, and optional xid
+    fn make_flow_frame(rid: &MessageId, xid: Option<&MessageId>, seq: u64) -> Frame {
+        let mut f = Frame::new(FrameType::Chunk, rid.clone());
+        f.seq = seq;
+        f.routing_id = xid.cloned();
+        f
+    }
+
+    // TEST451: ReorderBuffer in-order delivery: seq 0,1,2 delivered immediately
+    #[test]
+    fn test_reorder_buffer_in_order() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        let ready0 = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready0.len(), 1);
+        assert_eq!(ready0[0].seq, 0);
+
+        let ready1 = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert_eq!(ready1.len(), 1);
+        assert_eq!(ready1[0].seq, 1);
+
+        let ready2 = buf.accept(make_flow_frame(&rid, None, 2)).unwrap();
+        assert_eq!(ready2.len(), 1);
+        assert_eq!(ready2[0].seq, 2);
+    }
+
+    // TEST452: ReorderBuffer out-of-order: seq 1 then 0 delivers both in order
+    #[test]
+    fn test_reorder_buffer_out_of_order() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        let ready1 = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert!(ready1.is_empty(), "seq 1 without seq 0 must be buffered");
+
+        let ready0 = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready0.len(), 2);
+        assert_eq!(ready0[0].seq, 0);
+        assert_eq!(ready0[1].seq, 1);
+    }
+
+    // TEST453: ReorderBuffer gap fill: seq 0,2,1 delivers 0, buffers 2, then delivers 1+2
+    #[test]
+    fn test_reorder_buffer_gap_fill() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        let ready0 = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready0.len(), 1);
+
+        let ready2 = buf.accept(make_flow_frame(&rid, None, 2)).unwrap();
+        assert!(ready2.is_empty(), "seq 2 without seq 1 must be buffered");
+
+        let ready1 = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert_eq!(ready1.len(), 2);
+        assert_eq!(ready1[0].seq, 1);
+        assert_eq!(ready1[1].seq, 2);
+    }
+
+    // TEST454: ReorderBuffer stale seq is hard error
+    #[test]
+    fn test_reorder_buffer_stale_seq() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+
+        let result = buf.accept(make_flow_frame(&rid, None, 0));
+        assert!(result.is_err(), "stale seq must be protocol error");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("stale"), "error message must mention stale: {}", err);
+    }
+
+    // TEST455: ReorderBuffer overflow triggers protocol error
+    #[test]
+    fn test_reorder_buffer_overflow() {
+        let mut buf = ReorderBuffer::new(3); // tiny buffer
+        let rid = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 2)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 3)).unwrap();
+
+        let result = buf.accept(make_flow_frame(&rid, None, 4));
+        assert!(result.is_err(), "buffer overflow must be protocol error");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("overflow"), "error message must mention overflow: {}", err);
+    }
+
+    // TEST456: Multiple concurrent flows reorder independently
+    #[test]
+    fn test_reorder_buffer_independent_flows() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid_a = MessageId::new_uuid();
+        let rid_b = MessageId::new_uuid();
+
+        let ready_a1 = buf.accept(make_flow_frame(&rid_a, None, 1)).unwrap();
+        assert!(ready_a1.is_empty());
+
+        let ready_b0 = buf.accept(make_flow_frame(&rid_b, None, 0)).unwrap();
+        assert_eq!(ready_b0.len(), 1);
+        assert_eq!(ready_b0[0].seq, 0);
+
+        let ready_a0 = buf.accept(make_flow_frame(&rid_a, None, 0)).unwrap();
+        assert_eq!(ready_a0.len(), 2);
+        assert_eq!(ready_a0[0].seq, 0);
+        assert_eq!(ready_a0[1].seq, 1);
+
+        let ready_b1 = buf.accept(make_flow_frame(&rid_b, None, 1)).unwrap();
+        assert_eq!(ready_b1.len(), 1);
+    }
+
+    // TEST457: cleanup_flow removes state; new frames start at seq 0
+    #[test]
+    fn test_reorder_buffer_cleanup() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+
+        let key = FlowKey { rid: rid.clone(), xid: None };
+        buf.cleanup_flow(&key);
+
+        let ready = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].seq, 0);
+    }
+
+    // TEST458: Non-flow frames bypass reorder entirely
+    #[test]
+    fn test_reorder_buffer_non_flow_bypass() {
+        let mut buf = ReorderBuffer::new(64);
+
+        let hello = Frame::new(FrameType::Hello, MessageId::Uint(0));
+        let hb = Frame::new(FrameType::Heartbeat, MessageId::new_uuid());
+        let notify = Frame::new(FrameType::RelayNotify, MessageId::Uint(0));
+        let state = Frame::new(FrameType::RelayState, MessageId::Uint(0));
+
+        assert_eq!(buf.accept(hello).unwrap().len(), 1, "Hello must bypass reorder");
+        assert_eq!(buf.accept(hb).unwrap().len(), 1, "Heartbeat must bypass reorder");
+        assert_eq!(buf.accept(notify).unwrap().len(), 1, "RelayNotify must bypass reorder");
+        assert_eq!(buf.accept(state).unwrap().len(), 1, "RelayState must bypass reorder");
+    }
+
+    // TEST459: Terminal END frame flows through correctly
+    #[test]
+    fn test_reorder_buffer_end_frame() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        let mut req = Frame::new(FrameType::Req, rid.clone());
+        req.seq = 0;
+        buf.accept(req).unwrap();
+
+        let mut end = Frame::end(rid.clone(), None);
+        end.seq = 1;
+        let ready = buf.accept(end).unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].frame_type, FrameType::End);
+        assert_eq!(ready[0].seq, 1);
+    }
+
+    // TEST460: Terminal ERR frame flows through correctly
+    #[test]
+    fn test_reorder_buffer_err_frame() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        let mut req = Frame::new(FrameType::Req, rid.clone());
+        req.seq = 0;
+        buf.accept(req).unwrap();
+
+        let mut err = Frame::err(rid.clone(), "TEST", "test error");
+        err.seq = 1;
+        let ready = buf.accept(err).unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].frame_type, FrameType::Err);
+        assert_eq!(ready[0].seq, 1);
     }
 }

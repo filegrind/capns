@@ -8,7 +8,7 @@
 //!
 //! All other frames pass through transparently in both directions.
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
+use crate::cbor_frame::{Frame, FlowKey, FrameType, Limits, MessageId, ReorderBuffer};
 use crate::cbor_io::{
     encode_frame, read_frame, write_frame, CborError, FrameReader, FrameWriter,
 };
@@ -71,10 +71,13 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
         W: Send + 'static,
     {
         // Send initial RelayNotify if provided
-        if let Some((manifest, limits)) = initial_notify {
+        let max_reorder = if let Some((manifest, limits)) = initial_notify {
             let notify = Frame::relay_notify(manifest, limits);
             socket_write.write(&notify)?;
-        }
+            limits.max_reorder_buffer
+        } else {
+            crate::cbor_frame::DEFAULT_MAX_REORDER_BUFFER
+        };
 
         let resource_state = self.resource_state;
         let mut local_writer = self.local_writer;
@@ -86,6 +89,7 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
         let err1 = Arc::clone(&first_error);
         let rs1 = Arc::clone(&resource_state);
         let t1 = std::thread::spawn(move || {
+            let mut reorder = ReorderBuffer::new(max_reorder);
             loop {
                 match socket_read.read() {
                     Ok(Some(frame)) => {
@@ -96,12 +100,29 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
                         } else if frame.frame_type == FrameType::RelayNotify {
                             // RelayNotify from master — ignore
                         } else {
-                            if let Err(e) = local_writer.write(&frame) {
-                                let mut guard = err1.lock().unwrap();
-                                if guard.is_none() {
-                                    *guard = Some(e);
+                            let ready_frames = match reorder.accept(frame) {
+                                Ok(frames) => frames,
+                                Err(e) => {
+                                    let mut guard = err1.lock().unwrap();
+                                    if guard.is_none() {
+                                        *guard = Some(e);
+                                    }
+                                    return;
                                 }
-                                return;
+                            };
+                            for f in &ready_frames {
+                                if matches!(f.frame_type, FrameType::End | FrameType::Err) {
+                                    reorder.cleanup_flow(&FlowKey::from_frame(f));
+                                }
+                            }
+                            for f in ready_frames {
+                                if let Err(e) = local_writer.write(&f) {
+                                    let mut guard = err1.lock().unwrap();
+                                    if guard.is_none() {
+                                        *guard = Some(e);
+                                    }
+                                    return;
+                                }
                             }
                         }
                     }
@@ -120,6 +141,7 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
         // Thread 2: local → socket (PluginHost sends frames to master)
         let err2 = Arc::clone(&first_error);
         let t2 = std::thread::spawn(move || {
+            let mut reorder = ReorderBuffer::new(max_reorder);
             loop {
                 match local_reader.read() {
                     Ok(Some(frame)) => {
@@ -131,13 +153,29 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
                             if frame.frame_type == FrameType::RelayNotify {
                                 eprintln!("[RelaySlave] Forwarding RelayNotify from local to socket");
                             }
-                            // Forward frame to socket (including RelayNotify for capability updates)
-                            if let Err(e) = socket_write.write(&frame) {
-                                let mut guard = err2.lock().unwrap();
-                                if guard.is_none() {
-                                    *guard = Some(e);
+                            let ready_frames = match reorder.accept(frame) {
+                                Ok(frames) => frames,
+                                Err(e) => {
+                                    let mut guard = err2.lock().unwrap();
+                                    if guard.is_none() {
+                                        *guard = Some(e);
+                                    }
+                                    return;
                                 }
-                                return;
+                            };
+                            for f in &ready_frames {
+                                if matches!(f.frame_type, FrameType::End | FrameType::Err) {
+                                    reorder.cleanup_flow(&FlowKey::from_frame(f));
+                                }
+                            }
+                            for f in ready_frames {
+                                if let Err(e) = socket_write.write(&f) {
+                                    let mut guard = err2.lock().unwrap();
+                                    if guard.is_none() {
+                                        *guard = Some(e);
+                                    }
+                                    return;
+                                }
                             }
                         }
                     }
@@ -185,6 +223,10 @@ pub struct RelayMaster {
     manifest: Vec<u8>,
     /// Latest limits from slave's RelayNotify
     limits: Limits,
+    /// Reorder buffer for frames read from the socket
+    reorder: ReorderBuffer,
+    /// Ready queue of frames that passed through the reorder buffer
+    ready_queue: std::collections::VecDeque<Frame>,
 }
 
 impl RelayMaster {
@@ -219,7 +261,8 @@ impl RelayMaster {
                 CborError::Protocol("RelayNotify missing limits".to_string())
             })?;
 
-        Ok(Self { manifest, limits })
+        let reorder = ReorderBuffer::new(limits.max_reorder_buffer);
+        Ok(Self { manifest, limits, reorder, ready_queue: std::collections::VecDeque::new() })
     }
 
     /// Get the aggregate manifest from the slave.
@@ -244,29 +287,38 @@ impl RelayMaster {
     /// Read the next non-relay frame from the socket.
     ///
     /// RelayNotify frames are intercepted: manifest and limits are updated.
-    /// All other frames are returned to the caller.
+    /// All other frames pass through the reorder buffer before delivery.
     /// Returns Ok(None) on EOF.
     pub fn read_frame<SR: Read>(
         &mut self,
         socket_read: &mut FrameReader<SR>,
     ) -> Result<Option<Frame>, CborError> {
         loop {
+            // Drain ready queue first
+            if let Some(frame) = self.ready_queue.pop_front() {
+                return Ok(Some(frame));
+            }
+
             match socket_read.read()? {
                 Some(frame) => {
                     if frame.frame_type == FrameType::RelayNotify {
-                        // Intercept: update manifest and limits
                         if let Some(manifest) = frame.relay_notify_manifest() {
                             self.manifest = manifest.to_vec();
                         }
                         if let Some(limits) = frame.relay_notify_limits() {
                             self.limits = limits;
                         }
-                        continue; // Don't return relay frames to caller
+                        continue;
                     } else if frame.frame_type == FrameType::RelayState {
-                        // RelayState from slave? Protocol error — ignore
                         continue;
                     }
-                    return Ok(Some(frame));
+                    let ready = self.reorder.accept(frame)?;
+                    for f in &ready {
+                        if matches!(f.frame_type, FrameType::End | FrameType::Err) {
+                            self.reorder.cleanup_flow(&FlowKey::from_frame(f));
+                        }
+                    }
+                    self.ready_queue.extend(ready);
                 }
                 None => return Ok(None),
             }
@@ -285,6 +337,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 pub struct AsyncRelayMaster {
     manifest: Vec<u8>,
     limits: Limits,
+    reorder: ReorderBuffer,
+    ready_queue: std::collections::VecDeque<Frame>,
 }
 
 impl AsyncRelayMaster {
@@ -312,7 +366,8 @@ impl AsyncRelayMaster {
             .relay_notify_limits()
             .ok_or_else(|| CborError::Protocol("RelayNotify missing limits".to_string()))?;
 
-        Ok(Self { manifest, limits })
+        let reorder = ReorderBuffer::new(limits.max_reorder_buffer);
+        Ok(Self { manifest, limits, reorder, ready_queue: std::collections::VecDeque::new() })
     }
 
     /// Get the aggregate manifest from the slave.
@@ -336,11 +391,17 @@ impl AsyncRelayMaster {
 
     /// Read the next non-relay frame from the socket.
     /// Intercepts RelayNotify frames and updates internal state.
+    /// Flow frames pass through the reorder buffer before delivery.
     pub async fn read_frame<SR: AsyncRead + Unpin>(
         &mut self,
         socket_read: &mut AsyncFrameReader<SR>,
     ) -> Result<Option<Frame>, CborError> {
         loop {
+            // Drain ready queue first
+            if let Some(frame) = self.ready_queue.pop_front() {
+                return Ok(Some(frame));
+            }
+
             match socket_read.read().await? {
                 Some(frame) => {
                     if frame.frame_type == FrameType::RelayNotify {
@@ -354,7 +415,13 @@ impl AsyncRelayMaster {
                     } else if frame.frame_type == FrameType::RelayState {
                         continue;
                     }
-                    return Ok(Some(frame));
+                    let ready = self.reorder.accept(frame)?;
+                    for f in &ready {
+                        if matches!(f.frame_type, FrameType::End | FrameType::Err) {
+                            self.reorder.cleanup_flow(&FlowKey::from_frame(f));
+                        }
+                    }
+                    self.ready_queue.extend(ready);
                 }
                 None => return Ok(None),
             }
@@ -369,7 +436,7 @@ impl AsyncRelayMaster {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
+    use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
     use crate::cbor_io::{FrameReader, FrameWriter};
     use std::io::{BufReader, BufWriter};
     use std::thread;
@@ -424,6 +491,7 @@ mod tests {
         let limits = Limits {
             max_frame: 1_000_000,
             max_chunk: 64_000,
+            ..Limits::default()
         };
 
         let (master_read_stream, slave_write_stream) = create_pipe_pair();
@@ -505,12 +573,14 @@ mod tests {
         // Master sends a REQ frame through the socket
         let master_write_handle = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(master_socket_write));
-            let req = Frame::req(
+            let mut seq = SeqAssigner::new();
+            let mut req = Frame::req(
                 req_id_clone,
                 "cap:op=test",
                 b"hello".to_vec(),
                 "text/plain",
             );
+            seq.assign(&mut req);
             writer.write(&req).unwrap();
             drop(writer);
         });
@@ -520,9 +590,10 @@ mod tests {
         let chunk_id_clone = chunk_id.clone();
         let runtime_write_handle = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(runtime_write_to_slave));
+            let mut seq = SeqAssigner::new();
             let payload = b"response".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            let chunk = Frame::chunk(
+            let mut chunk = Frame::chunk(
                 chunk_id_clone,
                 "stream-1".to_string(),
                 0,
@@ -530,6 +601,7 @@ mod tests {
                 0,
                 checksum,
             );
+            seq.assign(&mut chunk);
             writer.write(&chunk).unwrap();
             drop(writer);
         });
@@ -586,16 +658,18 @@ mod tests {
 
         let master_handle = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(master_socket_write));
+            let mut seq = SeqAssigner::new();
             // Send RelayState
             let state = Frame::relay_state(b"{\"memory\":1024}");
             writer.write(&state).unwrap();
             // Then send a normal REQ to verify the slave still works
-            let req = Frame::req(
+            let mut req = Frame::req(
                 MessageId::new_uuid(),
                 "cap:op=test",
                 vec![],
                 "text/plain",
             );
+            seq.assign(&mut req);
             writer.write(&req).unwrap();
             drop(writer);
         });
@@ -634,6 +708,7 @@ mod tests {
 
         let slave_handle = thread::spawn(move || {
             let mut socket_writer = FrameWriter::new(BufWriter::new(slave_socket_write));
+            let mut seq = SeqAssigner::new();
             let limits = Limits::default();
 
             // First: send initial RelayNotify
@@ -648,7 +723,7 @@ mod tests {
             // Then: forward a normal CHUNK frame
             let payload = b"data".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            let chunk = Frame::chunk(
+            let mut chunk = Frame::chunk(
                 MessageId::new_uuid(),
                 "stream-1".to_string(),
                 0,
@@ -656,6 +731,7 @@ mod tests {
                 0,
                 checksum,
             );
+            seq.assign(&mut chunk);
             socket_writer.write(&chunk).unwrap();
 
             // Then: inject updated RelayNotify (new cap discovered)
@@ -706,30 +782,39 @@ mod tests {
         let limits = Limits {
             max_frame: 2_000_000,
             max_chunk: 100_000,
+            ..Limits::default()
         };
 
         let slave_handle = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(slave_socket_write));
+            let mut seq = SeqAssigner::new();
 
             // Initial RelayNotify
             let initial = Frame::relay_notify(b"{\"caps\":[\"cap:op=a\"]}", &limits);
             writer.write(&initial).unwrap();
 
             // Normal frame
-            let end = Frame::end(MessageId::new_uuid(), None);
+            let end_id = MessageId::new_uuid();
+            let mut end = Frame::end(end_id.clone(), None);
+            seq.assign(&mut end);
             writer.write(&end).unwrap();
+            seq.remove(&end_id);
 
             // Updated RelayNotify
             let updated_limits = Limits {
                 max_frame: 3_000_000,
                 max_chunk: 200_000,
+                ..Limits::default()
             };
             let updated = Frame::relay_notify(b"{\"caps\":[\"cap:op=a\",\"cap:op=b\"]}", &updated_limits);
             writer.write(&updated).unwrap();
 
             // Another normal frame to prove master continues
-            let end2 = Frame::end(MessageId::new_uuid(), None);
+            let end2_id = MessageId::new_uuid();
+            let mut end2 = Frame::end(end2_id.clone(), None);
+            seq.assign(&mut end2);
             writer.write(&end2).unwrap();
+            seq.remove(&end2_id);
 
             drop(writer);
         });
@@ -820,9 +905,12 @@ mod tests {
         // Master writes REQ frames
         let master_write = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(master_socket_write));
-            let req1 = Frame::req(req_id1_clone, "cap:op=a", b"data-a".to_vec(), "text/plain");
-            let req2 = Frame::req(req_id2_clone, "cap:op=b", b"data-b".to_vec(), "text/plain");
+            let mut seq = SeqAssigner::new();
+            let mut req1 = Frame::req(req_id1_clone, "cap:op=a", b"data-a".to_vec(), "text/plain");
+            let mut req2 = Frame::req(req_id2_clone, "cap:op=b", b"data-b".to_vec(), "text/plain");
+            seq.assign(&mut req1);
             writer.write(&req1).unwrap();
+            seq.assign(&mut req2);
             writer.write(&req2).unwrap();
             drop(writer);
         });
@@ -832,12 +920,16 @@ mod tests {
         let resp_id1_clone = resp_id1.clone();
         let runtime_write = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(runtime_writes_to_slave));
+            let mut seq = SeqAssigner::new();
             let payload = b"resp-a".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            let chunk = Frame::chunk(resp_id1_clone, "s1".to_string(), 0, payload, 0, checksum);
-            let end = Frame::end(resp_id1.clone(), None);
+            let mut chunk = Frame::chunk(resp_id1_clone, "s1".to_string(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
             writer.write(&chunk).unwrap();
+            let mut end = Frame::end(resp_id1.clone(), None);
+            seq.assign(&mut end);
             writer.write(&end).unwrap();
+            seq.remove(&resp_id1);
             drop(writer);
         });
 

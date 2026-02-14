@@ -6,7 +6,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::cbor_frame::{Frame, FrameType, MessageId};
+    use crate::cbor_frame::{Frame, FrameType, MessageId, SeqAssigner};
     use crate::cbor_io::{FrameReader, FrameWriter, handshake, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
     use crate::plugin_runtime::PluginRuntime;
     use crate::standard::caps::CAP_IDENTITY;
@@ -121,12 +121,22 @@ mod tests {
                 }
             }
 
+            let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut start);
+            writer.write(&start).unwrap();
             let checksum = Frame::compute_checksum(&arg_data);
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, arg_data, 0, checksum)).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            writer.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, arg_data, 0, checksum);
+            seq.assign(&mut chunk);
+            writer.write(&chunk).unwrap();
+            let mut stream_end = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut stream_end);
+            writer.write(&stream_end).unwrap();
+            let mut end = Frame::end(req.id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
             drop(writer);
         });
 
@@ -139,25 +149,32 @@ mod tests {
             let mut w = AsyncFrameWriter::new(eng_write);
             let mut r = AsyncFrameReader::new(eng_read);
 
+            let mut seq = SeqAssigner::new();
             let sid = uuid::Uuid::new_v4().to_string();
             let xid = MessageId::Uint(1);
             let mut req_frame = Frame::req(req_id.clone(), CAP_IDENTITY, vec![], "text/plain");
             req_frame.routing_id = Some(xid.clone());
+            seq.assign(&mut req_frame);
             w.write(&req_frame).await.unwrap();
             let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
             stream_start.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
             let payload = b"hello world".to_vec();
             let checksum = Frame::compute_checksum(&payload);
             let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, payload, 0, checksum);
             chunk.routing_id = Some(xid.clone());
+            seq.assign(&mut chunk);
             w.write(&chunk).await.unwrap();
             let mut stream_end = Frame::stream_end(req_id.clone(), sid, 1);
             stream_end.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_end);
             w.write(&stream_end).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&end.id);
 
             // Read response
             let mut payload = Vec::new();
@@ -200,7 +217,11 @@ mod tests {
             let (mut reader, mut writer) = plugin_handshake(p_from_rt, p_to_rt, &m);
 
             let req = reader.read().unwrap().expect("Expected REQ");
-            writer.write(&Frame::err(req.id, "FAIL_CODE", "Something went wrong")).unwrap();
+            let mut seq = SeqAssigner::new();
+            let mut err = Frame::err(req.id, "FAIL_CODE", "Something went wrong");
+            seq.assign(&mut err);
+            writer.write(&err).unwrap();
+            seq.remove(&err.id);
             drop(writer);
         });
 
@@ -212,13 +233,17 @@ mod tests {
             let mut w = AsyncFrameWriter::new(eng_write);
             let mut r = AsyncFrameReader::new(eng_read);
 
+            let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=fail;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&end.id);
 
             let mut err_code = String::new();
             let mut err_msg = String::new();
@@ -283,12 +308,22 @@ mod tests {
                 assert_eq!(b, i as u8, "Byte mismatch at position {}", i);
             }
 
+            let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut start);
+            writer.write(&start).unwrap();
             let checksum = Frame::compute_checksum(&received);
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, received, 0, checksum)).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            writer.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, received, 0, checksum);
+            seq.assign(&mut chunk);
+            writer.write(&chunk).unwrap();
+            let mut stream_end = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut stream_end);
+            writer.write(&stream_end).unwrap();
+            let mut end = Frame::end(req.id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
             drop(writer);
         });
 
@@ -300,24 +335,31 @@ mod tests {
             let mut w = AsyncFrameWriter::new(eng_write);
             let mut r = AsyncFrameReader::new(eng_read);
 
+            let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
             let sid = uuid::Uuid::new_v4().to_string();
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=binary;out=\"media:void\"", vec![], "application/octet-stream");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
             stream_start.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
             let checksum = Frame::compute_checksum(&binary_clone);
             let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, binary_clone, 0, checksum);
             chunk.routing_id = Some(xid.clone());
+            seq.assign(&mut chunk);
             w.write(&chunk).await.unwrap();
             let mut stream_end = Frame::stream_end(req_id.clone(), sid, 1);
             stream_end.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_end);
             w.write(&stream_end).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&end.id);
 
             let mut payload = Vec::new();
             loop {
@@ -368,14 +410,23 @@ mod tests {
             }
 
             let sid = "resp".to_string();
-            writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            for seq in 0u64..5 {
-                let data = format!("chunk{}", seq).into_bytes();
+            let mut seq = SeqAssigner::new();
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut start);
+            writer.write(&start).unwrap();
+            for idx in 0u64..5 {
+                let data = format!("chunk{}", idx).into_bytes();
                 let checksum = Frame::compute_checksum(&data);
-                writer.write(&Frame::chunk(req.id.clone(), sid.clone(), seq, data, seq, checksum)).unwrap();
+                let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, data, idx, checksum);
+                seq.assign(&mut chunk);
+                writer.write(&chunk).unwrap();
             }
-            writer.write(&Frame::stream_end(req.id.clone(), sid, 5)).unwrap();
-            writer.write(&Frame::end(req.id, None)).unwrap();
+            let mut stream_end = Frame::stream_end(req.id.clone(), sid, 5);
+            seq.assign(&mut stream_end);
+            writer.write(&stream_end).unwrap();
+            let mut end = Frame::end(req.id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
             drop(writer);
         });
 
@@ -387,13 +438,17 @@ mod tests {
             let mut w = AsyncFrameWriter::new(eng_write);
             let mut r = AsyncFrameReader::new(eng_read);
 
+            let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=stream;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&end.id);
 
             let mut chunks = Vec::new();
             loop {
@@ -418,7 +473,7 @@ mod tests {
         let chunks = engine_task.await.unwrap();
         assert_eq!(chunks.len(), 5, "All 5 chunks must arrive");
         for (i, (seq, data)) in chunks.iter().enumerate() {
-            assert_eq!(*seq, i as u64, "Chunk seq must be contiguous from 0");
+            assert_eq!(*seq, (i + 1) as u64, "Chunk seq must be contiguous from 1 (StreamStart takes seq 0)");
             assert_eq!(data, &format!("chunk{}", i).into_bytes(), "Chunk data must match");
         }
 
@@ -447,13 +502,23 @@ mod tests {
             let req = reader.read().unwrap().expect("Expected REQ");
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""), "Plugin A must receive alpha REQ");
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            let mut seq = SeqAssigner::new();
             let sid = "a".to_string();
-            writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut start);
+            writer.write(&start).unwrap();
             let payload = b"from-alpha".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            writer.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            writer.write(&chunk).unwrap();
+            let mut stream_end = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut stream_end);
+            writer.write(&stream_end).unwrap();
+            let mut end = Frame::end(req.id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
             drop(writer);
         });
 
@@ -463,13 +528,23 @@ mod tests {
             let req = reader.read().unwrap().expect("Expected REQ");
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""), "Plugin B must receive beta REQ");
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            let mut seq = SeqAssigner::new();
             let sid = "b".to_string();
-            writer.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut start);
+            writer.write(&start).unwrap();
             let payload = b"from-beta".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            writer.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
-            writer.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            writer.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            writer.write(&chunk).unwrap();
+            let mut stream_end = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut stream_end);
+            writer.write(&stream_end).unwrap();
+            let mut end = Frame::end(req.id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
             drop(writer);
         });
 
@@ -486,20 +561,27 @@ mod tests {
             let mut w = AsyncFrameWriter::new(eng_write);
             let mut r = AsyncFrameReader::new(eng_read);
 
+            let mut seq = SeqAssigner::new();
             let xid_alpha = MessageId::Uint(1);
             let xid_beta = MessageId::Uint(2);
             let mut req_alpha = Frame::req(alpha_id_c.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
             req_alpha.routing_id = Some(xid_alpha.clone());
+            seq.assign(&mut req_alpha);
             w.write(&req_alpha).await.unwrap();
             let mut end_alpha = Frame::end(alpha_id_c.clone(), None);
             end_alpha.routing_id = Some(xid_alpha.clone());
+            seq.assign(&mut end_alpha);
             w.write(&end_alpha).await.unwrap();
+            seq.remove(&end_alpha.id);
             let mut req_beta = Frame::req(beta_id_c.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
             req_beta.routing_id = Some(xid_beta.clone());
+            seq.assign(&mut req_beta);
             w.write(&req_beta).await.unwrap();
             let mut end_beta = Frame::end(beta_id_c.clone(), None);
             end_beta.routing_id = Some(xid_beta.clone());
+            seq.assign(&mut end_beta);
             w.write(&end_beta).await.unwrap();
+            seq.remove(&end_beta.id);
 
             let mut alpha_data = Vec::new();
             let mut beta_data = Vec::new();
@@ -573,13 +655,17 @@ mod tests {
         let req_id_clone = req_id.clone();
         let engine_send = tokio::spawn(async move {
             let mut w = AsyncFrameWriter::new(eng_write);
+            let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
             let mut req = Frame::req(req_id_clone.clone(), "cap:in=\"media:void\";op=unknown;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut end = Frame::end(req_id_clone, None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&end.id);
         });
 
         // Read ERR frame from the host on the engine side
@@ -684,7 +770,11 @@ mod tests {
             assert_eq!(frame.cap.as_deref(), Some("CAP_IDENTITY"));
             assert_eq!(frame.payload.as_deref(), Some(b"hello".as_ref()));
 
-            writer.write(&Frame::end(frame.id, Some(b"hello back".to_vec()))).unwrap();
+            let mut seq = SeqAssigner::new();
+            let mut end = Frame::end(frame.id, Some(b"hello back".to_vec()));
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -694,8 +784,11 @@ mod tests {
         reader.set_limits(limits);
         writer.set_limits(limits);
 
+        let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        writer.write(&Frame::req(request_id.clone(), "CAP_IDENTITY", b"hello".to_vec(), "application/json")).unwrap();
+        let mut req = Frame::req(request_id.clone(), "CAP_IDENTITY", b"hello".to_vec(), "application/json");
+        seq.assign(&mut req);
+        writer.write(&req).unwrap();
 
         let response = reader.read().unwrap().unwrap();
         assert_eq!(response.frame_type, FrameType::End);
@@ -719,14 +812,23 @@ mod tests {
             let request_id = frame.id.clone();
 
             let sid = "response".to_string();
-            writer.write(&Frame::stream_start(request_id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-            for (seq, data) in [b"chunk1", b"chunk2", b"chunk3"].iter().enumerate() {
+            let mut seq = SeqAssigner::new();
+            let mut start = Frame::stream_start(request_id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut start);
+            writer.write(&start).unwrap();
+            for (idx, data) in [b"chunk1", b"chunk2", b"chunk3"].iter().enumerate() {
                 let payload = data.to_vec();
                 let checksum = Frame::compute_checksum(&payload);
-                writer.write(&Frame::chunk(request_id.clone(), sid.clone(), seq as u64, payload, seq as u64, checksum)).unwrap();
+                let mut chunk = Frame::chunk(request_id.clone(), sid.clone(), 0, payload, idx as u64, checksum);
+                seq.assign(&mut chunk);
+                writer.write(&chunk).unwrap();
             }
-            writer.write(&Frame::stream_end(request_id.clone(), sid, 3)).unwrap();
-            writer.write(&Frame::end(request_id, None)).unwrap();
+            let mut stream_end = Frame::stream_end(request_id.clone(), sid, 3);
+            seq.assign(&mut stream_end);
+            writer.write(&stream_end).unwrap();
+            let mut end = Frame::end(request_id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -736,8 +838,11 @@ mod tests {
         reader.set_limits(limits);
         writer.set_limits(limits);
 
+        let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        writer.write(&Frame::req(request_id.clone(), "cap:in=\"media:void\";op=stream;out=\"media:void\"", b"go".to_vec(), "application/json")).unwrap();
+        let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=stream;out=\"media:void\"", b"go".to_vec(), "application/json");
+        seq.assign(&mut req);
+        writer.write(&req).unwrap();
 
         // Collect chunks
         let mut chunks = Vec::new();
@@ -773,7 +878,10 @@ mod tests {
             let frame = reader.read().unwrap().unwrap();
             assert_eq!(frame.frame_type, FrameType::Heartbeat);
 
-            writer.write(&Frame::heartbeat(frame.id)).unwrap();
+            let mut seq = SeqAssigner::new();
+            let mut hb = Frame::heartbeat(frame.id);
+            seq.assign(&mut hb);
+            writer.write(&hb).unwrap();
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -783,8 +891,11 @@ mod tests {
         reader.set_limits(limits);
         writer.set_limits(limits);
 
+        let mut seq = SeqAssigner::new();
         let heartbeat_id = MessageId::new_uuid();
-        writer.write(&Frame::heartbeat(heartbeat_id.clone())).unwrap();
+        let mut hb = Frame::heartbeat(heartbeat_id.clone());
+        seq.assign(&mut hb);
+        writer.write(&hb).unwrap();
 
         let response = reader.read().unwrap().unwrap();
         assert_eq!(response.frame_type, FrameType::Heartbeat);
@@ -843,7 +954,11 @@ mod tests {
                 assert_eq!(byte, i as u8, "Byte mismatch at position {}", i);
             }
 
-            writer.write(&Frame::end(frame.id, Some(payload))).unwrap();
+            let mut seq = SeqAssigner::new();
+            let mut end = Frame::end(frame.id, Some(payload));
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -853,8 +968,11 @@ mod tests {
         reader.set_limits(limits);
         writer.set_limits(limits);
 
+        let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        writer.write(&Frame::req(request_id.clone(), "cap:in=\"media:void\";op=binary;out=\"media:void\"", binary_clone, "application/octet-stream")).unwrap();
+        let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=binary;out=\"media:void\"", binary_clone, "application/octet-stream");
+        seq.assign(&mut req);
+        writer.write(&req).unwrap();
 
         let response = reader.read().unwrap().unwrap();
         let result = response.payload.unwrap();
@@ -882,10 +1000,14 @@ mod tests {
         let plugin_handle = std::thread::spawn(move || {
             let (mut reader, mut writer) = plugin_handshake(plugin_read, plugin_write, &manifest);
 
+            let mut seq = SeqAssigner::new();
             for _ in 0..3 {
                 let frame = reader.read().unwrap().unwrap();
                 received_ids_clone.lock().unwrap().push(frame.id.clone());
-                writer.write(&Frame::end(frame.id, Some(b"ok".to_vec()))).unwrap();
+                let mut end = Frame::end(frame.id, Some(b"ok".to_vec()));
+                seq.assign(&mut end);
+                writer.write(&end).unwrap();
+                seq.remove(&end.id);
             }
         });
 
@@ -896,9 +1018,12 @@ mod tests {
         reader.set_limits(limits);
         writer.set_limits(limits);
 
+        let mut seq = SeqAssigner::new();
         for _ in 0..3 {
             let request_id = MessageId::new_uuid();
-            writer.write(&Frame::req(request_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "application/json")).unwrap();
+            let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "application/json");
+            seq.assign(&mut req);
+            writer.write(&req).unwrap();
             reader.read().unwrap().unwrap();
         }
 
@@ -928,7 +1053,11 @@ mod tests {
             assert!(frame.payload.is_none() || frame.payload.as_ref().unwrap().is_empty(),
                     "empty payload must arrive empty");
 
-            writer.write(&Frame::end(frame.id, Some(vec![]))).unwrap();
+            let mut seq = SeqAssigner::new();
+            let mut end = Frame::end(frame.id, Some(vec![]));
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+            seq.remove(&end.id);
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -938,8 +1067,11 @@ mod tests {
         reader.set_limits(limits);
         writer.set_limits(limits);
 
+        let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        writer.write(&Frame::req(request_id.clone(), "cap:in=\"media:void\";op=empty;out=\"media:void\"", vec![], "application/json")).unwrap();
+        let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=empty;out=\"media:void\"", vec![], "application/json");
+        seq.assign(&mut req);
+        writer.write(&req).unwrap();
 
         let response = reader.read().unwrap().unwrap();
         assert!(response.payload.is_none() || response.payload.as_ref().unwrap().is_empty());

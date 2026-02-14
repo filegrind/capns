@@ -39,7 +39,7 @@
 //! }
 //! ```
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
+use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::cbor_io::{handshake_accept, CborError, FrameReader, FrameWriter};
 use crate::caller::CapArgumentValue;
 use crate::cap::{ArgSource, Cap, CapArg};
@@ -117,7 +117,6 @@ pub struct StreamEmitter<'a> {
     request_id: MessageId,
     routing_id: Option<MessageId>,  // XID for responses, None for peer requests
     stream_started: AtomicBool,
-    seq: Mutex<u64>,
     chunk_index: Mutex<u64>,  // Chunk sequence index within stream, starts at 0
     chunk_count: Mutex<u64>,  // Total chunks sent in this stream
     max_chunk: usize,
@@ -145,7 +144,6 @@ impl<'a> StreamEmitter<'a> {
             request_id,
             routing_id,
             stream_started: AtomicBool::new(false),
-            seq: Mutex::new(0),
             chunk_index: Mutex::new(0),
             chunk_count: Mutex::new(0),
             max_chunk,
@@ -245,13 +243,6 @@ impl<'a> StreamEmitter<'a> {
         ciborium::into_writer(value, &mut cbor_payload)
             .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR: {}", e)))?;
 
-        let seq = {
-            let mut seq_guard = self.seq.lock().unwrap();
-            let current = *seq_guard;
-            *seq_guard += 1;
-            current
-        };
-
         let index = {
             let mut index_guard = self.chunk_index.lock().unwrap();
             let current = *index_guard;
@@ -266,7 +257,7 @@ impl<'a> StreamEmitter<'a> {
 
         let checksum = Frame::compute_checksum(&cbor_payload);
 
-        let mut frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), seq, cbor_payload, index, checksum);
+        let mut frame = Frame::chunk(self.request_id.clone(), self.stream_id.clone(), 0, cbor_payload, index, checksum);
         frame.routing_id = self.routing_id.clone();
         self.sender.send(&frame)
     }
@@ -1022,7 +1013,6 @@ impl PeerInvoker for PeerInvokerImpl {
             // CHUNK(s): Send argument data as CBOR-encoded chunks
             // Each CHUNK payload MUST be independently decodable CBOR
             let mut offset = 0;
-            let mut seq = 0u64;
             let mut chunk_index = 0u64;
             while offset < arg.value.len() {
                 let chunk_size = (arg.value.len() - offset).min(max_chunk);
@@ -1041,7 +1031,7 @@ impl PeerInvoker for PeerInvokerImpl {
                 let chunk_frame = Frame::chunk(
                     request_id.clone(),
                     stream_id.clone(),
-                    seq,
+                    0,
                     cbor_payload,
                     chunk_index,
                     checksum
@@ -1052,7 +1042,6 @@ impl PeerInvoker for PeerInvokerImpl {
                 })?;
 
                 offset += chunk_size;
-                seq += 1;
                 chunk_index += 1;
             }
 
@@ -1440,16 +1429,14 @@ impl PluginRuntime {
                     } else {
                         // Non-empty value - chunk into max_chunk pieces
                         let mut offset = 0;
-                        let mut seq = 0u64;
                         let mut chunk_index = 0u64;
                         while offset < bytes.len() {
                             let chunk_size = (bytes.len() - offset).min(max_chunk);
                             let chunk_data = bytes[offset..offset + chunk_size].to_vec();
                             let checksum = Frame::compute_checksum(&chunk_data);
-                            let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq, chunk_data, chunk_index, checksum);
+                            let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, chunk_data, chunk_index, checksum);
                             tx.send(chunk_frame).map_err(|_| RuntimeError::Handler("Failed to send CHUNK".to_string()))?;
                             offset += chunk_size;
-                            seq += 1;
                             chunk_index += 1;
                         }
                         chunk_index
@@ -1993,12 +1980,19 @@ impl PluginRuntime {
         let writer_handle = std::thread::spawn(move || {
             eprintln!("[PluginRuntime/writer] Writer thread started");
             let mut frame_count = 0;
-            for frame in output_rx {
+            let mut seq_assigner = SeqAssigner::new();
+            for mut frame in output_rx {
                 frame_count += 1;
-                eprintln!("[PluginRuntime/writer] Writing frame #{}: {:?} (id={:?})", frame_count, frame.frame_type, frame.id);
+                // Assign centralized seq per request ID before writing
+                seq_assigner.assign(&mut frame);
+                eprintln!("[PluginRuntime/writer] Writing frame #{}: {:?} (id={:?}, seq={})", frame_count, frame.frame_type, frame.id, frame.seq);
                 if let Err(e) = frame_writer.write(&frame) {
                     eprintln!("[PluginRuntime/writer] Failed to write frame: {}", e);
                     break;
+                }
+                // Cleanup seq tracking on terminal frames
+                if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
+                    seq_assigner.remove(&frame.id);
                 }
                 eprintln!("[PluginRuntime/writer] Frame #{} written successfully", frame_count);
             }
@@ -2622,9 +2616,9 @@ impl PluginRuntime {
                                     break;
                                 }
                                 // Send each CHUNK individually (each is already a complete CBOR value)
-                                for (seq, chunk_data) in chunks.iter().enumerate() {
+                                for (idx, chunk_data) in chunks.iter().enumerate() {
                                     let checksum = Frame::compute_checksum(chunk_data);
-                                    let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), seq as u64, chunk_data.clone(), seq as u64, checksum);
+                                    let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, chunk_data.clone(), idx as u64, checksum);
                                     if tx.send(chunk_frame).is_err() {
                                         break;
                                     }
@@ -5024,7 +5018,6 @@ mod tests {
 
         // Send CHUNK frames
         let mut offset = 0;
-        let mut seq = 0u64;
         let mut chunk_index = 0u64;
         while offset < payload_bytes.len() {
             let chunk_size = (payload_bytes.len() - offset).min(MAX_CHUNK);
@@ -5033,13 +5026,12 @@ mod tests {
             tx.send(Frame::chunk(
                 request_id.clone(),
                 stream_id.clone(),
-                seq,
+                0,
                 chunk_data,
                 chunk_index,
                 checksum
             )).ok();
             offset += chunk_size;
-            seq += 1;
             chunk_index += 1;
         }
 

@@ -25,7 +25,7 @@
 //! - RelayNotify/RelayState: fatal error (plugins must never send these)
 //! - Everything else: forwarded to relay (pass-through)
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId};
+use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::cbor_io::{handshake_async, AsyncFrameReader, AsyncFrameWriter, CborError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -1123,10 +1123,15 @@ impl PluginHostRuntime {
         mut rx: mpsc::UnboundedReceiver<Frame>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            while let Some(frame) = rx.recv().await {
+            let mut seq_assigner = SeqAssigner::new();
+            while let Some(mut frame) = rx.recv().await {
+                seq_assigner.assign(&mut frame);
                 if let Err(e) = writer.write(&frame).await {
                     eprintln!("[PluginWriter] write error: {}", e);
                     break;
+                }
+                if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
+                    seq_assigner.remove(&frame.id);
                 }
             }
         })
@@ -1182,12 +1187,17 @@ impl PluginHostRuntime {
         mut rx: mpsc::UnboundedReceiver<Frame>,
     ) {
         let mut writer = AsyncFrameWriter::new(relay_write);
+        let mut seq_assigner = SeqAssigner::new();
         eprintln!("[PluginHostRuntime/outbound_writer] Starting outbound writer loop");
-        while let Some(frame) = rx.recv().await {
-            eprintln!("[PluginHostRuntime/outbound_writer] Writing frame: {:?} (id={:?})", frame.frame_type, frame.id);
+        while let Some(mut frame) = rx.recv().await {
+            seq_assigner.assign(&mut frame);
+            eprintln!("[PluginHostRuntime/outbound_writer] Writing frame: {:?} (id={:?}, seq={})", frame.frame_type, frame.id, frame.seq);
             if let Err(e) = writer.write(&frame).await {
                 eprintln!("[PluginHostRuntime/outbound_writer] Write error: {}", e);
                 break;
+            }
+            if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
+                seq_assigner.remove(&frame.id);
             }
             eprintln!("[PluginHostRuntime/outbound_writer] Frame written successfully");
         }
@@ -1455,10 +1465,13 @@ mod tests {
 
         // Send a REQ through the relay (must have XID since it's from relay)
         let send_handle = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut writer = AsyncFrameWriter::new(engine_write_half);
             let mut req = Frame::req(MessageId::new_uuid(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(MessageId::Uint(1)); // XID from RelaySwitch
+            seq.assign(&mut req);
             writer.write(&req).await.unwrap();
+            seq.remove(&req.id);
         });
 
         // Run the runtime — should attempt to spawn, fail (binary doesn't exist)
@@ -1556,6 +1569,7 @@ mod tests {
         let pa_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(pa_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(pa_to_rt_std));
             handshake_accept(&mut r, &mut w, &ma).unwrap();
@@ -1565,12 +1579,21 @@ mod tests {
             assert_eq!(frame.cap.as_deref(), Some("cap:in=\"media:void\";op=convert;out=\"media:void\""), "Plugin A should receive convert REQ");
             // Send END response
             let stream_id = "s1".to_string();
-            w.write(&Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:bytes".to_string())).unwrap();
+            let mut ss = Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss);
+            w.write(&ss).unwrap();
             let payload = b"converted".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            w.write(&Frame::chunk(frame.id.clone(), stream_id.clone(), 0, payload, 0, checksum)).unwrap();
-            w.write(&Frame::stream_end(frame.id.clone(), stream_id, 1)).unwrap();
-            w.write(&Frame::end(frame.id, None)).unwrap();
+            let mut chunk = Frame::chunk(frame.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            w.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(frame.id.clone(), stream_id, 1);
+            seq.assign(&mut se);
+            w.write(&se).unwrap();
+            let mut end = Frame::end(frame.id.clone(), None);
+            seq.assign(&mut end);
+            w.write(&end).unwrap();
+            seq.remove(&frame.id);
         });
 
         // Plugin B thread
@@ -1613,6 +1636,7 @@ mod tests {
         // Engine: send REQ, read response, THEN close relay
         let req_id = MessageId::new_uuid();
         let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut w = AsyncFrameWriter::new(eng_write_half);
             let mut r = AsyncFrameReader::new(eng_read_half);
 
@@ -1620,21 +1644,27 @@ mod tests {
             let sid = uuid::Uuid::new_v4().to_string();
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=convert;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
             stream_start.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
             let payload = b"input".to_vec();
             let checksum = Frame::compute_checksum(&payload);
             let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, payload, 0, checksum);
             chunk.routing_id = Some(xid.clone());
+            seq.assign(&mut chunk);
             w.write(&chunk).await.unwrap();
             let mut stream_end = Frame::stream_end(req_id.clone(), sid, 1);
             stream_end.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_end);
             w.write(&stream_end).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&req_id);
 
             let mut payload = Vec::new();
             loop {
@@ -1682,13 +1712,16 @@ mod tests {
         let plugin_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
             handshake_accept(&mut r, &mut w, &m).unwrap();
 
             // Send a heartbeat from plugin
             let hb_id = MessageId::new_uuid();
-            w.write(&Frame::heartbeat(hb_id.clone())).unwrap();
+            let mut hb = Frame::heartbeat(hb_id.clone());
+            seq.assign(&mut hb);
+            w.write(&hb).unwrap();
 
             // Read the heartbeat response
             let response = r.read().unwrap().expect("Expected heartbeat response");
@@ -1766,6 +1799,7 @@ mod tests {
         let plugin_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
             handshake_accept(&mut r, &mut w, &m).unwrap();
@@ -1781,14 +1815,25 @@ mod tests {
             }
 
             // Send LOG + response (LOG should be forwarded too)
-            w.write(&Frame::log(req_id_for_plugin.clone(), "info", "Processing")).unwrap();
+            let mut log = Frame::log(req_id_for_plugin.clone(), "info", "Processing");
+            seq.assign(&mut log);
+            w.write(&log).unwrap();
             let sid = "rs".to_string();
-            w.write(&Frame::stream_start(req_id_for_plugin.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut ss = Frame::stream_start(req_id_for_plugin.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss);
+            w.write(&ss).unwrap();
             let payload = b"result".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            w.write(&Frame::chunk(req_id_for_plugin.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
-            w.write(&Frame::stream_end(req_id_for_plugin.clone(), sid, 1)).unwrap();
-            w.write(&Frame::end(req_id_for_plugin, None)).unwrap();
+            let mut chunk = Frame::chunk(req_id_for_plugin.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            w.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req_id_for_plugin.clone(), sid, 1);
+            seq.assign(&mut se);
+            w.write(&se).unwrap();
+            let mut end = Frame::end(req_id_for_plugin.clone(), None);
+            seq.assign(&mut end);
+            w.write(&end).unwrap();
+            seq.remove(&req_id_for_plugin);
             drop(w);
         });
 
@@ -1815,6 +1860,7 @@ mod tests {
         // Engine: send REQ, read response (keep relay open until response received)
         let req_id_send = req_id.clone();
         let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut w = AsyncFrameWriter::new(eng_write_half);
             let mut r = AsyncFrameReader::new(eng_read_half);
 
@@ -1822,16 +1868,21 @@ mod tests {
             let sid = uuid::Uuid::new_v4().to_string();
             let mut req = Frame::req(req_id_send.clone(), "cap:in=\"media:void\";op=fwd;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut stream_start = Frame::stream_start(req_id_send.clone(), sid.clone(), "media:bytes".to_string());
             stream_start.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
             let mut stream_end = Frame::stream_end(req_id_send.clone(), sid, 0);
             stream_end.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_end);
             w.write(&stream_end).await.unwrap();
-            let mut end = Frame::end(req_id_send, None);
+            let mut end = Frame::end(req_id_send.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&req_id_send);
 
             let mut types = Vec::new();
             loop {
@@ -1885,6 +1936,7 @@ mod tests {
         let plugin_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
             handshake_accept(&mut r, &mut w, &m).unwrap();
@@ -1915,12 +1967,21 @@ mod tests {
 
             // Send response
             let sid = "rs".to_string();
-            w.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss);
+            w.write(&ss).unwrap();
             let payload = b"ok".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            w.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
-            w.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            w.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            w.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut se);
+            w.write(&se).unwrap();
+            let mut end = Frame::end(req.id.clone(), None);
+            seq.assign(&mut end);
+            w.write(&end).unwrap();
+            seq.remove(&req.id);
             drop(w);
         });
 
@@ -1946,6 +2007,7 @@ mod tests {
 
         let req_id = MessageId::new_uuid();
         let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut w = AsyncFrameWriter::new(eng_write_half);
             let mut r = AsyncFrameReader::new(eng_read_half);
 
@@ -1953,22 +2015,28 @@ mod tests {
             // Send REQ + stream continuation frames
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=cont;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let sid = uuid::Uuid::new_v4().to_string();
             let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
             stream_start.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
             let payload = b"payload-data".to_vec();
             let checksum = Frame::compute_checksum(&payload);
             let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, payload, 0, checksum);
             chunk.routing_id = Some(xid.clone());
+            seq.assign(&mut chunk);
             w.write(&chunk).await.unwrap();
             let mut stream_end = Frame::stream_end(req_id.clone(), sid, 1);
             stream_end.routing_id = Some(xid.clone());
+            seq.assign(&mut stream_end);
             w.write(&stream_end).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&req_id);
 
             // Read response
             let mut payload = Vec::new();
@@ -2128,16 +2196,20 @@ mod tests {
 
         let req_id = MessageId::new_uuid();
         let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut w = AsyncFrameWriter::new(eng_write_half);
 
             let xid = MessageId::Uint(1);
             // Send REQ (plugin will die after reading it)
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=die;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
             w.write(&end).await.unwrap();
+            seq.remove(&req_id);
 
             // Close relay connection after sending request
             // (in real use, engine would implement timeout for pending requests)
@@ -2185,6 +2257,7 @@ mod tests {
         let pa_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(pa_from_rt));
             let mut w = FrameWriter::new(BufWriter::new(pa_to_rt));
             handshake_accept(&mut r, &mut w, &ma).unwrap();
@@ -2192,12 +2265,21 @@ mod tests {
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
             loop { let f = r.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "a".to_string();
-            w.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss);
+            w.write(&ss).unwrap();
             let payload = b"from-A".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            w.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
-            w.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            w.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            w.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut se);
+            w.write(&se).unwrap();
+            let mut end = Frame::end(req.id.clone(), None);
+            seq.assign(&mut end);
+            w.write(&end).unwrap();
+            seq.remove(&req.id);
             drop(w);
         });
 
@@ -2205,6 +2287,7 @@ mod tests {
         let pb_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(pb_from_rt));
             let mut w = FrameWriter::new(BufWriter::new(pb_to_rt));
             handshake_accept(&mut r, &mut w, &mb).unwrap();
@@ -2212,12 +2295,21 @@ mod tests {
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
             loop { let f = r.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "b".to_string();
-            w.write(&Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss);
+            w.write(&ss).unwrap();
             let payload = b"from-B".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            w.write(&Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum)).unwrap();
-            w.write(&Frame::stream_end(req.id.clone(), sid, 1)).unwrap();
-            w.write(&Frame::end(req.id, None)).unwrap();
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            w.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut se);
+            w.write(&se).unwrap();
+            let mut end = Frame::end(req.id.clone(), None);
+            seq.assign(&mut end);
+            w.write(&end).unwrap();
+            seq.remove(&req.id);
             drop(w);
         });
 
@@ -2246,6 +2338,7 @@ mod tests {
         let beta_c = beta_id.clone();
 
         let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut w = AsyncFrameWriter::new(eng_write_half);
             let mut r = AsyncFrameReader::new(eng_read_half);
 
@@ -2254,16 +2347,22 @@ mod tests {
             // Send two requests to different caps
             let mut req_alpha = Frame::req(alpha_c.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
             req_alpha.routing_id = Some(xid_alpha.clone());
+            seq.assign(&mut req_alpha);
             w.write(&req_alpha).await.unwrap();
             let mut end_alpha = Frame::end(alpha_c.clone(), None);
             end_alpha.routing_id = Some(xid_alpha.clone());
+            seq.assign(&mut end_alpha);
             w.write(&end_alpha).await.unwrap();
+            seq.remove(&alpha_c);
             let mut req_beta = Frame::req(beta_c.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
             req_beta.routing_id = Some(xid_beta.clone());
+            seq.assign(&mut req_beta);
             w.write(&req_beta).await.unwrap();
             let mut end_beta = Frame::end(beta_c.clone(), None);
             end_beta.routing_id = Some(xid_beta.clone());
+            seq.assign(&mut end_beta);
             w.write(&end_beta).await.unwrap();
+            seq.remove(&beta_c);
 
             // Collect responses by req_id
             let mut alpha_data = Vec::new();
@@ -2314,6 +2413,7 @@ mod tests {
         let plugin_handle = std::thread::spawn(move || {
             use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
+            let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
             handshake_accept(&mut r, &mut w, &m).unwrap();
@@ -2339,10 +2439,19 @@ mod tests {
                 let data = format!("response-{}", i).into_bytes();
                 let checksum = Frame::compute_checksum(&data);
                 let sid = format!("s{}", i);
-                w.write(&Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string())).unwrap();
-                w.write(&Frame::chunk(req_id.clone(), sid.clone(), 0, data, 0, checksum)).unwrap();
-                w.write(&Frame::stream_end(req_id.clone(), sid, 1)).unwrap();
-                w.write(&Frame::end(req_id.clone(), None)).unwrap();
+                let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+                seq.assign(&mut ss);
+                w.write(&ss).unwrap();
+                let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, data, 0, checksum);
+                seq.assign(&mut chunk);
+                w.write(&chunk).unwrap();
+                let mut se = Frame::stream_end(req_id.clone(), sid, 1);
+                seq.assign(&mut se);
+                w.write(&se).unwrap();
+                let mut end = Frame::end(req_id.clone(), None);
+                seq.assign(&mut end);
+                w.write(&end).unwrap();
+                seq.remove(req_id);
             }
             drop(w);
         });
@@ -2371,6 +2480,7 @@ mod tests {
         let r1 = req_id_1.clone();
 
         let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
             let mut w = AsyncFrameWriter::new(eng_write_half);
             let mut r = AsyncFrameReader::new(eng_read_half);
 
@@ -2379,16 +2489,22 @@ mod tests {
             let xid_1 = MessageId::Uint(2);
             let mut req_0 = Frame::req(r0.clone(), "cap:in=\"media:void\";op=conc;out=\"media:void\"", vec![], "text/plain");
             req_0.routing_id = Some(xid_0.clone());
+            seq.assign(&mut req_0);
             w.write(&req_0).await.unwrap();
             let mut end_0 = Frame::end(r0.clone(), None);
             end_0.routing_id = Some(xid_0.clone());
+            seq.assign(&mut end_0);
             w.write(&end_0).await.unwrap();
+            seq.remove(&r0);
             let mut req_1 = Frame::req(r1.clone(), "cap:in=\"media:void\";op=conc;out=\"media:void\"", vec![], "text/plain");
             req_1.routing_id = Some(xid_1.clone());
+            seq.assign(&mut req_1);
             w.write(&req_1).await.unwrap();
             let mut end_1 = Frame::end(r1.clone(), None);
             end_1.routing_id = Some(xid_1.clone());
+            seq.assign(&mut end_1);
             w.write(&end_1).await.unwrap();
+            seq.remove(&r1);
 
             // Collect responses by req_id
             let mut data_0 = Vec::new();
