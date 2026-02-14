@@ -89,7 +89,7 @@ pub use cbor_io::{
     AsyncFrameReader, AsyncFrameWriter, handshake_async,
     read_frame_async, write_frame_async,
 };
-pub use plugin_runtime::{PluginRuntime, RuntimeError, StreamEmitter, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter};
+pub use plugin_runtime::{PluginRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, PeerCall, StreamError};
 pub use plugin_repo::{
     PluginRepo, PluginRepoError,
     PluginCapSummary, PluginInfo, PluginSuggestion, PluginRegistryResponse,
