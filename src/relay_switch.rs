@@ -769,13 +769,19 @@ impl RelaySwitch {
                             for (idx, cap) in new_caps.iter().enumerate() {
                                 eprintln!("[RelaySwitch]   cap[{}]: {}", idx, cap);
                             }
-                            // Update master's caps
+                            // Update master's caps and limits
                             if let Some(master) = self.masters.get_mut(source_idx) {
                                 master.caps = new_caps;
                                 master.manifest = caps_payload.to_vec();
+                                // Extract and update limits from RelayNotify
+                                if let Some(new_limits) = frame.relay_notify_limits() {
+                                    master.limits = new_limits;
+                                }
                             }
-                            // Rebuild cap_table from all masters
+                            // Rebuild cap_table, aggregate capabilities, and limits from all masters
                             self.rebuild_cap_table();
+                            self.rebuild_capabilities();
+                            self.rebuild_limits();
                             eprintln!("[RelaySwitch] Cap table now has {} entries", self.cap_table.len());
                         }
                         Err(e) => {
@@ -947,6 +953,7 @@ fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, Re
 mod tests {
     use super::*;
     use crate::cbor_frame::Frame;
+    use crate::standard::caps::CAP_ECHO;
     use std::os::unix::net::UnixStream;
 
     // TEST429: Cap routing logic (find_master_for_cap)
@@ -968,9 +975,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=echo;out=\"media:void\""]
-            });
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:"]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -983,9 +988,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=double;out=\"media:void\""]
-            });
+            let manifest = serde_json::json!( ["cap:in=\"media:void\";op=double;out=\"media:void\""]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -998,15 +1001,21 @@ mod tests {
         rx1.recv_timeout(Duration::from_secs(2)).unwrap();
         rx2.recv_timeout(Duration::from_secs(2)).unwrap();
 
-        let switch = RelaySwitch::new(vec![
+        let mut switch = RelaySwitch::new(vec![
             (engine_read1, engine_write1),
             (engine_read2, engine_write2),
         ])
         .unwrap();
 
+        // Read and process both RelayNotify frames
+        let notify1 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify1.frame_type, FrameType::RelayNotify);
+        let notify2 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify2.frame_type, FrameType::RelayNotify);
+
         // Verify routing
         assert_eq!(
-            switch.find_master_for_cap("cap:in=\"media:void\";op=echo;out=\"media:void\""),
+            switch.find_master_for_cap("cap:in=media:;out=media:"),
             Some(0)
         );
         assert_eq!(
@@ -1043,12 +1052,10 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
 
-            // Send initial RelayNotify
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=echo;out=\"media:void\""]
-            });
+            // Send initial RelayNotify (simple JSON array of URN strings)
+            let caps = serde_json::json!(["cap:in=media:;out=media:"]);
             let notify = Frame::relay_notify(
-                &serde_json::to_vec(&manifest).unwrap(),
+                &serde_json::to_vec(&caps).unwrap(),
                 &Limits::default(),
             );
             writer.write(&notify).unwrap();
@@ -1056,32 +1063,49 @@ mod tests {
             // Signal that notify was sent
             tx.send(()).unwrap();
 
-            // Read one REQ and send response
-            match reader.read().unwrap() {
-                Some(frame) => {
-                    if frame.frame_type == FrameType::Req {
-                        let response = Frame::end(frame.id.clone(), Some(vec![42]));
-                        writer.write(&response).unwrap();
-                    }
+            // Read REQ frame - extract both RID and XID
+            let (req_id, xid) = if let Some(frame) = reader.read().unwrap() {
+                if frame.frame_type == FrameType::Req {
+                    (Some(frame.id.clone()), frame.routing_id.clone())
+                } else {
+                    (None, None)
                 }
-                None => {}
+            } else {
+                (None, None)
+            };
+
+            // Read END frame
+            if let Some(frame) = reader.read().unwrap() {
+                if frame.frame_type == FrameType::End && req_id.is_some() {
+                    // Send response with same XID
+                    let mut response = Frame::end(req_id.unwrap(), Some(vec![42]));
+                    response.routing_id = xid;
+                    writer.write(&response).unwrap();
+                }
             }
         });
 
-        // Wait for RelayNotify
+        // Wait for RelayNotify to be sent
         rx.recv_timeout(Duration::from_secs(2)).unwrap();
 
         // Create RelaySwitch
         let mut switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
 
-        // Send REQ
+        // Read and process the RelayNotify frame
+        let notify_frame = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify_frame.frame_type, FrameType::RelayNotify);
+
+        // Now send REQ + END
+        let req_id = MessageId::Uint(1);
         let req = Frame::req(
-            MessageId::Uint(1),
-            "cap:in=\"media:void\";op=echo;out=\"media:void\"",
+            req_id.clone(),
+            "cap:in=media:;out=media:",
             vec![1, 2, 3],
             "text/plain",
         );
         switch.send_to_master(req).unwrap();
+        let end = Frame::end(req_id.clone(), None);
+        switch.send_to_master(end).unwrap();
 
         // Read response with timeout
         let response = switch.read_from_masters().unwrap().unwrap();
@@ -1104,9 +1128,7 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
 
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=echo;out=\"media:void\""]
-            });
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:"]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1117,8 +1139,11 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) => {
                         if frame.frame_type == FrameType::Req {
-                            let response = Frame::end(frame.id.clone(), Some(vec![1]));
+                            let mut response = Frame::end(frame.id.clone(), Some(vec![1]));
+                            response.routing_id = frame.routing_id.clone();
                             writer.write(&response).unwrap();
+                        } else if frame.frame_type == FrameType::End {
+                            // Read request END, continue
                         }
                     }
                     None => break,
@@ -1131,9 +1156,7 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
 
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=double;out=\"media:void\""]
-            });
+            let manifest = serde_json::json!( ["cap:in=\"media:void\";op=double;out=\"media:void\""]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1144,8 +1167,11 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) => {
                         if frame.frame_type == FrameType::Req {
-                            let response = Frame::end(frame.id.clone(), Some(vec![2]));
+                            let mut response = Frame::end(frame.id.clone(), Some(vec![2]));
+                            response.routing_id = frame.routing_id.clone();
                             writer.write(&response).unwrap();
+                        } else if frame.frame_type == FrameType::End {
+                            // Read request END, continue
                         }
                     }
                     None => break,
@@ -1160,26 +1186,38 @@ mod tests {
         ])
         .unwrap();
 
-        // Send REQ for echo cap → routes to master 1
+        // Read RelayNotify from both masters
+        let notify1 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify1.frame_type, FrameType::RelayNotify);
+        let notify2 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify2.frame_type, FrameType::RelayNotify);
+
+        // Send REQ + END for echo cap → routes to master 1
+        let req1_id = MessageId::Uint(1);
         let req1 = Frame::req(
-            MessageId::Uint(1),
-            "cap:in=\"media:void\";op=echo;out=\"media:void\"",
+            req1_id.clone(),
+            "cap:in=media:;out=media:",
             vec![],
             "text/plain",
         );
         switch.send_to_master(req1).unwrap();
+        let end1 = Frame::end(req1_id, None);
+        switch.send_to_master(end1).unwrap();
 
         let resp1 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![1]));
 
-        // Send REQ for double cap → routes to master 2
+        // Send REQ + END for double cap → routes to master 2
+        let req2_id = MessageId::Uint(2);
         let req2 = Frame::req(
-            MessageId::Uint(2),
+            req2_id.clone(),
             "cap:in=\"media:void\";op=double;out=\"media:void\"",
             vec![],
             "text/plain",
         );
         switch.send_to_master(req2).unwrap();
+        let end2 = Frame::end(req2_id, None);
+        switch.send_to_master(end2).unwrap();
 
         let resp2 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![2]));
@@ -1200,9 +1238,7 @@ mod tests {
             let _reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
 
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=echo;out=\"media:void\""]
-            });
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:"]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1246,15 +1282,13 @@ mod tests {
         let (tx2, rx2) = mpsc::channel();
 
         // Both slaves advertise the same cap
-        let same_cap = "cap:in=\"media:void\";op=echo;out=\"media:void\"";
+        let same_cap = "cap:in=media:;out=media:";
 
         // Spawn slave 1
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
-            let manifest = serde_json::json!({
-                "capabilities": [same_cap]
-            });
+            let manifest = serde_json::json!( [same_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1266,8 +1300,12 @@ mod tests {
             loop {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
-                        let response = Frame::end(frame.id.clone(), Some(vec![1]));
+                        let mut response = Frame::end(frame.id.clone(), Some(vec![1]));
+                        response.routing_id = frame.routing_id.clone();
                         writer.write(&response).unwrap();
+                    }
+                    Some(frame) if frame.frame_type == FrameType::End => {
+                        // Request END, continue
                     }
                     None => break,
                     _ => {}
@@ -1279,9 +1317,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
-            let manifest = serde_json::json!({
-                "capabilities": [same_cap]
-            });
+            let manifest = serde_json::json!( [same_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1293,8 +1329,12 @@ mod tests {
             loop {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
-                        let response = Frame::end(frame.id.clone(), Some(vec![2]));
+                        let mut response = Frame::end(frame.id.clone(), Some(vec![2]));
+                        response.routing_id = frame.routing_id.clone();
                         writer.write(&response).unwrap();
+                    }
+                    Some(frame) if frame.frame_type == FrameType::End => {
+                        // Request END, continue
                     }
                     None => break,
                     _ => {}
@@ -1311,26 +1351,38 @@ mod tests {
         ])
         .unwrap();
 
-        // Send first request - should go to master 0 (first match)
+        // Read RelayNotify from both masters
+        let notify1 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify1.frame_type, FrameType::RelayNotify);
+        let notify2 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify2.frame_type, FrameType::RelayNotify);
+
+        // Send first request + END - should go to master 0 (first match)
+        let req1_id = MessageId::Uint(1);
         let req1 = Frame::req(
-            MessageId::Uint(1),
+            req1_id.clone(),
             same_cap,
             vec![],
             "text/plain",
         );
         switch.send_to_master(req1).unwrap();
+        let end1 = Frame::end(req1_id, None);
+        switch.send_to_master(end1).unwrap();
 
         let resp1 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![1])); // From master 0
 
-        // Send second request - should ALSO go to master 0 (consistent routing)
+        // Send second request + END - should ALSO go to master 0 (consistent routing)
+        let req2_id = MessageId::Uint(2);
         let req2 = Frame::req(
-            MessageId::Uint(2),
+            req2_id.clone(),
             same_cap,
             vec![],
             "text/plain",
         );
         switch.send_to_master(req2).unwrap();
+        let end2 = Frame::end(req2_id, None);
+        switch.send_to_master(end2).unwrap();
 
         let resp2 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![1])); // Also from master 0
@@ -1351,9 +1403,7 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
 
-            let manifest = serde_json::json!({
-                "capabilities": ["cap:in=\"media:void\";op=test;out=\"media:void\""]
-            });
+            let manifest = serde_json::json!( ["cap:in=\"media:void\";op=test;out=\"media:void\""]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1364,6 +1414,7 @@ mod tests {
             // Read REQ
             let req = reader.read().unwrap().unwrap();
             assert_eq!(req.frame_type, FrameType::Req);
+            let xid = req.routing_id.clone();
 
             // Read CHUNK continuation
             let chunk = reader.read().unwrap().unwrap();
@@ -1375,14 +1426,19 @@ mod tests {
             assert_eq!(end.frame_type, FrameType::End);
             assert_eq!(end.id, req.id);
 
-            // Send response
-            let response = Frame::end(req.id.clone(), Some(vec![42]));
+            // Send response with XID
+            let mut response = Frame::end(req.id.clone(), Some(vec![42]));
+            response.routing_id = xid;
             writer.write(&response).unwrap();
         });
 
         rx.recv_timeout(Duration::from_secs(2)).unwrap();
 
         let mut switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
+
+        // Read RelayNotify
+        let notify = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify.frame_type, FrameType::RelayNotify);
 
         let req_id = MessageId::Uint(1);
 
@@ -1440,12 +1496,10 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
-            let manifest = serde_json::json!({
-                "capabilities": [
-                    "cap:in=\"media:void\";op=echo;out=\"media:void\"",
+            let manifest = serde_json::json!( [
+                    "cap:in=media:;out=media:",
                     "cap:in=\"media:void\";op=double;out=\"media:void\""
-                ]
-            });
+                ]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1457,12 +1511,10 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
-            let manifest = serde_json::json!({
-                "capabilities": [
-                    "cap:in=\"media:void\";op=echo;out=\"media:void\"",  // Duplicate
+            let manifest = serde_json::json!( [
+                    "cap:in=media:;out=media:",  // Duplicate
                     "cap:in=\"media:void\";op=triple;out=\"media:void\""
-                ]
-            });
+                ]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1474,11 +1526,17 @@ mod tests {
         rx1.recv_timeout(Duration::from_secs(2)).unwrap();
         rx2.recv_timeout(Duration::from_secs(2)).unwrap();
 
-        let switch = RelaySwitch::new(vec![
+        let mut switch = RelaySwitch::new(vec![
             (engine_read1, engine_write1),
             (engine_read2, engine_write2),
         ])
         .unwrap();
+
+        // Read RelayNotify from both masters
+        let notify1 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify1.frame_type, FrameType::RelayNotify);
+        let notify2 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify2.frame_type, FrameType::RelayNotify);
 
         let caps: serde_json::Value =
             serde_json::from_slice(switch.capabilities()).unwrap();
@@ -1493,7 +1551,7 @@ mod tests {
         // Should have 3 unique caps (echo appears twice but deduplicated)
         assert_eq!(cap_list.len(), 3);
         assert!(cap_list.contains(&"cap:in=\"media:void\";op=double;out=\"media:void\"".to_string()));
-        assert!(cap_list.contains(&"cap:in=\"media:void\";op=echo;out=\"media:void\"".to_string()));
+        assert!(cap_list.contains(&"cap:in=media:;out=media:".to_string()));
         assert!(cap_list.contains(&"cap:in=\"media:void\";op=triple;out=\"media:void\"".to_string()));
     }
 
@@ -1514,7 +1572,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
-            let manifest = serde_json::json!({"capabilities": []});
+            let manifest = serde_json::json!([]);
             let limits1 = Limits {
                 max_frame: 1_000_000,
                 max_chunk: 100_000,
@@ -1530,7 +1588,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
-            let manifest = serde_json::json!({"capabilities": []});
+            let manifest = serde_json::json!([]);
             let limits2 = Limits {
                 max_frame: 2_000_000,  // Larger
                 max_chunk: 50_000,     // Smaller
@@ -1546,11 +1604,17 @@ mod tests {
         rx1.recv_timeout(Duration::from_secs(2)).unwrap();
         rx2.recv_timeout(Duration::from_secs(2)).unwrap();
 
-        let switch = RelaySwitch::new(vec![
+        let mut switch = RelaySwitch::new(vec![
             (engine_read1, engine_write1),
             (engine_read2, engine_write2),
         ])
         .unwrap();
+
+        // Read RelayNotify from both masters
+        let notify1 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify1.frame_type, FrameType::RelayNotify);
+        let notify2 = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify2.frame_type, FrameType::RelayNotify);
 
         // Should take minimum of each limit
         assert_eq!(switch.limits().max_frame, 1_000_000); // min(1M, 2M)
@@ -1574,9 +1638,7 @@ mod tests {
         std::thread::spawn(move || {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
-            let manifest = serde_json::json!({
-                "capabilities": [registered_cap]
-            });
+            let manifest = serde_json::json!( [registered_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1588,8 +1650,12 @@ mod tests {
             loop {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
-                        let response = Frame::end(frame.id.clone(), Some(vec![42]));
+                        let mut response = Frame::end(frame.id.clone(), Some(vec![42]));
+                        response.routing_id = frame.routing_id.clone();
                         writer.write(&response).unwrap();
+                    }
+                    Some(frame) if frame.frame_type == FrameType::End => {
+                        // Request END, continue
                     }
                     None => break,
                     _ => {}
@@ -1601,14 +1667,21 @@ mod tests {
 
         let mut switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
 
+        // Read RelayNotify
+        let notify = switch.read_from_masters().unwrap().unwrap();
+        assert_eq!(notify.frame_type, FrameType::RelayNotify);
+
         // Exact match should work
+        let req1_id = MessageId::Uint(1);
         let req1 = Frame::req(
-            MessageId::Uint(1),
+            req1_id.clone(),
             registered_cap,
             vec![],
             "text/plain",
         );
         switch.send_to_master(req1).unwrap();
+        let end1 = Frame::end(req1_id, None);
+        switch.send_to_master(end1).unwrap();
         let resp1 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![42]));
 

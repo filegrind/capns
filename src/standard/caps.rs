@@ -31,6 +31,14 @@ use crate::media_urn::{
 use std::sync::Arc;
 
 // =============================================================================
+// STANDARD CAP URN CONSTANTS
+// =============================================================================
+
+/// Standard echo capability URN
+/// Accepts any media type as input and outputs any media type
+pub const CAP_ECHO: &str = "cap:in=media:;out=media:";
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 

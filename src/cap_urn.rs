@@ -99,12 +99,16 @@ impl CapUrn {
             .ok_or(CapUrnError::MissingOutSpec)?
             .clone();
 
-        // Validate that in and out specs are valid media URNs
+        // Validate that in and out specs are valid media URNs (or wildcard "*")
         use crate::media_urn::MediaUrn;
-        MediaUrn::from_string(&in_urn)
-            .map_err(|e| CapUrnError::InvalidInSpec(format!("Invalid media URN for in spec '{}': {}", in_urn, e)))?;
-        MediaUrn::from_string(&out_urn)
-            .map_err(|e| CapUrnError::InvalidOutSpec(format!("Invalid media URN for out spec '{}': {}", out_urn, e)))?;
+        if in_urn != "*" {
+            MediaUrn::from_string(&in_urn)
+                .map_err(|e| CapUrnError::InvalidInSpec(format!("Invalid media URN for in spec '{}': {}", in_urn, e)))?;
+        }
+        if out_urn != "*" {
+            MediaUrn::from_string(&out_urn)
+                .map_err(|e| CapUrnError::InvalidOutSpec(format!("Invalid media URN for out spec '{}': {}", out_urn, e)))?;
+        }
 
         // Collect remaining tags (excluding in/out)
         let tags: BTreeMap<String, String> = tagged

@@ -302,7 +302,7 @@ pub trait PeerInvoker: Send + Sync {
     /// # Example
     /// ```ignore
     /// let args = vec![CapArgumentValue::new("media:bytes", payload)];
-    /// let rx = peer.invoke("cap:op=echo;...", &args)?;
+    /// let rx = peer.invoke("cap:in=media:;out=media:", &args)?;
     /// let mut result = Vec::new();
     /// for frame in rx {
     ///     match frame.frame_type {
@@ -475,7 +475,13 @@ pub struct CliFrameSender {
 }
 
 impl CliFrameSender {
-    pub fn new(emitter: CliStreamEmitter) -> Self {
+    pub fn new() -> Self {
+        Self {
+            emitter: CliStreamEmitter::new(),
+        }
+    }
+
+    pub fn with_emitter(emitter: CliStreamEmitter) -> Self {
         Self { emitter }
     }
 }
@@ -1161,17 +1167,20 @@ impl PluginRuntime {
     /// **Peer invocation**: Use the `peer` parameter to invoke caps on the host.
     /// This is useful for sandboxed plugins that need to delegate operations
     /// (like network access) to the host.
-    // DEPRECATED: Use register_raw instead for full streaming control
-    /*
+    ///
+    /// Convenience wrapper around register_raw for simpler handlers that don't need
+    /// full streaming control. Use register_raw for true streaming handlers.
     pub fn register<Req, F>(&mut self, cap_urn: &str, handler: F)
     where
         Req: serde::de::DeserializeOwned + 'static,
-        F: Fn(Req, ...) -> Result<(), RuntimeError> + Send + Sync + 'static,
+        F: Fn(Req, &StreamEmitter, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
     {
         let streaming_handler = move |frames: Receiver<Frame>, sender: &dyn FrameSender, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
             // Accumulate all CHUNK frame payloads
             let mut accumulated = Vec::new();
+            let mut request_id = MessageId::Uint(0);
             for frame in frames {
+                request_id = frame.id.clone();
                 match frame.frame_type {
                     FrameType::Chunk => {
                         if let Some(payload) = frame.payload {
@@ -1192,12 +1201,15 @@ impl PluginRuntime {
             let request: Req = serde_json::from_slice(&accumulated)
                 .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse request: {}", e)))?;
 
-            handler(request, emitter, peer)
+            // Create StreamEmitter for convenient CBOR streaming
+            let stream_id = uuid::Uuid::new_v4().to_string();
+            let emitter = StreamEmitter::new(sender, stream_id, request_id, None, Limits::default().max_chunk);
+
+            handler(request, &emitter, peer)
         };
 
         self.handlers.insert(cap_urn.to_string(), Arc::new(streaming_handler));
     }
-    */
 
     /// Register a raw handler for a cap URN.
     ///
@@ -1365,7 +1377,7 @@ impl PluginRuntime {
 
         // Create CLI-mode frame sender and no-op peer invoker
         let cli_emitter = CliStreamEmitter::without_ndjson();
-        let frame_sender = CliFrameSender::new(cli_emitter);
+        let frame_sender = CliFrameSender::with_emitter(cli_emitter);
         let peer = NoPeerInvoker;
 
         // STREAM MULTIPLEXING: Parse CBOR arguments and create separate streams
@@ -2896,7 +2908,7 @@ mod tests {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, emitter, _peer| {
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"result".to_vec()));
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"result".to_vec()))?;
             Ok(())
         });
 
@@ -2911,14 +2923,20 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        runtime.register_raw("cap:op=raw", move |frames, emitter, _peer| {
+        runtime.register_raw("cap:op=raw", move |frames, sender, _peer| {
             // Stream through and track (now using Frame)
             let mut total = Vec::new();
+            let mut request_id = MessageId::Uint(0);
+            let stream_id = uuid::Uuid::new_v4().to_string();
+
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
                         total.extend_from_slice(&payload);
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));
+                        // Create StreamEmitter to use emit_cbor
+                        let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;
                     }
                 }
             }
@@ -2928,7 +2946,7 @@ mod tests {
 
         let handler = runtime.find_handler("cap:op=raw").unwrap();
         let no_peer = NoPeerInvoker;
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
 
         let (tx, rx) = crossbeam_channel::unbounded();
         let request_id = MessageId::new_uuid();
@@ -2958,14 +2976,14 @@ mod tests {
         runtime.register::<serde_json::Value, _>("cap:op=test", move |req, emitter, _peer| {
             let value = req.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
             let bytes = value.as_bytes();
-            emitter.emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()));
+            emitter.emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()))?;
             *received_clone.lock().unwrap() = bytes.to_vec();
             Ok(())
         });
 
         let handler = runtime.find_handler("cap:op=test").unwrap();
         let no_peer = NoPeerInvoker;
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
 
         let (tx, rx) = crossbeam_channel::unbounded();
         let request_id = MessageId::new_uuid();
@@ -2991,7 +3009,7 @@ mod tests {
 
         let handler = runtime.find_handler("cap:op=test").unwrap();
         let no_peer = NoPeerInvoker;
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
 
         let (tx, rx) = crossbeam_channel::unbounded();
         let request_id = MessageId::new_uuid();
@@ -3027,7 +3045,7 @@ mod tests {
         let received_clone = Arc::clone(&received);
 
         runtime.register::<serde_json::Value, _>("cap:op=threaded", move |_req, emitter, _peer| {
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"done".to_vec()));
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"done".to_vec()))?;
             *received_clone.lock().unwrap() = b"done".to_vec();
             Ok(())
         });
@@ -3037,7 +3055,7 @@ mod tests {
 
         let handle = std::thread::spawn(move || {
             let no_peer = NoPeerInvoker;
-            let emitter = CliStreamEmitter::new();
+            let emitter = CliFrameSender::new();
             let (tx, rx) = crossbeam_channel::unbounded();
             let request_id = MessageId::new_uuid();
             let stream_id = "test-stream".to_string();
@@ -3246,14 +3264,15 @@ mod tests {
         }
     }
 
-    // TEST266: Test CliStreamEmitter writes to stdout and stderr correctly (basic construction)
+    // TEST266: Test CliFrameSender wraps CliStreamEmitter correctly (basic construction)
     #[test]
-    fn test_cli_stream_emitter_construction() {
-        let emitter = CliStreamEmitter::new();
-        assert!(emitter.ndjson, "default CLI emitter must use NDJSON");
+    fn test_cli_frame_sender_construction() {
+        let sender = CliFrameSender::new();
+        assert!(sender.emitter.ndjson, "default CLI sender must use NDJSON");
 
         let emitter2 = CliStreamEmitter::without_ndjson();
-        assert!(!emitter2.ndjson);
+        let sender2 = CliFrameSender::with_emitter(emitter2);
+        assert!(!sender2.emitter.ndjson);
     }
 
     // TEST268: Test RuntimeError variants display correct messages
@@ -3283,42 +3302,57 @@ mod tests {
     fn test_multiple_handlers() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_raw("cap:op=alpha", |frames, emitter, _| {
+        runtime.register_raw("cap:op=alpha", |frames, sender, _| {
+            let mut request_id = MessageId::Uint(0);
+            let stream_id = uuid::Uuid::new_v4().to_string();
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));
+                        let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;
                     }
                 }
             }
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"a".to_vec()));
+            let emitter = StreamEmitter::new(sender, stream_id, request_id, None, Limits::default().max_chunk);
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"a".to_vec()))?;
             Ok(())
         });
-        runtime.register_raw("cap:op=beta", |frames, emitter, _| {
+        runtime.register_raw("cap:op=beta", |frames, sender, _| {
+            let mut request_id = MessageId::Uint(0);
+            let stream_id = uuid::Uuid::new_v4().to_string();
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));
+                        let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;
                     }
                 }
             }
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"b".to_vec()));
+            let emitter = StreamEmitter::new(sender, stream_id, request_id, None, Limits::default().max_chunk);
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"b".to_vec()))?;
             Ok(())
         });
-        runtime.register_raw("cap:op=gamma", |frames, emitter, _| {
+        runtime.register_raw("cap:op=gamma", |frames, sender, _| {
+            let mut request_id = MessageId::Uint(0);
+            let stream_id = uuid::Uuid::new_v4().to_string();
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));
+                        let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;
                     }
                 }
             }
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"g".to_vec()));
+            let emitter = StreamEmitter::new(sender, stream_id, request_id, None, Limits::default().max_chunk);
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"g".to_vec()))?;
             Ok(())
         });
 
         let no_peer = NoPeerInvoker;
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
 
         let h_alpha = runtime.find_handler("cap:op=alpha").unwrap();
         let (tx, rx) = crossbeam_channel::unbounded();
@@ -3370,34 +3404,44 @@ mod tests {
         let result2 = Arc::new(Mutex::new(Vec::new()));
         let result2_clone = Arc::clone(&result2);
 
-        runtime.register_raw("cap:op=test", move |frames, emitter, _| {
+        runtime.register_raw("cap:op=test", move |frames, sender, _| {
+            let mut request_id = MessageId::Uint(0);
+            let stream_id = uuid::Uuid::new_v4().to_string();
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));
+                        let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;
                     }
                 }
             }
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"first".to_vec()));
+            let emitter = StreamEmitter::new(sender, stream_id, request_id, None, Limits::default().max_chunk);
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"first".to_vec()))?;
             *result1_clone.lock().unwrap() = b"first".to_vec();
             Ok(())
         });
-        runtime.register_raw("cap:op=test", move |frames, emitter, _| {
+        runtime.register_raw("cap:op=test", move |frames, sender, _| {
+            let mut request_id = MessageId::Uint(0);
+            let stream_id = uuid::Uuid::new_v4().to_string();
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));
+                        let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;
                     }
                 }
             }
-            emitter.emit_cbor(&ciborium::Value::Bytes(b"second".to_vec()));
+            let emitter = StreamEmitter::new(sender, stream_id, request_id, None, Limits::default().max_chunk);
+            emitter.emit_cbor(&ciborium::Value::Bytes(b"second".to_vec()))?;
             *result2_clone.lock().unwrap() = b"second".to_vec();
             Ok(())
         });
 
         let handler = runtime.find_handler("cap:op=test").unwrap();
         let no_peer = NoPeerInvoker;
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
         let (tx, rx) = crossbeam_channel::unbounded();
         let request_id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
@@ -3563,14 +3607,18 @@ mod tests {
 
         runtime.register_raw(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
-            move |frames, emitter, _peer| {
+            move |frames, sender, _peer| {
                 // TRUE STREAMING: Relay frames as they arrive, track total for verification
                 let mut total_received = Vec::new();
+                let mut request_id = MessageId::Uint(0);
+                let stream_id = uuid::Uuid::new_v4().to_string();
                 for frame in frames {
+                    request_id = frame.id.clone();
                     if frame.frame_type == FrameType::Chunk {
                         if let Some(payload) = frame.payload {
                             total_received.extend_from_slice(&payload);
-                            emitter.emit_cbor(&ciborium::Value::Bytes(payload));  // Stream through immediately
+                            let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                            emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;  // Stream through immediately
                         }
                     }
                 }
@@ -3616,7 +3664,7 @@ mod tests {
         ).unwrap();
 
         let handler = runtime.find_handler(&cap.urn_string()).unwrap();
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
         let peer = NoPeerInvoker;
 
         // STREAMING: Send payload via channel as Frame stream
@@ -4149,14 +4197,18 @@ mod tests {
 
         runtime.register_raw(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
-            move |frames, emitter, _peer| {
+            move |frames, sender, _peer| {
                 // TRUE STREAMING: Relay frames immediately, verify after
                 let mut total = Vec::new();
+                let mut request_id = MessageId::Uint(0);
+                let stream_id = uuid::Uuid::new_v4().to_string();
                 for frame in frames {
+                    request_id = frame.id.clone();
                     if frame.frame_type == FrameType::Chunk {
                         if let Some(payload) = frame.payload {
                             total.extend_from_slice(&payload);
-                            emitter.emit_cbor(&ciborium::Value::Bytes(payload));  // Stream through
+                            let emitter = StreamEmitter::new(sender, stream_id.clone(), request_id.clone(), None, Limits::default().max_chunk);
+                            emitter.emit_cbor(&ciborium::Value::Bytes(payload))?;  // Stream through
                         }
                     }
                 }
@@ -4195,7 +4247,7 @@ mod tests {
         ).unwrap();
 
         let handler = runtime.find_handler(&cap.urn_string()).unwrap();
-        let emitter = CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
         let peer = NoPeerInvoker;
 
         // STREAMING: Send payload via channel as Frame stream
@@ -4898,14 +4950,19 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        let handler = move |frames: Receiver<Frame>, emitter: &dyn StreamEmitter, _peer: &dyn PeerInvoker| {
+        let handler = move |frames: Receiver<Frame>, sender: &dyn FrameSender, _peer: &dyn PeerInvoker| {
             // TRUE STREAMING: Relay frames and verify
             let mut total = Vec::new();
+            let mut request_id = MessageId::Uint(0);
             for frame in frames {
+                request_id = frame.id.clone();
                 if frame.frame_type == FrameType::Chunk {
                     if let Some(payload) = frame.payload {
                         total.extend_from_slice(&payload);
-                        emitter.emit_cbor(&ciborium::Value::Bytes(payload));  // Stream through
+                        // Create StreamEmitter to use emit_cbor
+                        let stream_id = uuid::Uuid::new_v4().to_string();
+                        let emitter = StreamEmitter::new(sender, stream_id, request_id.clone(), None, Limits::default().max_chunk);
+                        emitter.emit_cbor(&ciborium::Value::Bytes(payload)).ok();  // Stream through
                     }
                 }
             }
@@ -4955,7 +5012,7 @@ mod tests {
         // Simulate streaming: chunk payload and send via channel
         let handler_func = runtime.find_handler(&cap.urn_string()).unwrap();
         let no_peer = NoPeerInvoker;
-        let emitter = crate::CliStreamEmitter::new();
+        let emitter = CliFrameSender::new();
 
         let (tx, rx) = crossbeam_channel::unbounded();
         const MAX_CHUNK: usize = 262144;
