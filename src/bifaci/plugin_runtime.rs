@@ -94,6 +94,12 @@ pub enum RuntimeError {
     #[error("Manifest error: {0}")]
     Manifest(String),
 
+    #[error("Corrupted data: {0}")]
+    CorruptedData(String),
+
+    #[error("Protocol error: {0}")]
+    Protocol(String),
+
     #[error("Stream error: {0}")]
     Stream(#[from] StreamError),
 }
@@ -620,6 +626,18 @@ impl FrameSender for CliFrameSender {
             FrameType::Chunk => {
                 // Extract CBOR payload from CHUNK frame and emit to stdout
                 if let Some(ref payload) = frame.payload {
+                    // Verify checksum (protocol v2 integrity check)
+                    let expected_checksum = Frame::compute_checksum(payload);
+                    let actual_checksum = frame.checksum.ok_or_else(|| {
+                        RuntimeError::Protocol("CHUNK frame missing checksum field".to_string())
+                    })?;
+                    if expected_checksum != actual_checksum {
+                        return Err(RuntimeError::CorruptedData(format!(
+                            "CHUNK checksum mismatch: expected {}, got {} (payload {} bytes)",
+                            expected_checksum, actual_checksum, payload.len()
+                        )));
+                    }
+
                     // Decode CBOR payload
                     let value: ciborium::Value = ciborium::from_reader(&payload[..])
                         .map_err(|e| RuntimeError::Handler(format!("Failed to decode CBOR payload: {}", e)))?;
@@ -1205,15 +1223,22 @@ fn demux_multi_stream(
                     // Regular stream — decode CBOR and forward
                     if let Some(tx) = stream_channels.get(&stream_id) {
                         if let Some(payload) = frame.payload {
-                            // Checksum validation
-                            if let Some(expected_checksum) = frame.checksum {
-                                let actual = Frame::compute_checksum(&payload);
-                                if actual != expected_checksum {
+                            // Checksum validation (MANDATORY in protocol v2)
+                            let expected_checksum = match frame.checksum {
+                                Some(c) => c,
+                                None => {
                                     let _ = tx.send(Err(StreamError::Protocol(
-                                        format!("Checksum mismatch: expected={}, actual={}", expected_checksum, actual)
+                                        "CHUNK frame missing required checksum field".to_string()
                                     )));
                                     continue;
                                 }
+                            };
+                            let actual = Frame::compute_checksum(&payload);
+                            if actual != expected_checksum {
+                                let _ = tx.send(Err(StreamError::Protocol(
+                                    format!("Checksum mismatch: expected={}, actual={}", expected_checksum, actual)
+                                )));
+                                continue;
                             }
                             match ciborium::from_reader::<ciborium::Value, _>(&payload[..]) {
                                 Ok(value) => { let _ = tx.send(Ok(value)); }
@@ -1345,14 +1370,22 @@ fn demux_single_stream(raw_rx: Receiver<Frame>) -> Result<InputStream, RuntimeEr
                 }
                 FrameType::Chunk => {
                     if let Some(payload) = frame.payload {
-                        if let Some(expected_checksum) = frame.checksum {
-                            let actual = Frame::compute_checksum(&payload);
-                            if actual != expected_checksum {
+                        // Checksum validation (MANDATORY in protocol v2)
+                        let expected_checksum = match frame.checksum {
+                            Some(c) => c,
+                            None => {
                                 let _ = chunk_tx.send(Err(StreamError::Protocol(
-                                    format!("Checksum mismatch: expected={}, actual={}", expected_checksum, actual)
+                                    "CHUNK frame missing required checksum field".to_string()
                                 )));
                                 continue;
                             }
+                        };
+                        let actual = Frame::compute_checksum(&payload);
+                        if actual != expected_checksum {
+                            let _ = chunk_tx.send(Err(StreamError::Protocol(
+                                format!("Checksum mismatch: expected={}, actual={}", expected_checksum, actual)
+                            )));
+                            continue;
                         }
                         match ciborium::from_reader::<ciborium::Value, _>(&payload[..]) {
                             Ok(value) => { let _ = chunk_tx.send(Ok(value)); }

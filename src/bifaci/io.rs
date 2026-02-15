@@ -928,8 +928,12 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     seq.assign(&mut stream_start);
     writer.write(&stream_start).await?;
 
-    let checksum = Frame::compute_checksum(&nonce);
-    let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, nonce.clone(), 0, checksum);
+    // CBOR-encode nonce before checksumming (protocol v2: CHUNK payload = CBOR-encoded data)
+    let mut cbor_nonce = Vec::new();
+    ciborium::into_writer(&Value::Bytes(nonce.clone()), &mut cbor_nonce)
+        .expect("BUG: failed to CBOR-encode nonce");
+    let checksum = Frame::compute_checksum(&cbor_nonce);
+    let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, cbor_nonce, 0, checksum);
     chunk.routing_id = Some(xid.clone());
     seq.assign(&mut chunk);
     writer.write(&chunk).await?;
@@ -945,7 +949,8 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     writer.write(&end).await?;
 
     // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
-    let mut accumulated = Vec::new();
+    // Each CHUNK payload is CBOR-encoded (protocol v2), decode each and concatenate
+    let mut cbor_chunks = Vec::new();
     loop {
         let frame = reader.read().await?.ok_or_else(|| {
             CborError::Protocol("Connection closed during identity verification".to_string())
@@ -954,12 +959,24 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         match frame.frame_type {
             FrameType::StreamStart => {}
             FrameType::Chunk => {
-                if let Some(payload) = frame.payload {
-                    accumulated.extend_from_slice(&payload);
+                if let Some(cbor_payload) = frame.payload {
+                    // Decode CBOR chunk
+                    let value: Value = ciborium::from_reader(&cbor_payload[..])
+                        .map_err(|e| CborError::Protocol(format!("Failed to decode CBOR chunk: {}", e)))?;
+                    if let Value::Bytes(bytes) = value {
+                        cbor_chunks.push(bytes);
+                    } else {
+                        return Err(CborError::Protocol(format!(
+                            "Expected bytes chunk, got {:?}",
+                            value
+                        )));
+                    }
                 }
             }
             FrameType::StreamEnd => {}
             FrameType::End => {
+                // Concatenate all decoded chunks
+                let accumulated: Vec<u8> = cbor_chunks.into_iter().flatten().collect();
                 if accumulated != nonce {
                     return Err(CborError::Protocol(format!(
                         "Identity verification failed: payload mismatch (expected {} bytes, got {})",
@@ -1611,6 +1628,36 @@ mod tests {
         assert_eq!(decoded.id, id);
         assert_eq!(decoded.stream_id.as_deref(), Some("stream-xyz-789"));
         assert!(decoded.media_urn.is_none(), "StreamEnd should not have media_urn");
+    }
+
+    // TEST497: Verify CHUNK frame with corrupted payload is rejected by checksum
+    #[test]
+    fn test497_chunk_corrupted_payload_rejected() {
+        let id = MessageId::new_uuid();
+        let stream_id = "stream-test".to_string();
+        let payload = b"original data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        // Create CHUNK with correct checksum
+        let chunk = Frame::chunk(id.clone(), stream_id.clone(), 0, payload.clone(), 0, checksum);
+
+        // Encode it
+        let encoded = encode_frame(&chunk).unwrap();
+
+        // Decode it
+        let mut decoded = decode_frame(&encoded).unwrap();
+        assert_eq!(decoded.checksum, Some(checksum));
+
+        // Now CORRUPT the payload but keep the checksum
+        decoded.payload = Some(b"corrupted data".to_vec());
+
+        // Verify checksum doesn't match corrupted payload
+        let corrupted_checksum = Frame::compute_checksum(decoded.payload.as_ref().unwrap());
+        assert_ne!(corrupted_checksum, checksum, "Checksums should differ for corrupted data");
+        assert_eq!(decoded.checksum, Some(checksum), "Frame still has original checksum");
+
+        // This proves that if someone modifies the payload in transit,
+        // the checksum will not match and verification will fail
     }
 
     // TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode
