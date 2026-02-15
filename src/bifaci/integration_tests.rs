@@ -80,7 +80,7 @@ mod tests {
         (rt_from_p, rt_to_p, p_from_rt_std, p_to_rt_std)
     }
 
-    /// Helper: do handshake on plugin side (sync, in a thread).
+    /// Helper: do handshake only on plugin side (for raw frame tests using `handshake()`).
     fn plugin_handshake(
         from_runtime: std::os::unix::net::UnixStream,
         to_runtime: std::os::unix::net::UnixStream,
@@ -91,6 +91,42 @@ mod tests {
         let limits = handshake_accept(&mut reader, &mut writer, manifest).unwrap();
         reader.set_limits(limits);
         writer.set_limits(limits);
+        (reader, writer)
+    }
+
+    /// Helper: do handshake + handle identity verification (for tests using `attach_plugin()`).
+    fn plugin_handshake_with_identity(
+        from_runtime: std::os::unix::net::UnixStream,
+        to_runtime: std::os::unix::net::UnixStream,
+        manifest: &[u8],
+    ) -> (FrameReader<BufReader<std::os::unix::net::UnixStream>>, FrameWriter<BufWriter<std::os::unix::net::UnixStream>>) {
+        let (mut reader, mut writer) = plugin_handshake(from_runtime, to_runtime, manifest);
+
+        // Handle identity verification REQ
+        let req = reader.read().unwrap().expect("expected identity REQ after handshake");
+        assert_eq!(req.frame_type, FrameType::Req, "first frame after handshake must be identity REQ");
+        let mut payload = Vec::new();
+        loop {
+            let f = reader.read().unwrap().expect("expected frame");
+            match f.frame_type {
+                FrameType::StreamStart => {}
+                FrameType::Chunk => payload.extend(f.payload.unwrap_or_default()),
+                FrameType::StreamEnd => {}
+                FrameType::End => break,
+                other => panic!("unexpected frame type during identity verification: {:?}", other),
+            }
+        }
+        let stream_id = "identity-echo".to_string();
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        writer.write(&ss).unwrap();
+        let checksum = Frame::compute_checksum(&payload);
+        let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
+        writer.write(&chunk).unwrap();
+        let se = Frame::stream_end(req.id.clone(), stream_id, 1);
+        writer.write(&se).unwrap();
+        let end = Frame::end(req.id, None);
+        writer.write(&end).unwrap();
+
         (reader, writer)
     }
 
@@ -106,7 +142,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            let (mut reader, mut writer) = plugin_handshake(p_from_rt, p_to_rt, &m);
+            let (mut reader, mut writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
 
             let req = reader.read().unwrap().expect("Expected REQ");
             assert_eq!(req.frame_type, FrameType::Req);
@@ -215,7 +251,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            let (mut reader, mut writer) = plugin_handshake(p_from_rt, p_to_rt, &m);
+            let (mut reader, mut writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
 
             let req = reader.read().unwrap().expect("Expected REQ");
             let mut seq = SeqAssigner::new();
@@ -290,7 +326,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            let (mut reader, mut writer) = plugin_handshake(p_from_rt, p_to_rt, &m);
+            let (mut reader, mut writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
 
             let req = reader.read().unwrap().expect("Expected REQ");
 
@@ -401,7 +437,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            let (mut reader, mut writer) = plugin_handshake(p_from_rt, p_to_rt, &m);
+            let (mut reader, mut writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
 
             let req = reader.read().unwrap().expect("Expected REQ");
 
@@ -499,7 +535,7 @@ mod tests {
 
         let ma = manifest_a.as_bytes().to_vec();
         let plugin_a = std::thread::spawn(move || {
-            let (mut reader, mut writer) = plugin_handshake(pa_from_rt, pa_to_rt, &ma);
+            let (mut reader, mut writer) = plugin_handshake_with_identity(pa_from_rt, pa_to_rt, &ma);
             let req = reader.read().unwrap().expect("Expected REQ");
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""), "Plugin A must receive alpha REQ");
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
@@ -525,7 +561,7 @@ mod tests {
 
         let mb = manifest_b.as_bytes().to_vec();
         let plugin_b = std::thread::spawn(move || {
-            let (mut reader, mut writer) = plugin_handshake(pb_from_rt, pb_to_rt, &mb);
+            let (mut reader, mut writer) = plugin_handshake_with_identity(pb_from_rt, pb_to_rt, &mb);
             let req = reader.read().unwrap().expect("Expected REQ");
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""), "Plugin B must receive beta REQ");
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
@@ -631,7 +667,7 @@ mod tests {
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
             eprintln!("[TEST/plugin] Starting plugin thread");
-            let (mut reader, _writer) = plugin_handshake(p_from_rt, p_to_rt, &m);
+            let (mut reader, _writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
             eprintln!("[TEST/plugin] Handshake complete, waiting for EOF...");
             // Plugin waits for EOF — no REQ should arrive since cap is unknown
             match reader.read() {
@@ -1078,5 +1114,274 @@ mod tests {
         assert!(response.payload.is_none() || response.payload.as_ref().unwrap().is_empty());
 
         plugin_handle.join().unwrap();
+    }
+
+    // =========================================================================
+    // Identity verification end-to-end tests
+    // =========================================================================
+
+    // TEST489: Full path identity verification: engine → host (attach_plugin) → plugin
+    //
+    // This verifies that attach_plugin completes identity verification end-to-end
+    // and the plugin is ready to handle subsequent requests.
+    #[tokio::test]
+    async fn test489_full_path_identity_verification() {
+        use crate::bifaci::host_runtime::PluginHostRuntime;
+
+        let manifest = r#"{"name":"IdentityE2E","version":"1.0","description":"Identity test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+
+        let (p_read, p_write, p_from_rt, p_to_rt) = create_plugin_pair();
+        let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
+
+            // After identity verification, handle a real request
+            let req = reader.read().unwrap().expect("Expected REQ after identity verification");
+            assert_eq!(req.frame_type, FrameType::Req, "Must receive real REQ after identity handshake");
+
+            // Consume request body
+            loop {
+                let f = reader.read().unwrap().expect("Expected frame");
+                if f.frame_type == FrameType::End { break; }
+            }
+
+            // Send response
+            let mut seq = SeqAssigner::new();
+            let sid = "resp".to_string();
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss);
+            writer.write(&ss).unwrap();
+            let payload = b"verified-and-working".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk);
+            writer.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut se);
+            writer.write(&se).unwrap();
+            let mut end = Frame::end(req.id, None);
+            seq.assign(&mut end);
+            writer.write(&end).unwrap();
+        });
+
+        let (p_read_half, _) = p_read.into_split();
+        let (_, p_write_half) = p_write.into_split();
+
+        let mut runtime = PluginHostRuntime::new();
+        runtime.attach_plugin(p_read_half, p_write_half).await.unwrap();
+
+        let (rt_read_half, _) = rt_relay_read.into_split();
+        let (_, rt_write_half) = rt_relay_write.into_split();
+        let (_, eng_write_half) = eng_write.into_split();
+        let (eng_read_half, _) = eng_read.into_split();
+
+        let req_id = MessageId::new_uuid();
+        let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
+            let mut w = AsyncFrameWriter::new(eng_write_half);
+            let mut r = AsyncFrameReader::new(eng_read_half);
+
+            let xid = MessageId::Uint(1);
+            let sid = uuid::Uuid::new_v4().to_string();
+
+            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain");
+            req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
+            w.write(&req).await.unwrap();
+
+            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            ss.routing_id = Some(xid.clone());
+            seq.assign(&mut ss);
+            w.write(&ss).await.unwrap();
+
+            let payload = b"test-data".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, payload, 0, checksum);
+            chunk.routing_id = Some(xid.clone());
+            seq.assign(&mut chunk);
+            w.write(&chunk).await.unwrap();
+
+            let mut se = Frame::stream_end(req_id.clone(), sid, 1);
+            se.routing_id = Some(xid.clone());
+            seq.assign(&mut se);
+            w.write(&se).await.unwrap();
+
+            let mut end = Frame::end(req_id.clone(), None);
+            end.routing_id = Some(xid);
+            seq.assign(&mut end);
+            w.write(&end).await.unwrap();
+
+            // Read response
+            let mut payload = Vec::new();
+            loop {
+                match r.read().await {
+                    Ok(Some(f)) => {
+                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
+                        if f.frame_type == FrameType::End { break; }
+                    }
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+            drop(w);
+            payload
+        });
+
+        let result = runtime.run(rt_read_half, rt_write_half, || vec![]).await;
+        assert!(result.is_ok(), "Runtime should exit cleanly: {:?}", result);
+
+        let response = engine_task.await.unwrap();
+        assert_eq!(response, b"verified-and-working", "Plugin must respond after identity verification");
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST490: Identity verification with multiple plugins through single relay
+    //
+    // Both plugins must pass identity verification independently before any
+    // real requests are routed.
+    #[tokio::test]
+    async fn test490_identity_verification_multiple_plugins() {
+        use crate::bifaci::host_runtime::PluginHostRuntime;
+
+        let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Alpha","command":"alpha","args":[]}]}"#;
+        let manifest_b = r#"{"name":"PluginB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=beta;out=\"media:void\"","title":"Beta","command":"beta","args":[]}]}"#;
+
+        let (pa_read, pa_write, pa_from_rt, pa_to_rt) = create_plugin_pair();
+        let (pb_read, pb_write, pb_from_rt, pb_to_rt) = create_plugin_pair();
+        let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
+
+        let ma = manifest_a.as_bytes().to_vec();
+        let pa_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake_with_identity(pa_from_rt, pa_to_rt, &ma);
+            let req = reader.read().unwrap().expect("Expected REQ for alpha");
+            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
+            loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            let mut seq = SeqAssigner::new();
+            let sid = "a".to_string();
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss); writer.write(&ss).unwrap();
+            let payload = b"from-alpha".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk); writer.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut se); writer.write(&se).unwrap();
+            let mut end = Frame::end(req.id.clone(), None);
+            seq.assign(&mut end); writer.write(&end).unwrap();
+        });
+
+        let mb = manifest_b.as_bytes().to_vec();
+        let pb_handle = std::thread::spawn(move || {
+            let (mut reader, mut writer) = plugin_handshake_with_identity(pb_from_rt, pb_to_rt, &mb);
+            let req = reader.read().unwrap().expect("Expected REQ for beta");
+            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
+            loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            let mut seq = SeqAssigner::new();
+            let sid = "b".to_string();
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            seq.assign(&mut ss); writer.write(&ss).unwrap();
+            let payload = b"from-beta".to_vec();
+            let checksum = Frame::compute_checksum(&payload);
+            let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
+            seq.assign(&mut chunk); writer.write(&chunk).unwrap();
+            let mut se = Frame::stream_end(req.id.clone(), sid, 1);
+            seq.assign(&mut se); writer.write(&se).unwrap();
+            let mut end = Frame::end(req.id.clone(), None);
+            seq.assign(&mut end); writer.write(&end).unwrap();
+        });
+
+        let (pa_read_half, _) = pa_read.into_split();
+        let (_, pa_write_half) = pa_write.into_split();
+        let (pb_read_half, _) = pb_read.into_split();
+        let (_, pb_write_half) = pb_write.into_split();
+
+        let mut runtime = PluginHostRuntime::new();
+        runtime.attach_plugin(pa_read_half, pa_write_half).await.unwrap();
+        runtime.attach_plugin(pb_read_half, pb_write_half).await.unwrap();
+
+        let (rt_read_half, _) = rt_relay_read.into_split();
+        let (_, rt_write_half) = rt_relay_write.into_split();
+        let (_, eng_write_half) = eng_write.into_split();
+        let (eng_read_half, _) = eng_read.into_split();
+
+        let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
+            let mut w = AsyncFrameWriter::new(eng_write_half);
+            let mut r = AsyncFrameReader::new(eng_read_half);
+            let xid = MessageId::Uint(1);
+
+            // Send alpha request
+            let req_id = MessageId::new_uuid();
+            let sid = uuid::Uuid::new_v4().to_string();
+            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
+            req.routing_id = Some(xid.clone()); seq.assign(&mut req); w.write(&req).await.unwrap();
+            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            ss.routing_id = Some(xid.clone()); seq.assign(&mut ss); w.write(&ss).await.unwrap();
+            let payload_a = b"alpha-data".to_vec();
+            let checksum = Frame::compute_checksum(&payload_a);
+            let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, payload_a, 0, checksum);
+            chunk.routing_id = Some(xid.clone()); seq.assign(&mut chunk); w.write(&chunk).await.unwrap();
+            let mut se = Frame::stream_end(req_id.clone(), sid, 1);
+            se.routing_id = Some(xid.clone()); seq.assign(&mut se); w.write(&se).await.unwrap();
+            let mut end = Frame::end(req_id.clone(), None);
+            end.routing_id = Some(xid.clone()); seq.assign(&mut end); w.write(&end).await.unwrap();
+
+            let mut payload = Vec::new();
+            loop {
+                match r.read().await {
+                    Ok(Some(f)) => {
+                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
+                        if f.frame_type == FrameType::End { break; }
+                    }
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+
+            // Send beta request
+            let req_id2 = MessageId::new_uuid();
+            let xid2 = MessageId::Uint(2);
+            let sid2 = uuid::Uuid::new_v4().to_string();
+            let mut req2 = Frame::req(req_id2.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
+            req2.routing_id = Some(xid2.clone()); seq.assign(&mut req2); w.write(&req2).await.unwrap();
+            let mut ss2 = Frame::stream_start(req_id2.clone(), sid2.clone(), "media:bytes".to_string());
+            ss2.routing_id = Some(xid2.clone()); seq.assign(&mut ss2); w.write(&ss2).await.unwrap();
+            let payload_b = b"beta-data".to_vec();
+            let checksum2 = Frame::compute_checksum(&payload_b);
+            let mut chunk2 = Frame::chunk(req_id2.clone(), sid2.clone(), 0, payload_b, 0, checksum2);
+            chunk2.routing_id = Some(xid2.clone()); seq.assign(&mut chunk2); w.write(&chunk2).await.unwrap();
+            let mut se2 = Frame::stream_end(req_id2.clone(), sid2, 1);
+            se2.routing_id = Some(xid2.clone()); seq.assign(&mut se2); w.write(&se2).await.unwrap();
+            let mut end2 = Frame::end(req_id2.clone(), None);
+            end2.routing_id = Some(xid2); seq.assign(&mut end2); w.write(&end2).await.unwrap();
+
+            let mut payload2 = Vec::new();
+            loop {
+                match r.read().await {
+                    Ok(Some(f)) => {
+                        if f.frame_type == FrameType::Chunk { payload2.extend(f.payload.unwrap_or_default()); }
+                        if f.frame_type == FrameType::End { break; }
+                    }
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+
+            drop(w);
+            (payload, payload2)
+        });
+
+        let result = runtime.run(rt_read_half, rt_write_half, || vec![]).await;
+        assert!(result.is_ok(), "Runtime should exit cleanly: {:?}", result);
+
+        let (resp_alpha, resp_beta) = engine_task.await.unwrap();
+        assert_eq!(resp_alpha, b"from-alpha", "Alpha plugin must respond correctly after identity verification");
+        assert_eq!(resp_beta, b"from-beta", "Beta plugin must respond correctly after identity verification");
+
+        pa_handle.join().unwrap();
+        pb_handle.join().unwrap();
     }
 }

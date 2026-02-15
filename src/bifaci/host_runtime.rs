@@ -26,7 +26,7 @@
 //! - Everything else: forwarded to relay (pass-through)
 
 use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::bifaci::io::{handshake_async, AsyncFrameReader, AsyncFrameWriter, CborError};
+use crate::bifaci::io::{handshake_async, verify_identity, AsyncFrameReader, AsyncFrameWriter, CborError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -334,6 +334,12 @@ impl PluginHostRuntime {
             .map_err(|e| AsyncHostError::Handshake(e.to_string()))?;
 
         let caps = parse_caps_from_manifest(&result.manifest)?;
+
+        // Verify identity — proves the protocol stack works end-to-end
+        verify_identity(&mut reader, &mut writer)
+            .await
+            .map_err(|e| AsyncHostError::Protocol(format!("Identity verification failed: {}", e)))?;
+
         let plugin_idx = self.plugins.len();
 
         // Start writer task
@@ -867,6 +873,17 @@ impl PluginHostRuntime {
 
         let caps = parse_caps_from_manifest(&handshake_result.manifest)?;
 
+        // Verify identity — proves the protocol stack works end-to-end
+        if let Err(e) = verify_identity(&mut reader, &mut writer).await {
+            self.plugins[plugin_idx].hello_failed = true;
+            let _ = child.kill().await;
+            return Err(AsyncHostError::Protocol(format!(
+                "Plugin '{}' identity verification failed: {} — permanently removed",
+                self.plugins[plugin_idx].path.display(),
+                e
+            )));
+        }
+
         // Start writer task
         let (writer_tx, writer_rx) = mpsc::unbounded_channel::<Frame>();
         let wh = Self::start_writer_task(writer, writer_rx);
@@ -1274,6 +1291,54 @@ mod tests {
     use crate::standard::caps::CAP_IDENTITY;
     use crate::CapUrn;
 
+    /// Helper: perform handshake_accept and handle the identity verification REQ.
+    /// Returns (FrameReader, FrameWriter) ready for further communication.
+    fn plugin_handshake_with_identity(
+        from_runtime: std::os::unix::net::UnixStream,
+        to_runtime: std::os::unix::net::UnixStream,
+        manifest: &[u8],
+    ) -> (crate::bifaci::io::FrameReader<std::io::BufReader<std::os::unix::net::UnixStream>>,
+          crate::bifaci::io::FrameWriter<std::io::BufWriter<std::os::unix::net::UnixStream>>)
+    {
+        use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
+        use std::io::{BufReader, BufWriter};
+
+        let mut reader = FrameReader::new(BufReader::new(from_runtime));
+        let mut writer = FrameWriter::new(BufWriter::new(to_runtime));
+        handshake_accept(&mut reader, &mut writer, manifest).unwrap();
+
+        // Handle identity verification REQ
+        let req = reader.read().unwrap().expect("expected identity REQ");
+        assert_eq!(req.frame_type, FrameType::Req, "first frame after handshake must be REQ");
+
+        // Read request body: STREAM_START → CHUNK(s) → STREAM_END → END
+        let mut payload = Vec::new();
+        loop {
+            let f = reader.read().unwrap().expect("expected frame");
+            match f.frame_type {
+                FrameType::StreamStart => {}
+                FrameType::Chunk => payload.extend(f.payload.unwrap_or_default()),
+                FrameType::StreamEnd => {}
+                FrameType::End => break,
+                other => panic!("unexpected frame type during identity verification: {:?}", other),
+            }
+        }
+
+        // Echo response: STREAM_START → CHUNK → STREAM_END → END
+        let stream_id = "identity-echo".to_string();
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        writer.write(&ss).unwrap();
+        let checksum = Frame::compute_checksum(&payload);
+        let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
+        writer.write(&chunk).unwrap();
+        let se = Frame::stream_end(req.id.clone(), stream_id, 1);
+        writer.write(&se).unwrap();
+        let end = Frame::end(req.id, None);
+        writer.write(&end).unwrap();
+
+        (reader, writer)
+    }
+
     // TEST480: parse_caps_from_manifest rejects manifest without CAP_IDENTITY
     #[test]
     fn test480_parse_caps_rejects_manifest_without_identity() {
@@ -1548,14 +1613,10 @@ mod tests {
         let (plugin_read, _) = runtime_from_plugin.into_split();
         let (_, plugin_write) = runtime_to_plugin.into_split();
 
-        // Plugin thread does handshake
+        // Plugin thread does handshake + identity verification
         let manifest_bytes = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
-            let mut reader = FrameReader::new(BufReader::new(plugin_from_runtime_std));
-            let mut writer = FrameWriter::new(BufWriter::new(plugin_to_runtime_std));
-            handshake_accept(&mut reader, &mut writer, &manifest_bytes).unwrap();
+            plugin_handshake_with_identity(plugin_from_runtime_std, plugin_to_runtime_std, &manifest_bytes);
         });
 
         let mut runtime = PluginHostRuntime::new();
@@ -1605,12 +1666,8 @@ mod tests {
         // Plugin A thread
         let ma = manifest_a.as_bytes().to_vec();
         let pa_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(pa_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(pa_to_rt_std));
-            handshake_accept(&mut r, &mut w, &ma).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(pa_from_rt_std, pa_to_rt_std, &ma);
             // Read one REQ and verify cap
             let frame = r.read().unwrap().expect("expected REQ");
             assert_eq!(frame.frame_type, FrameType::Req);
@@ -1637,11 +1694,7 @@ mod tests {
         // Plugin B thread
         let mb = manifest_b.as_bytes().to_vec();
         let pb_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
-            let mut r = FrameReader::new(BufReader::new(pb_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(pb_to_rt_std));
-            handshake_accept(&mut r, &mut w, &mb).unwrap();
+            let (r, w) = plugin_handshake_with_identity(pb_from_rt_std, pb_to_rt_std, &mb);
             // Plugin B should NOT receive the convert REQ
             // It may receive heartbeats, but the REQ should only go to Plugin A
             // Just exit - the runtime will handle heartbeat timeouts
@@ -1748,12 +1801,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
-            handshake_accept(&mut r, &mut w, &m).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
 
             // Send a heartbeat from plugin
             let hb_id = MessageId::new_uuid();
@@ -1835,12 +1884,8 @@ mod tests {
         let req_id = MessageId::new_uuid();
         let req_id_for_plugin = req_id.clone();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
-            handshake_accept(&mut r, &mut w, &m).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
 
             // Read the REQ
             let frame = r.read().unwrap().expect("Expected REQ");
@@ -1972,12 +2017,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
-            handshake_accept(&mut r, &mut w, &m).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
 
             // Read REQ
             let req = r.read().unwrap().expect("Expected REQ");
@@ -2118,12 +2159,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
-            let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
-            handshake_accept(&mut r, &mut w, &m).unwrap();
-            // Die immediately after handshake
+            let (r, w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
+            // Die immediately after identity verification
             drop(w);
             drop(r);
         });
@@ -2195,11 +2232,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
-            let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
-            handshake_accept(&mut r, &mut w, &m).unwrap();
+            let (mut r, w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
 
             // Read REQ and consume all frames until END, then die
             let _req = r.read().unwrap().expect("Expected REQ");
@@ -2295,12 +2328,8 @@ mod tests {
 
         let ma = manifest_a.as_bytes().to_vec();
         let pa_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(pa_from_rt));
-            let mut w = FrameWriter::new(BufWriter::new(pa_to_rt));
-            handshake_accept(&mut r, &mut w, &ma).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(pa_from_rt, pa_to_rt, &ma);
             let req = r.read().unwrap().expect("Expected REQ");
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
             loop { let f = r.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
@@ -2325,12 +2354,8 @@ mod tests {
 
         let mb = manifest_b.as_bytes().to_vec();
         let pb_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(pb_from_rt));
-            let mut w = FrameWriter::new(BufWriter::new(pb_to_rt));
-            handshake_accept(&mut r, &mut w, &mb).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(pb_from_rt, pb_to_rt, &mb);
             let req = r.read().unwrap().expect("Expected REQ");
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
             loop { let f = r.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
@@ -2451,12 +2476,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
-            use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
-            let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
-            let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
-            handshake_accept(&mut r, &mut w, &m).unwrap();
+            let (mut r, mut w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
 
             // Read two REQs and their streams, then respond to each
             let mut pending: Vec<MessageId> = Vec::new();
@@ -2583,5 +2604,82 @@ mod tests {
         runtime.register_plugin(Path::new("/test"), &["cap:in=\"media:void\";op=known;out=\"media:void\"".to_string()]);
         assert!(runtime.find_plugin_for_cap("cap:in=\"media:void\";op=known;out=\"media:void\"").is_some());
         assert!(runtime.find_plugin_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\"").is_none());
+    }
+
+    // =========================================================================
+    // Identity verification integration tests
+    // =========================================================================
+
+    // TEST485: attach_plugin completes identity verification with working plugin
+    #[tokio::test]
+    async fn test_attach_plugin_identity_verification_succeeds() {
+        let manifest = r#"{"name":"IdentityTest","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+
+        let (p_to_rt, rt_from_p) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (rt_to_p, p_from_rt) = std::os::unix::net::UnixStream::pair().unwrap();
+        rt_from_p.set_nonblocking(true).unwrap();
+        rt_to_p.set_nonblocking(true).unwrap();
+
+        let rt_from = tokio::net::UnixStream::from_std(rt_from_p).unwrap();
+        let rt_to = tokio::net::UnixStream::from_std(rt_to_p).unwrap();
+        let (p_read, _) = rt_from.into_split();
+        let (_, p_write) = rt_to.into_split();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            plugin_handshake_with_identity(p_from_rt, p_to_rt, &m);
+        });
+
+        let mut runtime = PluginHostRuntime::new();
+        let idx = runtime.attach_plugin(p_read, p_write).await.unwrap();
+        assert_eq!(idx, 0);
+        assert!(runtime.plugins[0].running, "Plugin must be running after identity verification");
+
+        // Verify both caps are registered
+        let caps: Vec<String> = runtime.plugins[0].caps.iter().map(|c| c.urn_string()).collect();
+        assert!(caps.iter().any(|c| c == CAP_IDENTITY), "Must have identity cap");
+        assert_eq!(caps.len(), 2, "Must have both caps");
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST486: attach_plugin rejects plugin that fails identity verification
+    #[tokio::test]
+    async fn test_attach_plugin_identity_verification_fails() {
+        let manifest = r#"{"name":"BrokenIdentity","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]}]}"#;
+
+        let (p_to_rt, rt_from_p) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (rt_to_p, p_from_rt) = std::os::unix::net::UnixStream::pair().unwrap();
+        rt_from_p.set_nonblocking(true).unwrap();
+        rt_to_p.set_nonblocking(true).unwrap();
+
+        let rt_from = tokio::net::UnixStream::from_std(rt_from_p).unwrap();
+        let rt_to = tokio::net::UnixStream::from_std(rt_to_p).unwrap();
+        let (p_read, _) = rt_from.into_split();
+        let (_, p_write) = rt_to.into_split();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
+            use std::io::{BufReader, BufWriter};
+            let mut reader = FrameReader::new(BufReader::new(p_from_rt));
+            let mut writer = FrameWriter::new(BufWriter::new(p_to_rt));
+            handshake_accept(&mut reader, &mut writer, &m).unwrap();
+
+            // Read identity REQ, respond with ERR (broken identity handler)
+            let req = reader.read().unwrap().expect("expected identity REQ");
+            assert_eq!(req.frame_type, FrameType::Req);
+            let err = Frame::err(req.id, "BROKEN", "identity handler is broken");
+            writer.write(&err).unwrap();
+        });
+
+        let mut runtime = PluginHostRuntime::new();
+        let result = runtime.attach_plugin(p_read, p_write).await;
+        assert!(result.is_err(), "attach_plugin must fail when identity verification fails");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Identity verification failed"),
+            "Error must mention identity verification: {}", err);
+
+        plugin_handle.join().unwrap();
     }
 }

@@ -883,6 +883,109 @@ pub async fn handshake_async<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     Ok(HandshakeResult { limits, manifest })
 }
 
+// =============================================================================
+// IDENTITY VERIFICATION
+// =============================================================================
+
+/// CBOR-encoded Text("bifaci") — deterministic 7-byte nonce for identity verification.
+pub(crate) fn identity_nonce() -> Vec<u8> {
+    let mut buf = Vec::new();
+    ciborium::into_writer(&Value::Text("bifaci".to_string()), &mut buf)
+        .expect("BUG: failed to encode identity nonce");
+    buf
+}
+
+/// Verify a connection by invoking the identity capability (async).
+///
+/// Sends a REQ with CAP_IDENTITY carrying the "bifaci" nonce with proper
+/// XID and seq assignment, then verifies the response echoes it back unchanged.
+/// This proves the entire protocol stack works end-to-end before the connection
+/// is considered live.
+///
+/// Must be called after handshake, before any other traffic.
+pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+    reader: &mut AsyncFrameReader<R>,
+    writer: &mut AsyncFrameWriter<W>,
+) -> Result<(), CborError> {
+    use crate::standard::caps::CAP_IDENTITY;
+    use crate::bifaci::frame::SeqAssigner;
+
+    let nonce = identity_nonce();
+    let req_id = MessageId::new_uuid();
+    let stream_id = "identity-verify".to_string();
+    let xid = MessageId::Uint(0);
+    let mut seq = SeqAssigner::new();
+
+    // Send REQ (empty payload) with XID + seq
+    let mut req = Frame::req(req_id.clone(), CAP_IDENTITY, vec![], "application/cbor");
+    req.routing_id = Some(xid.clone());
+    seq.assign(&mut req);
+    writer.write(&req).await?;
+
+    // Send request body: STREAM_START → CHUNK → STREAM_END → END
+    let mut stream_start = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:bytes".to_string());
+    stream_start.routing_id = Some(xid.clone());
+    seq.assign(&mut stream_start);
+    writer.write(&stream_start).await?;
+
+    let checksum = Frame::compute_checksum(&nonce);
+    let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, nonce.clone(), 0, checksum);
+    chunk.routing_id = Some(xid.clone());
+    seq.assign(&mut chunk);
+    writer.write(&chunk).await?;
+
+    let mut stream_end = Frame::stream_end(req_id.clone(), stream_id, 1);
+    stream_end.routing_id = Some(xid.clone());
+    seq.assign(&mut stream_end);
+    writer.write(&stream_end).await?;
+
+    let mut end = Frame::end(req_id.clone(), None);
+    end.routing_id = Some(xid.clone());
+    seq.assign(&mut end);
+    writer.write(&end).await?;
+
+    // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
+    let mut accumulated = Vec::new();
+    loop {
+        let frame = reader.read().await?.ok_or_else(|| {
+            CborError::Protocol("Connection closed during identity verification".to_string())
+        })?;
+
+        match frame.frame_type {
+            FrameType::StreamStart => {}
+            FrameType::Chunk => {
+                if let Some(payload) = frame.payload {
+                    accumulated.extend_from_slice(&payload);
+                }
+            }
+            FrameType::StreamEnd => {}
+            FrameType::End => {
+                if accumulated != nonce {
+                    return Err(CborError::Protocol(format!(
+                        "Identity verification failed: payload mismatch (expected {} bytes, got {})",
+                        nonce.len(),
+                        accumulated.len()
+                    )));
+                }
+                return Ok(());
+            }
+            FrameType::Err => {
+                let code = frame.error_code().unwrap_or("UNKNOWN");
+                let msg = frame.error_message().unwrap_or("no message");
+                return Err(CborError::Protocol(format!(
+                    "Identity verification failed: [{code}] {msg}"
+                )));
+            }
+            other => {
+                return Err(CborError::Protocol(format!(
+                    "Identity verification: unexpected frame type {:?}",
+                    other
+                )));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1634,6 +1737,150 @@ mod tests {
         };
         let host_reorder = host_frame.hello_max_reorder_buffer().unwrap();
         assert_eq!(host_reorder, DEFAULT_MAX_REORDER_BUFFER);
+    }
+
+    // =========================================================================
+    // Identity verification tests
+    // =========================================================================
+
+    /// Manifest with only CAP_IDENTITY (minimum valid manifest)
+    const IDENTITY_MANIFEST: &str = r#"{"name":"Test","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]}]}"#;
+
+    /// Simulate plugin side: handshake_accept, then handle one identity REQ
+    /// by echoing back the payload (like the standard identity handler).
+    fn run_plugin_identity_echo(
+        from_host: std::os::unix::net::UnixStream,
+        to_host: std::os::unix::net::UnixStream,
+        manifest: &[u8],
+    ) {
+        let mut reader = FrameReader::new(std::io::BufReader::new(from_host));
+        let mut writer = FrameWriter::new(std::io::BufWriter::new(to_host));
+        handshake_accept(&mut reader, &mut writer, manifest).unwrap();
+
+        // Read REQ
+        let req = reader.read().unwrap().expect("expected REQ");
+        assert_eq!(req.frame_type, FrameType::Req);
+
+        // Read request body: STREAM_START → CHUNK(s) → STREAM_END → END
+        let mut payload = Vec::new();
+        loop {
+            let f = reader.read().unwrap().expect("expected frame");
+            match f.frame_type {
+                FrameType::StreamStart => {}
+                FrameType::Chunk => payload.extend(f.payload.unwrap_or_default()),
+                FrameType::StreamEnd => {}
+                FrameType::End => break,
+                other => panic!("unexpected frame type during identity request: {:?}", other),
+            }
+        }
+
+        // Echo response: STREAM_START → CHUNK → STREAM_END → END
+        let stream_id = "echo".to_string();
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        writer.write(&ss).unwrap();
+        let checksum = Frame::compute_checksum(&payload);
+        let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
+        writer.write(&chunk).unwrap();
+        let se = Frame::stream_end(req.id.clone(), stream_id, 1);
+        writer.write(&se).unwrap();
+        let end = Frame::end(req.id, None);
+        writer.write(&end).unwrap();
+    }
+
+    // TEST481: verify_identity succeeds with standard identity echo handler
+    #[tokio::test]
+    async fn test_verify_identity_succeeds() {
+        let (host_to_plugin_std, plugin_from_host_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (plugin_to_host_std, host_from_plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
+
+        // Plugin side runs sync in a thread
+        let manifest = IDENTITY_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            run_plugin_identity_echo(plugin_from_host_std, plugin_to_host_std, &manifest);
+        });
+
+        // Host side runs async
+        host_from_plugin_std.set_nonblocking(true).unwrap();
+        host_to_plugin_std.set_nonblocking(true).unwrap();
+        let host_read = tokio::net::UnixStream::from_std(host_from_plugin_std).unwrap();
+        let host_write = tokio::net::UnixStream::from_std(host_to_plugin_std).unwrap();
+
+        let mut reader = AsyncFrameReader::new(host_read);
+        let mut writer = AsyncFrameWriter::new(host_write);
+        let _hs = handshake_async(&mut reader, &mut writer).await.unwrap();
+
+        let result = verify_identity(&mut reader, &mut writer).await;
+        assert!(result.is_ok(), "verify_identity must succeed: {:?}", result.unwrap_err());
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST482: verify_identity fails when plugin returns ERR on identity call
+    #[tokio::test]
+    async fn test_verify_identity_fails_on_err() {
+        let (host_to_plugin_std, plugin_from_host_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (plugin_to_host_std, host_from_plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
+
+        let manifest = IDENTITY_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let mut reader = FrameReader::new(std::io::BufReader::new(plugin_from_host_std));
+            let mut writer = FrameWriter::new(std::io::BufWriter::new(plugin_to_host_std));
+            handshake_accept(&mut reader, &mut writer, &manifest).unwrap();
+
+            // Read REQ, respond with ERR
+            let req = reader.read().unwrap().expect("expected REQ");
+            let err = Frame::err(req.id, "BROKEN", "identity handler broken");
+            writer.write(&err).unwrap();
+        });
+
+        host_from_plugin_std.set_nonblocking(true).unwrap();
+        host_to_plugin_std.set_nonblocking(true).unwrap();
+        let host_read = tokio::net::UnixStream::from_std(host_from_plugin_std).unwrap();
+        let host_write = tokio::net::UnixStream::from_std(host_to_plugin_std).unwrap();
+
+        let mut reader = AsyncFrameReader::new(host_read);
+        let mut writer = AsyncFrameWriter::new(host_write);
+        handshake_async(&mut reader, &mut writer).await.unwrap();
+
+        let result = verify_identity(&mut reader, &mut writer).await;
+        assert!(result.is_err(), "verify_identity must fail on ERR");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("BROKEN"), "error must contain error code: {}", err);
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST483: verify_identity fails when connection closes before response
+    #[tokio::test]
+    async fn test_verify_identity_fails_on_close() {
+        let (host_to_plugin_std, plugin_from_host_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (plugin_to_host_std, host_from_plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
+
+        let manifest = IDENTITY_MANIFEST.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let mut reader = FrameReader::new(std::io::BufReader::new(plugin_from_host_std));
+            let mut writer = FrameWriter::new(std::io::BufWriter::new(plugin_to_host_std));
+            handshake_accept(&mut reader, &mut writer, &manifest).unwrap();
+
+            // Read REQ but close connection without responding
+            let _req = reader.read().unwrap().expect("expected REQ");
+            drop(writer);
+            drop(reader);
+        });
+
+        host_from_plugin_std.set_nonblocking(true).unwrap();
+        host_to_plugin_std.set_nonblocking(true).unwrap();
+        let host_read = tokio::net::UnixStream::from_std(host_from_plugin_std).unwrap();
+        let host_write = tokio::net::UnixStream::from_std(host_to_plugin_std).unwrap();
+
+        let mut reader = AsyncFrameReader::new(host_read);
+        let mut writer = AsyncFrameWriter::new(host_write);
+        handshake_async(&mut reader, &mut writer).await.unwrap();
+
+        let result = verify_identity(&mut reader, &mut writer).await;
+        assert!(result.is_err(), "verify_identity must fail on connection close");
+
+        plugin_handle.join().unwrap();
     }
 
 }

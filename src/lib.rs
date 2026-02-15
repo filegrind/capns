@@ -63,6 +63,7 @@ pub use bifaci::io::{
     handshake, handshake_accept,
     AsyncFrameReader, AsyncFrameWriter, handshake_async,
     read_frame_async, write_frame_async,
+    verify_identity,
 };
 pub use bifaci::manifest::*;
 pub use bifaci::plugin_runtime::{PluginRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, PeerCall, StreamError};
