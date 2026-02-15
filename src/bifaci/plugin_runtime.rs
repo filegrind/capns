@@ -273,10 +273,10 @@ impl OutputStream {
         ciborium::into_writer(value, &mut cbor_payload)
             .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR: {}", e)))?;
 
-        let index = {
-            let mut index_guard = self.chunk_index.lock().unwrap();
-            let current = *index_guard;
-            *index_guard += 1;
+        let chunk_index = {
+            let mut chunk_index_guard = self.chunk_index.lock().unwrap();
+            let current = *chunk_index_guard;
+            *chunk_index_guard += 1;
             current
         };
         {
@@ -290,7 +290,7 @@ impl OutputStream {
             self.stream_id.clone(),
             0,
             cbor_payload,
-            index,
+            chunk_index,
             checksum,
         );
         frame.routing_id = self.routing_id.clone();

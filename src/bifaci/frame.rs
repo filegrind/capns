@@ -19,7 +19,7 @@
 //!   8: offset (u64, optional - byte offset in chunked stream)
 //!   9: eof (bool, optional - true on final chunk)
 //!   10: cap (tstr, optional - cap URN for requests)
-//!   14: index (u64, optional - chunk sequence index within stream, starts at 0)
+//!   14: chunk_index (u64, optional - chunk sequence index within stream, starts at 0)
 //!   15: chunk_count (u64, optional - total chunks in STREAM_END, by source's count)
 //!   16: checksum (u64, optional - FNV-1a hash of payload for CHUNK frames)
 //! }
@@ -208,7 +208,7 @@ pub struct Frame {
     /// Cap URN (for requests)
     pub cap: Option<String>,
     /// Chunk sequence index within stream (CHUNK frames only, starts at 0)
-    pub index: Option<u64>,
+    pub chunk_index: Option<u64>,
     /// Total chunk count (STREAM_END frames only, by source's reckoning)
     pub chunk_count: Option<u64>,
     /// FNV-1a checksum of payload (CHUNK frames only)
@@ -233,7 +233,7 @@ impl Frame {
             offset: None,
             eof: None,
             cap: None,
-            index: None,
+            chunk_index: None,
             chunk_count: None,
             checksum: None,
         }
@@ -322,12 +322,12 @@ impl Frame {
     /// * `stream_id` - The stream ID this chunk belongs to
     /// * `seq` - Sequence number within the stream
     /// * `payload` - Chunk data
-    pub fn chunk(req_id: MessageId, stream_id: String, seq: u64, payload: Vec<u8>, index: u64, checksum: u64) -> Self {
+    pub fn chunk(req_id: MessageId, stream_id: String, seq: u64, payload: Vec<u8>, chunk_index: u64, checksum: u64) -> Self {
         let mut frame = Self::new(FrameType::Chunk, req_id);
         frame.stream_id = Some(stream_id);
         frame.seq = seq;
         frame.payload = Some(payload);
-        frame.index = Some(index);
+        frame.chunk_index = Some(chunk_index);
         frame.checksum = Some(checksum);
         frame
     }
@@ -342,7 +342,7 @@ impl Frame {
         offset: u64,
         total_len: Option<u64>,
         is_last: bool,
-        index: u64,
+        chunk_index: u64,
         checksum: u64,
     ) -> Self {
         let mut frame = Self::new(FrameType::Chunk, req_id);
@@ -350,9 +350,9 @@ impl Frame {
         frame.seq = seq;
         frame.payload = Some(payload);
         frame.offset = Some(offset);
-        frame.index = Some(index);
+        frame.chunk_index = Some(chunk_index);
         frame.checksum = Some(checksum);
-        if index == 0 {
+        if chunk_index == 0 {
             frame.len = total_len;
         }
         if is_last {
@@ -1092,7 +1092,7 @@ mod tests {
         let payload2 = b"mid".to_vec();
         let checksum2 = Frame::compute_checksum(&payload2);
         let mid = Frame::chunk_with_offset(id.clone(), stream_id.clone(), 3, payload2, 500, Some(9999), false, 3, checksum2);
-        assert!(mid.len.is_none(), "non-first chunk must not carry len (index != 0)");
+        assert!(mid.len.is_none(), "non-first chunk must not carry len (chunk_index != 0)");
         assert_eq!(mid.offset, Some(500));
 
         let payload3 = b"last".to_vec();
@@ -1392,9 +1392,9 @@ mod tests {
         assert_eq!(checksum, 0xcbf29ce484222325, "empty data produces FNV offset basis");
     }
 
-    // TEST438: Verify CHUNK frame can store index and checksum fields
+    // TEST438: Verify CHUNK frame can store chunk_index and checksum fields
     #[test]
-    fn test_chunk_with_index_and_checksum() {
+    fn test_chunk_with_chunk_index_and_checksum() {
         let id = MessageId::Uuid([1; 16]);
         let stream_id = "test-stream".to_string();
         let payload = b"chunk data".to_vec();
@@ -1406,7 +1406,7 @@ mod tests {
         assert_eq!(frame.id, id);
         assert_eq!(frame.stream_id, Some(stream_id));
         assert_eq!(frame.seq, 5);
-        assert_eq!(frame.index, Some(3), "index should be set");
+        assert_eq!(frame.chunk_index, Some(3), "chunk_index should be set");
         assert_eq!(frame.checksum, Some(checksum), "checksum should be set");
     }
 
@@ -1785,12 +1785,12 @@ mod tests {
     }
 
     // =========================================================================
-    // New Protocol Fields Tests (routing_id, index, chunk_count, checksum)
+    // New Protocol Fields Tests (routing_id, chunk_index, chunk_count, checksum)
     // =========================================================================
 
-    // TEST491: Frame::chunk constructor requires and sets index and checksum
+    // TEST491: Frame::chunk constructor requires and sets chunk_index and checksum
     #[test]
-    fn test_chunk_requires_index_and_checksum() {
+    fn test_chunk_requires_chunk_index_and_checksum() {
         let req_id = MessageId::new_uuid();
         let payload = b"test data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
@@ -1798,7 +1798,7 @@ mod tests {
         let frame = Frame::chunk(req_id.clone(), "stream-1".to_string(), 0, payload.clone(), 5, checksum);
 
         assert_eq!(frame.frame_type, FrameType::Chunk);
-        assert_eq!(frame.index, Some(5), "index must be set");
+        assert_eq!(frame.chunk_index, Some(5), "chunk_index must be set");
         assert_eq!(frame.checksum, Some(checksum), "checksum must be set");
         assert_eq!(frame.payload, Some(payload));
     }
@@ -1836,30 +1836,30 @@ mod tests {
         assert_eq!(hash2, hash3);
     }
 
-    // TEST495: CBOR decode REJECTS CHUNK frame missing index field
+    // TEST495: CBOR decode REJECTS CHUNK frame missing chunk_index field
     #[test]
-    fn test_cbor_rejects_chunk_without_index() {
+    fn test_cbor_rejects_chunk_without_chunk_index() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
         let payload = b"data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
 
-        // Create frame with index, then remove it to simulate corruption
+        // Create frame with chunk_index, then remove it to simulate corruption
         let mut frame = Frame::new(FrameType::Chunk, req_id);
         frame.stream_id = Some("s1".to_string());
         frame.payload = Some(payload);
         frame.checksum = Some(checksum);
-        // index deliberately missing
+        // chunk_index deliberately missing
 
         let encoded = encode_frame(&frame).expect("encoding corrupted frame");
 
         // Decode should FAIL
         let result = decode_frame(&encoded);
-        assert!(result.is_err(), "decode must reject CHUNK without index");
+        assert!(result.is_err(), "decode must reject CHUNK without chunk_index");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("index") || err.contains("CHUNK"),
-                "error must mention missing index: {}", err);
+        assert!(err.contains("chunk_index") || err.contains("CHUNK"),
+                "error must mention missing chunk_index: {}", err);
     }
 
     // TEST496: CBOR decode REJECTS CHUNK frame missing checksum field
@@ -1874,7 +1874,7 @@ mod tests {
         let mut frame = Frame::new(FrameType::Chunk, req_id);
         frame.stream_id = Some("s1".to_string());
         frame.payload = Some(payload);
-        frame.index = Some(0);
+        frame.chunk_index = Some(0);
         // checksum deliberately missing
 
         let encoded = encode_frame(&frame).expect("encoding should succeed");
@@ -1927,9 +1927,9 @@ mod tests {
         assert_eq!(decoded.id, req_id);
     }
 
-    // TEST499: index and checksum roundtrip through CBOR encoding
+    // TEST499: chunk_index and checksum roundtrip through CBOR encoding
     #[test]
-    fn test_index_checksum_cbor_roundtrip() {
+    fn test_chunk_index_checksum_cbor_roundtrip() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -1941,7 +1941,7 @@ mod tests {
         let encoded = encode_frame(&frame).expect("encoding should succeed");
         let decoded = decode_frame(&encoded).expect("decoding should succeed");
 
-        assert_eq!(decoded.index, Some(7), "index must roundtrip");
+        assert_eq!(decoded.chunk_index, Some(7), "chunk_index must roundtrip");
         assert_eq!(decoded.checksum, Some(checksum), "checksum must roundtrip");
         assert_eq!(decoded.payload, Some(payload));
     }
@@ -1968,7 +1968,7 @@ mod tests {
         let frame = Frame::new(FrameType::Req, MessageId::new_uuid());
 
         assert_eq!(frame.routing_id, None);
-        assert_eq!(frame.index, None);
+        assert_eq!(frame.chunk_index, None);
         assert_eq!(frame.chunk_count, None);
         assert_eq!(frame.checksum, None);
     }
@@ -2001,9 +2001,9 @@ mod tests {
         assert_eq!(hash, hash2, "large payload hash must be deterministic");
     }
 
-    // TEST505: chunk_with_offset sets index correctly
+    // TEST505: chunk_with_offset sets chunk_index correctly
     #[test]
-    fn test_chunk_with_offset_sets_index() {
+    fn test_chunk_with_offset_sets_chunk_index() {
         let req_id = MessageId::new_uuid();
         let payload = b"data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
@@ -2016,11 +2016,11 @@ mod tests {
             1024,  // offset
             Some(10000), // total_len
             false, // is_last
-            5,     // index
+            5,     // chunk_index
             checksum,
         );
 
-        assert_eq!(frame.index, Some(5), "index must be set");
+        assert_eq!(frame.chunk_index, Some(5), "chunk_index must be set");
         assert_eq!(frame.checksum, Some(checksum), "checksum must be set");
         assert_eq!(frame.offset, Some(1024));
     }

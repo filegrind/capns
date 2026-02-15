@@ -140,10 +140,10 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CborError> {
         map.push((Value::Integer(keys::ROUTING_ID.into()), routing_id_value));
     }
 
-    if let Some(index) = frame.index {
+    if let Some(chunk_index) = frame.chunk_index {
         map.push((
             Value::Integer(keys::INDEX.into()),
-            Value::Integer((index as i64).into()),
+            Value::Integer((chunk_index as i64).into()),
         ));
     }
 
@@ -325,7 +325,7 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
         _ => MessageId::Uint(0),
     });
 
-    let index = lookup.get(&keys::INDEX).and_then(|v| match v {
+    let chunk_index = lookup.get(&keys::INDEX).and_then(|v| match v {
         Value::Integer(i) => {
             let n: i128 = (*i).into();
             Some(n as u64)
@@ -364,7 +364,7 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
         offset,
         eof,
         cap,
-        index,
+        chunk_index,
         chunk_count,
         checksum,
     };
@@ -372,8 +372,8 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
     // Validate required fields based on frame type
     match frame.frame_type {
         FrameType::Chunk => {
-            if frame.index.is_none() {
-                return Err(CborError::InvalidFrame("CHUNK frame missing required field: index".to_string()));
+            if frame.chunk_index.is_none() {
+                return Err(CborError::InvalidFrame("CHUNK frame missing required field: chunk_index".to_string()));
             }
             if frame.checksum.is_none() {
                 return Err(CborError::InvalidFrame("CHUNK frame missing required field: checksum".to_string()));
@@ -641,7 +641,7 @@ impl<W: Write> FrameWriter<W> {
             let mut frame = Frame::chunk(id.clone(), stream_id.clone(), 0, chunk_data, chunk_index, checksum);
             frame.offset = Some(offset as u64);
 
-            // Set content_type and total len on first chunk (index-based, not seq-based)
+            // Set content_type and total len on first chunk (chunk_index-based, not seq-based)
             if chunk_index == 0 {
                 frame.content_type = Some(content_type.to_string());
                 frame.len = Some(total_len as u64);
@@ -1213,7 +1213,7 @@ mod tests {
 
     // TEST218: Test write_chunked splits data into chunks respecting max_chunk and reconstructs correctly
     // Chunks from write_chunked have seq=0. SeqAssigner at the output stage assigns final seq.
-    // Chunk ordering within a stream is tracked by chunk_index (index field).
+    // Chunk ordering within a stream is tracked by chunk_index (chunk_index field).
     #[test]
     fn test_write_chunked() {
         let limits = Limits {
@@ -1250,7 +1250,7 @@ mod tests {
                     assert_eq!(f.id, id);
                     assert_eq!(f.seq, 0, "write_chunked produces seq=0; SeqAssigner assigns at output stage");
                     // chunk_index tracks ordering within the chunked write
-                    assert_eq!(f.index, Some(chunk_count), "chunk_index must increment monotonically");
+                    assert_eq!(f.chunk_index, Some(chunk_count), "chunk_index must increment monotonically");
 
                     if chunk_count == 0 {
                         first_chunk_had_len = f.len.is_some();
@@ -1613,7 +1613,7 @@ mod tests {
         assert!(decoded.media_urn.is_none(), "StreamEnd should not have media_urn");
     }
 
-    // TEST440: CHUNK frame with index and checksum roundtrips through encode/decode
+    // TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode
     #[test]
     fn test_chunk_index_checksum_roundtrip() {
         let id = MessageId::new_uuid();
@@ -1631,7 +1631,7 @@ mod tests {
         assert_eq!(decoded.stream_id, Some(stream_id));
         assert_eq!(decoded.seq, 5);
         assert_eq!(decoded.payload, Some(payload));
-        assert_eq!(decoded.index, Some(3), "index must roundtrip");
+        assert_eq!(decoded.chunk_index, Some(3), "chunk_index must roundtrip");
         assert_eq!(decoded.checksum, Some(checksum), "checksum must roundtrip");
     }
 
@@ -1687,7 +1687,7 @@ mod tests {
         assert_eq!(frames.len(), 2);
         for (i, f) in frames.iter().enumerate() {
             assert_eq!(f.seq, 0, "chunk {} must have seq=0", i);
-            assert_eq!(f.index, Some(i as u64), "chunk {} must have index={}", i, i);
+            assert_eq!(f.chunk_index, Some(i as u64), "chunk {} must have chunk_index={}", i, i);
         }
     }
 
