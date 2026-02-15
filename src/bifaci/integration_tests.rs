@@ -804,7 +804,7 @@ mod tests {
 
             let frame = reader.read().unwrap().unwrap();
             assert_eq!(frame.frame_type, FrameType::Req);
-            assert_eq!(frame.cap.as_deref(), Some("CAP_IDENTITY"));
+            assert_eq!(frame.cap.as_deref(), Some(CAP_IDENTITY));
             assert_eq!(frame.payload.as_deref(), Some(b"hello".as_ref()));
 
             let mut seq = SeqAssigner::new();
@@ -823,7 +823,7 @@ mod tests {
 
         let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        let mut req = Frame::req(request_id.clone(), "CAP_IDENTITY", b"hello".to_vec(), "application/json");
+        let mut req = Frame::req(request_id.clone(), CAP_IDENTITY, b"hello".to_vec(), "application/json");
         seq.assign(&mut req);
         writer.write(&req).unwrap();
 

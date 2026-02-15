@@ -5133,4 +5133,438 @@ mod tests {
         assert!(runtime.find_handler(CAP_DISCARD).is_some(),
             "Discard handler must still be present after overriding identity");
     }
+
+    // =========================================================================
+    // Stream Abstractions Tests (InputStream, InputPackage, OutputStream, PeerCall)
+    // =========================================================================
+
+    use crossbeam_channel::{unbounded, Sender};
+    use ciborium::Value;
+    use std::sync::Arc;
+
+    // Helper: Create test InputStream from chunks
+    fn create_test_input_stream(media_urn: &str, chunks: Vec<Result<Value, StreamError>>) -> InputStream {
+        let (tx, rx) = unbounded();
+        for chunk in chunks {
+            tx.send(chunk).unwrap();
+        }
+        drop(tx); // Close channel
+        InputStream {
+            media_urn: media_urn.to_string(),
+            rx,
+        }
+    }
+
+    // TEST529: InputStream iterator yields chunks in order
+    #[test]
+    fn test_input_stream_iterator_order() {
+        let chunks = vec![
+            Ok(Value::Bytes(b"chunk1".to_vec())),
+            Ok(Value::Bytes(b"chunk2".to_vec())),
+            Ok(Value::Bytes(b"chunk3".to_vec())),
+        ];
+        let stream = create_test_input_stream("media:test", chunks);
+
+        let collected: Vec<_> = stream.collect();
+        assert_eq!(collected.len(), 3);
+        assert_eq!(collected[0].as_ref().unwrap(), &Value::Bytes(b"chunk1".to_vec()));
+        assert_eq!(collected[1].as_ref().unwrap(), &Value::Bytes(b"chunk2".to_vec()));
+        assert_eq!(collected[2].as_ref().unwrap(), &Value::Bytes(b"chunk3".to_vec()));
+    }
+
+    // TEST530: InputStream::collect_bytes concatenates byte chunks
+    #[test]
+    fn test_input_stream_collect_bytes() {
+        let chunks = vec![
+            Ok(Value::Bytes(b"hello".to_vec())),
+            Ok(Value::Bytes(b" ".to_vec())),
+            Ok(Value::Bytes(b"world".to_vec())),
+        ];
+        let stream = create_test_input_stream("media:bytes", chunks);
+
+        let result = stream.collect_bytes().expect("collect must succeed");
+        assert_eq!(result, b"hello world");
+    }
+
+    // TEST531: InputStream::collect_bytes handles text chunks
+    #[test]
+    fn test_input_stream_collect_bytes_text() {
+        let chunks = vec![
+            Ok(Value::Text("hello".to_string())),
+            Ok(Value::Text(" world".to_string())),
+        ];
+        let stream = create_test_input_stream("media:text", chunks);
+
+        let result = stream.collect_bytes().expect("collect must succeed");
+        assert_eq!(result, b"hello world");
+    }
+
+    // TEST532: InputStream empty stream produces empty bytes
+    #[test]
+    fn test_input_stream_empty() {
+        let chunks = vec![];
+        let stream = create_test_input_stream("media:void", chunks);
+
+        let result = stream.collect_bytes().expect("empty stream must succeed");
+        assert_eq!(result, b"");
+    }
+
+    // TEST533: InputStream propagates errors
+    #[test]
+    fn test_input_stream_error_propagation() {
+        let chunks = vec![
+            Ok(Value::Bytes(b"data".to_vec())),
+            Err(StreamError::Protocol("test error".to_string())),
+        ];
+        let stream = create_test_input_stream("media:test", chunks);
+
+        let result = stream.collect_bytes();
+        assert!(result.is_err(), "error must propagate");
+
+        if let Err(StreamError::Protocol(msg)) = result {
+            assert_eq!(msg, "test error");
+        } else {
+            panic!("expected Protocol error");
+        }
+    }
+
+    // TEST534: InputStream::media_urn returns correct URN
+    #[test]
+    fn test_input_stream_media_urn() {
+        let chunks = vec![Ok(Value::Bytes(b"data".to_vec()))];
+        let stream = create_test_input_stream("media:image;format=png", chunks);
+
+        assert_eq!(stream.media_urn(), "media:image;format=png");
+    }
+
+    // TEST535: InputPackage iterator yields streams
+    #[test]
+    fn test_input_package_iteration() {
+        let (tx, rx) = unbounded();
+
+        // Send 3 streams
+        for i in 0..3 {
+            let (stream_tx, stream_rx) = unbounded();
+            stream_tx.send(Ok(Value::Bytes(format!("stream{}", i).into_bytes()))).unwrap();
+            drop(stream_tx);
+
+            tx.send(Ok(InputStream {
+                media_urn: format!("media:stream{}", i),
+                rx: stream_rx,
+            })).unwrap();
+        }
+        drop(tx);
+
+        let package = InputPackage {
+            rx,
+            _demux_handle: None,
+        };
+
+        let streams: Vec<_> = package.collect();
+        assert_eq!(streams.len(), 3, "must yield 3 streams");
+
+        for (i, result) in streams.iter().enumerate() {
+            assert!(result.is_ok(), "stream {} must be Ok", i);
+            let stream = result.as_ref().unwrap();
+            assert_eq!(stream.media_urn(), format!("media:stream{}", i));
+        }
+    }
+
+    // TEST536: InputPackage::collect_all_bytes aggregates all streams
+    #[test]
+    fn test_input_package_collect_all_bytes() {
+        let (tx, rx) = unbounded();
+
+        // Stream 1: "hello"
+        let (s1_tx, s1_rx) = unbounded();
+        s1_tx.send(Ok(Value::Bytes(b"hello".to_vec()))).unwrap();
+        drop(s1_tx);
+        tx.send(Ok(InputStream {
+            media_urn: "media:s1".to_string(),
+            rx: s1_rx,
+        })).unwrap();
+
+        // Stream 2: " world"
+        let (s2_tx, s2_rx) = unbounded();
+        s2_tx.send(Ok(Value::Bytes(b" world".to_vec()))).unwrap();
+        drop(s2_tx);
+        tx.send(Ok(InputStream {
+            media_urn: "media:s2".to_string(),
+            rx: s2_rx,
+        })).unwrap();
+
+        drop(tx);
+
+        let package = InputPackage {
+            rx,
+            _demux_handle: None,
+        };
+
+        let all_bytes = package.collect_all_bytes().expect("must succeed");
+        assert_eq!(all_bytes, b"hello world");
+    }
+
+    // TEST537: InputPackage empty package produces empty bytes
+    #[test]
+    fn test_input_package_empty() {
+        let (tx, rx) = unbounded();
+        drop(tx); // No streams
+
+        let package = InputPackage {
+            rx,
+            _demux_handle: None,
+        };
+
+        let all_bytes = package.collect_all_bytes().expect("empty package must succeed");
+        assert_eq!(all_bytes, b"");
+    }
+
+    // TEST538: InputPackage propagates stream errors
+    #[test]
+    fn test_input_package_error_propagation() {
+        let (tx, rx) = unbounded();
+
+        // Good stream
+        let (s1_tx, s1_rx) = unbounded();
+        s1_tx.send(Ok(Value::Bytes(b"data".to_vec()))).unwrap();
+        drop(s1_tx);
+        tx.send(Ok(InputStream {
+            media_urn: "media:good".to_string(),
+            rx: s1_rx,
+        })).unwrap();
+
+        // Error stream
+        let (s2_tx, s2_rx) = unbounded();
+        s2_tx.send(Err(StreamError::Protocol("stream error".to_string()))).unwrap();
+        drop(s2_tx);
+        tx.send(Ok(InputStream {
+            media_urn: "media:bad".to_string(),
+            rx: s2_rx,
+        })).unwrap();
+
+        drop(tx);
+
+        let package = InputPackage {
+            rx,
+            _demux_handle: None,
+        };
+
+        let result = package.collect_all_bytes();
+        assert!(result.is_err(), "error must propagate from bad stream");
+    }
+
+    // Mock FrameSender for testing OutputStream
+    struct MockFrameSender {
+        frames: Arc<Mutex<Vec<Frame>>>,
+    }
+
+    impl MockFrameSender {
+        fn new() -> (Self, Arc<Mutex<Vec<Frame>>>) {
+            let frames = Arc::new(Mutex::new(Vec::new()));
+            let sender = Self {
+                frames: Arc::clone(&frames),
+            };
+            (sender, frames)
+        }
+    }
+
+    impl FrameSender for MockFrameSender {
+        fn send(&self, frame: &Frame) -> Result<(), RuntimeError> {
+            self.frames.lock().unwrap().push(frame.clone());
+            Ok(())
+        }
+    }
+
+    // TEST539: OutputStream sends STREAM_START on first write
+    #[test]
+    fn test_output_stream_sends_stream_start() {
+        let (sender, frames) = MockFrameSender::new();
+        let mut stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:test".to_string(),
+            MessageId::new_uuid(),
+            None,
+            256_000,
+        );
+
+        stream.emit_cbor(&Value::Bytes(b"test".to_vec())).expect("write must succeed");
+
+        let captured = frames.lock().unwrap();
+        assert!(captured.len() >= 1, "must send at least STREAM_START");
+        assert_eq!(captured[0].frame_type, FrameType::StreamStart,
+                   "first frame must be STREAM_START");
+        assert_eq!(captured[0].stream_id, Some("stream-1".to_string()));
+    }
+
+    // TEST540: OutputStream::close sends STREAM_END with correct chunk_count
+    #[test]
+    fn test_output_stream_close_sends_stream_end() {
+        let (sender, frames) = MockFrameSender::new();
+        let mut stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:test".to_string(),
+            MessageId::new_uuid(),
+            None,
+            256_000,
+        );
+
+        // Write 3 chunks
+        stream.emit_cbor(&Value::Bytes(b"chunk1".to_vec())).unwrap();
+        stream.emit_cbor(&Value::Bytes(b"chunk2".to_vec())).unwrap();
+        stream.emit_cbor(&Value::Bytes(b"chunk3".to_vec())).unwrap();
+
+        stream.close().expect("close must succeed");
+
+        let captured = frames.lock().unwrap();
+        let stream_end = captured.iter().find(|f| f.frame_type == FrameType::StreamEnd)
+            .expect("must have STREAM_END");
+
+        assert_eq!(stream_end.chunk_count, Some(3), "chunk_count must be 3");
+    }
+
+    // TEST541: OutputStream chunks large data correctly
+    #[test]
+    fn test_output_stream_chunks_large_data() {
+        let (sender, frames) = MockFrameSender::new();
+        let max_chunk = 100; // Small chunk size for testing
+        let mut stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:bytes".to_string(),
+            MessageId::new_uuid(),
+            None,
+            max_chunk,
+        );
+
+        // Write 250 bytes (should create 3 chunks: 100, 100, 50)
+        let large_data = vec![0xAA; 250];
+        stream.emit_cbor(&Value::Bytes(large_data)).unwrap();
+        stream.close().unwrap();
+
+        let captured = frames.lock().unwrap();
+        let chunks: Vec<_> = captured.iter()
+            .filter(|f| f.frame_type == FrameType::Chunk)
+            .collect();
+
+        assert!(chunks.len() >= 3, "large data must be chunked (got {} chunks)", chunks.len());
+    }
+
+    // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
+    #[test]
+    fn test_output_stream_empty() {
+        let (sender, frames) = MockFrameSender::new();
+        let mut stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:void".to_string(),
+            MessageId::new_uuid(),
+            None,
+            256_000,
+        );
+
+        stream.close().expect("close must succeed");
+
+        let captured = frames.lock().unwrap();
+        assert!(captured.iter().any(|f| f.frame_type == FrameType::StreamStart));
+        assert!(captured.iter().any(|f| f.frame_type == FrameType::StreamEnd));
+
+        let chunk_count = captured.iter()
+            .filter(|f| f.frame_type == FrameType::Chunk)
+            .count();
+        assert_eq!(chunk_count, 0, "empty stream must have zero chunks");
+    }
+
+    // TEST543: PeerCall::arg creates OutputStream with correct stream_id
+    #[test]
+    fn test_peer_call_arg_creates_stream() {
+        let (sender, _frames) = MockFrameSender::new();
+        let (response_tx, response_rx) = unbounded();
+        drop(response_tx); // Close immediately for test
+
+        let peer = PeerCall {
+            sender: Arc::new(sender),
+            request_id: MessageId::new_uuid(),
+            max_chunk: 256_000,
+            response_rx: Some(response_rx),
+        };
+
+        let arg_stream = peer.arg("media:argument");
+        assert_eq!(arg_stream.media_urn, "media:argument");
+        assert!(!arg_stream.stream_id.is_empty(), "stream_id must be generated");
+    }
+
+    // TEST544: PeerCall::finish sends END frame
+    #[test]
+    fn test_peer_call_finish_sends_end() {
+        let (sender, frames) = MockFrameSender::new();
+        let (response_tx, response_rx) = unbounded();
+
+        // Send empty response stream
+        drop(response_tx);
+
+        let request_id = MessageId::new_uuid();
+        let peer = PeerCall {
+            sender: Arc::new(sender),
+            request_id: request_id.clone(),
+            max_chunk: 256_000,
+            response_rx: Some(response_rx),
+        };
+
+        let _response = peer.finish().expect("finish must succeed");
+
+        let captured = frames.lock().unwrap();
+        let end_frame = captured.iter().find(|f| f.frame_type == FrameType::End)
+            .expect("must send END frame");
+
+        assert_eq!(end_frame.id, request_id, "END must have correct request ID");
+    }
+
+    // TEST545: PeerCall::finish returns InputStream for response
+    #[test]
+    fn test_peer_call_finish_returns_response_stream() {
+        let (sender, _frames) = MockFrameSender::new();
+        let (response_tx, response_rx) = unbounded();
+
+        // Send response frames (simulating STREAM_START + CHUNK + STREAM_END)
+        let req_id = MessageId::new_uuid();
+
+        // STREAM_START
+        let mut start = Frame::new(FrameType::StreamStart, req_id.clone());
+        start.stream_id = Some("response-stream".to_string());
+        start.media_urn = Some("media:response".to_string());
+        response_tx.send(start).unwrap();
+
+        // CHUNK - payload must be CBOR-encoded
+        let raw_data = b"response data".to_vec();
+        let mut cbor_payload = Vec::new();
+        ciborium::into_writer(&Value::Bytes(raw_data.clone()), &mut cbor_payload).unwrap();
+        let checksum = Frame::compute_checksum(&cbor_payload);
+        response_tx.send(Frame::chunk(
+            req_id.clone(),
+            "response-stream".to_string(),
+            0,
+            cbor_payload,
+            0,
+            checksum,
+        )).unwrap();
+
+        // STREAM_END
+        response_tx.send(Frame::stream_end(req_id.clone(), "response-stream".to_string(), 1)).unwrap();
+        drop(response_tx);
+
+        let peer = PeerCall {
+            sender: Arc::new(sender),
+            request_id: req_id,
+            max_chunk: 256_000,
+            response_rx: Some(response_rx),
+        };
+
+        let response_stream = peer.finish().expect("finish must succeed");
+        assert_eq!(response_stream.media_urn(), "media:response");
+
+        let bytes = response_stream.collect_bytes().expect("collect must succeed");
+        assert_eq!(bytes, b"response data");
+    }
 }

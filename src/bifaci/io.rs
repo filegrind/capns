@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn test_encode_decode_roundtrip() {
         let id = MessageId::new_uuid();
-        let original = Frame::req(id.clone(), "cap:op=test", b"payload".to_vec(), "application/json");
+        let original = Frame::req(id.clone(), r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
 
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
@@ -1117,7 +1117,7 @@ mod tests {
     fn test_frame_io_roundtrip() {
         let limits = Limits::default();
         let id = MessageId::new_uuid();
-        let original = Frame::req(id, "cap:op=test", b"payload".to_vec(), "application/json");
+        let original = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
 
         let mut buf = Vec::new();
         write_frame(&mut buf, &original, &limits).expect("write should succeed");
@@ -1147,7 +1147,7 @@ mod tests {
         let id2 = MessageId::new_uuid();
         let id3 = MessageId::new_uuid();
 
-        let f1 = Frame::req(id1.clone(), "cap:op=first", b"one".to_vec(), "text/plain");
+        let f1 = Frame::req(id1.clone(), r#"cap:in="media:void";op=first;out="media:void""#, b"one".to_vec(), "text/plain");
         let payload2 = b"two".to_vec();
         let checksum2 = Frame::compute_checksum(&payload2);
         let f2 = Frame::chunk(id2.clone(), "stream-2".to_string(), 0, payload2, 0, checksum2);
@@ -1186,7 +1186,7 @@ mod tests {
 
         let id = MessageId::new_uuid();
         let large_payload = vec![0u8; 200];
-        let frame = Frame::req(id, "cap:op=test", large_payload, "application/octet-stream");
+        let frame = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, large_payload, "application/octet-stream");
 
         let mut buf = Vec::new();
         let result = write_frame(&mut buf, &frame, &limits);
@@ -1201,7 +1201,7 @@ mod tests {
 
         // Write a frame with generous limits
         let id = MessageId::new_uuid();
-        let frame = Frame::req(id, "cap:op=test", vec![0u8; 200], "text/plain");
+        let frame = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, vec![0u8; 200], "text/plain");
         let mut buf = Vec::new();
         write_frame(&mut buf, &frame, &write_limits).unwrap();
 
@@ -1486,7 +1486,7 @@ mod tests {
             // Read host's HELLO (consume it)
             let _ = reader.read().unwrap();
             // Send a REQ instead of HELLO
-            let bad_frame = Frame::req(MessageId::Uint(1), "cap:op=bad", vec![], "text/plain");
+            let bad_frame = Frame::req(MessageId::Uint(1), r#"cap:in="media:void";op=bad;out="media:void""#, vec![], "text/plain");
             writer.write(&bad_frame).unwrap();
         });
 
@@ -1532,7 +1532,7 @@ mod tests {
         }
 
         let id = MessageId::new_uuid();
-        let frame = Frame::req(id.clone(), "cap:op=binary", data.clone(), "application/octet-stream");
+        let frame = Frame::req(id.clone(), r#"cap:in="media:void";op=binary;out="media:void""#, data.clone(), "application/octet-stream");
 
         let encoded = encode_frame(&frame).unwrap();
         let decoded = decode_frame(&encoded).unwrap();
@@ -1551,7 +1551,7 @@ mod tests {
     // TEST399a: RelayNotify encode/decode roundtrip preserves manifest and limits
     #[test]
     fn test_relay_notify_roundtrip() {
-        let manifest = b"{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}";
+        let manifest = br#"{"caps":["cap:in=\"media:void\";op=test;out=\"media:void\"","cap:in=\"media:void\";op=convert;out=\"media:void\""]}"#;
         let limits = crate::bifaci::frame::Limits { max_frame: 2_000_000, max_chunk: 128_000, ..crate::bifaci::frame::Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
 

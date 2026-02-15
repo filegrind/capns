@@ -37,6 +37,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use crate::CapUrn;
 
 /// Protocol version. Version 2: Result-based emitters, negotiated chunk limits, per-request errors.
 pub const PROTOCOL_VERSION: u8 = 2;
@@ -295,7 +296,14 @@ impl Frame {
     }
 
     /// Create a REQ frame for invoking a cap
+    ///
+    /// # Panics
+    /// Panics if cap_urn is not a valid cap URN.
     pub fn req(id: MessageId, cap_urn: &str, payload: Vec<u8>, content_type: &str) -> Self {
+        // HARD VALIDATION: cap URN must be valid
+        CapUrn::from_string(cap_urn)
+            .unwrap_or_else(|_| panic!("Invalid cap URN: '{}'", cap_urn));
+
         let mut frame = Self::new(FrameType::Req, id);
         frame.cap = Some(cap_urn.to_string());
         frame.payload = Some(payload);
@@ -810,6 +818,13 @@ impl ReorderBuffer {
             Ok(ready)
         } else if frame.seq > state.expected_seq {
             // Out-of-order: buffer it
+            // Check if this seq is already buffered (duplicate)
+            if state.buffer.contains_key(&frame.seq) {
+                return Err(CborError::Protocol(format!(
+                    "stale/duplicate seq: seq {} already buffered (expected >= {})",
+                    frame.seq, state.expected_seq,
+                )));
+            }
             if state.buffer.len() >= self.max_buffer_per_flow {
                 return Err(CborError::Protocol(format!(
                     "reorder buffer overflow: flow has {} buffered frames (max {}), \
@@ -992,10 +1007,10 @@ mod tests {
     #[test]
     fn test_req_frame() {
         let id = MessageId::new_uuid();
-        let frame = Frame::req(id.clone(), "cap:op=test", b"payload".to_vec(), "application/json");
+        let frame = Frame::req(id.clone(), r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
         assert_eq!(frame.frame_type, FrameType::Req);
         assert_eq!(frame.id, id);
-        assert_eq!(frame.cap, Some("cap:op=test".to_string()));
+        assert_eq!(frame.cap, Some(r#"cap:in="media:void";op=test;out="media:void""#.to_string()));
         assert_eq!(frame.payload, Some(b"payload".to_vec()));
         assert_eq!(frame.content_type, Some("application/json".to_string()));
         assert_eq!(frame.version, PROTOCOL_VERSION);
@@ -1102,7 +1117,7 @@ mod tests {
     // TEST191: Test error_code and error_message return None for non-Err frame types
     #[test]
     fn test_error_accessors_on_non_err_frame() {
-        let req = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
+        let req = Frame::req(MessageId::new_uuid(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
         assert!(req.error_code().is_none(), "REQ must have no error_code");
         assert!(req.error_message().is_none(), "REQ must have no error_message");
 
@@ -1113,7 +1128,7 @@ mod tests {
     // TEST192: Test log_level and log_message return None for non-Log frame types
     #[test]
     fn test_log_accessors_on_non_log_frame() {
-        let req = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
+        let req = Frame::req(MessageId::new_uuid(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
         assert!(req.log_level().is_none(), "REQ must have no log_level");
         assert!(req.log_message().is_none(), "REQ must have no log_message");
     }
@@ -1242,7 +1257,7 @@ mod tests {
     // TEST204: Test Frame::req with empty payload stores Some(empty vec) not None
     #[test]
     fn test_req_frame_empty_payload() {
-        let frame = Frame::req(MessageId::new_uuid(), "cap:op=test", vec![], "text/plain");
+        let frame = Frame::req(MessageId::new_uuid(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
         assert_eq!(frame.payload, Some(vec![]), "empty payload is still Some(vec![])");
     }
 
@@ -1322,8 +1337,7 @@ mod tests {
     // TEST401: Verify relay_notify factory stores manifest and limits, and accessors extract them
     #[test]
     fn test_relay_notify_frame() {
-        let manifest = b"{\"caps\":[\"cap:op=test\"]}";
-        let limits = Limits { max_frame: 2_000_000, max_chunk: 128_000, ..Limits::default() };
+        let manifest = br#"{"caps":["cap:in=\"media:void\";op=test;out=\"media:void\""]}"#;        let limits = Limits { max_frame: 2_000_000, max_chunk: 128_000, ..Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
 
         assert_eq!(frame.frame_type, FrameType::RelayNotify);
@@ -1768,5 +1782,713 @@ mod tests {
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].frame_type, FrameType::Err);
         assert_eq!(ready[0].seq, 1);
+    }
+
+    // =========================================================================
+    // New Protocol Fields Tests (routing_id, index, chunk_count, checksum)
+    // =========================================================================
+
+    // TEST491: Frame::chunk constructor requires and sets index and checksum
+    #[test]
+    fn test_chunk_requires_index_and_checksum() {
+        let req_id = MessageId::new_uuid();
+        let payload = b"test data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        let frame = Frame::chunk(req_id.clone(), "stream-1".to_string(), 0, payload.clone(), 5, checksum);
+
+        assert_eq!(frame.frame_type, FrameType::Chunk);
+        assert_eq!(frame.index, Some(5), "index must be set");
+        assert_eq!(frame.checksum, Some(checksum), "checksum must be set");
+        assert_eq!(frame.payload, Some(payload));
+    }
+
+    // TEST492: Frame::stream_end constructor requires and sets chunk_count
+    #[test]
+    fn test_stream_end_requires_chunk_count() {
+        let req_id = MessageId::new_uuid();
+
+        let frame = Frame::stream_end(req_id.clone(), "stream-1".to_string(), 42);
+
+        assert_eq!(frame.frame_type, FrameType::StreamEnd);
+        assert_eq!(frame.chunk_count, Some(42), "chunk_count must be set");
+        assert_eq!(frame.stream_id, Some("stream-1".to_string()));
+    }
+
+    // TEST493: compute_checksum produces correct FNV-1a hash for known test vectors
+    #[test]
+    fn test_compute_checksum_fnv1a_test_vectors() {
+        // FNV-1a standard test vectors
+        assert_eq!(Frame::compute_checksum(b""), 0xcbf29ce484222325, "empty string hash");
+        assert_eq!(Frame::compute_checksum(b"a"), 0xaf63dc4c8601ec8c, "single byte 'a'");
+        assert_eq!(Frame::compute_checksum(b"foobar"), 0x85944171f73967e8, "foobar string");
+    }
+
+    // TEST494: compute_checksum is deterministic
+    #[test]
+    fn test_compute_checksum_deterministic() {
+        let data = b"test data for hashing".to_vec();
+        let hash1 = Frame::compute_checksum(&data);
+        let hash2 = Frame::compute_checksum(&data);
+        let hash3 = Frame::compute_checksum(&data);
+
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash2, hash3);
+    }
+
+    // TEST495: CBOR decode REJECTS CHUNK frame missing index field
+    #[test]
+    fn test_cbor_rejects_chunk_without_index() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let req_id = MessageId::new_uuid();
+        let payload = b"data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        // Create frame with index, then remove it to simulate corruption
+        let mut frame = Frame::new(FrameType::Chunk, req_id);
+        frame.stream_id = Some("s1".to_string());
+        frame.payload = Some(payload);
+        frame.checksum = Some(checksum);
+        // index deliberately missing
+
+        let encoded = encode_frame(&frame).expect("encoding corrupted frame");
+
+        // Decode should FAIL
+        let result = decode_frame(&encoded);
+        assert!(result.is_err(), "decode must reject CHUNK without index");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("index") || err.contains("CHUNK"),
+                "error must mention missing index: {}", err);
+    }
+
+    // TEST496: CBOR decode REJECTS CHUNK frame missing checksum field
+    #[test]
+    fn test_cbor_rejects_chunk_without_checksum() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let req_id = MessageId::new_uuid();
+        let payload = b"data".to_vec();
+
+        // Create frame without checksum (will fail decoding)
+        let mut frame = Frame::new(FrameType::Chunk, req_id);
+        frame.stream_id = Some("s1".to_string());
+        frame.payload = Some(payload);
+        frame.index = Some(0);
+        // checksum deliberately missing
+
+        let encoded = encode_frame(&frame).expect("encoding should succeed");
+
+        // Decode should FAIL
+        let result = decode_frame(&encoded);
+        assert!(result.is_err(), "decode must reject CHUNK without checksum");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("checksum") || err.contains("CHUNK"),
+                "error must mention missing checksum: {}", err);
+    }
+
+    // TEST497: CBOR decode REJECTS STREAM_END frame missing chunk_count field
+    #[test]
+    fn test_cbor_rejects_stream_end_without_chunk_count() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let req_id = MessageId::new_uuid();
+
+        // Create STREAM_END without chunk_count
+        let mut frame = Frame::new(FrameType::StreamEnd, req_id);
+        frame.stream_id = Some("s1".to_string());
+        // chunk_count deliberately missing
+
+        let encoded = encode_frame(&frame).expect("encoding should succeed");
+
+        // Decode should FAIL
+        let result = decode_frame(&encoded);
+        assert!(result.is_err(), "decode must reject STREAM_END without chunk_count");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("chunk_count") || err.contains("STREAM_END"),
+                "error must mention missing chunk_count: {}", err);
+    }
+
+    // TEST498: routing_id field roundtrips through CBOR encoding
+    #[test]
+    fn test_routing_id_cbor_roundtrip() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let req_id = MessageId::new_uuid();
+        let routing_id = MessageId::new_uuid();
+
+        let mut frame = Frame::req(req_id.clone(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
+        frame.routing_id = Some(routing_id.clone());
+
+        let encoded = encode_frame(&frame).expect("encoding should succeed");
+        let decoded = decode_frame(&encoded).expect("decoding should succeed");
+
+        assert_eq!(decoded.routing_id, Some(routing_id), "routing_id must roundtrip");
+        assert_eq!(decoded.id, req_id);
+    }
+
+    // TEST499: index and checksum roundtrip through CBOR encoding
+    #[test]
+    fn test_index_checksum_cbor_roundtrip() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let req_id = MessageId::new_uuid();
+        let payload = b"test payload".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        let frame = Frame::chunk(req_id.clone(), "s1".to_string(), 0, payload.clone(), 7, checksum);
+
+        let encoded = encode_frame(&frame).expect("encoding should succeed");
+        let decoded = decode_frame(&encoded).expect("decoding should succeed");
+
+        assert_eq!(decoded.index, Some(7), "index must roundtrip");
+        assert_eq!(decoded.checksum, Some(checksum), "checksum must roundtrip");
+        assert_eq!(decoded.payload, Some(payload));
+    }
+
+    // TEST500: chunk_count roundtrips through CBOR encoding
+    #[test]
+    fn test_chunk_count_cbor_roundtrip() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let req_id = MessageId::new_uuid();
+
+        let frame = Frame::stream_end(req_id.clone(), "s1".to_string(), 42);
+
+        let encoded = encode_frame(&frame).expect("encoding should succeed");
+        let decoded = decode_frame(&encoded).expect("decoding should succeed");
+
+        assert_eq!(decoded.chunk_count, Some(42), "chunk_count must roundtrip");
+        assert_eq!(decoded.stream_id, Some("s1".to_string()));
+    }
+
+    // TEST501: Frame::new initializes new fields to None
+    #[test]
+    fn test_frame_new_initializes_optional_fields_none() {
+        let frame = Frame::new(FrameType::Req, MessageId::new_uuid());
+
+        assert_eq!(frame.routing_id, None);
+        assert_eq!(frame.index, None);
+        assert_eq!(frame.chunk_count, None);
+        assert_eq!(frame.checksum, None);
+    }
+
+    // TEST502: Keys module has constants for new fields
+    #[test]
+    fn test_keys_module_new_field_constants() {
+        assert_eq!(keys::ROUTING_ID, 13);
+        assert_eq!(keys::INDEX, 14);
+        assert_eq!(keys::CHUNK_COUNT, 15);
+        assert_eq!(keys::CHECKSUM, 16);
+    }
+
+    // TEST503: compute_checksum handles empty data correctly
+    #[test]
+    fn test_compute_checksum_empty_data() {
+        let hash = Frame::compute_checksum(b"");
+        assert_eq!(hash, 0xcbf29ce484222325, "empty data should produce FNV offset basis");
+    }
+
+    // TEST504: compute_checksum handles large payloads without overflow
+    #[test]
+    fn test_compute_checksum_large_payload() {
+        let large_data = vec![0xAA; 1_000_000];
+        let hash = Frame::compute_checksum(&large_data);
+        assert_ne!(hash, 0, "large payload should produce non-zero hash");
+
+        // Verify determinism with large data
+        let hash2 = Frame::compute_checksum(&large_data);
+        assert_eq!(hash, hash2, "large payload hash must be deterministic");
+    }
+
+    // TEST505: chunk_with_offset sets index correctly
+    #[test]
+    fn test_chunk_with_offset_sets_index() {
+        let req_id = MessageId::new_uuid();
+        let payload = b"data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        let frame = Frame::chunk_with_offset(
+            req_id,
+            "s1".to_string(),
+            0,     // seq
+            payload,
+            1024,  // offset
+            Some(10000), // total_len
+            false, // is_last
+            5,     // index
+            checksum,
+        );
+
+        assert_eq!(frame.index, Some(5), "index must be set");
+        assert_eq!(frame.checksum, Some(checksum), "checksum must be set");
+        assert_eq!(frame.offset, Some(1024));
+    }
+
+    // TEST506: Different data produces different checksums
+    #[test]
+    fn test_compute_checksum_different_data_different_hash() {
+        let data1 = b"hello".to_vec();
+        let data2 = b"world".to_vec();
+
+        let hash1 = Frame::compute_checksum(&data1);
+        let hash2 = Frame::compute_checksum(&data2);
+
+        assert_ne!(hash1, hash2, "different data must produce different hashes");
+    }
+
+    // =========================================================================
+    // ReorderBuffer Advanced Edge Cases
+    // =========================================================================
+
+    // TEST507: ReorderBuffer isolates flows by XID (routing_id) - same RID different XIDs
+    #[test]
+    fn test_reorder_buffer_xid_isolation() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+        let xid_a = MessageId::new_uuid();
+        let xid_b = MessageId::new_uuid();
+
+        // Flow A (rid, xid_a): receive seq 1 first
+        let ready_a1 = buf.accept(make_flow_frame(&rid, Some(&xid_a), 1)).unwrap();
+        assert!(ready_a1.is_empty(), "xid_a seq 1 buffered");
+
+        // Flow B (rid, xid_b): receive seq 0 (different flow, should deliver immediately)
+        let ready_b0 = buf.accept(make_flow_frame(&rid, Some(&xid_b), 0)).unwrap();
+        assert_eq!(ready_b0.len(), 1, "xid_b seq 0 delivers immediately");
+        assert_eq!(ready_b0[0].seq, 0);
+
+        // Flow A: receive seq 0, should deliver 0+1
+        let ready_a0 = buf.accept(make_flow_frame(&rid, Some(&xid_a), 0)).unwrap();
+        assert_eq!(ready_a0.len(), 2, "xid_a delivers 0 and buffered 1");
+        assert_eq!(ready_a0[0].seq, 0);
+        assert_eq!(ready_a0[1].seq, 1);
+
+        // Verify both flows are independent
+        let ready_b1 = buf.accept(make_flow_frame(&rid, Some(&xid_b), 1)).unwrap();
+        assert_eq!(ready_b1.len(), 1);
+    }
+
+    // TEST508: ReorderBuffer rejects duplicate seq already in buffer
+    #[test]
+    fn test_reorder_buffer_duplicate_buffered_seq() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        // Buffer seq 1 (waiting for seq 0)
+        buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+
+        // Try to buffer seq 1 again - this is a duplicate
+        let result = buf.accept(make_flow_frame(&rid, None, 1));
+        assert!(result.is_err(), "duplicate buffered seq must fail");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("stale") || err.contains("duplicate"),
+                "error must mention stale/duplicate: {}", err);
+    }
+
+    // TEST509: ReorderBuffer handles large seq gaps without DOS
+    #[test]
+    fn test_reorder_buffer_large_gap_rejected() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+
+        // Try to send seq 1000 - huge gap that would require buffering 999 frames
+        // This should fail because we can't buffer that many frames
+        buf.accept(make_flow_frame(&rid, None, 2)).unwrap(); // buffer 1 frame
+        buf.accept(make_flow_frame(&rid, None, 3)).unwrap(); // buffer 2 frames
+
+        // Keep adding until we hit the limit
+        for seq in 4..=65 {
+            buf.accept(make_flow_frame(&rid, None, seq)).unwrap();
+        }
+
+        // This should overflow the buffer
+        let result = buf.accept(make_flow_frame(&rid, None, 66));
+        assert!(result.is_err(), "large gap causing buffer overflow must fail");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("overflow"), "error must mention overflow: {}", err);
+    }
+
+    // TEST510: ReorderBuffer with multiple interleaved gaps fills correctly
+    #[test]
+    fn test_reorder_buffer_multiple_gaps() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        // Send: 0, 3, 5, then fill the gaps
+        let ready0 = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready0.len(), 1);
+
+        let ready3 = buf.accept(make_flow_frame(&rid, None, 3)).unwrap();
+        assert!(ready3.is_empty(), "seq 3 buffered");
+
+        let ready5 = buf.accept(make_flow_frame(&rid, None, 5)).unwrap();
+        assert!(ready5.is_empty(), "seq 5 buffered");
+
+        // Fill gap with seq 1
+        let ready1 = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert_eq!(ready1.len(), 1, "only seq 1 delivered, still missing 2");
+
+        // Fill gap with seq 2 - should deliver 2, 3 (but not 5, still missing 4)
+        let ready2 = buf.accept(make_flow_frame(&rid, None, 2)).unwrap();
+        assert_eq!(ready2.len(), 2, "delivers 2 and 3");
+        assert_eq!(ready2[0].seq, 2);
+        assert_eq!(ready2[1].seq, 3);
+
+        // Fill final gap with seq 4 - should deliver 4, 5
+        let ready4 = buf.accept(make_flow_frame(&rid, None, 4)).unwrap();
+        assert_eq!(ready4.len(), 2, "delivers 4 and 5");
+        assert_eq!(ready4[0].seq, 4);
+        assert_eq!(ready4[1].seq, 5);
+    }
+
+    // TEST511: ReorderBuffer cleanup with buffered frames discards them
+    #[test]
+    fn test_reorder_buffer_cleanup_with_buffered_frames() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 2)).unwrap(); // buffered
+        buf.accept(make_flow_frame(&rid, None, 3)).unwrap(); // buffered
+
+        let key = FlowKey { rid: rid.clone(), xid: None };
+        buf.cleanup_flow(&key);
+
+        // After cleanup, seq 0 should work again (flow reset)
+        let ready = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].seq, 0);
+
+        // And buffered frames 2,3 were discarded (seq 1 is now expected)
+        let ready1 = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert_eq!(ready1.len(), 1);
+    }
+
+    // TEST512: ReorderBuffer delivers burst of consecutive buffered frames
+    #[test]
+    fn test_reorder_buffer_burst_delivery() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        // Buffer seq 1-10 (all waiting for seq 0)
+        for seq in 1..=10 {
+            let ready = buf.accept(make_flow_frame(&rid, None, seq)).unwrap();
+            assert!(ready.is_empty(), "seq {} buffered", seq);
+        }
+
+        // Now send seq 0 - should deliver all 11 frames at once
+        let ready = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready.len(), 11, "delivers seq 0 plus 10 buffered frames");
+        for (i, frame) in ready.iter().enumerate() {
+            assert_eq!(frame.seq, i as u64, "frame {} has correct seq", i);
+        }
+    }
+
+    // TEST513: ReorderBuffer different frame types in same flow maintain order
+    #[test]
+    fn test_reorder_buffer_mixed_types_same_flow() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        // Create different frame types with same RID
+        let mut req = Frame::new(FrameType::Req, rid.clone());
+        req.seq = 1;
+        let mut log = Frame::new(FrameType::Log, rid.clone());
+        log.seq = 2;
+        let mut chunk = Frame::new(FrameType::Chunk, rid.clone());
+        chunk.seq = 0;
+
+        // Send out of order: REQ(1), LOG(2), then CHUNK(0)
+        buf.accept(req).unwrap(); // buffered
+        buf.accept(log).unwrap(); // buffered
+
+        let ready = buf.accept(chunk).unwrap();
+        assert_eq!(ready.len(), 3, "all three frames delivered in order");
+        assert_eq!(ready[0].frame_type, FrameType::Chunk);
+        assert_eq!(ready[1].frame_type, FrameType::Req);
+        assert_eq!(ready[2].frame_type, FrameType::Log);
+    }
+
+    // TEST514: ReorderBuffer with XID cleanup doesn't affect different XID
+    #[test]
+    fn test_reorder_buffer_xid_cleanup_isolation() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+        let xid_a = MessageId::new_uuid();
+        let xid_b = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, Some(&xid_a), 0)).unwrap();
+        buf.accept(make_flow_frame(&rid, Some(&xid_b), 0)).unwrap();
+
+        // Cleanup flow A
+        let key_a = FlowKey { rid: rid.clone(), xid: Some(xid_a.clone()) };
+        buf.cleanup_flow(&key_a);
+
+        // Flow B should still expect seq 1
+        let ready = buf.accept(make_flow_frame(&rid, Some(&xid_b), 1)).unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].seq, 1);
+
+        // Flow A was reset, seq 0 works again
+        let ready_a = buf.accept(make_flow_frame(&rid, Some(&xid_a), 0)).unwrap();
+        assert_eq!(ready_a.len(), 1);
+    }
+
+    // TEST515: ReorderBuffer overflow error includes diagnostic information
+    #[test]
+    fn test_reorder_buffer_overflow_error_details() {
+        let max_buffer = 3;
+        let mut buf = ReorderBuffer::new(max_buffer);
+        let rid = MessageId::new_uuid();
+
+        // Fill buffer to capacity
+        for seq in 1..=3 {
+            buf.accept(make_flow_frame(&rid, None, seq)).unwrap();
+        }
+
+        // Overflow
+        let result = buf.accept(make_flow_frame(&rid, None, 4));
+        assert!(result.is_err());
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("overflow"), "must mention overflow");
+        assert!(err.contains(&max_buffer.to_string()), "must include max buffer size");
+        assert!(err.contains("expected seq 0"), "must show expected seq");
+        assert!(err.contains("got seq 4"), "must show actual seq");
+    }
+
+    // TEST516: ReorderBuffer stale error includes diagnostic information
+    #[test]
+    fn test_reorder_buffer_stale_error_details() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        buf.accept(make_flow_frame(&rid, None, 2)).unwrap();
+
+        // Send stale seq 1
+        let result = buf.accept(make_flow_frame(&rid, None, 1));
+        assert!(result.is_err());
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("stale") || err.contains("duplicate"), "must mention stale/duplicate");
+        assert!(err.contains("expected >= 3"), "must show expected seq");
+        assert!(err.contains("got 1"), "must show actual seq");
+    }
+
+    // TEST517: FlowKey with None XID differs from Some(xid)
+    #[test]
+    fn test_flow_key_none_vs_some_xid() {
+        let rid = MessageId::new_uuid();
+        let xid = MessageId::new_uuid();
+
+        let key_none = FlowKey { rid: rid.clone(), xid: None };
+        let key_some = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
+
+        assert_ne!(key_none, key_some, "None XID must differ from Some(xid)");
+
+        // Hash equality check (for HashMap)
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher1 = DefaultHasher::new();
+        key_none.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+
+        let mut hasher2 = DefaultHasher::new();
+        key_some.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        assert_ne!(hash1, hash2, "different XID states must hash differently");
+    }
+
+    // TEST518: ReorderBuffer handles zero-length ready vec correctly
+    #[test]
+    fn test_reorder_buffer_empty_ready_vec() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        // Send seq 1 first - should return empty vec (buffered)
+        let ready = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert!(ready.is_empty(), "buffered frame returns empty vec");
+        assert_eq!(ready.len(), 0, "explicit length check");
+    }
+
+    // TEST519: ReorderBuffer state persists across accept calls
+    #[test]
+    fn test_reorder_buffer_state_persistence() {
+        let mut buf = ReorderBuffer::new(64);
+        let rid = MessageId::new_uuid();
+
+        // First call: establish expected_seq = 0, buffer seq 2
+        buf.accept(make_flow_frame(&rid, None, 2)).unwrap();
+
+        // Second call: send seq 1, should still be buffered (missing 0)
+        let ready = buf.accept(make_flow_frame(&rid, None, 1)).unwrap();
+        assert!(ready.is_empty(), "seq 1 buffered, still waiting for seq 0");
+
+        // Third call: send seq 0, should deliver 0, 1, 2
+        let ready = buf.accept(make_flow_frame(&rid, None, 0)).unwrap();
+        assert_eq!(ready.len(), 3, "state persisted correctly");
+    }
+
+    // TEST520: ReorderBuffer max_buffer_per_flow is per-flow not global
+    #[test]
+    fn test_reorder_buffer_per_flow_limit() {
+        let mut buf = ReorderBuffer::new(2); // max 2 buffered per flow
+        let rid_a = MessageId::new_uuid();
+        let rid_b = MessageId::new_uuid();
+
+        // Flow A: buffer 2 frames (at limit)
+        buf.accept(make_flow_frame(&rid_a, None, 1)).unwrap();
+        buf.accept(make_flow_frame(&rid_a, None, 2)).unwrap();
+
+        // Flow B: can still buffer 2 frames (separate limit)
+        buf.accept(make_flow_frame(&rid_b, None, 1)).unwrap();
+        buf.accept(make_flow_frame(&rid_b, None, 2)).unwrap();
+
+        // Flow A: overflow
+        let result = buf.accept(make_flow_frame(&rid_a, None, 3));
+        assert!(result.is_err(), "flow A overflows");
+
+        // Flow B: also overflow
+        let result = buf.accept(make_flow_frame(&rid_b, None, 3));
+        assert!(result.is_err(), "flow B also overflows");
+    }
+
+    // =========================================================================
+    // Relay Frame Types - Comprehensive Tests
+    // =========================================================================
+
+    // TEST521: RelayNotify CBOR roundtrip preserves manifest and limits
+    #[test]
+    fn test_relay_notify_cbor_roundtrip() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let manifest = br#"{"caps":["cap:in=\"media:void\";op=convert;out=\"media:image\""#;
+        let limits = Limits {
+            max_frame: 3_000_000,
+            max_chunk: 256_000,
+            max_reorder_buffer: 128,
+        };
+
+        let frame = Frame::relay_notify(manifest, &limits);
+        let encoded = encode_frame(&frame).expect("encoding must succeed");
+        let decoded = decode_frame(&encoded).expect("decoding must succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::RelayNotify);
+        assert_eq!(decoded.relay_notify_manifest(), Some(manifest.as_slice()),
+                   "manifest must roundtrip");
+
+        let decoded_limits = decoded.relay_notify_limits().expect("limits must be present");
+        assert_eq!(decoded_limits.max_frame, 3_000_000, "max_frame must roundtrip");
+        assert_eq!(decoded_limits.max_chunk, 256_000, "max_chunk must roundtrip");
+        assert_eq!(decoded_limits.max_reorder_buffer, 128, "max_reorder_buffer must roundtrip");
+    }
+
+    // TEST522: RelayState CBOR roundtrip preserves payload
+    #[test]
+    fn test_relay_state_cbor_roundtrip() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        let state_data = br#"{"memory_mb":8192,"cpu_cores":16,"active_flows":42}"#;
+        let frame = Frame::relay_state(state_data);
+
+        let encoded = encode_frame(&frame).expect("encoding must succeed");
+        let decoded = decode_frame(&encoded).expect("decoding must succeed");
+
+        assert_eq!(decoded.frame_type, FrameType::RelayState);
+        assert_eq!(decoded.payload, Some(state_data.to_vec()),
+                   "state payload must roundtrip exactly");
+        assert_eq!(decoded.id, MessageId::Uint(0));
+    }
+
+    // TEST523: is_flow_frame returns false for RelayNotify
+    #[test]
+    fn test_relay_notify_not_flow_frame() {
+        let manifest = b"test";
+        let limits = Limits::default();
+        let frame = Frame::relay_notify(manifest, &limits);
+
+        assert!(!frame.is_flow_frame(),
+                "RelayNotify must not be a flow frame (bypasses reordering)");
+    }
+
+    // TEST524: is_flow_frame returns false for RelayState
+    #[test]
+    fn test_relay_state_not_flow_frame() {
+        let state = b"test";
+        let frame = Frame::relay_state(state);
+
+        assert!(!frame.is_flow_frame(),
+                "RelayState must not be a flow frame (bypasses reordering)");
+    }
+
+    // TEST525: RelayNotify with empty manifest is valid
+    #[test]
+    fn test_relay_notify_empty_manifest() {
+        let empty_manifest = b"";
+        let limits = Limits::default();
+        let frame = Frame::relay_notify(empty_manifest, &limits);
+
+        assert_eq!(frame.frame_type, FrameType::RelayNotify);
+        assert_eq!(frame.relay_notify_manifest(), Some(empty_manifest.as_slice()));
+    }
+
+    // TEST526: RelayState with empty payload is valid
+    #[test]
+    fn test_relay_state_empty_payload() {
+        let empty_state = b"";
+        let frame = Frame::relay_state(empty_state);
+
+        assert_eq!(frame.frame_type, FrameType::RelayState);
+        assert_eq!(frame.payload, Some(vec![]));
+    }
+
+    // TEST527: RelayNotify with large manifest roundtrips correctly
+    #[test]
+    fn test_relay_notify_large_manifest() {
+        use crate::bifaci::io::{encode_frame, decode_frame};
+
+        // Create a large manifest (simulating many caps)
+        let mut large_manifest = String::from(r#"{"caps":["#);
+        for i in 0..100 {
+            if i > 0 {
+                large_manifest.push_str(",");
+            }
+            large_manifest.push_str(&format!(
+                r#""cap:in=\"media:void\";op=op{};out=\"media:void\"""#,
+                i
+            ));
+        }
+        large_manifest.push_str("]}");
+
+        let limits = Limits::default();
+        let frame = Frame::relay_notify(large_manifest.as_bytes(), &limits);
+
+        let encoded = encode_frame(&frame).expect("large manifest must encode");
+        let decoded = decode_frame(&encoded).expect("large manifest must decode");
+
+        assert_eq!(decoded.relay_notify_manifest(), Some(large_manifest.as_bytes()));
+    }
+
+    // TEST528: RelayNotify and RelayState use MessageId::Uint(0)
+    #[test]
+    fn test_relay_frames_use_uint_zero_id() {
+        let notify = Frame::relay_notify(b"test", &Limits::default());
+        let state = Frame::relay_state(b"test");
+
+        assert_eq!(notify.id, MessageId::Uint(0),
+                   "RelayNotify must use Uint(0) as sentinel ID");
+        assert_eq!(state.id, MessageId::Uint(0),
+                   "RelayState must use Uint(0) as sentinel ID");
+
+        // Verify they're not UUIDs
+        assert!(notify.id.to_uuid_string().is_none());
+        assert!(state.id.to_uuid_string().is_none());
     }
 }

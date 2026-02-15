@@ -453,7 +453,7 @@ mod tests {
     // TEST404: Slave sends RelayNotify on connect (initial_notify parameter)
     #[test]
     fn test_slave_sends_relay_notify_on_connect() {
-        let manifest = b"{\"caps\":[\"cap:op=test\"]}";
+        let manifest = b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\"]}";
         let limits = Limits::default();
 
         // Socket: slave writes → master reads
@@ -487,7 +487,7 @@ mod tests {
     // TEST405: Master reads RelayNotify and extracts manifest + limits
     #[test]
     fn test_master_reads_relay_notify() {
-        let manifest = b"{\"caps\":[\"cap:op=convert\"]}";
+        let manifest = b"{\"caps\":[\"cap:in=\"media:void\";op=convert;out=\"media:void\"\"]}";
         let limits = Limits {
             max_frame: 1_000_000,
             max_chunk: 64_000,
@@ -576,7 +576,7 @@ mod tests {
             let mut seq = SeqAssigner::new();
             let mut req = Frame::req(
                 req_id_clone,
-                "cap:op=test",
+                "cap:in=\"media:void\";op=test;out=\"media:void\"",
                 b"hello".to_vec(),
                 "text/plain",
             );
@@ -630,7 +630,7 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(runtime_read_from_slave));
             let frame = reader.read().unwrap().expect("should have frame");
             assert_eq!(frame.frame_type, FrameType::Req);
-            assert_eq!(frame.cap.as_deref(), Some("cap:op=test"));
+            assert_eq!(frame.cap.as_deref(), Some("cap:in=\"media:void\";op=test;out=\"media:void\""));
             assert_eq!(frame.payload, Some(b"hello".to_vec()));
         });
 
@@ -665,7 +665,7 @@ mod tests {
             // Then send a normal REQ to verify the slave still works
             let mut req = Frame::req(
                 MessageId::new_uuid(),
-                "cap:op=test",
+                "cap:in=\"media:void\";op=test;out=\"media:void\"",
                 vec![],
                 "text/plain",
             );
@@ -712,7 +712,7 @@ mod tests {
             let limits = Limits::default();
 
             // First: send initial RelayNotify
-            let initial = b"{\"caps\":[\"cap:op=test\"]}";
+            let initial = b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\"]}";
             RelaySlave::<std::io::Empty, Vec<u8>>::send_notify(
                 &mut socket_writer,
                 initial,
@@ -735,7 +735,7 @@ mod tests {
             socket_writer.write(&chunk).unwrap();
 
             // Then: inject updated RelayNotify (new cap discovered)
-            let updated = b"{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}";
+            let updated = b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\",\"cap:in=\"media:void\";op=convert;out=\"media:void\"\"]}";
             RelaySlave::<std::io::Empty, Vec<u8>>::send_notify(
                 &mut socket_writer,
                 updated,
@@ -754,7 +754,7 @@ mod tests {
             assert_eq!(f1.frame_type, FrameType::RelayNotify);
             assert_eq!(
                 f1.relay_notify_manifest(),
-                Some(b"{\"caps\":[\"cap:op=test\"]}".as_slice())
+                Some(b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\"]}".as_slice())
             );
 
             // Read CHUNK (passed through)
@@ -766,7 +766,7 @@ mod tests {
             assert_eq!(f3.frame_type, FrameType::RelayNotify);
             assert_eq!(
                 f3.relay_notify_manifest(),
-                Some(b"{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}".as_slice())
+                Some(b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\",\"cap:in=\"media:void\";op=convert;out=\"media:void\"\"]}".as_slice())
             );
         });
 
@@ -790,7 +790,7 @@ mod tests {
             let mut seq = SeqAssigner::new();
 
             // Initial RelayNotify
-            let initial = Frame::relay_notify(b"{\"caps\":[\"cap:op=a\"]}", &limits);
+            let initial = Frame::relay_notify(b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\"]}", &limits);
             writer.write(&initial).unwrap();
 
             // Normal frame
@@ -806,7 +806,7 @@ mod tests {
                 max_chunk: 200_000,
                 ..Limits::default()
             };
-            let updated = Frame::relay_notify(b"{\"caps\":[\"cap:op=a\",\"cap:op=b\"]}", &updated_limits);
+            let updated = Frame::relay_notify(b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\",\"cap:in=\"media:void\";op=b;out=\"media:void\"\"]}", &updated_limits);
             writer.write(&updated).unwrap();
 
             // Another normal frame to prove master continues
@@ -824,7 +824,7 @@ mod tests {
             let mut master = RelayMaster::connect(&mut reader).unwrap();
 
             // Initial state
-            assert_eq!(master.manifest(), b"{\"caps\":[\"cap:op=a\"]}");
+            assert_eq!(master.manifest(), b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\"]}");
             assert_eq!(master.limits().max_frame, 2_000_000);
 
             // First non-relay frame
@@ -836,7 +836,7 @@ mod tests {
             assert_eq!(f2.frame_type, FrameType::End);
 
             // Manifest and limits should be updated
-            assert_eq!(master.manifest(), b"{\"caps\":[\"cap:op=a\",\"cap:op=b\"]}");
+            assert_eq!(master.manifest(), b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\",\"cap:in=\"media:void\";op=b;out=\"media:void\"\"]}");
             assert_eq!(master.limits().max_frame, 3_000_000);
             assert_eq!(master.limits().max_chunk, 200_000);
         });
@@ -906,8 +906,8 @@ mod tests {
         let master_write = thread::spawn(move || {
             let mut writer = FrameWriter::new(BufWriter::new(master_socket_write));
             let mut seq = SeqAssigner::new();
-            let mut req1 = Frame::req(req_id1_clone, "cap:op=a", b"data-a".to_vec(), "text/plain");
-            let mut req2 = Frame::req(req_id2_clone, "cap:op=b", b"data-b".to_vec(), "text/plain");
+            let mut req1 = Frame::req(req_id1_clone, "cap:in=\"media:void\";op=a;out=\"media:void\"", b"data-a".to_vec(), "text/plain");
+            let mut req2 = Frame::req(req_id2_clone, "cap:in=\"media:void\";op=b;out=\"media:void\"", b"data-b".to_vec(), "text/plain");
             seq.assign(&mut req1);
             writer.write(&req1).unwrap();
             seq.assign(&mut req2);
