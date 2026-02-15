@@ -70,7 +70,15 @@ impl CapUrn {
     ///
     /// Format: `cap:in="media:...";out="media:...";key1=value1;...`
     /// The "cap:" prefix is mandatory
-    /// The 'in' and 'out' tags are REQUIRED (direction is part of cap identity)
+    ///
+    /// **Wildcard expansion for in/out tags:**
+    /// - Missing `in` or `out` tag → defaults to `media:`
+    /// - `in` or `out` without `=` → becomes `media:` (TaggedUrn treats `tag` as `tag=*`, we replace `*` with `media:`)
+    /// - `in=*` or `out=*` → replaced with `media:`
+    /// - `cap:` → `cap:in=media:;out=media:`
+    /// - `cap:in` → `cap:in=media:;out=media:`
+    /// - `cap:in=media:bytes;out` → `cap:in=media:bytes;out=media:`
+    ///
     /// Trailing semicolons are optional and ignored
     /// Tags are automatically sorted alphabetically for canonical form
     ///
@@ -87,25 +95,19 @@ impl CapUrn {
             return Err(CapUrnError::MissingCapPrefix);
         }
 
-        // Extract required in and out tags
-        let in_urn = tagged
-            .tags
-            .get("in")
-            .ok_or(CapUrnError::MissingInSpec)?
-            .clone();
-        let out_urn = tagged
-            .tags
-            .get("out")
-            .ok_or(CapUrnError::MissingOutSpec)?
-            .clone();
+        // Process in and out tags with wildcard expansion
+        // Missing tag or tag=* → "media:" (the wildcard)
+        let in_urn = Self::process_direction_tag(&tagged, "in")?;
+        let out_urn = Self::process_direction_tag(&tagged, "out")?;
 
-        // Validate that in and out specs are valid media URNs (or wildcard "*")
+        // Validate that in and out specs are valid media URNs (or wildcard "media:")
+        // After processing, "media:" is the wildcard (not "*")
         use crate::urn::media_urn::MediaUrn;
-        if in_urn != "*" {
+        if in_urn != "media:" {
             MediaUrn::from_string(&in_urn)
                 .map_err(|e| CapUrnError::InvalidInSpec(format!("Invalid media URN for in spec '{}': {}", in_urn, e)))?;
         }
-        if out_urn != "*" {
+        if out_urn != "media:" {
             MediaUrn::from_string(&out_urn)
                 .map_err(|e| CapUrnError::InvalidOutSpec(format!("Invalid media URN for out spec '{}': {}", out_urn, e)))?;
         }
@@ -122,6 +124,37 @@ impl CapUrn {
             out_urn,
             tags,
         })
+    }
+
+    /// Process a direction tag (in or out) with wildcard expansion
+    ///
+    /// - Missing tag → "media:" (wildcard)
+    /// - tag=* → "media:" (wildcard)
+    /// - tag= (empty) → error
+    /// - tag=value → value (validated later)
+    fn process_direction_tag(tagged: &TaggedUrn, tag_name: &str) -> Result<String, CapUrnError> {
+        match tagged.tags.get(tag_name) {
+            Some(value) => {
+                if value == "*" {
+                    // Replace * with media: wildcard
+                    Ok("media:".to_string())
+                } else if value.is_empty() {
+                    // Empty value is not allowed (in= or out= with nothing after =)
+                    if tag_name == "in" {
+                        Err(CapUrnError::InvalidInSpec("Empty value for 'in' tag is not allowed".to_string()))
+                    } else {
+                        Err(CapUrnError::InvalidOutSpec("Empty value for 'out' tag is not allowed".to_string()))
+                    }
+                } else {
+                    // Regular value - will be validated as MediaUrn later
+                    Ok(value.clone())
+                }
+            }
+            None => {
+                // Tag is missing - default to media: wildcard
+                Ok("media:".to_string())
+            }
+        }
     }
 
     /// Get the canonical string representation of this cap URN
@@ -253,7 +286,8 @@ impl CapUrn {
     /// Missing cap tags are wildcards (cap accepts any value for that tag).
     pub fn accepts(&self, request: &CapUrn) -> bool {
         // Input direction: cap_in is pattern, request_in is instance
-        if self.in_urn != "*" && request.in_urn != "*" {
+        // "media:" is the wildcard (matches anything)
+        if self.in_urn != "media:" && request.in_urn != "media:" {
             let cap_in = MediaUrn::from_string(&self.in_urn)
                 .unwrap_or_else(|e| panic!("CU2: cap in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
             let request_in = MediaUrn::from_string(&request.in_urn)
@@ -265,7 +299,8 @@ impl CapUrn {
         }
 
         // Output direction: request_out is pattern, cap_out is instance
-        if self.out_urn != "*" && request.out_urn != "*" {
+        // "media:" is the wildcard (matches anything)
+        if self.out_urn != "media:" && request.out_urn != "media:" {
             let cap_out = MediaUrn::from_string(&self.out_urn)
                 .unwrap_or_else(|e| panic!("CU2: cap out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
             let request_out = MediaUrn::from_string(&request.out_urn)
@@ -314,12 +349,13 @@ impl CapUrn {
     /// Other tags contribute 1 per non-wildcard value.
     pub fn specificity(&self) -> usize {
         let mut count = 0;
-        if self.in_urn != "*" {
+        // "media:" is the wildcard (contributes 0 to specificity)
+        if self.in_urn != "media:" {
             let in_media = MediaUrn::from_string(&self.in_urn)
                 .unwrap_or_else(|e| panic!("CU2: in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
             count += in_media.inner().tags.len();
         }
-        if self.out_urn != "*" {
+        if self.out_urn != "media:" {
             let out_media = MediaUrn::from_string(&self.out_urn)
                 .unwrap_or_else(|e| panic!("CU2: out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
             count += out_media.inner().tags.len();
@@ -678,22 +714,26 @@ mod tests {
         assert_eq!(cap.out_spec(), MEDIA_OBJECT);
     }
 
-    // TEST002: Test that missing 'in' spec fails with MissingInSpec, missing 'out' fails with MissingOutSpec
+    // TEST002: Test that missing 'in' or 'out' defaults to media: wildcard
     #[test]
-    fn test_direction_specs_required() {
-        // Missing 'in' should fail
-        let result = CapUrn::from_string(&format!("cap:out=\"{}\";op=test", MEDIA_OBJECT));
-        assert!(result.is_err());
-        assert!(matches!(result, Err(CapUrnError::MissingInSpec)));
+    fn test_direction_specs_default_to_wildcard() {
+        // Missing 'in' defaults to media:
+        let cap = CapUrn::from_string(&format!("cap:out=\"{}\";op=test", MEDIA_OBJECT))
+            .expect("Missing in should default to media:");
+        assert_eq!(cap.in_spec(), "media:");
+        assert_eq!(cap.out_spec(), MEDIA_OBJECT);
 
-        // Missing 'out' should fail
-        let result = CapUrn::from_string(&format!("cap:in=\"{}\";op=test", MEDIA_VOID));
-        assert!(result.is_err());
-        assert!(matches!(result, Err(CapUrnError::MissingOutSpec)));
+        // Missing 'out' defaults to media:
+        let cap = CapUrn::from_string(&format!("cap:in=\"{}\";op=test", MEDIA_VOID))
+            .expect("Missing out should default to media:");
+        assert_eq!(cap.in_spec(), MEDIA_VOID);
+        assert_eq!(cap.out_spec(), "media:");
 
         // Both present should succeed
-        let result = CapUrn::from_string(&format!("cap:in=\"{}\";out=\"{}\";op=test", MEDIA_VOID, MEDIA_OBJECT));
-        assert!(result.is_ok());
+        let cap = CapUrn::from_string(&format!("cap:in=\"{}\";out=\"{}\";op=test", MEDIA_VOID, MEDIA_OBJECT))
+            .expect("Both specs present should succeed");
+        assert_eq!(cap.in_spec(), MEDIA_VOID);
+        assert_eq!(cap.out_spec(), MEDIA_OBJECT);
     }
 
     // TEST003: Test that direction specs must match exactly, different in/out types don't match, wildcard matches any
@@ -1180,17 +1220,18 @@ mod tests {
         assert_eq!(wildcard_out.out_spec(), "*");
     }
 
-    // TEST028: Test empty cap URN fails with MissingInSpec
+    // TEST028: Test empty cap URN defaults to media: wildcard
     #[test]
-    fn test_empty_cap_urn_not_allowed() {
-        // Empty cap URN is no longer valid since in/out are required
-        let result = CapUrn::from_string("cap:");
-        assert!(result.is_err());
-        assert!(matches!(result, Err(CapUrnError::MissingInSpec)));
+    fn test_empty_cap_urn_defaults_to_wildcard() {
+        // Empty cap URN defaults to media: for both in and out
+        let cap = CapUrn::from_string("cap:").expect("Empty cap should default to media: wildcard");
+        assert_eq!(cap.in_spec(), "media:");
+        assert_eq!(cap.out_spec(), "media:");
 
-        // With trailing semicolon - still fails
-        let result = CapUrn::from_string("cap:;");
-        assert!(result.is_err());
+        // With trailing semicolon - same behavior
+        let cap = CapUrn::from_string("cap:;").expect("cap:; should default to media: wildcard");
+        assert_eq!(cap.in_spec(), "media:");
+        assert_eq!(cap.out_spec(), "media:");
     }
 
     // TEST029: Test minimal valid cap URN has just in and out, empty tags
@@ -1581,4 +1622,108 @@ mod tests {
         assert_eq!(best.in_spec(), "media:pdf;bytes",
             "CapMatcher must prefer the more specific pdf;bytes provider");
     }
+}
+
+// TEST_WILDCARD_001: cap: (empty) defaults to in=media:;out=media:
+#[test]
+fn test_wildcard_001_empty_cap_defaults_to_media_wildcard() {
+    let cap = CapUrn::from_string("cap:").expect("Empty cap should default to media: wildcard");
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:");
+    assert_eq!(cap.tags.len(), 0);
+}
+
+// TEST_WILDCARD_002: cap:in defaults out to media:
+#[test]
+fn test_wildcard_002_in_only_defaults_out_to_media() {
+    let cap = CapUrn::from_string("cap:in").expect("in without out should default out to media:");
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:");
+}
+
+// TEST_WILDCARD_003: cap:out defaults in to media:
+#[test]
+fn test_wildcard_003_out_only_defaults_in_to_media() {
+    let cap = CapUrn::from_string("cap:out").expect("out without in should default in to media:");
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:");
+}
+
+// TEST_WILDCARD_004: cap:in;out both become media:
+#[test]
+fn test_wildcard_004_in_out_no_values_become_media() {
+    let cap = CapUrn::from_string("cap:in;out").expect("in;out should both become media:");
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:");
+}
+
+// TEST_WILDCARD_005: cap:in=*;out=* becomes media:
+#[test]
+fn test_wildcard_005_explicit_asterisk_becomes_media() {
+    let cap = CapUrn::from_string("cap:in=*;out=*").expect("in=*;out=* should become media:");
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:");
+}
+
+// TEST_WILDCARD_006: cap:in=media:bytes;out=* has specific in, wildcard out
+#[test]
+fn test_wildcard_006_specific_in_wildcard_out() {
+    let cap = CapUrn::from_string("cap:in=media:bytes;out=*").expect("Specific in with wildcard out");
+    assert_eq!(cap.in_spec(), "media:bytes");
+    assert_eq!(cap.out_spec(), "media:");
+}
+
+// TEST_WILDCARD_007: cap:in=*;out=media:text has wildcard in, specific out
+#[test]
+fn test_wildcard_007_wildcard_in_specific_out() {
+    let cap = CapUrn::from_string("cap:in=*;out=media:text").expect("Wildcard in with specific out");
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:text");
+}
+
+// TEST_WILDCARD_008: cap:in=foo fails (invalid media URN)
+#[test]
+fn test_wildcard_008_invalid_in_spec_fails() {
+    let result = CapUrn::from_string("cap:in=foo;out=media:");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(err, CapUrnError::InvalidInSpec(_)));
+}
+
+// TEST_WILDCARD_009: cap:in=media:bytes;out=bar fails (invalid media URN)
+#[test]
+fn test_wildcard_009_invalid_out_spec_fails() {
+    let result = CapUrn::from_string("cap:in=media:bytes;out=bar");
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(err, CapUrnError::InvalidOutSpec(_)));
+}
+
+// TEST_WILDCARD_010: Wildcard in/out match specific caps
+#[test]
+fn test_wildcard_010_wildcard_accepts_specific() {
+    let wildcard = CapUrn::from_string("cap:").unwrap();
+    let specific = CapUrn::from_string("cap:in=media:bytes;out=media:text").unwrap();
+    
+    assert!(wildcard.accepts(&specific), "Wildcard should accept specific cap");
+    assert!(specific.conforms_to(&wildcard), "Specific should conform to wildcard");
+}
+
+// TEST_WILDCARD_011: Specificity - wildcard has 0, specific has tag count
+#[test]
+fn test_wildcard_011_specificity_scoring() {
+    let wildcard = CapUrn::from_string("cap:").unwrap();
+    let specific = CapUrn::from_string("cap:in=media:bytes;out=media:text").unwrap();
+    
+    assert_eq!(wildcard.specificity(), 0, "Wildcard should have 0 specificity");
+    assert!(specific.specificity() > 0, "Specific cap should have non-zero specificity");
+}
+
+// TEST_WILDCARD_012: cap:in;out;op=test preserves other tags
+#[test]
+fn test_wildcard_012_preserve_other_tags() {
+    let cap = CapUrn::from_string("cap:in;out;op=test").unwrap();
+    assert_eq!(cap.in_spec(), "media:");
+    assert_eq!(cap.out_spec(), "media:");
+    assert_eq!(cap.get_tag("op").map(|s| s.as_str()), Some("test"));
 }
