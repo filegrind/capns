@@ -1,28 +1,20 @@
-//! Cap SDK - Core cap URN and definition system
+//! Cap SDK — URN system, cap definitions, and the Bifaci protocol
 //!
-//! This library provides the fundamental cap URN system used across
-//! all MACINA plugins and providers. It defines the formal structure for cap
-//! identifiers with flat tag-based naming, wildcard support, and specificity comparison.
+//! This library provides:
 //!
-//! ## Plugin Communication
-//!
-//! The library provides unified plugin communication infrastructure using CBOR:
-//!
-//! - **CBOR Frame Types** (`cbor_frame`): Frame definitions with integer keys
-//! - **CBOR I/O** (`cbor_io`): Streaming CBOR read/write with handshake
-//! - **Plugin Runtime** (`plugin_runtime`): For plugin binaries - handles all I/O
-//! - **PluginHost** (`plugin_host_runtime`): For host callers - async communication with plugins
+//! - **URN system** (`urn`): Cap URNs, media URNs, cap matrix
+//! - **Cap definitions** (`cap`): Cap types, validation, registry, caller
+//! - **Media types** (`media`): Media spec resolution, registry, profile schemas
+//! - **Bifaci protocol** (`bifaci`): Binary Frame Cap Invocation — plugin runtime,
+//!   host runtime, relay, relay switch, plugin repo
+//! - **Standard** (`standard`): Standard cap and media URN constants
 //!
 //! ## Architecture
 //!
-//! ```ignore
-//! // Engine side: RelayMaster connects to the runtime via socket
-//! let master = AsyncRelayMaster::connect(socket_read, socket_write).await?;
-//!
-//! // Runtime side: PluginHostRuntime manages multiple plugins
-//! let mut runtime = PluginHostRuntime::new();
-//! runtime.register_plugin(Path::new("./my-plugin"), &["cap:op=test".into()]);
-//! runtime.run(relay_read, relay_write, || vec![]).await?;
+//! ```text
+//! Router:      (RelaySwitch + RelayMaster × N)
+//! Host × N:    (RelaySlave + PluginHostRuntime)
+//! Plugin × N:  (PluginRuntime + handler × N)
 //! ```
 //!
 //! ## Protocol Overview
@@ -36,68 +28,52 @@
 //! 5. Plugin can send LOG frames for progress/status
 //! 6. Relay-specific: RelayNotify (slave→master) and RelayState (master→slave)
 
-pub mod cap_urn;
-pub mod media_urn;
+pub mod urn;
 pub mod cap;
-pub mod manifest;
-pub mod validation;
-pub mod schema_validation;
-pub mod registry;
-pub mod media_registry;
+pub mod media;
+pub mod bifaci;
 pub mod standard;
-pub mod caller;
-pub mod response;
-pub mod cap_matrix;
-pub mod media_spec;
-pub mod profile_schema_registry;
 
-// CBOR-based plugin communication infrastructure
-pub mod cbor_frame;
-pub mod cbor_io;
-pub mod plugin_runtime;
-pub mod plugin_repo;
-pub mod plugin_host_runtime;
-pub mod cap_router;
-pub mod plugin_relay;
-pub mod relay_switch;
+// URN types
+pub use urn::cap_urn::*;
+pub use urn::media_urn::*;
+pub use urn::cap_matrix::*;
 
-// Integration tests for CBOR protocol
-#[cfg(test)]
-mod cbor_integration_tests;
+// Cap definitions
+pub use cap::definition::*;
+pub use cap::validation::*;
+pub use cap::schema_validation::{SchemaValidator as JsonSchemaValidator, SchemaValidationError, SchemaResolver, FileSchemaResolver};
+pub use cap::registry::*;
+pub use cap::caller::{CapArgumentValue, CapCaller, CapSet, StdinSource};
+pub use cap::response::*;
 
-pub use cap_urn::*;
-pub use media_urn::*;
-pub use cap::*;
-pub use manifest::*;
-pub use validation::*;
-pub use schema_validation::{SchemaValidator as JsonSchemaValidator, SchemaValidationError, SchemaResolver, FileSchemaResolver};
-pub use registry::*;
-pub use media_registry::{MediaUrnRegistry, MediaRegistryError, StoredMediaSpec};
+// Media types
+pub use media::spec::*;
+pub use media::registry::{MediaUrnRegistry, MediaRegistryError, StoredMediaSpec};
+pub use media::profile::{ProfileSchemaRegistry, ProfileSchemaError};
+
+// Standard caps and media
 pub use standard::*;
-pub use caller::{CapArgumentValue, CapCaller, CapSet, StdinSource};
-pub use response::*;
-pub use cap_matrix::*;
-pub use media_spec::*;
-pub use profile_schema_registry::{ProfileSchemaRegistry, ProfileSchemaError};
 
-// CBOR protocol exports
-pub use cbor_frame::{Frame, FrameType, MessageId, Limits, FlowKey, SeqAssigner, ReorderBuffer, PROTOCOL_VERSION, DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK, DEFAULT_MAX_REORDER_BUFFER};
-pub use cbor_io::{
+// Bifaci protocol — frames, I/O, runtimes
+pub use bifaci::frame::{Frame, FrameType, MessageId, Limits, FlowKey, SeqAssigner, ReorderBuffer, PROTOCOL_VERSION, DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK, DEFAULT_MAX_REORDER_BUFFER};
+pub use bifaci::io::{
     CborError, FrameReader, FrameWriter, HandshakeResult,
     encode_frame, decode_frame, read_frame, write_frame,
     handshake, handshake_accept,
     AsyncFrameReader, AsyncFrameWriter, handshake_async,
     read_frame_async, write_frame_async,
 };
-pub use plugin_runtime::{PluginRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, PeerCall, StreamError};
-pub use plugin_repo::{
+pub use bifaci::manifest::*;
+pub use bifaci::plugin_runtime::{PluginRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, PeerCall, StreamError};
+pub use bifaci::plugin_repo::{
     PluginRepo, PluginRepoError,
     PluginCapSummary, PluginInfo, PluginSuggestion, PluginRegistryResponse,
     PluginPackageInfo, PluginVersionInfo,
 };
 
 // PluginHost is the primary API for host-side plugin communication (async/tokio-native)
-pub use plugin_host_runtime::{
+pub use bifaci::host_runtime::{
     PluginHostRuntime as PluginHost,
     AsyncHostError as HostError,
     PluginResponse,
@@ -106,9 +82,9 @@ pub use plugin_host_runtime::{
 };
 
 // Also export with explicit Async prefix for clarity when needed
-pub use plugin_host_runtime::PluginHostRuntime;
-pub use plugin_host_runtime::AsyncHostError;
+pub use bifaci::host_runtime::PluginHostRuntime;
+pub use bifaci::host_runtime::AsyncHostError;
 
 // Relay exports
-pub use plugin_relay::{RelaySlave, RelayMaster, AsyncRelayMaster};
-pub use relay_switch::{RelaySwitch, RelaySwitchError};
+pub use bifaci::relay::{RelaySlave, RelayMaster, AsyncRelayMaster};
+pub use bifaci::relay_switch::{RelaySwitch, RelaySwitchError};

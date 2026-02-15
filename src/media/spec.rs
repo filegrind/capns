@@ -504,7 +504,7 @@ impl ResolvedMediaSpec {
 pub async fn resolve_media_urn(
     media_urn: &str,
     media_specs: Option<&[MediaSpecDef]>,
-    registry: &crate::media_registry::MediaUrnRegistry,
+    registry: &crate::media::registry::MediaUrnRegistry,
 ) -> Result<ResolvedMediaSpec, MediaSpecError> {
     // 1. First, try cap's local media_specs (highest priority - cap-specific definitions)
     if let Some(specs) = media_specs {
@@ -622,8 +622,8 @@ mod tests {
     // -------------------------------------------------------------------------
 
     // Helper to create a test registry
-    async fn test_registry() -> crate::media_registry::MediaUrnRegistry {
-        crate::media_registry::MediaUrnRegistry::new().await.expect("Failed to create test registry")
+    async fn test_registry() -> crate::media::registry::MediaUrnRegistry {
+        crate::media::registry::MediaUrnRegistry::new().await.expect("Failed to create test registry")
     }
 
     // Helper to create media specs vec for tests

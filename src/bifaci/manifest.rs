@@ -4,6 +4,8 @@
 //! This replaces the separate ProviderManifest and PluginManifest types with a single canonical format.
 
 use crate::Cap;
+use crate::urn::cap_urn::CapUrn;
+use crate::standard::caps::CAP_IDENTITY;
 use serde::{Deserialize, Serialize};
 
 /// Unified cap manifest for --manifest output
@@ -57,6 +59,34 @@ impl CapManifest {
     /// Set the page URL for the plugin (human-readable page, e.g., repository)
     pub fn with_page_url(mut self, page_url: String) -> Self {
         self.page_url = Some(page_url);
+        self
+    }
+
+    /// Validate that CAP_IDENTITY is declared in this manifest.
+    /// Fails hard if missing — identity is mandatory in every capset.
+    pub fn validate(&self) -> Result<(), String> {
+        let identity_urn = CapUrn::from_string(CAP_IDENTITY)
+            .map_err(|e| format!("BUG: CAP_IDENTITY constant is invalid: {}", e))?;
+        let has_identity = self.caps.iter().any(|cap| identity_urn.accepts(&cap.urn));
+        if !has_identity {
+            return Err(format!("Manifest missing required CAP_IDENTITY ({})", CAP_IDENTITY));
+        }
+        Ok(())
+    }
+
+    /// Ensure CAP_IDENTITY is present in this manifest. Adds it if missing.
+    pub fn ensure_identity(mut self) -> Self {
+        let identity_urn = CapUrn::from_string(CAP_IDENTITY)
+            .expect("BUG: CAP_IDENTITY constant is invalid");
+        let has_identity = self.caps.iter().any(|cap| identity_urn.accepts(&cap.urn));
+        if !has_identity {
+            let cap = Cap::new(
+                identity_urn,
+                "Identity".to_string(),
+                "identity".to_string(),
+            );
+            self.caps.push(cap);
+        }
         self
     }
 }
@@ -274,5 +304,59 @@ mod tests {
         assert_eq!(caps.len(), 1);
         assert!(caps[0].urn_string().contains("op=test"));
         assert!(caps[0].urn_string().contains("type=component"));
+    }
+
+    // TEST475: CapManifest::validate() passes when CAP_IDENTITY is present
+    #[test]
+    fn test475_validate_passes_with_identity() {
+        let identity_urn = CapUrn::from_string(CAP_IDENTITY).unwrap();
+        let cap = Cap::new(identity_urn, "Identity".to_string(), "identity".to_string());
+        let manifest = CapManifest::new(
+            "TestPlugin".to_string(),
+            "1.0.0".to_string(),
+            "Test".to_string(),
+            vec![cap],
+        );
+        assert!(manifest.validate().is_ok(), "Manifest with CAP_IDENTITY must validate");
+    }
+
+    // TEST476: CapManifest::validate() fails when CAP_IDENTITY is missing
+    #[test]
+    fn test476_validate_fails_without_identity() {
+        let specific_urn = CapUrn::from_string(&test_urn("op=convert")).unwrap();
+        let cap = Cap::new(specific_urn, "Convert".to_string(), "convert".to_string());
+        let manifest = CapManifest::new(
+            "TestPlugin".to_string(),
+            "1.0.0".to_string(),
+            "Test".to_string(),
+            vec![cap],
+        );
+        let result = manifest.validate();
+        assert!(result.is_err(), "Manifest without CAP_IDENTITY must fail validation");
+        assert!(result.unwrap_err().contains("CAP_IDENTITY"),
+            "Error message must mention CAP_IDENTITY");
+    }
+
+    // TEST477: ensure_identity() adds identity cap if missing, is idempotent if present
+    #[test]
+    fn test477_ensure_identity_adds_if_missing() {
+        let specific_urn = CapUrn::from_string(&test_urn("op=convert")).unwrap();
+        let cap = Cap::new(specific_urn, "Convert".to_string(), "convert".to_string());
+        let manifest = CapManifest::new(
+            "TestPlugin".to_string(),
+            "1.0.0".to_string(),
+            "Test".to_string(),
+            vec![cap],
+        );
+        assert_eq!(manifest.caps.len(), 1);
+        assert!(manifest.validate().is_err(), "Before ensure_identity, must be invalid");
+
+        let manifest = manifest.ensure_identity();
+        assert_eq!(manifest.caps.len(), 2, "ensure_identity must add one cap");
+        assert!(manifest.validate().is_ok(), "After ensure_identity, must be valid");
+
+        // Idempotent — calling again must not add a duplicate
+        let manifest = manifest.ensure_identity();
+        assert_eq!(manifest.caps.len(), 2, "ensure_identity must be idempotent");
     }
 }

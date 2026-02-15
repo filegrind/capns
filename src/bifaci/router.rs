@@ -7,8 +7,8 @@
 //! The router receives frames (REQ, STREAM_START, CHUNK, STREAM_END, END) and delegates
 //! them to the appropriate target plugin, then forwards responses back.
 
-use crate::plugin_host_runtime::{AsyncHostError, ResponseChunk};
-use crate::cbor_frame::Frame;
+use crate::bifaci::host_runtime::{AsyncHostError, ResponseChunk};
+use crate::bifaci::frame::Frame;
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
 

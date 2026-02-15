@@ -31,8 +31,8 @@
 //! }
 //! ```
 
-use crate::cap_urn::CapUrn;
-use crate::media_spec::{resolve_media_urn, MediaSpecDef, MediaSpecError, ResolvedMediaSpec};
+use crate::urn::cap_urn::CapUrn;
+use crate::media::spec::{resolve_media_urn, MediaSpecDef, MediaSpecError, ResolvedMediaSpec};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
@@ -188,7 +188,7 @@ impl CapArg {
     pub async fn resolve(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<ResolvedMediaSpec, MediaSpecError> {
         resolve_media_urn(&self.media_urn, media_specs, registry).await
     }
@@ -197,7 +197,7 @@ impl CapArg {
     pub async fn is_binary(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_binary())
     }
@@ -207,7 +207,7 @@ impl CapArg {
     pub async fn is_json(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
     }
@@ -217,7 +217,7 @@ impl CapArg {
     pub async fn is_structured(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_structured())
     }
@@ -226,7 +226,7 @@ impl CapArg {
     pub async fn media_type(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<String, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.media_type)
     }
@@ -235,7 +235,7 @@ impl CapArg {
     pub async fn profile_uri(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<String>, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.profile_uri)
     }
@@ -244,7 +244,7 @@ impl CapArg {
     pub async fn schema(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<serde_json::Value>, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.schema)
     }
@@ -331,7 +331,7 @@ impl CapOutput {
     pub async fn resolve(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<ResolvedMediaSpec, MediaSpecError> {
         resolve_media_urn(&self.media_urn, media_specs, registry).await
     }
@@ -340,7 +340,7 @@ impl CapOutput {
     pub async fn is_binary(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_binary())
     }
@@ -350,7 +350,7 @@ impl CapOutput {
     pub async fn is_json(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
     }
@@ -360,7 +360,7 @@ impl CapOutput {
     pub async fn is_structured(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.is_structured())
     }
@@ -369,7 +369,7 @@ impl CapOutput {
     pub async fn media_type(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<String, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.media_type)
     }
@@ -378,7 +378,7 @@ impl CapOutput {
     pub async fn profile_uri(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<String>, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.profile_uri)
     }
@@ -387,7 +387,7 @@ impl CapOutput {
     pub async fn schema(
         &self,
         media_specs: Option<&[MediaSpecDef]>,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<serde_json::Value>, MediaSpecError> {
         self.resolve(media_specs, registry).await.map(|ms| ms.schema)
     }
@@ -723,7 +723,7 @@ impl Cap {
     pub async fn resolve_media_urn(
         &self,
         media_urn: &str,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<ResolvedMediaSpec, MediaSpecError> {
         resolve_media_urn(media_urn, Some(&self.media_specs), registry).await
     }

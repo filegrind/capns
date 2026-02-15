@@ -15,7 +15,7 @@
 //!
 //! The CBOR payload is a map with integer keys (see cbor_frame.rs).
 
-use crate::cbor_frame::{keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_CHUNK, DEFAULT_MAX_FRAME, DEFAULT_MAX_REORDER_BUFFER};
+use crate::bifaci::frame::{keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_CHUNK, DEFAULT_MAX_FRAME, DEFAULT_MAX_REORDER_BUFFER};
 use ciborium::Value;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
@@ -1449,7 +1449,7 @@ mod tests {
     #[test]
     fn test_relay_notify_roundtrip() {
         let manifest = b"{\"caps\":[\"cap:op=test\",\"cap:op=convert\"]}";
-        let limits = crate::cbor_frame::Limits { max_frame: 2_000_000, max_chunk: 128_000, ..crate::cbor_frame::Limits::default() };
+        let limits = crate::bifaci::frame::Limits { max_frame: 2_000_000, max_chunk: 128_000, ..crate::bifaci::frame::Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
 
         let encoded = encode_frame(&frame).unwrap();

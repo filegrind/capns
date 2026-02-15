@@ -17,8 +17,8 @@
 //! println!("Title: {:?}", spec.title);
 //! ```
 
-use crate::media_spec::MediaSpecDef;
-use crate::registry::RegistryConfig;
+use crate::media::spec::MediaSpecDef;
+use crate::cap::registry::RegistryConfig;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

@@ -37,13 +37,14 @@
 //! }
 //! ```
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::cbor_io::{handshake_accept, CborError, FrameReader, FrameWriter};
-use crate::caller::CapArgumentValue;
-use crate::cap::{ArgSource, Cap, CapArg};
-use crate::cap_urn::CapUrn;
-use crate::manifest::CapManifest;
-use crate::media_urn::{MediaUrn, MEDIA_FILE_PATH, MEDIA_FILE_PATH_ARRAY};
+use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::io::{handshake_accept, CborError, FrameReader, FrameWriter};
+use crate::cap::caller::CapArgumentValue;
+use crate::cap::definition::{ArgSource, Cap, CapArg};
+use crate::urn::cap_urn::CapUrn;
+use crate::bifaci::manifest::CapManifest;
+use crate::urn::media_urn::{MediaUrn, MEDIA_FILE_PATH, MEDIA_FILE_PATH_ARRAY};
+use crate::standard::caps::{CAP_IDENTITY, CAP_DISCARD};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -1424,6 +1425,29 @@ pub struct PluginRuntime {
     limits: Limits,
 }
 
+/// Standard identity handler — pure passthrough. Forwards all input chunks to output.
+fn identity_handler(input: InputPackage, output: &OutputStream, _peer: &dyn PeerInvoker) -> Result<(), RuntimeError> {
+    for stream_result in input {
+        let stream = stream_result.map_err(|e| RuntimeError::Handler(format!("Identity input error: {}", e)))?;
+        for chunk_result in stream {
+            let chunk = chunk_result.map_err(|e| RuntimeError::Handler(format!("Identity chunk error: {}", e)))?;
+            output.emit_cbor(&chunk)?;
+        }
+    }
+    Ok(())
+}
+
+/// Standard discard handler — terminal morphism. Drains all input, produces nothing.
+fn discard_handler(input: InputPackage, _output: &OutputStream, _peer: &dyn PeerInvoker) -> Result<(), RuntimeError> {
+    for stream_result in input {
+        let stream = stream_result.map_err(|e| RuntimeError::Handler(format!("Discard input error: {}", e)))?;
+        for chunk_result in stream {
+            let _ = chunk_result.map_err(|e| RuntimeError::Handler(format!("Discard chunk error: {}", e)))?;
+        }
+    }
+    Ok(())
+}
+
 impl PluginRuntime {
     /// Create a new plugin runtime with the required manifest.
     ///
@@ -1435,33 +1459,68 @@ impl PluginRuntime {
     /// This manifest is sent in the HELLO response to the host (CBOR mode)
     /// and used for CLI argument parsing (CLI mode).
     /// **Plugins MUST provide a manifest - there is no fallback.**
+    ///
+    /// Auto-registers standard handlers (identity, discard) and ensures
+    /// CAP_IDENTITY is present in the manifest.
     pub fn new(manifest: &[u8]) -> Self {
         // Try to parse the manifest for CLI mode support
         let parsed_manifest = serde_json::from_slice::<CapManifest>(manifest).ok();
 
-        Self {
+        // Ensure identity in manifest, re-serialize if needed
+        let (manifest_data, parsed_manifest) = match parsed_manifest {
+            Some(m) => {
+                let m = m.ensure_identity();
+                let data = serde_json::to_vec(&m).unwrap_or_else(|_| manifest.to_vec());
+                (data, Some(m))
+            }
+            None => (manifest.to_vec(), None),
+        };
+
+        let mut rt = Self {
             handlers: HashMap::new(),
-            manifest_data: manifest.to_vec(),
+            manifest_data,
             manifest: parsed_manifest,
             limits: Limits::default(),
-        }
+        };
+        rt.register_standard_caps();
+        rt
     }
 
     /// Create a new plugin runtime with a pre-built CapManifest.
     /// This is the preferred method as it ensures the manifest is valid.
+    ///
+    /// Auto-registers standard handlers (identity, discard) and ensures
+    /// CAP_IDENTITY is present in the manifest.
     pub fn with_manifest(manifest: CapManifest) -> Self {
+        let manifest = manifest.ensure_identity();
         let manifest_data = serde_json::to_vec(&manifest).unwrap_or_default();
-        Self {
+        let mut rt = Self {
             handlers: HashMap::new(),
             manifest_data,
             manifest: Some(manifest),
             limits: Limits::default(),
-        }
+        };
+        rt.register_standard_caps();
+        rt
     }
 
     /// Create a new plugin runtime with manifest JSON string.
+    ///
+    /// Auto-registers standard handlers (identity, discard) and ensures
+    /// CAP_IDENTITY is present in the manifest.
     pub fn with_manifest_json(manifest_json: &str) -> Self {
         Self::new(manifest_json.as_bytes())
+    }
+
+    /// Register the standard identity and discard handlers.
+    /// Plugin authors can override either by calling register_raw() after construction.
+    fn register_standard_caps(&mut self) {
+        if self.find_handler(CAP_IDENTITY).is_none() {
+            self.handlers.insert(CAP_IDENTITY.to_string(), Arc::new(identity_handler));
+        }
+        if self.find_handler(CAP_DISCARD).is_none() {
+            self.handlers.insert(CAP_DISCARD.to_string(), Arc::new(discard_handler));
+        }
     }
 
     /// Register a handler for a cap URN.
@@ -1515,6 +1574,10 @@ impl PluginRuntime {
 
     /// Find a handler for a cap URN.
     /// Returns the handler if found, None otherwise.
+    ///
+    /// Matching direction: request is pattern, registered cap is instance.
+    /// `request.accepts(registered_cap)` — the request must accept the registered cap,
+    /// meaning the registered cap must be able to satisfy what the request asks for.
     pub fn find_handler(&self, cap_urn: &str) -> Option<HandlerFn> {
         // First try exact match
         if let Some(handler) = self.handlers.get(cap_urn) {
@@ -1522,14 +1585,15 @@ impl PluginRuntime {
         }
 
         // Then try pattern matching via CapUrn
+        // Request is pattern, registered cap is instance
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
         };
 
-        for (pattern, handler) in &self.handlers {
-            if let Ok(pattern_urn) = CapUrn::from_string(pattern) {
-                if pattern_urn.accepts(&request_urn) {
+        for (registered_cap_str, handler) in &self.handlers {
+            if let Ok(registered_urn) = CapUrn::from_string(registered_cap_str) {
+                if request_urn.accepts(&registered_urn) {
                     return Some(Arc::clone(handler));
                 }
             }
@@ -2942,7 +3006,7 @@ mod tests {
     // TEST258: Test PluginRuntime::with_manifest creates runtime with valid manifest data
     #[test]
     fn test_with_manifest_struct() {
-        let manifest: crate::manifest::CapManifest = serde_json::from_str(VALID_MANIFEST).unwrap();
+        let manifest: crate::bifaci::manifest::CapManifest = serde_json::from_str(VALID_MANIFEST).unwrap();
         let runtime = PluginRuntime::with_manifest(manifest);
         assert!(!runtime.manifest_data.is_empty());
         assert!(runtime.manifest.is_some());
@@ -5019,5 +5083,54 @@ mod tests {
             Err(e) => panic!("Expected RuntimeError::Io, got: {:?}", e),
             Ok(_) => panic!("Expected error"),
         }
+    }
+
+    // TEST478: PluginRuntime auto-registers identity and discard handlers on construction
+    #[test]
+    fn test478_auto_registers_identity_handler() {
+        let runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
+
+        // Identity handler must be registered at exact CAP_IDENTITY URN
+        assert!(runtime.find_handler(CAP_IDENTITY).is_some(),
+            "PluginRuntime must auto-register identity handler");
+
+        // Discard handler must be registered at exact CAP_DISCARD URN
+        assert!(runtime.find_handler(CAP_DISCARD).is_some(),
+            "PluginRuntime must auto-register discard handler");
+
+        // Standard handlers must NOT match arbitrary specific requests
+        // (request is pattern, registered cap is instance — broad caps don't satisfy specific patterns)
+        assert!(runtime.find_handler("cap:in=\"media:void\";op=nonexistent;out=\"media:void\"").is_none(),
+            "Standard handlers must not catch arbitrary specific requests");
+    }
+
+    // TEST479: Custom identity handler overrides auto-registered default
+    #[test]
+    fn test479_custom_identity_overrides_default() {
+        let mut runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
+
+        // Auto-registered identity handler must exist
+        assert!(runtime.find_handler(CAP_IDENTITY).is_some(),
+            "Auto-registered identity must exist before override");
+
+        // Count handlers before override
+        let handlers_before = runtime.handlers.len();
+
+        // Override identity with a custom handler
+        runtime.register_raw(CAP_IDENTITY, |_input, _output, _peer| {
+            Err(RuntimeError::Handler("custom identity".to_string()))
+        });
+
+        // Handler count must not change (HashMap insert replaces, doesn't add)
+        assert_eq!(runtime.handlers.len(), handlers_before,
+            "Overriding identity must replace, not add a new entry");
+
+        // The handler at CAP_IDENTITY must still be findable
+        assert!(runtime.find_handler(CAP_IDENTITY).is_some(),
+            "Identity handler must be findable after override");
+
+        // Also verify discard was NOT affected by the override
+        assert!(runtime.find_handler(CAP_DISCARD).is_some(),
+            "Discard handler must still be present after overriding identity");
     }
 }

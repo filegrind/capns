@@ -25,8 +25,8 @@
 //! - RelayNotify/RelayState: fatal error (plugins must never send these)
 //! - Everything else: forwarded to relay (pass-through)
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::cbor_io::{handshake_async, AsyncFrameReader, AsyncFrameWriter, CborError};
+use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::io::{handshake_async, AsyncFrameReader, AsyncFrameWriter, CborError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -1061,12 +1061,20 @@ impl PluginHostRuntime {
     /// frame with the updated capabilities. This allows RelaySwitch/RelayMaster
     /// to track capability changes dynamically as plugins connect/disconnect/fail.
     fn rebuild_capabilities(&mut self, outbound_tx: Option<&mpsc::UnboundedSender<Frame>>) {
-        // Collect capability URN strings from all running plugins
-        let mut cap_urns = Vec::new();
+        use crate::standard::caps::CAP_IDENTITY;
+
+        // CAP_IDENTITY is always present — structural, not plugin-dependent
+        let mut cap_urns = vec![CAP_IDENTITY.to_string()];
+
+        // Add capability URN strings from all running plugins
         for plugin in &self.plugins {
             if plugin.running && !plugin.hello_failed {
                 for cap in &plugin.caps {
-                    cap_urns.push(cap.urn.to_string());
+                    let urn_str = cap.urn.to_string();
+                    // Don't duplicate identity (plugins also declare it)
+                    if urn_str != CAP_IDENTITY {
+                        cap_urns.push(urn_str);
+                    }
                 }
             }
         }
@@ -1234,11 +1242,23 @@ impl Drop for PluginHostRuntime {
 /// ```
 fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<crate::Cap>, AsyncHostError> {
     use crate::CapManifest;
+    use crate::urn::cap_urn::CapUrn;
+    use crate::standard::caps::CAP_IDENTITY;
 
     // Deserialize directly into CapManifest - fail hard if invalid
     let manifest_obj: CapManifest = serde_json::from_slice(manifest).map_err(|e| {
         AsyncHostError::Protocol(format!("Invalid CapManifest from plugin: {}", e))
     })?;
+
+    // Verify CAP_IDENTITY is declared — mandatory for every plugin
+    let identity_urn = CapUrn::from_string(CAP_IDENTITY)
+        .expect("BUG: CAP_IDENTITY constant is invalid");
+    let has_identity = manifest_obj.caps.iter().any(|cap| identity_urn.accepts(&cap.urn));
+    if !has_identity {
+        return Err(AsyncHostError::Protocol(
+            format!("Plugin manifest missing required CAP_IDENTITY ({})", CAP_IDENTITY)
+        ));
+    }
 
     // Return the Cap objects directly
     Ok(manifest_obj.caps)
@@ -1253,6 +1273,24 @@ mod tests {
     use super::*;
     use crate::standard::caps::CAP_IDENTITY;
     use crate::CapUrn;
+
+    // TEST480: parse_caps_from_manifest rejects manifest without CAP_IDENTITY
+    #[test]
+    fn test480_parse_caps_rejects_manifest_without_identity() {
+        // Valid manifest but missing CAP_IDENTITY
+        let manifest = r#"{"name":"Test","version":"1.0","description":"Test","caps":[{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let result = parse_caps_from_manifest(manifest.as_bytes());
+        assert!(result.is_err(), "Manifest without CAP_IDENTITY must be rejected");
+        let err = result.unwrap_err();
+        assert!(format!("{}", err).contains("CAP_IDENTITY"),
+            "Error must mention CAP_IDENTITY, got: {}", err);
+
+        // Valid manifest WITH CAP_IDENTITY must succeed
+        let manifest_ok = r#"{"name":"Test","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let result_ok = parse_caps_from_manifest(manifest_ok.as_bytes());
+        assert!(result_ok.is_ok(), "Manifest with CAP_IDENTITY must be accepted");
+        assert_eq!(result_ok.unwrap().len(), 2, "Must parse both caps");
+    }
 
     // TEST235: Test ResponseChunk stores payload, seq, offset, len, and eof fields correctly
     #[test]
@@ -1365,7 +1403,7 @@ mod tests {
     // TEST244: Test AsyncHostError::from converts CborError to Cbor variant
     #[test]
     fn test_async_host_error_from_cbor() {
-        let cbor_err = crate::cbor_io::CborError::InvalidFrame("test".to_string());
+        let cbor_err = crate::bifaci::io::CborError::InvalidFrame("test".to_string());
         let host_err: AsyncHostError = cbor_err.into();
         match host_err {
             AsyncHostError::Cbor(msg) => assert!(msg.contains("test")),
@@ -1513,7 +1551,7 @@ mod tests {
         // Plugin thread does handshake
         let manifest_bytes = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut reader = FrameReader::new(BufReader::new(plugin_from_runtime_std));
             let mut writer = FrameWriter::new(BufWriter::new(plugin_to_runtime_std));
@@ -1541,8 +1579,8 @@ mod tests {
     // TEST417: Route REQ to correct plugin by cap_urn (with two attached plugins)
     #[tokio::test]
     async fn test_route_req_to_correct_plugin() {
-        let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
-        let manifest_b = r#"{"name":"PluginB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=\"media:void\";op=analyze;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest_b = r#"{"name":"PluginB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=analyze;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         // Create two plugin pipe pairs
         let (pa_to_rt_std, rt_from_pa_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1567,7 +1605,7 @@ mod tests {
         // Plugin A thread
         let ma = manifest_a.as_bytes().to_vec();
         let pa_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(pa_from_rt_std));
@@ -1599,7 +1637,7 @@ mod tests {
         // Plugin B thread
         let mb = manifest_b.as_bytes().to_vec();
         let pb_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut r = FrameReader::new(BufReader::new(pb_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(pb_to_rt_std));
@@ -1696,7 +1734,7 @@ mod tests {
     // TEST419: Plugin HEARTBEAT handled locally (not forwarded to relay)
     #[tokio::test]
     async fn test_plugin_heartbeat_handled_locally() {
-        let manifest = r#"{"name":"HBPlugin","version":"1.0","description":"Heartbeat plugin","caps":[{"urn":"cap:in=\"media:void\";op=hb;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"HBPlugin","version":"1.0","description":"Heartbeat plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=hb;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1710,7 +1748,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
@@ -1781,7 +1819,7 @@ mod tests {
     // TEST420: Plugin non-HELLO/non-HB frames forwarded to relay (pass-through)
     #[tokio::test]
     async fn test_plugin_frames_forwarded_to_relay() {
-        let manifest = r#"{"name":"FwdPlugin","version":"1.0","description":"Forward plugin","caps":[{"urn":"cap:in=\"media:void\";op=fwd;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"FwdPlugin","version":"1.0","description":"Forward plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=fwd;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1797,7 +1835,7 @@ mod tests {
         let req_id = MessageId::new_uuid();
         let req_id_for_plugin = req_id.clone();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
@@ -1920,7 +1958,7 @@ mod tests {
     // is present on those frames.
     #[tokio::test]
     async fn test_route_continuation_frames_by_req_id() {
-        let manifest = r#"{"name":"ContPlugin","version":"1.0","description":"Continuation plugin","caps":[{"urn":"cap:in=\"media:void\";op=cont;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"ContPlugin","version":"1.0","description":"Continuation plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=cont;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1934,7 +1972,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
@@ -2066,7 +2104,7 @@ mod tests {
     // TEST421: Plugin death updates capability list (caps removed)
     #[tokio::test]
     async fn test_plugin_death_updates_capabilities() {
-        let manifest = r#"{"name":"Dying","version":"1.0","description":"Dying plugin","caps":[{"urn":"cap:in=\"media:void\";op=die;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"Dying","version":"1.0","description":"Dying plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=die;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2080,7 +2118,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
@@ -2128,12 +2166,14 @@ mod tests {
 
         let _ = runtime.run(rt_read_half, rt_write_half, || vec![]).await;
 
-        // After death: caps should be empty (capabilities is a JSON array of URN strings)
+        // After death: only CAP_IDENTITY should remain (always present, plugin-specific caps removed)
         let caps_after = runtime.capabilities();
         let caps_str = std::str::from_utf8(caps_after).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(caps_str).unwrap();
         let arr = parsed.as_array().expect("capabilities should be a JSON array");
-        assert!(arr.is_empty(), "Dead plugin's caps should be removed. Got: {}", caps_str);
+        assert_eq!(arr.len(), 1, "Only CAP_IDENTITY should remain after plugin death. Got: {}", caps_str);
+        assert_eq!(arr[0].as_str().unwrap(), CAP_IDENTITY,
+            "Remaining cap must be CAP_IDENTITY. Got: {}", caps_str);
 
         plugin_handle.join().unwrap();
     }
@@ -2141,7 +2181,7 @@ mod tests {
     // TEST422: Plugin death sends ERR for all pending requests via relay
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_plugin_death_sends_err_for_pending_requests() {
-        let manifest = r#"{"name":"DiePlugin","version":"1.0","description":"Die plugin","caps":[{"urn":"cap:in=\"media:void\";op=die;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"DiePlugin","version":"1.0","description":"Die plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=die;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2155,7 +2195,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));
             let mut w = FrameWriter::new(BufWriter::new(p_to_rt_std));
@@ -2230,8 +2270,8 @@ mod tests {
     // TEST423: Multiple plugins registered with distinct caps route independently
     #[tokio::test]
     async fn test_multiple_plugins_route_independently() {
-        let manifest_a = r#"{"name":"PA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
-        let manifest_b = r#"{"name":"PB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=\"media:void\";op=beta;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest_a = r#"{"name":"PA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest_b = r#"{"name":"PB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=beta;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         // Plugin A
         let (pa_to_rt, rt_from_pa) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2255,7 +2295,7 @@ mod tests {
 
         let ma = manifest_a.as_bytes().to_vec();
         let pa_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(pa_from_rt));
@@ -2285,7 +2325,7 @@ mod tests {
 
         let mb = manifest_b.as_bytes().to_vec();
         let pb_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(pb_from_rt));
@@ -2398,7 +2438,7 @@ mod tests {
     // TEST424: Concurrent requests to the same plugin are handled independently
     #[tokio::test]
     async fn test_concurrent_requests_to_same_plugin() {
-        let manifest = r#"{"name":"ConcPlugin","version":"1.0","description":"Concurrent plugin","caps":[{"urn":"cap:in=\"media:void\";op=conc;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"ConcPlugin","version":"1.0","description":"Concurrent plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=conc;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2411,7 +2451,7 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = std::thread::spawn(move || {
-            use crate::cbor_io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
             use std::io::{BufReader, BufWriter};
             let mut seq = SeqAssigner::new();
             let mut r = FrameReader::new(BufReader::new(p_from_rt_std));

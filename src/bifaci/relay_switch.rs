@@ -44,9 +44,9 @@
 //! - Engine-initiated: plugin's END → cleanup immediately
 //! - Peer-initiated: engine's response END → cleanup (wait for final response)
 
-use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::cbor_io::{CborError, FrameReader, FrameWriter};
-use crate::plugin_relay::RelayMaster;
+use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
+use crate::bifaci::relay::RelayMaster;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter};
 use std::os::unix::net::UnixStream;
@@ -768,41 +768,35 @@ impl RelaySwitch {
             }
 
             FrameType::RelayNotify => {
-                // Capability update from plugin - update our cap table
+                // Capability update from host — update our cap table
                 eprintln!("[RelaySwitch] Received RelayNotify from master {}", source_idx);
 
-                if let Some(caps_payload) = frame.relay_notify_manifest() {
-                    eprintln!("[RelaySwitch] RelayNotify payload: {} bytes", caps_payload.len());
-                    match parse_caps_from_relay_notify(caps_payload) {
-                        Ok(new_caps) => {
-                            eprintln!("[RelaySwitch] Parsed {} caps:", new_caps.len());
-                            for (idx, cap) in new_caps.iter().enumerate() {
-                                eprintln!("[RelaySwitch]   cap[{}]: {}", idx, cap);
-                            }
-                            // Update master's caps and limits
-                            if let Some(master) = self.masters.get_mut(source_idx) {
-                                master.caps = new_caps;
-                                master.manifest = caps_payload.to_vec();
-                                // Extract and update limits from RelayNotify
-                                if let Some(new_limits) = frame.relay_notify_limits() {
-                                    master.limits = new_limits;
-                                }
-                            }
-                            // Rebuild cap_table, aggregate capabilities, and limits from all masters
-                            self.rebuild_cap_table();
-                            self.rebuild_capabilities();
-                            self.rebuild_limits();
-                            eprintln!("[RelaySwitch] Cap table now has {} entries", self.cap_table.len());
-                        }
-                        Err(e) => {
-                            eprintln!("[RelaySwitch] Failed to parse RelayNotify payload: {}", e);
-                        }
-                    }
-                } else {
-                    eprintln!("[RelaySwitch] RelayNotify has no payload!");
-                }
+                let caps_payload = frame.relay_notify_manifest()
+                    .ok_or_else(|| RelaySwitchError::Protocol("RelayNotify has no payload".to_string()))?;
 
-                // Also pass through to engine (for visibility)
+                eprintln!("[RelaySwitch] RelayNotify payload: {} bytes", caps_payload.len());
+                let new_caps = parse_caps_from_relay_notify(caps_payload)?;
+
+                eprintln!("[RelaySwitch] Parsed {} caps:", new_caps.len());
+                for (idx, cap) in new_caps.iter().enumerate() {
+                    eprintln!("[RelaySwitch]   cap[{}]: {}", idx, cap);
+                }
+                // Update master's caps and limits
+                if let Some(master) = self.masters.get_mut(source_idx) {
+                    master.caps = new_caps;
+                    master.manifest = caps_payload.to_vec();
+                    // Extract and update limits from RelayNotify
+                    if let Some(new_limits) = frame.relay_notify_limits() {
+                        master.limits = new_limits;
+                    }
+                }
+                // Rebuild cap_table, aggregate capabilities, and limits from all masters
+                self.rebuild_cap_table();
+                self.rebuild_capabilities();
+                self.rebuild_limits();
+                eprintln!("[RelaySwitch] Cap table now has {} entries", self.cap_table.len());
+
+                // Pass through to engine (for visibility)
                 Ok(Some(frame))
             }
 
@@ -928,12 +922,12 @@ impl RelaySwitch {
 
         self.negotiated_limits = Limits {
             max_frame: if min_max_frame == usize::MAX {
-                crate::cbor_frame::DEFAULT_MAX_FRAME
+                crate::bifaci::frame::DEFAULT_MAX_FRAME
             } else {
                 min_max_frame
             },
             max_chunk: if min_max_chunk == usize::MAX {
-                crate::cbor_frame::DEFAULT_MAX_CHUNK
+                crate::bifaci::frame::DEFAULT_MAX_CHUNK
             } else {
                 min_max_chunk
             },
@@ -948,10 +942,28 @@ impl RelaySwitch {
 
 /// Parse capability URNs from RelayNotify payload.
 /// RelayNotify contains a simple JSON array of URN strings: ["cap:...", "cap:...", ...]
+/// Validates that CAP_IDENTITY is present — hard-fail if missing.
 fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, RelaySwitchError> {
+    use crate::urn::cap_urn::CapUrn;
+    use crate::standard::caps::CAP_IDENTITY;
+
     // Deserialize simple JSON array of URN strings
     let cap_urns: Vec<String> = serde_json::from_slice(notify_payload)
         .map_err(|e| RelaySwitchError::Protocol(format!("Invalid RelayNotify capability array: {}", e)))?;
+
+    // Verify CAP_IDENTITY is present — mandatory for every host
+    let identity_urn = CapUrn::from_string(CAP_IDENTITY)
+        .expect("BUG: CAP_IDENTITY constant is invalid");
+    let has_identity = cap_urns.iter().any(|cap_str| {
+        CapUrn::from_string(cap_str)
+            .map(|cap_urn| identity_urn.accepts(&cap_urn))
+            .unwrap_or(false)
+    });
+    if !has_identity {
+        return Err(RelaySwitchError::Protocol(
+            format!("RelayNotify missing required CAP_IDENTITY ({})", CAP_IDENTITY)
+        ));
+    }
 
     Ok(cap_urns)
 }
@@ -963,7 +975,7 @@ fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cbor_frame::{Frame, SeqAssigner};
+    use crate::bifaci::frame::{Frame, SeqAssigner};
     use crate::standard::caps::CAP_IDENTITY;
     use std::os::unix::net::UnixStream;
 
@@ -999,7 +1011,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
-            let manifest = serde_json::json!( ["cap:in=\"media:void\";op=double;out=\"media:void\""]);
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1176,7 +1188,7 @@ mod tests {
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
             let mut seq = SeqAssigner::new();
 
-            let manifest = serde_json::json!( ["cap:in=\"media:void\";op=double;out=\"media:void\""]);
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1435,7 +1447,7 @@ mod tests {
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
             let mut seq = SeqAssigner::new();
 
-            let manifest = serde_json::json!( ["cap:in=\"media:void\";op=test;out=\"media:void\""]);
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:", "cap:in=\"media:void\";op=test;out=\"media:void\""]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),
@@ -1607,7 +1619,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read1));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write1));
-            let manifest = serde_json::json!([]);
+            let manifest = serde_json::json!(["cap:in=media:;out=media:"]);
             let limits1 = Limits {
                 max_frame: 1_000_000,
                 max_chunk: 100_000,
@@ -1624,7 +1636,7 @@ mod tests {
         std::thread::spawn(move || {
             let _reader = FrameReader::new(BufReader::new(slave_read2));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write2));
-            let manifest = serde_json::json!([]);
+            let manifest = serde_json::json!(["cap:in=media:;out=media:"]);
             let limits2 = Limits {
                 max_frame: 2_000_000,  // Larger
                 max_chunk: 50_000,     // Smaller
@@ -1676,7 +1688,7 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(slave_read));
             let mut writer = FrameWriter::new(BufWriter::new(slave_write));
             let mut seq = SeqAssigner::new();
-            let manifest = serde_json::json!( [registered_cap]);
+            let manifest = serde_json::json!( ["cap:in=media:;out=media:", registered_cap]);
             let notify = Frame::relay_notify(
                 &serde_json::to_vec(&manifest).unwrap(),
                 &Limits::default(),

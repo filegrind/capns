@@ -8,8 +8,8 @@
 //!
 //! All other frames pass through transparently in both directions.
 
-use crate::cbor_frame::{Frame, FlowKey, FrameType, Limits, MessageId, ReorderBuffer};
-use crate::cbor_io::{
+use crate::bifaci::frame::{Frame, FlowKey, FrameType, Limits, MessageId, ReorderBuffer};
+use crate::bifaci::io::{
     encode_frame, read_frame, write_frame, CborError, FrameReader, FrameWriter,
 };
 use std::io::{Read, Write};
@@ -76,7 +76,7 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
             socket_write.write(&notify)?;
             limits.max_reorder_buffer
         } else {
-            crate::cbor_frame::DEFAULT_MAX_REORDER_BUFFER
+            crate::bifaci::frame::DEFAULT_MAX_REORDER_BUFFER
         };
 
         let resource_state = self.resource_state;
@@ -330,7 +330,7 @@ impl RelayMaster {
 // ASYNC RELAY TYPES
 // =============================================================================
 
-use crate::cbor_io::{read_frame_async, write_frame_async, AsyncFrameReader, AsyncFrameWriter};
+use crate::bifaci::io::{read_frame_async, write_frame_async, AsyncFrameReader, AsyncFrameWriter};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 /// Async relay master for use with tokio.
@@ -436,8 +436,8 @@ impl AsyncRelayMaster {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cbor_frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
-    use crate::cbor_io::{FrameReader, FrameWriter};
+    use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+    use crate::bifaci::io::{FrameReader, FrameWriter};
     use std::io::{BufReader, BufWriter};
     use std::thread;
 

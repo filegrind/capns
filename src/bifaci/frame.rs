@@ -757,7 +757,7 @@ impl SeqAssigner {
 // REORDER BUFFER — Per-flow frame reordering at relay boundaries
 // =============================================================================
 
-use crate::cbor_io::CborError;
+use crate::bifaci::io::CborError;
 
 /// Per-flow state for the reorder buffer.
 struct FlowState {

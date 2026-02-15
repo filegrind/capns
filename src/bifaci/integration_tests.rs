@@ -6,14 +6,15 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::cbor_frame::{Frame, FrameType, MessageId, SeqAssigner};
-    use crate::cbor_io::{FrameReader, FrameWriter, handshake, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
-    use crate::plugin_runtime::PluginRuntime;
+    use crate::bifaci::frame::{Frame, FrameType, MessageId, SeqAssigner};
+    use crate::bifaci::io::{FrameReader, FrameWriter, handshake, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
+    use crate::bifaci::plugin_runtime::PluginRuntime;
     use crate::standard::caps::CAP_IDENTITY;
     use std::io::{BufReader, BufWriter};
 
-    /// Test manifest JSON - plugins MUST include manifest in HELLO response
-    const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","title":"Test","command":"test","args":[]}]}"#;
+    /// Test manifest JSON - plugins MUST include manifest in HELLO response.
+    /// CAP_IDENTITY is mandatory in every manifest.
+    const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
     // TEST293: Test PluginRuntime handler registration and lookup by exact and non-existent cap URN
     #[test]
@@ -96,7 +97,7 @@ mod tests {
     // TEST426: Full path: engine REQ → runtime → plugin → response back through relay
     #[tokio::test]
     async fn test_full_path_engine_req_to_plugin_response() {
-        use crate::plugin_host_runtime::PluginHostRuntime;
+        use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"EchoPlugin","version":"1.0","description":"Echo test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Test","command":"test","args":[]}]}"#;
 
@@ -205,9 +206,9 @@ mod tests {
     // TEST427: Plugin ERR frame flows back to engine through relay
     #[tokio::test]
     async fn test_plugin_error_flows_to_engine() {
-        use crate::plugin_host_runtime::PluginHostRuntime;
+        use crate::bifaci::host_runtime::PluginHostRuntime;
 
-        let manifest = r#"{"name":"ErrPlugin","version":"1.0","description":"Error test plugin","caps":[{"urn":"cap:in=\"media:void\";op=fail;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"ErrPlugin","version":"1.0","description":"Error test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=fail;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_read, p_write, p_from_rt, p_to_rt) = create_plugin_pair();
         let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
@@ -277,9 +278,9 @@ mod tests {
     // TEST428: Binary data integrity through full relay path (256 byte values)
     #[tokio::test]
     async fn test_binary_integrity_through_relay() {
-        use crate::plugin_host_runtime::PluginHostRuntime;
+        use crate::bifaci::host_runtime::PluginHostRuntime;
 
-        let manifest = r#"{"name":"BinPlugin","version":"1.0","description":"Binary test plugin","caps":[{"urn":"cap:in=\"media:void\";op=binary;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"BinPlugin","version":"1.0","description":"Binary test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=binary;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_read, p_write, p_from_rt, p_to_rt) = create_plugin_pair();
         let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
@@ -391,9 +392,9 @@ mod tests {
     // TEST429: Streaming chunks flow through relay without accumulation
     #[tokio::test]
     async fn test_streaming_chunks_through_relay() {
-        use crate::plugin_host_runtime::PluginHostRuntime;
+        use crate::bifaci::host_runtime::PluginHostRuntime;
 
-        let manifest = r#"{"name":"StreamPlugin","version":"1.0","description":"Streaming test plugin","caps":[{"urn":"cap:in=\"media:void\";op=stream;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"StreamPlugin","version":"1.0","description":"Streaming test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=stream;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_read, p_write, p_from_rt, p_to_rt) = create_plugin_pair();
         let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
@@ -487,10 +488,10 @@ mod tests {
     // TEST431: Two plugins routed independently by cap_urn
     #[tokio::test]
     async fn test_two_plugins_routed_independently() {
-        use crate::plugin_host_runtime::PluginHostRuntime;
+        use crate::bifaci::host_runtime::PluginHostRuntime;
 
-        let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
-        let manifest_b = r#"{"name":"PluginB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=\"media:void\";op=beta;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest_b = r#"{"name":"PluginB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=beta;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (pa_read, pa_write, pa_from_rt, pa_to_rt) = create_plugin_pair();
         let (pb_read, pb_write, pb_from_rt, pb_to_rt) = create_plugin_pair();
@@ -620,9 +621,9 @@ mod tests {
     // TEST432: REQ for unknown cap returns ERR frame (not fatal)
     #[tokio::test]
     async fn test_req_for_unknown_cap_returns_err_frame() {
-        use crate::plugin_host_runtime::PluginHostRuntime;
+        use crate::bifaci::host_runtime::PluginHostRuntime;
 
-        let manifest = r#"{"name":"OnePlugin","version":"1.0","description":"Known cap plugin","caps":[{"urn":"cap:in=\"media:void\";op=known;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
+        let manifest = r#"{"name":"OnePlugin","version":"1.0","description":"Known cap plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=known;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_read, p_write, p_from_rt, p_to_rt) = create_plugin_pair();
         let (rt_relay_read, rt_relay_write, eng_write, eng_read) = create_relay_pair();
@@ -726,7 +727,7 @@ mod tests {
     // TEST284: Handshake exchanges HELLO frames, negotiates limits
     #[test]
     fn test_handshake_host_plugin() {
-        use crate::cbor_io::{handshake, handshake_accept};
+        use crate::bifaci::io::{handshake, handshake_accept};
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -907,7 +908,7 @@ mod tests {
     // TEST290: Limit negotiation picks minimum
     #[test]
     fn test_limits_negotiation() {
-        use crate::cbor_io::{handshake, handshake_accept};
+        use crate::bifaci::io::{handshake, handshake_accept};
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();

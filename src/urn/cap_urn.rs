@@ -13,7 +13,7 @@ use std::fmt;
 use std::str::FromStr;
 use tagged_urn::{TaggedUrn, TaggedUrnBuilder, TaggedUrnError};
 
-use crate::media_urn::{MediaUrn, MediaUrnError, MEDIA_VOID, MEDIA_OBJECT};
+use crate::urn::media_urn::{MediaUrn, MediaUrnError, MEDIA_VOID, MEDIA_OBJECT};
 
 /// A cap URN using flat, ordered tags with required direction specifiers
 ///
@@ -100,7 +100,7 @@ impl CapUrn {
             .clone();
 
         // Validate that in and out specs are valid media URNs (or wildcard "*")
-        use crate::media_urn::MediaUrn;
+        use crate::urn::media_urn::MediaUrn;
         if in_urn != "*" {
             MediaUrn::from_string(&in_urn)
                 .map_err(|e| CapUrnError::InvalidInSpec(format!("Invalid media URN for in spec '{}': {}", in_urn, e)))?;

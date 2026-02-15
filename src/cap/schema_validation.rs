@@ -4,8 +4,8 @@
 //! Schemas are located in the `media_specs` table of the cap definition or in the registry.
 
 use crate::{Cap, CapOutput, CapArg};
-use crate::media_spec::resolve_media_urn;
-use crate::media_registry::MediaUrnRegistry;
+use crate::media::spec::resolve_media_urn;
+use crate::media::registry::MediaUrnRegistry;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -214,7 +214,7 @@ impl SchemaResolver for FileSchemaResolver {
 mod tests {
     use super::*;
     use crate::standard::media::MEDIA_STRING;
-    use crate::media_spec::MediaSpecDef;
+    use crate::media::spec::MediaSpecDef;
     use crate::{CapUrn, CapArg, ArgSource};
     use serde_json::json;
 

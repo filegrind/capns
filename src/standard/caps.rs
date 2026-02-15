@@ -7,7 +7,7 @@
 use crate::{
     Cap, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGE, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, RegistryError
 };
-use crate::media_urn::{
+use crate::urn::media_urn::{
     // Primitives (needed for coercion functions)
     MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_BINARY,
     // Semantic media types
@@ -34,9 +34,14 @@ use std::sync::Arc;
 // STANDARD CAP URN CONSTANTS
 // =============================================================================
 
-/// Standard echo capability URN
-/// Accepts any media type as input and outputs any media type
+/// Identity capability — the categorical identity morphism. MANDATORY in every capset.
+/// Accepts any media type as input and outputs any media type.
 pub const CAP_IDENTITY: &str = "cap:in=media:;out=media:";
+
+/// Discard capability — the terminal morphism. Standard, NOT mandatory.
+/// Accepts any media type as input and produces void output.
+/// The capns lib provides a default implementation; plugins may override.
+pub const CAP_DISCARD: &str = "cap:in=media:;out=media:void";
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -429,14 +434,14 @@ fn media_urn_for_type(type_name: &str) -> &'static str {
     match type_name {
         "string" => MEDIA_STRING,
         "integer" => MEDIA_INTEGER,
-        "number" => crate::media_urn::MEDIA_NUMBER,
+        "number" => crate::urn::media_urn::MEDIA_NUMBER,
         "boolean" => MEDIA_BOOLEAN,
         "object" => MEDIA_OBJECT,
-        "string-array" => crate::media_urn::MEDIA_STRING_ARRAY,
-        "integer-array" => crate::media_urn::MEDIA_INTEGER_ARRAY,
-        "number-array" => crate::media_urn::MEDIA_NUMBER_ARRAY,
-        "boolean-array" => crate::media_urn::MEDIA_BOOLEAN_ARRAY,
-        "object-array" => crate::media_urn::MEDIA_OBJECT_ARRAY,
+        "string-array" => crate::urn::media_urn::MEDIA_STRING_ARRAY,
+        "integer-array" => crate::urn::media_urn::MEDIA_INTEGER_ARRAY,
+        "number-array" => crate::urn::media_urn::MEDIA_NUMBER_ARRAY,
+        "boolean-array" => crate::urn::media_urn::MEDIA_BOOLEAN_ARRAY,
+        "object-array" => crate::urn::media_urn::MEDIA_OBJECT_ARRAY,
         other => panic!("Unknown media type: {}. Valid types are: string, integer, number, boolean, object, string-array, integer-array, number-array, boolean-array, object-array", other),
     }
 }
@@ -668,7 +673,7 @@ pub async fn all_coercion_caps(registry: Arc<CapRegistry>) -> Result<Vec<(&'stat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media_urn::{MEDIA_MODEL_SPEC, MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT};
+    use crate::urn::media_urn::{MEDIA_MODEL_SPEC, MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT};
     use crate::standard::media::MEDIA_STRING;
 
     // TEST307: Test model_availability_urn builds valid cap URN with correct op and media specs
@@ -710,7 +715,7 @@ mod tests {
     // TEST311: Test llm_conversation_urn in/out specs match the expected media URNs semantically
     #[test]
     fn test_llm_conversation_urn_specs() {
-        use crate::media_urn::MediaUrn;
+        use crate::urn::media_urn::MediaUrn;
         let urn = llm_conversation_urn("fr");
 
         // Compare semantically via MediaUrn matching (tag order may differ)
@@ -735,11 +740,46 @@ mod tests {
 
         // Verify they roundtrip through CapUrn parsing
         let avail_str = model_availability_urn().to_string();
-        let parsed = crate::cap_urn::CapUrn::from_string(&avail_str);
+        let parsed = crate::urn::cap_urn::CapUrn::from_string(&avail_str);
         assert!(parsed.is_ok(), "model_availability_urn must be parseable: {:?}", parsed.err());
 
         let path_str = model_path_urn().to_string();
-        let parsed = crate::cap_urn::CapUrn::from_string(&path_str);
+        let parsed = crate::urn::cap_urn::CapUrn::from_string(&path_str);
         assert!(parsed.is_ok(), "model_path_urn must be parseable: {:?}", parsed.err());
+    }
+
+    // TEST473: CAP_DISCARD parses as valid CapUrn with in=media: and out=media:void
+    #[test]
+    fn test473_cap_discard_parses_as_valid_urn() {
+        use crate::urn::cap_urn::CapUrn;
+        use crate::urn::media_urn::MEDIA_VOID;
+
+        let urn = CapUrn::from_string(CAP_DISCARD).expect("CAP_DISCARD must parse");
+        assert_eq!(urn.in_spec(), "media:", "CAP_DISCARD input must be wildcard media:");
+        assert_eq!(urn.out_spec(), MEDIA_VOID, "CAP_DISCARD output must be media:void");
+    }
+
+    // TEST474: CAP_DISCARD accepts specific-input/void-output caps
+    #[test]
+    fn test474_cap_discard_accepts_specific_void_cap() {
+        use crate::urn::cap_urn::CapUrn;
+
+        let discard = CapUrn::from_string(CAP_DISCARD).expect("CAP_DISCARD must parse");
+        let specific = CapUrn::from_string("cap:in=\"media:pdf;bytes\";op=shred;out=\"media:void\"")
+            .expect("specific cap must parse");
+
+        // discard (pattern) accepts specific (instance)? No — discard has no op tag,
+        // but the specific cap has op=shred. As pattern, discard accepts instances
+        // that are at least as specific. The specific cap IS more specific.
+        // As instance, does the specific cap conform to the discard pattern?
+        // specific.conforms_to(discard) == discard.accepts(specific)
+        assert!(discard.accepts(&specific),
+            "CAP_DISCARD must accept a more specific cap with void output");
+
+        // But a cap with non-void output must NOT conform to discard
+        let non_void = CapUrn::from_string("cap:in=\"media:pdf;bytes\";op=convert;out=\"media:string\"")
+            .expect("non-void cap must parse");
+        assert!(!discard.accepts(&non_void),
+            "CAP_DISCARD must NOT accept a cap with non-void output");
     }
 }

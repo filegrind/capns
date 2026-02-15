@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Result};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
-use crate::{Cap, validation::ValidationError};
+use crate::{Cap, ValidationError};
 
 /// Unified response wrapper for all plugin operations
 /// Provides type-safe deserialization of plugin output
@@ -144,7 +144,7 @@ impl ResponseWrapper {
     pub async fn validate_against_cap(
         &self,
         cap: &Cap,
-        registry: &crate::media_registry::MediaUrnRegistry,
+        registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<(), ValidationError> {
         let media_specs = cap.get_media_specs();
 
@@ -215,10 +215,10 @@ impl ResponseWrapper {
     pub async fn matches_output_type(
         &self,
         cap: &Cap,
-        registry: &crate::media_registry::MediaUrnRegistry,
-    ) -> Result<bool, crate::media_spec::MediaSpecError> {
+        registry: &crate::media::registry::MediaUrnRegistry,
+    ) -> Result<bool, crate::media::spec::MediaSpecError> {
         let output_def = cap.get_output()
-            .ok_or_else(|| crate::media_spec::MediaSpecError::UnresolvableMediaUrn(
+            .ok_or_else(|| crate::media::spec::MediaSpecError::UnresolvableMediaUrn(
                 "cap has no output definition".to_string()
             ))?;
 

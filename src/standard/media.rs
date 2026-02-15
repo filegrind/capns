@@ -26,7 +26,7 @@
 //! ```
 
 // Re-export media URN constants from media_urn module
-pub use crate::media_urn::{
+pub use crate::urn::media_urn::{
     MediaUrn, MediaUrnError,
     MEDIA_VOID, MEDIA_STRING, MEDIA_INTEGER, MEDIA_NUMBER, MEDIA_BOOLEAN, MEDIA_OBJECT,
     MEDIA_STRING_ARRAY, MEDIA_INTEGER_ARRAY, MEDIA_NUMBER_ARRAY, MEDIA_BOOLEAN_ARRAY, MEDIA_OBJECT_ARRAY,
@@ -40,7 +40,7 @@ pub use crate::media_urn::{
 };
 
 // Re-export profile URLs from media_spec
-pub use crate::media_spec::{
+pub use crate::media::spec::{
     SCHEMA_BASE,
     PROFILE_STR, PROFILE_INT, PROFILE_NUM, PROFILE_BOOL, PROFILE_OBJ,
     PROFILE_STR_ARRAY, PROFILE_INT_ARRAY, PROFILE_NUM_ARRAY, PROFILE_BOOL_ARRAY, PROFILE_OBJ_ARRAY,
@@ -48,7 +48,7 @@ pub use crate::media_spec::{
 };
 
 // Re-export types and resolution function from media_spec
-pub use crate::media_spec::{
+pub use crate::media::spec::{
     MediaSpecDef, MediaSpecError, ResolvedMediaSpec,
     resolve_media_urn, validate_media_specs_no_duplicates,
 };

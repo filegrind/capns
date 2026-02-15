@@ -4,8 +4,8 @@ use anyhow::{Result, anyhow};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use crate::{CapUrn, ResponseWrapper, Cap};
-use crate::media_spec::{resolve_media_urn, ResolvedMediaSpec};
-use crate::media_registry::MediaUrnRegistry;
+use crate::media::spec::{resolve_media_urn, ResolvedMediaSpec};
+use crate::media::registry::MediaUrnRegistry;
 
 /// Source for stdin data - either raw bytes or a file reference.
 ///

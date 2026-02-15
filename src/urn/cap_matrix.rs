@@ -8,7 +8,7 @@
 //! from one spec to another.
 
 use crate::{Cap, CapArgumentValue, CapUrn, CapSet};
-use crate::media_urn::MediaUrn;
+use crate::urn::media_urn::MediaUrn;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Registry error types for capability host operations
@@ -510,7 +510,7 @@ pub struct CapMatrix {
     /// Map of host name to entry. pub(crate) for CapBlock access.
     pub(crate) sets: HashMap<String, CapSetEntry>,
     /// Media URN registry for resolving media specs
-    pub(crate) media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>,
+    pub(crate) media_registry: std::sync::Arc<crate::media::registry::MediaUrnRegistry>,
 }
 
 /// Entry for a registered capability host
@@ -523,7 +523,7 @@ pub(crate) struct CapSetEntry {
 
 impl CapMatrix {
     /// Create a new capability host registry with the given media registry
-    pub fn new(media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>) -> Self {
+    pub fn new(media_registry: std::sync::Arc<crate::media::registry::MediaUrnRegistry>) -> Self {
         Self {
             sets: HashMap::new(),
             media_registry,
@@ -674,7 +674,7 @@ pub struct CapBlock {
     /// Uses Arc<std::sync::RwLock> for shared access
     registries: Vec<(String, std::sync::Arc<std::sync::RwLock<CapMatrix>>)>,
     /// Media URN registry for resolving media specs
-    media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>,
+    media_registry: std::sync::Arc<crate::media::registry::MediaUrnRegistry>,
 }
 
 /// Wrapper that implements CapSet for CapBlock
@@ -777,7 +777,7 @@ impl CapSet for CompositeCapSet {
 
 impl CapBlock {
     /// Create a new composite registry with the given media registry
-    pub fn new(media_registry: std::sync::Arc<crate::media_registry::MediaUrnRegistry>) -> Self {
+    pub fn new(media_registry: std::sync::Arc<crate::media::registry::MediaUrnRegistry>) -> Self {
         Self {
             registries: Vec::new(),
             media_registry,
@@ -939,7 +939,7 @@ mod tests {
     use super::*;
     use crate::CapOutput;
     use crate::standard::media::{MEDIA_STRING, MEDIA_OBJECT, MEDIA_BINARY};
-    use crate::media_registry::MediaUrnRegistry;
+    use crate::media::registry::MediaUrnRegistry;
     use std::pin::Pin;
     use std::future::Future;
     use std::collections::HashMap;
