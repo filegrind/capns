@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 /// Identity capability — the categorical identity morphism. MANDATORY in every capset.
 /// Accepts any media type as input and outputs any media type.
-pub const CAP_IDENTITY: &str = "cap:in=media:;out=media:";
+pub const CAP_IDENTITY: &str = "cap:";
 
 /// Discard capability — the terminal morphism. Standard, NOT mandatory.
 /// Accepts any media type as input and produces void output.

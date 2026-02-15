@@ -928,6 +928,8 @@ impl PluginHostRuntime {
             Err(_) => return None,
         };
 
+        let request_specificity = request_urn.specificity();
+
         // Collect ALL matching plugins with their specificity scores
         let mut matches: Vec<(usize, usize)> = Vec::new(); // (plugin_idx, specificity)
 
@@ -945,16 +947,17 @@ impl PluginHostRuntime {
             return None;
         }
 
-        // Find maximum specificity
-        let max_specificity = matches.iter().map(|(_, s)| *s).max().unwrap();
+        // Prefer the match with specificity closest to the request's specificity.
+        // Ties broken by first match (deterministic).
+        let min_distance = matches.iter()
+            .map(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs())
+            .min()
+            .unwrap();
 
-        // Filter to only those with max specificity and take first
-        // Multiple matches with same max specificity will route to the first one (deterministic)
         matches
             .iter()
-            .filter(|(_, s)| *s == max_specificity)
+            .find(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs() == min_distance)
             .map(|(idx, _)| *idx)
-            .next()
     }
 
     // =========================================================================
@@ -1270,7 +1273,7 @@ fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<crate::Cap>, AsyncHos
     // Verify CAP_IDENTITY is declared — mandatory for every plugin
     let identity_urn = CapUrn::from_string(CAP_IDENTITY)
         .expect("BUG: CAP_IDENTITY constant is invalid");
-    let has_identity = manifest_obj.caps.iter().any(|cap| identity_urn.accepts(&cap.urn));
+    let has_identity = manifest_obj.caps.iter().any(|cap| identity_urn.conforms_to(&cap.urn));
     if !has_identity {
         return Err(AsyncHostError::Protocol(
             format!("Plugin manifest missing required CAP_IDENTITY ({})", CAP_IDENTITY)
@@ -1624,15 +1627,17 @@ mod tests {
 
         assert_eq!(idx, 0);
         assert!(runtime.plugins[0].running);
-        assert_eq!(
-            runtime.plugins[0].caps.iter().map(|c| c.urn_string()).collect::<Vec<_>>(),
-            vec![CAP_IDENTITY]
-        );
+        // Verify plugin has identity cap via semantic comparison (not string comparison)
+        let identity_urn = crate::CapUrn::from_string(CAP_IDENTITY).unwrap();
+        assert!(runtime.plugins[0].caps.iter().any(|c| identity_urn.conforms_to(&c.urn)),
+            "Plugin must have identity cap");
         assert!(!runtime.capabilities().is_empty());
 
-        // Capabilities JSON should mention the cap
-        let caps_str = std::str::from_utf8(runtime.capabilities()).unwrap();
-        assert!(caps_str.contains(CAP_IDENTITY), "Capabilities must include attached plugin's cap");
+        // Capabilities JSON must include identity
+        let caps: Vec<String> = serde_json::from_slice(runtime.capabilities()).unwrap();
+        assert!(caps.iter().any(|s| crate::CapUrn::from_string(s)
+            .map(|u| identity_urn.conforms_to(&u)).unwrap_or(false)),
+            "Capabilities must include identity cap");
 
         plugin_handle.join().unwrap();
     }
@@ -2635,10 +2640,11 @@ mod tests {
         assert_eq!(idx, 0);
         assert!(runtime.plugins[0].running, "Plugin must be running after identity verification");
 
-        // Verify both caps are registered
-        let caps: Vec<String> = runtime.plugins[0].caps.iter().map(|c| c.urn_string()).collect();
-        assert!(caps.iter().any(|c| c == CAP_IDENTITY), "Must have identity cap");
-        assert_eq!(caps.len(), 2, "Must have both caps");
+        // Verify both caps are registered (semantic comparison, not string)
+        let identity_urn = crate::CapUrn::from_string(CAP_IDENTITY).unwrap();
+        assert!(runtime.plugins[0].caps.iter().any(|c| identity_urn.conforms_to(&c.urn)),
+            "Must have identity cap");
+        assert_eq!(runtime.plugins[0].caps.len(), 2, "Must have both caps");
 
         plugin_handle.join().unwrap();
     }

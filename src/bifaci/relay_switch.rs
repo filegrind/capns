@@ -668,13 +668,16 @@ impl RelaySwitch {
     // =========================================================================
 
     /// Find which master handles a given cap URN.
-    /// Chooses the MOST SPECIFIC matching cap URN (highest specificity score).
-    /// If multiple matches have the same highest specificity, chooses one (deterministic).
+    /// Prefers the match whose specificity is CLOSEST to the request's specificity.
+    /// This ensures generic requests (e.g., identity) route to generic handlers,
+    /// and specific requests route to specific handlers.
     fn find_master_for_cap(&self, cap_urn: &str) -> Option<usize> {
         let request_urn = match crate::CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
         };
+
+        let request_specificity = request_urn.specificity();
 
         // Collect ALL matching masters with their specificity scores
         let mut matches: Vec<(usize, usize)> = Vec::new(); // (master_idx, specificity)
@@ -693,16 +696,17 @@ impl RelaySwitch {
             return None;
         }
 
-        // Find maximum specificity
-        let max_specificity = matches.iter().map(|(_, s)| *s).max().unwrap();
+        // Prefer the match with specificity closest to the request's specificity.
+        // Ties broken by first match (deterministic).
+        let min_distance = matches.iter()
+            .map(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs())
+            .min()
+            .unwrap();
 
-        // Filter to only those with max specificity and take first
-        // Multiple matches with same max specificity will route to the first one (deterministic)
         matches
             .iter()
-            .filter(|(_, s)| *s == max_specificity)
+            .find(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs() == min_distance)
             .map(|(idx, _)| *idx)
-            .next()
     }
 
     /// Handle a frame arriving from a master (plugin → engine direction).
@@ -1090,7 +1094,7 @@ fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, Re
         .expect("BUG: CAP_IDENTITY constant is invalid");
     let has_identity = cap_urns.iter().any(|cap_str| {
         CapUrn::from_string(cap_str)
-            .map(|cap_urn| identity_urn.accepts(&cap_urn))
+            .map(|cap_urn| identity_urn.conforms_to(&cap_urn))
             .unwrap_or(false)
     });
     if !has_identity {

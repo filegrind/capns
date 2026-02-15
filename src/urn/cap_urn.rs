@@ -285,9 +285,10 @@ impl CapUrn {
     /// For other tags: cap satisfies request's tag constraints.
     /// Missing cap tags are wildcards (cap accepts any value for that tag).
     pub fn accepts(&self, request: &CapUrn) -> bool {
-        // Input direction: cap_in is pattern, request_in is instance
-        // "media:" is the wildcard (matches anything)
-        if self.in_urn != "media:" && request.in_urn != "media:" {
+        // Input direction: self.in_urn is pattern, request.in_urn is instance
+        // "media:" on the PATTERN side means "I accept any input" — skip check.
+        // "media:" on the INSTANCE side is just the least specific — still check.
+        if self.in_urn != "media:" {
             let cap_in = MediaUrn::from_string(&self.in_urn)
                 .unwrap_or_else(|e| panic!("CU2: cap in_spec '{}' is not a valid MediaUrn: {}", self.in_urn, e));
             let request_in = MediaUrn::from_string(&request.in_urn)
@@ -298,9 +299,10 @@ impl CapUrn {
             }
         }
 
-        // Output direction: request_out is pattern, cap_out is instance
-        // "media:" is the wildcard (matches anything)
-        if self.out_urn != "media:" && request.out_urn != "media:" {
+        // Output direction: self.out_urn is pattern, request.out_urn is instance
+        // "media:" on the PATTERN side means "I accept any output" — skip check.
+        // "media:" on the INSTANCE side is just the least specific — still check.
+        if self.out_urn != "media:" {
             let cap_out = MediaUrn::from_string(&self.out_urn)
                 .unwrap_or_else(|e| panic!("CU2: cap out_spec '{}' is not a valid MediaUrn: {}", self.out_urn, e));
             let request_out = MediaUrn::from_string(&request.out_urn)
@@ -311,15 +313,17 @@ impl CapUrn {
             }
         }
 
-        // Check all other tags that the request specifies
-        for (request_key, request_value) in &request.tags {
-            match self.tags.get(request_key) {
-                Some(cap_value) => {
-                    if cap_value == "*" { continue; }
-                    if request_value == "*" { continue; }
-                    if cap_value != request_value { return false; }
+        // Check all tags that the pattern (self) requires.
+        // The instance (request param) must satisfy every pattern constraint.
+        // Missing tag in instance → instance doesn't satisfy constraint → reject.
+        for (self_key, self_value) in &self.tags {
+            match request.tags.get(self_key) {
+                Some(req_value) => {
+                    if self_value == "*" { continue; }
+                    if req_value == "*" { continue; }
+                    if self_value != req_value { return false; }
                 }
-                None => { continue; } // Missing tag in cap = wildcard
+                None => { return false; } // Instance missing a tag the pattern requires
             }
         }
 
@@ -598,13 +602,13 @@ impl CapMatcher {
     /// Find the most specific cap that accepts a request
     pub fn find_best_match<'a>(caps: &'a [CapUrn], request: &CapUrn) -> Option<&'a CapUrn> {
         caps.iter()
-            .filter(|cap| cap.accepts(request))
+            .filter(|cap| request.accepts(cap))
             .max_by_key(|cap| cap.specificity())
     }
 
-    /// Find all caps that accept a request, sorted by specificity
+    /// Find all caps that match a request, sorted by specificity
     pub fn find_all_matches<'a>(caps: &'a [CapUrn], request: &CapUrn) -> Vec<&'a CapUrn> {
-        let mut matches: Vec<&CapUrn> = caps.iter().filter(|cap| cap.accepts(request)).collect();
+        let mut matches: Vec<&CapUrn> = caps.iter().filter(|cap| request.accepts(cap)).collect();
 
         // Sort by specificity (most specific first)
         matches.sort_by_key(|cap| std::cmp::Reverse(cap.specificity()));
@@ -757,9 +761,11 @@ mod tests {
         let cap4 = CapUrn::from_string(&format!("cap:in=\"{}\";op=test;out=\"{}\"", in_str, out_int)).unwrap();
         assert!(!cap1.accepts(&cap4));
 
-        // Wildcard in direction should match
+        // Wildcard in=* direction: cap5 has media: for in, specific for out
         let cap5 = CapUrn::from_string(&format!("cap:in=*;op=test;out=\"{}\"", out_obj)).unwrap();
-        assert!(cap1.accepts(&cap5));
+        // cap1 (specific in) as pattern rejects cap5 (bare media: in) — specific pattern doesn't accept broad instance
+        assert!(!cap1.accepts(&cap5));
+        // cap5 (wildcard in) as pattern accepts cap1 (specific in) — wildcard pattern accepts anything
         assert!(cap5.accepts(&cap1));
     }
 
@@ -1010,22 +1016,26 @@ mod tests {
     fn test_tag_matching() {
         let cap = CapUrn::from_string(&test_urn("op=generate;ext=pdf;target=thumbnail")).unwrap();
 
-        // Exact match
+        // Exact match — both directions accept
         let request1 =
             CapUrn::from_string(&test_urn("op=generate;ext=pdf;target=thumbnail")).unwrap();
         assert!(cap.accepts(&request1));
+        assert!(request1.accepts(&cap));
 
-        // Subset match (other tags)
+        // Routing direction: request(op=generate) accepts cap(op,ext,target) — request only needs op
         let request2 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
-        assert!(cap.accepts(&request2));
+        assert!(request2.accepts(&cap));
+        // Reverse: cap(op,ext,target) as pattern rejects request missing ext,target
+        assert!(!cap.accepts(&request2));
 
-        // Wildcard request should match specific cap
+        // Routing direction: request(ext=*) accepts cap(ext=pdf) — wildcard matches specific
         let request3 = CapUrn::from_string(&test_urn("ext=*")).unwrap();
-        assert!(cap.accepts(&request3)); // Cap has ext=pdf, request accepts any ext
+        assert!(request3.accepts(&cap));
 
-        // No match - conflicting value
+        // Conflicting value — neither direction accepts
         let request4 = CapUrn::from_string(&test_urn("op=extract")).unwrap();
         assert!(!cap.accepts(&request4));
+        assert!(!request4.accepts(&cap));
     }
 
     // TEST018: Test that quoted values with different case do NOT match (case-sensitive)
@@ -1042,19 +1052,23 @@ mod tests {
         assert!(cap1.accepts(&cap3));
     }
 
-    // TEST019: Test that missing tags are treated as wildcards (cap without tag matches any value for that tag)
+    // TEST019: Missing tag in instance causes rejection — pattern's tags are constraints
     #[test]
     fn test_missing_tag_handling() {
         let cap = CapUrn::from_string(&test_urn("op=generate")).unwrap();
-
-        // Request with tag should match cap without tag (treated as wildcard)
         let request1 = CapUrn::from_string(&test_urn("ext=pdf")).unwrap();
-        assert!(cap.accepts(&request1)); // cap missing ext tag = wildcard, accepts any ext
 
-        // But cap with extra tags can match subset requests
+        // cap(op) as pattern: instance(ext) missing op → reject
+        assert!(!cap.accepts(&request1));
+        // request(ext) as pattern: instance(cap) missing ext → reject
+        assert!(!request1.accepts(&cap));
+
+        // Routing: request(op) accepts cap(op,ext) — instance has op → match
         let cap2 = CapUrn::from_string(&test_urn("op=generate;ext=pdf")).unwrap();
         let request2 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
-        assert!(cap2.accepts(&request2));
+        assert!(request2.accepts(&cap2));
+        // Reverse: cap(op,ext) as pattern rejects request missing ext
+        assert!(!cap2.accepts(&request2));
     }
 
     // TEST020: Test specificity calculation (direction specs use MediaUrn tag count, wildcards don't count)
@@ -1133,26 +1147,26 @@ mod tests {
         assert_eq!(cap.get_tag("key"), Some(&"ValueWithCase".to_string()));
     }
 
-    // TEST024: Test directional accepts (missing tags = wildcards, different direction specs rejected)
+    // TEST024: Directional accepts — pattern's tags are constraints, instance must satisfy
     #[test]
     fn test_directional_accepts() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate;ext=pdf")).unwrap();
         let cap2 = CapUrn::from_string(&test_urn("op=generate;format=*")).unwrap();
         let cap3 = CapUrn::from_string(&test_urn("type=image;op=extract")).unwrap();
 
-        // cap1 accepts cap2 as request (cap1 has no constraint on format)
-        assert!(cap1.accepts(&cap2));
-        // cap2 accepts cap1 as request (cap2 has no constraint on ext)
-        assert!(cap2.accepts(&cap1));
-        // cap1 does NOT accept cap3 (op mismatch: generate vs extract)
+        // cap1(op,ext) as pattern: cap2 missing ext → reject
+        assert!(!cap1.accepts(&cap2));
+        // cap2(op,format) as pattern: cap1 missing format → reject
+        assert!(!cap2.accepts(&cap1));
+        // op mismatch: neither direction accepts
         assert!(!cap1.accepts(&cap3));
         assert!(!cap3.accepts(&cap1));
 
-        // General cap accepts specific request (missing tags = wildcards)
+        // Routing: general request(op) accepts specific cap(op,ext) — instance has op
         let cap4 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
-        assert!(cap4.accepts(&cap1));
-        // Specific cap also accepts general request (only checks request's tags)
-        assert!(cap1.accepts(&cap4));
+        assert!(cap4.accepts(&cap1)); // cap4 only requires op, cap1 has it
+        // Reverse: specific cap(op,ext) rejects general request missing ext
+        assert!(!cap1.accepts(&cap4));
 
         // Different direction specs: neither accepts the other
         let cap5 = CapUrn::from_string(&format!(
@@ -1399,16 +1413,15 @@ mod tests {
         );
     }
 
-    // TEST042: Matching semantics - cap with extra tag matches
+    // TEST042: Pattern rejects instance missing required tags
     #[test]
     fn test_matching_semantics_test3_cap_has_extra_tag() {
-        // Test 3: Cap has extra tag
         let cap = CapUrn::from_string(&test_urn("op=generate;ext=pdf;version=2")).unwrap();
         let request = CapUrn::from_string(&test_urn("op=generate;ext=pdf")).unwrap();
-        assert!(
-            cap.accepts(&request),
-            "Test 3: Cap with extra tag should match"
-        );
+        // cap(op,ext,version) as pattern rejects request missing version
+        assert!(!cap.accepts(&request), "Pattern rejects instance missing required tag");
+        // Routing: request(op,ext) accepts cap(op,ext,version) — instance has all request needs
+        assert!(request.accepts(&cap), "Request pattern satisfied by more-specific cap");
     }
 
     // TEST043: Matching semantics - request wildcard matches specific cap value
@@ -1502,16 +1515,14 @@ mod tests {
         );
     }
 
-    // TEST049: Matching semantics - cross-dimension independence
+    // TEST049: Non-overlapping tags — neither direction accepts
     #[test]
     fn test_matching_semantics_test9_cross_dimension_independence() {
-        // Test 9: Cross-dimension independence (for other tags)
         let cap = CapUrn::from_string(&test_urn("op=generate")).unwrap();
         let request = CapUrn::from_string(&test_urn("ext=pdf")).unwrap();
-        assert!(
-            cap.accepts(&request),
-            "Test 9: Cross-dimension independence should match"
-        );
+        // cap(op) rejects request missing op; request(ext) rejects cap missing ext
+        assert!(!cap.accepts(&request), "Pattern rejects instance missing required tag");
+        assert!(!request.accepts(&cap), "Reverse also rejects — non-overlapping tags");
     }
 
     // TEST050: Matching semantics - direction mismatch prevents matching
@@ -1726,4 +1737,83 @@ fn test_wildcard_012_preserve_other_tags() {
     assert_eq!(cap.in_spec(), "media:");
     assert_eq!(cap.out_spec(), "media:");
     assert_eq!(cap.get_tag("op").map(|s| s.as_str()), Some("test"));
+}
+
+// TEST_WILDCARD_013: All identity forms produce the same CapUrn
+#[test]
+fn test_wildcard_013_identity_forms_equivalent() {
+    let forms = [
+        "cap:",
+        "cap:in;out",
+        "cap:in=*;out=*",
+        "cap:in=media:;out=media:",
+        "cap:in;out=media:",
+        "cap:in=*;out=media:",
+        "cap:in=media:;out",
+        "cap:in=media:;out=*",
+    ];
+    let reference = CapUrn::from_string(forms[0]).unwrap();
+    for form in &forms[1..] {
+        let parsed = CapUrn::from_string(form).unwrap();
+        assert_eq!(parsed.in_spec(), "media:", "in_spec mismatch for '{}'", form);
+        assert_eq!(parsed.out_spec(), "media:", "out_spec mismatch for '{}'", form);
+        assert!(parsed.tags.is_empty(), "unexpected tags for '{}'", form);
+        // Bidirectional accepts — equivalent caps
+        assert!(reference.accepts(&parsed), "'cap:' must accept '{}' as instance", form);
+        assert!(parsed.accepts(&reference), "'{}' must accept 'cap:' as instance", form);
+    }
+}
+
+// TEST_WILDCARD_014: CAP_IDENTITY constant matches identity caps regardless of string form
+#[test]
+fn test_wildcard_014_cap_identity_constant_works() {
+    use crate::standard::caps::CAP_IDENTITY;
+    let identity = CapUrn::from_string(CAP_IDENTITY).unwrap();
+
+    // Identity accepts itself
+    assert!(identity.accepts(&identity));
+
+    // Identity parsed from different string forms is equivalent
+    let long_form = CapUrn::from_string("cap:in=media:;out=media:").unwrap();
+    assert!(identity.accepts(&long_form));
+    assert!(long_form.accepts(&identity));
+
+    // Identity as pattern accepts any specific cap (wildcard in/out, no tags)
+    let specific = CapUrn::from_string("cap:in=\"media:void\";op=test;out=\"media:void\"").unwrap();
+    assert!(identity.accepts(&specific), "Identity pattern must accept specific cap");
+
+    // Specific as pattern does NOT accept identity — specific requires things identity lacks
+    assert!(!specific.accepts(&identity), "Specific pattern must reject identity");
+
+    // conforms_to is the reverse of accepts
+    // identity.conforms_to(specific) = specific.accepts(identity) → false
+    // (specific requires void in/out + op=test, identity has bare media: + no tags)
+    assert!(!identity.conforms_to(&specific), "Identity does not conform to specific cap");
+    // specific.conforms_to(identity) = identity.accepts(specific) → true
+    // (identity accepts everything — broadest pattern)
+    assert!(specific.conforms_to(&identity), "Specific conforms to identity (identity accepts all)");
+}
+
+// TEST_WILDCARD_015: Identity (no tags) does not match specific requests via routing
+#[test]
+fn test_wildcard_015_identity_routing_isolation() {
+    let identity = CapUrn::from_string("cap:").unwrap();
+    let specific_request = CapUrn::from_string("cap:in=\"media:void\";op=test;out=\"media:void\"").unwrap();
+
+    // Routing direction: request.accepts(registered_cap)
+    // Specific request rejects identity — identity's bare media: doesn't satisfy specific in/out
+    assert!(!specific_request.accepts(&identity),
+        "Specific request must not route to identity handler");
+
+    // Identity request accepts identity — exact match (no constraints)
+    let identity_request = CapUrn::from_string("cap:").unwrap();
+    assert!(identity_request.accepts(&identity),
+        "Identity request must route to identity handler");
+
+    // Identity request does NOT accept specific cap — direction spec mismatch
+    // identity has media: for in (wildcard, skips check), BUT the direction check
+    // for output: identity out=media: → skip (wildcard). For tags: identity has no tags → match.
+    // So identity request DOES match specific via accepts. BUT closest-specificity
+    // routing ensures the identity handler is preferred.
+    // This is correct: identity request has no constraints, matches everything.
 }

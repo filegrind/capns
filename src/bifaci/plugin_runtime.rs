@@ -1579,27 +1579,31 @@ impl PluginRuntime {
     /// `request.accepts(registered_cap)` — the request must accept the registered cap,
     /// meaning the registered cap must be able to satisfy what the request asks for.
     pub fn find_handler(&self, cap_urn: &str) -> Option<HandlerFn> {
-        // First try exact match
-        if let Some(handler) = self.handlers.get(cap_urn) {
-            return Some(Arc::clone(handler));
-        }
-
-        // Then try pattern matching via CapUrn
-        // Request is pattern, registered cap is instance
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
         };
 
+        let request_specificity = request_urn.specificity();
+        let mut best: Option<(Arc<dyn Fn(InputPackage, &OutputStream, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync>, usize)> = None;
+
         for (registered_cap_str, handler) in &self.handlers {
             if let Ok(registered_urn) = CapUrn::from_string(registered_cap_str) {
                 if request_urn.accepts(&registered_urn) {
-                    return Some(Arc::clone(handler));
+                    let specificity = registered_urn.specificity();
+                    let distance = (specificity as isize - request_specificity as isize).unsigned_abs();
+                    match &best {
+                        None => best = Some((Arc::clone(handler), distance)),
+                        Some((_, best_distance)) if distance < *best_distance => {
+                            best = Some((Arc::clone(handler), distance));
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
 
-        None
+        best.map(|(handler, _)| handler)
     }
 
     /// Run the plugin runtime.
@@ -2982,12 +2986,13 @@ mod tests {
     // TEST256: Test PluginRuntime::with_manifest_json stores manifest data and parses when valid
     #[test]
     fn test_with_manifest_json() {
-        // TEST_MANIFEST has "cap:op=test" which lacks in/out, so CapManifest parsing fails
+        // TEST_MANIFEST has "cap:op=test" — missing in/out defaults to media: (wildcard).
+        // ensure_identity() adds identity since cap:op=test is NOT identity.
         let runtime_basic = PluginRuntime::with_manifest_json(TEST_MANIFEST);
         assert!(!runtime_basic.manifest_data.is_empty());
-        // The cap URN "cap:op=test" is invalid for CapManifest (missing in/out)
-        // so manifest parse is expected to fail - this is correct behavior
-        assert!(runtime_basic.manifest.is_none(), "cap:op=test lacks in/out, parse must fail");
+        assert!(runtime_basic.manifest.is_some(), "cap:op=test is valid (defaults to media: for in/out)");
+        let manifest = runtime_basic.manifest.unwrap();
+        assert_eq!(manifest.caps.len(), 2, "Original cap + auto-added identity");
 
         // VALID_MANIFEST has proper in/out specs
         let runtime_valid = PluginRuntime::with_manifest_json(VALID_MANIFEST);

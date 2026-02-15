@@ -67,7 +67,7 @@ impl CapManifest {
     pub fn validate(&self) -> Result<(), String> {
         let identity_urn = CapUrn::from_string(CAP_IDENTITY)
             .map_err(|e| format!("BUG: CAP_IDENTITY constant is invalid: {}", e))?;
-        let has_identity = self.caps.iter().any(|cap| identity_urn.accepts(&cap.urn));
+        let has_identity = self.caps.iter().any(|cap| identity_urn.conforms_to(&cap.urn));
         if !has_identity {
             return Err(format!("Manifest missing required CAP_IDENTITY ({})", CAP_IDENTITY));
         }
@@ -78,7 +78,7 @@ impl CapManifest {
     pub fn ensure_identity(mut self) -> Self {
         let identity_urn = CapUrn::from_string(CAP_IDENTITY)
             .expect("BUG: CAP_IDENTITY constant is invalid");
-        let has_identity = self.caps.iter().any(|cap| identity_urn.accepts(&cap.urn));
+        let has_identity = self.caps.iter().any(|cap| identity_urn.conforms_to(&cap.urn));
         if !has_identity {
             let cap = Cap::new(
                 identity_urn,

@@ -731,7 +731,7 @@ impl Cap {
     /// Check if this cap accepts a request string
     pub fn accepts_request(&self, request: &str) -> bool {
         let request_urn = CapUrn::from_string(request).expect("Invalid cap URN in request");
-        self.urn.accepts(&request_urn)
+        request_urn.accepts(&self.urn)
     }
 
     /// Get the cap URN as a string
