@@ -726,15 +726,18 @@ impl FlowKey {
 
 use std::collections::HashMap;
 
-/// Assigns monotonically increasing seq numbers per request ID.
+/// Assigns monotonically increasing seq numbers per FlowKey (RID + optional XID).
 /// Used at output stages (writer threads) to ensure each flow's frames
 /// carry a contiguous, gap-free seq sequence starting at 0.
+///
+/// Keyed by FlowKey to match ReorderBuffer's key space exactly:
+/// (RID=A, XID=nil) and (RID=A, XID=5) are separate flows with independent counters.
 ///
 /// Non-flow frames (Hello, Heartbeat, RelayNotify, RelayState) are skipped
 /// and their seq stays at 0.
 #[derive(Debug)]
 pub struct SeqAssigner {
-    counters: HashMap<MessageId, u64>,
+    counters: HashMap<FlowKey, u64>,
 }
 
 impl SeqAssigner {
@@ -750,14 +753,15 @@ impl SeqAssigner {
         if !frame.is_flow_frame() {
             return;
         }
-        let counter = self.counters.entry(frame.id.clone()).or_insert(0);
+        let key = FlowKey::from_frame(frame);
+        let counter = self.counters.entry(key).or_insert(0);
         frame.seq = *counter;
         *counter += 1;
     }
 
-    /// Remove tracking for a request ID (call after END/ERR delivery).
-    pub fn remove(&mut self, rid: &MessageId) {
-        self.counters.remove(rid);
+    /// Remove tracking for a flow (call after END/ERR delivery).
+    pub fn remove(&mut self, key: &FlowKey) {
+        self.counters.remove(key);
     }
 }
 
@@ -1497,23 +1501,75 @@ mod tests {
         assert_eq!(state.seq, 0, "RelayState seq must stay 0");
     }
 
-    // TEST445: SeqAssigner.remove resets flow; next frame for that RID starts at seq 0
+    // TEST445: SeqAssigner.remove with FlowKey(rid, None) resets that flow; FlowKey(rid, Some(xid)) is unaffected
     #[test]
-    fn test_seq_assigner_remove_resets() {
+    fn test_seq_assigner_remove_by_flow_key() {
         let mut assigner = SeqAssigner::new();
         let rid = MessageId::new_uuid();
+        let xid = MessageId::new_uuid();
 
+        // Flow 1: (rid, None) — plugin peer invoke
         let mut f0 = Frame::new(FrameType::Req, rid.clone());
         let mut f1 = Frame::new(FrameType::End, rid.clone());
         assigner.assign(&mut f0);
         assigner.assign(&mut f1);
         assert_eq!(f1.seq, 1);
 
-        assigner.remove(&rid);
+        // Flow 2: (rid, Some(xid)) — relay response
+        let mut g0 = Frame::new(FrameType::Req, rid.clone());
+        g0.routing_id = Some(xid.clone());
+        let mut g1 = Frame::new(FrameType::Chunk, rid.clone());
+        g1.routing_id = Some(xid.clone());
+        assigner.assign(&mut g0);
+        assigner.assign(&mut g1);
+        assert_eq!(g0.seq, 0);
+        assert_eq!(g1.seq, 1);
 
+        // Remove Flow 1 only
+        assigner.remove(&FlowKey { rid: rid.clone(), xid: None });
+
+        // Flow 1 restarts at 0
         let mut f2 = Frame::new(FrameType::Req, rid.clone());
         assigner.assign(&mut f2);
-        assert_eq!(f2.seq, 0, "after remove, seq must restart at 0");
+        assert_eq!(f2.seq, 0, "after remove(rid, None), that flow restarts at 0");
+
+        // Flow 2 continues unaffected
+        let mut g2 = Frame::new(FrameType::End, rid.clone());
+        g2.routing_id = Some(xid.clone());
+        assigner.assign(&mut g2);
+        assert_eq!(g2.seq, 2, "remove(rid, None) must not affect (rid, Some(xid))");
+    }
+
+    // TEST445a: Same RID with different XIDs get independent seq counters
+    #[test]
+    fn test_seq_assigner_same_rid_different_xids_independent() {
+        let mut assigner = SeqAssigner::new();
+        let rid = MessageId::new_uuid();
+        let xid_a = MessageId::Uint(1);
+        let xid_b = MessageId::Uint(2);
+
+        // Flow A: (rid, xid_a)
+        let mut a0 = Frame::new(FrameType::Req, rid.clone());
+        a0.routing_id = Some(xid_a.clone());
+        let mut a1 = Frame::new(FrameType::Chunk, rid.clone());
+        a1.routing_id = Some(xid_a.clone());
+
+        // Flow B: (rid, xid_b)
+        let mut b0 = Frame::new(FrameType::Req, rid.clone());
+        b0.routing_id = Some(xid_b.clone());
+
+        // Flow C: (rid, None) — no XID
+        let mut c0 = Frame::new(FrameType::Req, rid.clone());
+
+        assigner.assign(&mut a0);
+        assigner.assign(&mut b0);
+        assigner.assign(&mut a1);
+        assigner.assign(&mut c0);
+
+        assert_eq!(a0.seq, 0, "flow (rid, xid_a) starts at 0");
+        assert_eq!(a1.seq, 1, "flow (rid, xid_a) increments to 1");
+        assert_eq!(b0.seq, 0, "flow (rid, xid_b) starts at 0 independently");
+        assert_eq!(c0.seq, 0, "flow (rid, None) starts at 0 independently");
     }
 
     // TEST446: SeqAssigner handles mixed frame types (REQ, CHUNK, LOG, END) for same RID

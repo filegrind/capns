@@ -6,7 +6,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::bifaci::frame::{Frame, FrameType, MessageId, SeqAssigner};
+    use crate::bifaci::frame::{FlowKey, Frame, FrameType, MessageId, SeqAssigner};
     use crate::bifaci::io::{FrameReader, FrameWriter, handshake, handshake_accept, AsyncFrameReader, AsyncFrameWriter};
     use crate::bifaci::plugin_runtime::PluginRuntime;
     use crate::standard::caps::CAP_IDENTITY;
@@ -173,7 +173,7 @@ mod tests {
             let mut end = Frame::end(req.id, None);
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
             drop(writer);
         });
 
@@ -211,7 +211,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
 
             // Read response
             let mut payload = Vec::new();
@@ -258,7 +258,7 @@ mod tests {
             let mut err = Frame::err(req.id, "FAIL_CODE", "Something went wrong");
             seq.assign(&mut err);
             writer.write(&err).unwrap();
-            seq.remove(&err.id);
+            seq.remove(&FlowKey::from_frame(&err));
             drop(writer);
         });
 
@@ -280,7 +280,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
 
             let mut err_code = String::new();
             let mut err_msg = String::new();
@@ -360,7 +360,7 @@ mod tests {
             let mut end = Frame::end(req.id, None);
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
             drop(writer);
         });
 
@@ -396,7 +396,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
 
             let mut payload = Vec::new();
             loop {
@@ -485,7 +485,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
 
             let mut chunks = Vec::new();
             loop {
@@ -555,7 +555,7 @@ mod tests {
             let mut end = Frame::end(req.id, None);
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
             drop(writer);
         });
 
@@ -581,7 +581,7 @@ mod tests {
             let mut end = Frame::end(req.id, None);
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
             drop(writer);
         });
 
@@ -609,7 +609,7 @@ mod tests {
             end_alpha.routing_id = Some(xid_alpha.clone());
             seq.assign(&mut end_alpha);
             w.write(&end_alpha).await.unwrap();
-            seq.remove(&end_alpha.id);
+            seq.remove(&FlowKey::from_frame(&end_alpha));
             let mut req_beta = Frame::req(beta_id_c.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
             req_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut req_beta);
@@ -618,7 +618,7 @@ mod tests {
             end_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut end_beta);
             w.write(&end_beta).await.unwrap();
-            seq.remove(&end_beta.id);
+            seq.remove(&FlowKey::from_frame(&end_beta));
 
             let mut alpha_data = Vec::new();
             let mut beta_data = Vec::new();
@@ -702,7 +702,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
         });
 
         // Read ERR frame from the host on the engine side
@@ -811,7 +811,7 @@ mod tests {
             let mut end = Frame::end(frame.id, Some(b"hello back".to_vec()));
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -995,7 +995,7 @@ mod tests {
             let mut end = Frame::end(frame.id, Some(payload));
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));
@@ -1044,7 +1044,7 @@ mod tests {
                 let mut end = Frame::end(frame.id, Some(b"ok".to_vec()));
                 seq.assign(&mut end);
                 writer.write(&end).unwrap();
-                seq.remove(&end.id);
+                seq.remove(&FlowKey::from_frame(&end));
             }
         });
 
@@ -1094,7 +1094,7 @@ mod tests {
             let mut end = Frame::end(frame.id, Some(vec![]));
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end.id);
+            seq.remove(&FlowKey::from_frame(&end));
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_read));

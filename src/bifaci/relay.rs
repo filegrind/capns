@@ -436,7 +436,7 @@ impl AsyncRelayMaster {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+    use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
     use crate::bifaci::io::{FrameReader, FrameWriter};
     use std::io::{BufReader, BufWriter};
     use std::thread;
@@ -798,7 +798,7 @@ mod tests {
             let mut end = Frame::end(end_id.clone(), None);
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&end_id);
+            seq.remove(&FlowKey { rid: end_id, xid: None });
 
             // Updated RelayNotify
             let updated_limits = Limits {
@@ -814,7 +814,7 @@ mod tests {
             let mut end2 = Frame::end(end2_id.clone(), None);
             seq.assign(&mut end2);
             writer.write(&end2).unwrap();
-            seq.remove(&end2_id);
+            seq.remove(&FlowKey { rid: end2_id, xid: None });
 
             drop(writer);
         });
@@ -929,7 +929,7 @@ mod tests {
             let mut end = Frame::end(resp_id1.clone(), None);
             seq.assign(&mut end);
             writer.write(&end).unwrap();
-            seq.remove(&resp_id1);
+            seq.remove(&FlowKey { rid: resp_id1, xid: None });
             drop(writer);
         });
 

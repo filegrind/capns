@@ -37,7 +37,7 @@
 //! }
 //! ```
 
-use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{handshake_accept, CborError, FrameReader, FrameWriter};
 use crate::cap::caller::CapArgumentValue;
 use crate::cap::definition::{ArgSource, Cap, CapArg};
@@ -2402,7 +2402,7 @@ impl PluginRuntime {
                 }
                 // Cleanup seq tracking on terminal frames
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
-                    seq_assigner.remove(&frame.id);
+                    seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
                 eprintln!("[PluginRuntime/writer] Frame #{} written successfully", frame_count);
             }

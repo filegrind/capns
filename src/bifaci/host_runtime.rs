@@ -25,7 +25,7 @@
 //! - RelayNotify/RelayState: fatal error (plugins must never send these)
 //! - Everything else: forwarded to relay (pass-through)
 
-use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{handshake_async, verify_identity, AsyncFrameReader, AsyncFrameWriter, CborError};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -271,6 +271,9 @@ pub struct PluginHostRuntime {
     /// List 2: INCOMING_RXIDS - tracks incoming requests from relay ((XID, RID) → plugin_idx).
     /// Continuations for these requests are routed by this table.
     incoming_rxids: HashMap<(MessageId, MessageId), usize>,
+    /// Max-seen seq per flow for plugin-originated frames.
+    /// Used to set seq on host-generated ERR frames (max_seen + 1).
+    outgoing_max_seq: HashMap<FlowKey, u64>,
     /// Aggregate capabilities (serialized JSON manifest of all plugin caps).
     capabilities: Vec<u8>,
     /// Channel sender for plugin events (shared with reader tasks).
@@ -291,6 +294,7 @@ impl PluginHostRuntime {
             cap_table: Vec::new(),
             outgoing_rids: HashMap::new(),
             incoming_rxids: HashMap::new(),
+            outgoing_max_seq: HashMap::new(),
             capabilities: Vec::new(),
             event_tx,
             event_rx: Some(event_rx),
@@ -630,12 +634,15 @@ impl PluginHostRuntime {
                 // If the plugin is dead, send ERR to engine and clean up routing.
                 if self.send_to_plugin(plugin_idx, frame.clone()).is_err() {
                     eprintln!("[PluginHostRuntime.handle_relay_frame] Plugin {} died, sending ERR", plugin_idx);
+                    let flow_key = FlowKey { rid: frame.id.clone(), xid: Some(xid.clone()) };
+                    let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
                     let mut err = Frame::err(
                         frame.id.clone(),
                         "PLUGIN_DIED",
                         "Plugin exited while processing request",
                     );
                     err.routing_id = frame.routing_id.clone(); // Copy XID from incoming request
+                    err.seq = next_seq;
                     let _ = outbound_tx.send(err);
 
                     // Cleanup from both lists (only one will match)
@@ -729,6 +736,10 @@ impl PluginHostRuntime {
                 eprintln!("[PluginHostRuntime.handle_plugin_frame] Recorded outgoing_rids[{:?}] = {}",
                     frame.id, plugin_idx);
 
+                // Track max-seen seq for host-generated ERR on death
+                let flow_key = FlowKey::from_frame(&frame);
+                self.outgoing_max_seq.insert(flow_key, frame.seq);
+
                 // Forward as-is to relay (no XID - will be assigned by RelaySwitch)
                 outbound_tx
                     .send(frame)
@@ -743,8 +754,17 @@ impl PluginHostRuntime {
                 eprintln!("[PluginHostRuntime.handle_plugin_frame] {:?} from plugin {}: RID={:?}",
                     frame.frame_type, plugin_idx, frame.id);
 
-                let is_terminal = frame.frame_type == FrameType::End
-                    || frame.frame_type == FrameType::Err;
+                // Track max-seen seq for flow, clean up on terminal
+                if frame.is_flow_frame() {
+                    let flow_key = FlowKey::from_frame(&frame);
+                    let is_terminal = frame.frame_type == FrameType::End
+                        || frame.frame_type == FrameType::Err;
+                    if is_terminal {
+                        self.outgoing_max_seq.remove(&flow_key);
+                    } else {
+                        self.outgoing_max_seq.insert(flow_key, frame.seq);
+                    }
+                }
 
                 // NOTE: Do NOT remove incoming_rxids here!
                 // Response END from plugin doesn't mean the REQUEST is complete.
@@ -780,27 +800,44 @@ impl PluginHostRuntime {
         // Send ERR for pending PEER requests (outgoing_rids only)
         // NOTE: Do NOT send ERR for incoming_rxids! Those entries are intentionally leaked
         // to handle out-of-order frame arrival. They don't represent pending work.
-        let failed_outgoing_rids: Vec<MessageId> = self
+        // Collect (rid, next_seq) for host-generated ERR frames.
+        let failed_outgoing: Vec<(MessageId, u64)> = self
             .outgoing_rids
             .iter()
             .filter(|(_, &idx)| idx == plugin_idx)
-            .map(|(rid, _)| rid.clone())
+            .map(|(rid, _)| {
+                // Peer REQs from plugin have no XID
+                let flow_key = FlowKey { rid: rid.clone(), xid: None };
+                let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                (rid.clone(), next_seq)
+            })
             .collect();
 
         eprintln!("[PluginHostRuntime.handle_plugin_death] Plugin {} died, failing {} outgoing peer requests",
-            plugin_idx, failed_outgoing_rids.len());
+            plugin_idx, failed_outgoing.len());
 
-        for rid in &failed_outgoing_rids {
-            let err_frame = Frame::err(
+        for (rid, next_seq) in &failed_outgoing {
+            let mut err_frame = Frame::err(
                 rid.clone(),
                 "PLUGIN_DIED",
                 &format!("Plugin {} exited unexpectedly", plugin.path.display()),
             );
+            err_frame.seq = *next_seq;
             let _ = outbound_tx.send(err_frame);
             self.outgoing_rids.remove(rid);
         }
 
         // Clean up incoming_rxids entries for this plugin (leaked routing entries)
+        // Also clean up outgoing_max_seq for flows associated with these entries
+        let failed_incoming_keys: Vec<(MessageId, MessageId)> = self
+            .incoming_rxids
+            .iter()
+            .filter(|(_, &idx)| idx == plugin_idx)
+            .map(|((xid, rid), _)| (xid.clone(), rid.clone()))
+            .collect();
+        for (xid, rid) in &failed_incoming_keys {
+            self.outgoing_max_seq.remove(&FlowKey { rid: rid.clone(), xid: Some(xid.clone()) });
+        }
         self.incoming_rxids.retain(|(_, _), &mut idx| idx != plugin_idx);
 
         // Remove caps temporarily (will be re-added on relaunch)
@@ -1011,22 +1048,28 @@ impl PluginHostRuntime {
                     plugin_idx, failed_incoming_keys.len(), failed_outgoing_rids.len());
 
                 for (xid, rid) in &failed_incoming_keys {
+                    let flow_key = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
+                    let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
                     let mut err_frame = Frame::err(
                         rid.clone(),
                         "PLUGIN_UNHEALTHY",
                         "Plugin stopped responding to heartbeats",
                     );
                     err_frame.routing_id = Some(xid.clone());
+                    err_frame.seq = next_seq;
                     let _ = outbound_tx.send(err_frame);
                     self.incoming_rxids.remove(&(xid.clone(), rid.clone()));
                 }
 
                 for rid in &failed_outgoing_rids {
-                    let err_frame = Frame::err(
+                    let flow_key = FlowKey { rid: rid.clone(), xid: None };
+                    let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                    let mut err_frame = Frame::err(
                         rid.clone(),
                         "PLUGIN_UNHEALTHY",
                         "Plugin stopped responding to heartbeats",
                     );
+                    err_frame.seq = next_seq;
                     let _ = outbound_tx.send(err_frame);
                     self.outgoing_rids.remove(rid);
                 }
@@ -1159,7 +1202,7 @@ impl PluginHostRuntime {
                     break;
                 }
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
-                    seq_assigner.remove(&frame.id);
+                    seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
             }
         })
@@ -1210,22 +1253,18 @@ impl PluginHostRuntime {
     }
 
     /// Outbound writer loop: reads frames from channel, writes to relay.
+    /// Frames arrive with seq already assigned by PluginRuntime — no modification needed.
     async fn outbound_writer_loop<W: AsyncWrite + Unpin>(
         relay_write: W,
         mut rx: mpsc::UnboundedReceiver<Frame>,
     ) {
         let mut writer = AsyncFrameWriter::new(relay_write);
-        let mut seq_assigner = SeqAssigner::new();
         eprintln!("[PluginHostRuntime/outbound_writer] Starting outbound writer loop");
-        while let Some(mut frame) = rx.recv().await {
-            seq_assigner.assign(&mut frame);
+        while let Some(frame) = rx.recv().await {
             eprintln!("[PluginHostRuntime/outbound_writer] Writing frame: {:?} (id={:?}, seq={})", frame.frame_type, frame.id, frame.seq);
             if let Err(e) = writer.write(&frame).await {
                 eprintln!("[PluginHostRuntime/outbound_writer] Write error: {}", e);
                 break;
-            }
-            if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
-                seq_assigner.remove(&frame.id);
             }
             eprintln!("[PluginHostRuntime/outbound_writer] Frame written successfully");
         }
@@ -1577,7 +1616,7 @@ mod tests {
             req.routing_id = Some(MessageId::Uint(1)); // XID from RelaySwitch
             seq.assign(&mut req);
             writer.write(&req).await.unwrap();
-            seq.remove(&req.id);
+            seq.remove(&FlowKey::from_frame(&req));
         });
 
         // Run the runtime — should attempt to spawn, fail (binary doesn't exist)
@@ -1693,7 +1732,7 @@ mod tests {
             let mut end = Frame::end(frame.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).unwrap();
-            seq.remove(&frame.id);
+            seq.remove(&FlowKey { rid: frame.id.clone(), xid: None });
         });
 
         // Plugin B thread
@@ -1760,7 +1799,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&req_id);
+            seq.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
 
             let mut payload = Vec::new();
             loop {
@@ -1921,7 +1960,7 @@ mod tests {
             let mut end = Frame::end(req_id_for_plugin.clone(), None);
             seq.assign(&mut end);
             w.write(&end).unwrap();
-            seq.remove(&req_id_for_plugin);
+            seq.remove(&FlowKey { rid: req_id_for_plugin.clone(), xid: None });
             drop(w);
         });
 
@@ -1970,7 +2009,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&req_id_send);
+            seq.remove(&FlowKey { rid: req_id_send.clone(), xid: Some(xid.clone()) });
 
             let mut types = Vec::new();
             loop {
@@ -2065,7 +2104,7 @@ mod tests {
             let mut end = Frame::end(req.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).unwrap();
-            seq.remove(&req.id);
+            seq.remove(&FlowKey { rid: req.id.clone(), xid: None });
             drop(w);
         });
 
@@ -2120,7 +2159,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&req_id);
+            seq.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
 
             // Read response
             let mut payload = Vec::new();
@@ -2287,7 +2326,7 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&req_id);
+            seq.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
 
             // Close relay connection after sending request
             // (in real use, engine would implement timeout for pending requests)
@@ -2353,7 +2392,7 @@ mod tests {
             let mut end = Frame::end(req.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).unwrap();
-            seq.remove(&req.id);
+            seq.remove(&FlowKey { rid: req.id.clone(), xid: None });
             drop(w);
         });
 
@@ -2379,7 +2418,7 @@ mod tests {
             let mut end = Frame::end(req.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).unwrap();
-            seq.remove(&req.id);
+            seq.remove(&FlowKey { rid: req.id.clone(), xid: None });
             drop(w);
         });
 
@@ -2423,7 +2462,7 @@ mod tests {
             end_alpha.routing_id = Some(xid_alpha.clone());
             seq.assign(&mut end_alpha);
             w.write(&end_alpha).await.unwrap();
-            seq.remove(&alpha_c);
+            seq.remove(&FlowKey { rid: alpha_c.clone(), xid: Some(xid_alpha.clone()) });
             let mut req_beta = Frame::req(beta_c.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
             req_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut req_beta);
@@ -2432,7 +2471,7 @@ mod tests {
             end_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut end_beta);
             w.write(&end_beta).await.unwrap();
-            seq.remove(&beta_c);
+            seq.remove(&FlowKey { rid: beta_c.clone(), xid: Some(xid_beta.clone()) });
 
             // Collect responses by req_id
             let mut alpha_data = Vec::new();
@@ -2517,7 +2556,7 @@ mod tests {
                 let mut end = Frame::end(req_id.clone(), None);
                 seq.assign(&mut end);
                 w.write(&end).unwrap();
-                seq.remove(req_id);
+                seq.remove(&FlowKey { rid: req_id.clone(), xid: None });
             }
             drop(w);
         });
@@ -2561,7 +2600,7 @@ mod tests {
             end_0.routing_id = Some(xid_0.clone());
             seq.assign(&mut end_0);
             w.write(&end_0).await.unwrap();
-            seq.remove(&r0);
+            seq.remove(&FlowKey { rid: r0.clone(), xid: Some(xid_0.clone()) });
             let mut req_1 = Frame::req(r1.clone(), "cap:in=\"media:void\";op=conc;out=\"media:void\"", vec![], "text/plain");
             req_1.routing_id = Some(xid_1.clone());
             seq.assign(&mut req_1);
@@ -2570,7 +2609,7 @@ mod tests {
             end_1.routing_id = Some(xid_1.clone());
             seq.assign(&mut end_1);
             w.write(&end_1).await.unwrap();
-            seq.remove(&r1);
+            seq.remove(&FlowKey { rid: r1.clone(), xid: Some(xid_1.clone()) });
 
             // Collect responses by req_id
             let mut data_0 = Vec::new();

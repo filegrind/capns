@@ -44,7 +44,7 @@
 //! - Engine-initiated: plugin's END → cleanup immediately
 //! - Peer-initiated: engine's response END → cleanup (wait for final response)
 
-use crate::bifaci::frame::{Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{CborError, FrameReader, FrameWriter, identity_nonce};
 use crate::bifaci::relay::RelayMaster;
 use std::collections::{HashMap, HashSet};
@@ -256,7 +256,7 @@ impl RelaySwitch {
                     "master {}: identity verification send failed: {}", master_idx, e
                 )))?;
 
-                seq_assigner.remove(&req_id);
+                seq_assigner.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
 
                 // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
                 let mut accumulated = Vec::new();
@@ -658,7 +658,7 @@ impl RelaySwitch {
         master.seq_assigner.assign(frame);
         master.socket_writer.write(frame)?;
         if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
-            master.seq_assigner.remove(&frame.id);
+            master.seq_assigner.remove(&FlowKey::from_frame(frame));
         }
         Ok(())
     }
@@ -1226,11 +1226,12 @@ mod tests {
             if let Some(frame) = reader.read().unwrap() {
                 if frame.frame_type == FrameType::End && req_id.is_some() {
                     let rid = req_id.unwrap();
+                    let xid_clone = xid.clone();
                     let mut response = Frame::end(rid.clone(), Some(vec![42]));
                     response.routing_id = xid;
                     seq.assign(&mut response);
                     writer.write(&response).unwrap();
-                    seq.remove(&rid);
+                    seq.remove(&FlowKey { rid: rid.clone(), xid: xid_clone });
                 }
             }
         });
@@ -1266,11 +1267,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
                         let rid = frame.id.clone();
+                        let xid = frame.routing_id.clone();
                         let mut response = Frame::end(rid.clone(), Some(vec![1]));
-                        response.routing_id = frame.routing_id.clone();
+                        response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).unwrap();
-                        seq.remove(&rid);
+                        seq.remove(&FlowKey { rid: rid.clone(), xid });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -1288,11 +1290,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
                         let rid = frame.id.clone();
+                        let xid = frame.routing_id.clone();
                         let mut response = Frame::end(rid.clone(), Some(vec![2]));
-                        response.routing_id = frame.routing_id.clone();
+                        response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).unwrap();
-                        seq.remove(&rid);
+                        seq.remove(&FlowKey { rid: rid.clone(), xid });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -1357,11 +1360,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
                         let rid = frame.id.clone();
+                        let xid = frame.routing_id.clone();
                         let mut response = Frame::end(rid.clone(), Some(vec![1]));
-                        response.routing_id = frame.routing_id.clone();
+                        response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).unwrap();
-                        seq.remove(&rid);
+                        seq.remove(&FlowKey { rid: rid.clone(), xid });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -1378,11 +1382,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
                         let rid = frame.id.clone();
+                        let xid = frame.routing_id.clone();
                         let mut response = Frame::end(rid.clone(), Some(vec![2]));
-                        response.routing_id = frame.routing_id.clone();
+                        response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).unwrap();
-                        seq.remove(&rid);
+                        seq.remove(&FlowKey { rid: rid.clone(), xid });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -1436,11 +1441,12 @@ mod tests {
             assert_eq!(end.id, req.id);
 
             let rid = req.id.clone();
+            let xid_clone = xid.clone();
             let mut response = Frame::end(rid.clone(), Some(vec![42]));
             response.routing_id = xid;
             seq.assign(&mut response);
             writer.write(&response).unwrap();
-            seq.remove(&rid);
+            seq.remove(&FlowKey { rid: rid.clone(), xid: xid_clone });
         });
 
         let mut switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
@@ -1549,11 +1555,12 @@ mod tests {
                 match reader.read().unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
                         let rid = frame.id.clone();
+                        let xid = frame.routing_id.clone();
                         let mut response = Frame::end(rid.clone(), Some(vec![42]));
-                        response.routing_id = frame.routing_id.clone();
+                        response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).unwrap();
-                        seq.remove(&rid);
+                        seq.remove(&FlowKey { rid: rid.clone(), xid });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
