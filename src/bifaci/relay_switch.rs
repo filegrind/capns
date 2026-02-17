@@ -336,7 +336,12 @@ impl RelaySwitch {
                 loop {
                     match reader.read() {
                         Ok(Some(frame)) => {
+                            eprintln!("[RelaySwitch/reader-{}] Read frame: {:?} (id={:?}, seq={}, xid={:?}, payload_len={})",
+                                master_idx, frame.frame_type, frame.id, frame.seq,
+                                frame.routing_id,
+                                frame.payload.as_ref().map_or(0, |p| p.len()));
                             if tx.send((master_idx, Ok(frame))).is_err() {
+                                eprintln!("[RelaySwitch/reader-{}] Channel send failed, exiting", master_idx);
                                 break;
                             }
                         }
