@@ -16,23 +16,53 @@ mod tests {
     /// CAP_IDENTITY is mandatory in every manifest.
     const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
-    // TEST293: Test PluginRuntime handler registration and lookup by exact and non-existent cap URN
+    // TEST293: Test PluginRuntime Op registration and lookup by exact and non-existent cap URN
     #[test]
     fn test_plugin_runtime_handler_registration() {
+        use crate::bifaci::plugin_runtime::{Request, WET_KEY_REQUEST, IdentityOp};
+        use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
+        use async_trait::async_trait;
+        use std::sync::Arc;
+
+        /// Test Op: serializes JSON input to CBOR bytes and emits
+        #[derive(Default)]
+        struct JsonEchoOp;
+        #[async_trait]
+        impl Op<()> for JsonEchoOp {
+            async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let bytes = input.collect_all_bytes()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                req.output().emit_cbor(&ciborium::Value::Bytes(bytes))
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                Ok(())
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("JsonEchoOp").build() }
+        }
+
+        /// Test Op: emits fixed "transformed" bytes
+        #[derive(Default)]
+        struct TransformOp;
+        #[async_trait]
+        impl Op<()> for TransformOp {
+            async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let _input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                req.output().emit_cbor(&ciborium::Value::Bytes(b"transformed".to_vec()))
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                Ok(())
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("TransformOp").build() }
+        }
+
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-
-        runtime.register::<serde_json::Value, _>(CAP_IDENTITY, |req, emitter, _peer| {
-            let bytes = serde_json::to_vec(&req).unwrap_or_default();
-            let cbor_value = ciborium::Value::Bytes(bytes);
-            emitter.emit_cbor(&cbor_value)?;
-            Ok(())
-        });
-
-        runtime.register::<serde_json::Value, _>("cap:in=\"media:void\";op=transform;out=\"media:void\"", |_req, emitter, _peer| {
-            let cbor_value = ciborium::Value::Bytes(b"transformed".to_vec());
-            emitter.emit_cbor(&cbor_value)?;
-            Ok(())
-        });
+        runtime.register_op_type::<JsonEchoOp>(CAP_IDENTITY);
+        runtime.register_op_type::<TransformOp>("cap:in=\"media:void\";op=transform;out=\"media:void\"");
 
         // Exact match
         assert!(runtime.find_handler(CAP_IDENTITY).is_some());

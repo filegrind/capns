@@ -45,7 +45,9 @@ use crate::urn::cap_urn::CapUrn;
 use crate::bifaci::manifest::CapManifest;
 use crate::urn::media_urn::{MediaUrn, MEDIA_FILE_PATH, MEDIA_FILE_PATH_ARRAY};
 use crate::standard::caps::{CAP_IDENTITY, CAP_DISCARD};
+use async_trait::async_trait;
 use crossbeam_channel::{bounded, Receiver, Sender};
+use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
 use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::sync::{Arc, Mutex};
@@ -673,12 +675,111 @@ impl FrameSender for CliFrameSender {
     }
 }
 
-/// Handler function type — receives InputPackage for streaming input,
-/// OutputStream for output, and PeerInvoker for peer calls.
-/// Handlers never see Frame objects, routing_id, or protocol details.
-pub type HandlerFn = Arc<
-    dyn Fn(InputPackage, &OutputStream, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync,
->;
+// =============================================================================
+// OP-BASED HANDLER SYSTEM — handlers implement ops::Op<()>
+// =============================================================================
+
+/// Bundles capns I/O for WetContext. Op handlers extract this from WetContext
+/// to access streaming input, output, and peer invocation.
+pub struct Request {
+    input: Mutex<Option<InputPackage>>,
+    output: Arc<OutputStream>,
+    peer: Arc<dyn PeerInvoker>,
+}
+
+impl Request {
+    /// Create a new Request bundling input, output, and peer invoker.
+    pub fn new(input: InputPackage, output: OutputStream, peer: Arc<dyn PeerInvoker>) -> Self {
+        Self {
+            input: Mutex::new(Some(input)),
+            output: Arc::new(output),
+            peer,
+        }
+    }
+
+    /// Take the input package. Can only be called once — second call returns error.
+    pub fn take_input(&self) -> Result<InputPackage, RuntimeError> {
+        self.input.lock().unwrap().take().ok_or_else(|| {
+            RuntimeError::Handler("Input already consumed".to_string())
+        })
+    }
+
+    /// Access the output stream.
+    pub fn output(&self) -> &OutputStream {
+        &self.output
+    }
+
+    /// Access the peer invoker.
+    pub fn peer(&self) -> &dyn PeerInvoker {
+        &*self.peer
+    }
+}
+
+/// WetContext key for the Request object.
+pub const WET_KEY_REQUEST: &str = "request";
+
+/// Factory function that creates a fresh Op<()> instance per invocation.
+pub type OpFactory = Arc<dyn Fn() -> Box<dyn Op<()>> + Send + Sync>;
+
+/// Standard identity handler — pure passthrough. Forwards all input chunks to output.
+#[derive(Default)]
+pub struct IdentityOp;
+
+#[async_trait]
+impl Op<()> for IdentityOp {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let input = req.take_input()
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        for stream_result in input {
+            let stream = stream_result
+                .map_err(|e| OpError::ExecutionFailed(format!("Identity input error: {}", e)))?;
+            for chunk_result in stream {
+                let chunk = chunk_result
+                    .map_err(|e| OpError::ExecutionFailed(format!("Identity chunk error: {}", e)))?;
+                req.output().emit_cbor(&chunk)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn metadata(&self) -> OpMetadata {
+        OpMetadata::builder("IdentityOp")
+            .description("Pure passthrough — forwards all input to output")
+            .build()
+    }
+}
+
+/// Standard discard handler — terminal morphism. Drains all input, produces nothing.
+#[derive(Default)]
+pub struct DiscardOp;
+
+#[async_trait]
+impl Op<()> for DiscardOp {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let input = req.take_input()
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        for stream_result in input {
+            let stream = stream_result
+                .map_err(|e| OpError::ExecutionFailed(format!("Discard input error: {}", e)))?;
+            for chunk_result in stream {
+                let _ = chunk_result
+                    .map_err(|e| OpError::ExecutionFailed(format!("Discard chunk error: {}", e)))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn metadata(&self) -> OpMetadata {
+        OpMetadata::builder("DiscardOp")
+            .description("Terminal morphism — drains all input, produces nothing")
+            .build()
+    }
+}
 
 /// Tracks a pending peer request (plugin invoking host cap).
 /// The reader loop forwards response frames to the channel.
@@ -1444,8 +1545,8 @@ struct ActiveRequest {
 /// - Accept new requests while previous ones are still processing
 /// - Handle multiple concurrent cap invocations
 pub struct PluginRuntime {
-    /// Registered handlers by cap URN pattern (Arc for thread-safe sharing)
-    handlers: HashMap<String, HandlerFn>,
+    /// Registered Op factories by cap URN pattern
+    handlers: HashMap<String, OpFactory>,
 
     /// Plugin manifest JSON data - sent in HELLO response.
     /// This is REQUIRED - plugins must provide their manifest.
@@ -1458,27 +1559,30 @@ pub struct PluginRuntime {
     limits: Limits,
 }
 
-/// Standard identity handler — pure passthrough. Forwards all input chunks to output.
-fn identity_handler(input: InputPackage, output: &OutputStream, _peer: &dyn PeerInvoker) -> Result<(), RuntimeError> {
-    for stream_result in input {
-        let stream = stream_result.map_err(|e| RuntimeError::Handler(format!("Identity input error: {}", e)))?;
-        for chunk_result in stream {
-            let chunk = chunk_result.map_err(|e| RuntimeError::Handler(format!("Identity chunk error: {}", e)))?;
-            output.emit_cbor(&chunk)?;
-        }
-    }
-    Ok(())
-}
+/// Dispatch an Op with a Request via WetContext. Bridges sync handler threads to async Op::perform.
+/// Closes the output stream on success (sends STREAM_END if stream was started).
+fn dispatch_op(
+    op: Box<dyn Op<()>>,
+    input: InputPackage,
+    output: OutputStream,
+    peer: Arc<dyn PeerInvoker>,
+) -> Result<(), RuntimeError> {
+    let req = Arc::new(Request::new(input, output, peer));
+    let mut dry = DryContext::new();
+    let mut wet = WetContext::new();
+    wet.insert_arc(WET_KEY_REQUEST, req.clone());
 
-/// Standard discard handler — terminal morphism. Drains all input, produces nothing.
-fn discard_handler(input: InputPackage, _output: &OutputStream, _peer: &dyn PeerInvoker) -> Result<(), RuntimeError> {
-    for stream_result in input {
-        let stream = stream_result.map_err(|e| RuntimeError::Handler(format!("Discard input error: {}", e)))?;
-        for chunk_result in stream {
-            let _ = chunk_result.map_err(|e| RuntimeError::Handler(format!("Discard chunk error: {}", e)))?;
-        }
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| RuntimeError::Handler(format!("Runtime: {}", e)))?;
+    let result = rt.block_on(op.perform(&mut dry, &mut wet))
+        .map_err(|e| RuntimeError::Handler(e.to_string()));
+
+    if result.is_ok() {
+        let _ = req.output().close();
     }
-    Ok(())
+    result
 }
 
 impl PluginRuntime {
@@ -1546,79 +1650,45 @@ impl PluginRuntime {
     }
 
     /// Register the standard identity and discard handlers.
-    /// Plugin authors can override either by calling register_raw() after construction.
+    /// Plugin authors can override either by calling register_op() after construction.
     fn register_standard_caps(&mut self) {
         if self.find_handler(CAP_IDENTITY).is_none() {
-            self.handlers.insert(CAP_IDENTITY.to_string(), Arc::new(identity_handler));
+            self.register_op_type::<IdentityOp>(CAP_IDENTITY);
         }
         if self.find_handler(CAP_DISCARD).is_none() {
-            self.handlers.insert(CAP_DISCARD.to_string(), Arc::new(discard_handler));
+            self.register_op_type::<DiscardOp>(CAP_DISCARD);
         }
     }
 
-    /// Register a handler for a cap URN.
-    ///
-    /// The handler receives:
-    /// - The request payload as bytes (typically JSON or CBOR)
-    /// - An emitter for streaming output
-    /// - A peer invoker for calling caps on the host
-    ///
-    /// It returns the final response payload bytes.
-    ///
-    /// Chunks emitted by the handler are written immediately to stdout.
-    /// This is essential for progress updates and real-time token streaming.
-    ///
-    /// **Thread safety**: Handlers run in separate threads, so they must be
-    /// Send + Sync. The emitter and peer invoker are thread-safe and can be used freely.
-    ///
-    /// **Peer invocation**: Use the `peer` parameter to invoke caps on the host.
-    /// This is useful for sandboxed plugins that need to delegate operations
-    /// (like network access) to the host.
-    ///
-    /// Convenience wrapper around register_raw for simpler handlers that don't need
-    /// full streaming control. Use register_raw for true streaming handlers.
-    /// Register a convenience handler that accumulates all input, JSON-deserializes,
-    /// and passes the deserialized value to the handler.
-    /// Use register_raw for streaming handlers that process input chunk by chunk.
-    pub fn register<Req, F>(&mut self, cap_urn: &str, handler: F)
+    /// Register an Op factory for a cap URN.
+    /// The factory creates a fresh Op<()> instance per invocation.
+    pub fn register_op<F>(&mut self, cap_urn: &str, factory: F)
     where
-        Req: serde::de::DeserializeOwned + 'static,
-        F: Fn(Req, &OutputStream, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
+        F: Fn() -> Box<dyn Op<()>> + Send + Sync + 'static,
     {
-        let streaming_handler = move |input: InputPackage, output: &OutputStream, peer: &dyn PeerInvoker| -> Result<(), RuntimeError> {
-            let all_bytes = input.collect_all_bytes()
-                .map_err(|e| RuntimeError::Handler(format!("Failed to collect input: {}", e)))?;
-            let request: Req = serde_json::from_slice(&all_bytes)
-                .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse request: {}", e)))?;
-            handler(request, output, peer)
-        };
-        self.handlers.insert(cap_urn.to_string(), Arc::new(streaming_handler));
+        self.handlers.insert(cap_urn.to_string(), Arc::new(factory));
     }
 
-    /// Register a raw handler for a cap URN.
-    /// Handler receives streaming InputPackage, OutputStream, and PeerInvoker.
-    /// Streaming handlers process input as it arrives — no accumulation.
-    pub fn register_raw<F>(&mut self, cap_urn: &str, handler: F)
-    where
-        F: Fn(InputPackage, &OutputStream, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync + 'static,
-    {
-        self.handlers.insert(cap_urn.to_string(), Arc::new(handler));
+    /// Register an Op type for a cap URN. The type must implement Op<()> + Default.
+    /// Creates instances via Default::default() on each invocation.
+    pub fn register_op_type<T: Op<()> + Default + 'static>(&mut self, cap_urn: &str) {
+        self.handlers.insert(cap_urn.to_string(), Arc::new(|| Box::new(T::default()) as Box<dyn Op<()>>));
     }
 
     /// Find a handler for a cap URN.
-    /// Returns the handler if found, None otherwise.
+    /// Returns the OpFactory if found, None otherwise.
     ///
     /// Matching direction: request is pattern, registered cap is instance.
     /// `request.accepts(registered_cap)` — the request must accept the registered cap,
     /// meaning the registered cap must be able to satisfy what the request asks for.
-    pub fn find_handler(&self, cap_urn: &str) -> Option<HandlerFn> {
+    pub fn find_handler(&self, cap_urn: &str) -> Option<OpFactory> {
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
         };
 
         let request_specificity = request_urn.specificity();
-        let mut best: Option<(Arc<dyn Fn(InputPackage, &OutputStream, &dyn PeerInvoker) -> Result<(), RuntimeError> + Send + Sync>, usize)> = None;
+        let mut best: Option<(OpFactory, usize)> = None;
 
         for (registered_cap_str, handler) in &self.handlers {
             if let Ok(registered_urn) = CapUrn::from_string(registered_cap_str) {
@@ -1722,8 +1792,8 @@ impl PluginRuntime {
             ))
         })?;
 
-        // Find handler
-        let handler = self.find_handler(&cap.urn_string()).ok_or_else(|| {
+        // Find handler factory
+        let factory = self.find_handler(&cap.urn_string()).ok_or_else(|| {
             RuntimeError::NoHandler(format!(
                 "No handler registered for cap '{}'",
                 cap.urn_string()
@@ -1863,12 +1933,13 @@ impl PluginRuntime {
             Limits::default().max_chunk,
         );
 
-        // Invoke handler with new abstractions
-        let result = handler(input_package, &output, &peer);
+        // Invoke Op handler
+        let op = factory();
+        let peer_arc: Arc<dyn PeerInvoker> = Arc::new(peer);
+        let result = dispatch_op(op, input_package, output, peer_arc);
 
         match result {
             Ok(()) => {
-                let _ = output.close();
                 eprintln!("[PluginRuntime] CLI handler completed successfully");
                 Ok(())
             }
@@ -2446,8 +2517,8 @@ impl PluginRuntime {
                         }
                     };
 
-                    let handler = match self.find_handler(&cap_urn) {
-                        Some(h) => h,
+                    let factory = match self.find_handler(&cap_urn) {
+                        Some(f) => f,
                         None => {
                             let err_frame = Frame::err(frame.id.clone(), "NO_HANDLER",
                                 &format!("No handler registered for cap: {}", cap_urn));
@@ -2508,14 +2579,14 @@ impl PluginRuntime {
                             max_chunk,
                         };
 
-                        // Call handler
-                        let result = handler(input_package, &output, &peer_invoker);
+                        // Call Op handler via dispatch
+                        let op = factory();
+                        let peer_arc: Arc<dyn PeerInvoker> = Arc::new(peer_invoker);
+                        let result = dispatch_op(op, input_package, output, peer_arc);
 
                         match result {
                             Ok(()) => {
                                 eprintln!("[PluginRuntime] Handler completed successfully");
-                                // Close output stream (STREAM_END) if it was started
-                                let _ = output.close();
                                 // Send END frame with routing_id
                                 let mut end_frame = Frame::end(request_id, None);
                                 end_frame.routing_id = routing_id;
@@ -2642,6 +2713,146 @@ impl PluginRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // =========================================================================
+    // Reusable test Op structs
+    // =========================================================================
+
+    /// Test Op: emits a fixed byte value
+    struct EmitBytesOp {
+        data: Vec<u8>,
+    }
+    #[async_trait]
+    impl Op<()> for EmitBytesOp {
+        async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let _input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            Ok(())
+        }
+        fn metadata(&self) -> OpMetadata { OpMetadata::builder("EmitBytesOp").build() }
+    }
+
+    /// Test Op: echoes all input chunks to output, optionally records received bytes
+    struct EchoOp {
+        received: Option<Arc<Mutex<Vec<u8>>>>,
+    }
+    impl Default for EchoOp {
+        fn default() -> Self { Self { received: None } }
+    }
+    #[async_trait]
+    impl Op<()> for EchoOp {
+        async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let mut total = Vec::new();
+            for stream in input {
+                let stream = stream.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                for chunk in stream {
+                    let chunk = chunk.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                    if let ciborium::Value::Bytes(ref b) = chunk {
+                        total.extend(b);
+                    }
+                    req.output().emit_cbor(&chunk)
+                        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                }
+            }
+            if let Some(ref received) = self.received {
+                *received.lock().unwrap() = total;
+            }
+            Ok(())
+        }
+        fn metadata(&self) -> OpMetadata { OpMetadata::builder("EchoOp").build() }
+    }
+
+    /// Test Op: echoes input then appends a tag byte
+    struct EchoTagOp {
+        tag: Vec<u8>,
+    }
+    #[async_trait]
+    impl Op<()> for EchoTagOp {
+        async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            for stream in input {
+                let stream = stream.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                for chunk in stream {
+                    let chunk = chunk.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                    req.output().emit_cbor(&chunk)
+                        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                }
+            }
+            req.output().emit_cbor(&ciborium::Value::Bytes(self.tag.clone()))
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            Ok(())
+        }
+        fn metadata(&self) -> OpMetadata { OpMetadata::builder("EchoTagOp").build() }
+    }
+
+    /// Test Op: extracts CBOR "value" key from args, stores in shared state
+    struct ExtractValueOp {
+        received: Arc<Mutex<Vec<u8>>>,
+    }
+    #[async_trait]
+    impl Op<()> for ExtractValueOp {
+        async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let bytes = input.collect_all_bytes()
+                .map_err(|e| OpError::ExecutionFailed(format!("Stream error: {}", e)))?;
+            let cbor_val: ciborium::Value = ciborium::from_reader(&bytes[..])
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            if let ciborium::Value::Array(args) = cbor_val {
+                for arg in args {
+                    if let ciborium::Value::Map(map) = arg {
+                        for (k, v) in map {
+                            if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v) {
+                                if key == "value" {
+                                    *self.received.lock().unwrap() = b.clone();
+                                    req.output().emit_cbor(&ciborium::Value::Bytes(b))
+                                        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        fn metadata(&self) -> OpMetadata { OpMetadata::builder("ExtractValueOp").build() }
+    }
+
+    /// Test Op: no-op (does nothing)
+    #[derive(Default)]
+    struct NoOpOp;
+    #[async_trait]
+    impl Op<()> for NoOpOp {
+        async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            let _input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            Ok(())
+        }
+        fn metadata(&self) -> OpMetadata { OpMetadata::builder("NoOpOp").build() }
+    }
+
+    /// Helper: invoke a factory-produced Op with test input/output
+    fn invoke_op(factory: &OpFactory, input: InputPackage, output: OutputStream) -> Result<(), RuntimeError> {
+        let op = factory();
+        let peer: Arc<dyn PeerInvoker> = Arc::new(NoPeerInvoker);
+        dispatch_op(op, input, output, peer)
+    }
 
     /// Create an InputPackage from a list of streams for testing.
     /// Each stream is a (media_urn, data_bytes) pair.
@@ -2867,96 +3078,106 @@ mod tests {
     /// Valid manifest with proper in/out specs for tests that need parsed CapManifest
     const VALID_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}]}"#;
 
-    // TEST248: Test register handler by exact cap URN and find it by the same URN
+    // TEST248: Test register_op and find_handler by exact cap URN
     #[test]
     fn test_register_and_find_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-
-        runtime.register::<serde_json::Value, _>("cap:in=*;op=test;out=*", |_request, output, _peer| {
-            output.emit_cbor(&ciborium::Value::Bytes(b"result".to_vec()))?;
-            Ok(())
-        });
-
+        runtime.register_op("cap:in=*;op=test;out=*", || Box::new(EmitBytesOp { data: b"result".to_vec() }));
         assert!(runtime.find_handler("cap:in=*;op=test;out=*").is_some());
     }
 
-    // TEST249: Test register_raw handler works with bytes directly without deserialization
+    // TEST249: Test register_op handler echoes bytes directly
     #[test]
     fn test_raw_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-
         let received: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        runtime.register_raw("cap:op=raw", move |input, output, _peer| {
-            let mut total: Vec<u8> = Vec::new();
-            for stream in input {
-                let stream = stream?;
-                for chunk in stream {
-                    let chunk = chunk?;
-                    if let ciborium::Value::Bytes(ref b) = chunk {
-                        total.extend(b);
-                    }
-                    output.emit_cbor(&chunk)?;
-                }
-            }
-            *received_clone.lock().unwrap() = total;
-            Ok(())
+        runtime.register_op("cap:op=raw", move || {
+            Box::new(EchoOp { received: Some(Arc::clone(&received_clone)) }) as Box<dyn Op<()>>
         });
 
-        let handler = runtime.find_handler("cap:op=raw").unwrap();
-        let no_peer = NoPeerInvoker;
+        let factory = runtime.find_handler("cap:op=raw").unwrap();
         let input = test_input_package(&[("media:bytes", b"echo this")]);
         let (output, _out_rx) = test_output_stream();
-
-        handler(input, &output, &no_peer).unwrap();
+        invoke_op(&factory, input, output).unwrap();
         assert_eq!(&*received.lock().unwrap(), b"echo this", "raw handler must echo payload");
     }
 
-    // TEST250: Test register typed handler deserializes JSON and executes correctly
+    // TEST250: Test Op handler collects input and processes it
     #[test]
     fn test_typed_handler_deserialization() {
+        /// Test Op: parses JSON, extracts "key" field, emits as bytes
+        struct JsonKeyOp {
+            received: Arc<Mutex<Vec<u8>>>,
+        }
+        #[async_trait]
+        impl Op<()> for JsonKeyOp {
+            async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let all_bytes = input.collect_all_bytes()
+                    .map_err(|e| OpError::ExecutionFailed(format!("Failed to collect: {}", e)))?;
+                let json: serde_json::Value = serde_json::from_slice(&all_bytes)
+                    .map_err(|e| OpError::ExecutionFailed(format!("Bad JSON: {}", e)))?;
+                let value = json.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
+                let bytes = value.as_bytes();
+                req.output().emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()))
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                *self.received.lock().unwrap() = bytes.to_vec();
+                Ok(())
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("JsonKeyOp").build() }
+        }
+
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        runtime.register::<serde_json::Value, _>("cap:op=test", move |req, output, _peer| {
-            let value = req.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
-            let bytes = value.as_bytes();
-            output.emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()))?;
-            *received_clone.lock().unwrap() = bytes.to_vec();
-            Ok(())
+        runtime.register_op("cap:op=test", move || {
+            Box::new(JsonKeyOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
         });
 
-        let handler = runtime.find_handler("cap:op=test").unwrap();
-        let no_peer = NoPeerInvoker;
-        // JSON data: the collect_all_bytes in register() wrapper will get these raw bytes
+        let factory = runtime.find_handler("cap:op=test").unwrap();
         let input = test_input_package(&[("media:bytes", b"{\"key\":\"hello\"}")]);
         let (output, _out_rx) = test_output_stream();
-
-        handler(input, &output, &no_peer).unwrap();
+        invoke_op(&factory, input, output).unwrap();
         assert_eq!(&*received.lock().unwrap(), b"hello");
     }
 
-    // TEST251: Test typed handler returns RuntimeError::Deserialize for invalid JSON input
+    // TEST251: Test Op handler propagates errors through RuntimeError::Handler
     #[test]
     fn test_typed_handler_rejects_invalid_json() {
-        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-        runtime.register::<serde_json::Value, _>("cap:op=test", |_req, _output, _peer| {
-            Ok(())
-        });
+        /// Op that parses JSON — fails on invalid input
+        struct JsonParseOp;
+        #[async_trait]
+        impl Op<()> for JsonParseOp {
+            async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let all_bytes = input.collect_all_bytes()
+                    .map_err(|e| OpError::ExecutionFailed(format!("Failed to collect: {}", e)))?;
+                let _: serde_json::Value = serde_json::from_slice(&all_bytes)
+                    .map_err(|e| OpError::ExecutionFailed(format!("Bad JSON: {}", e)))?;
+                Ok(())
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("JsonParseOp").build() }
+        }
 
-        let handler = runtime.find_handler("cap:op=test").unwrap();
-        let no_peer = NoPeerInvoker;
+        let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
+        runtime.register_op("cap:op=test", || Box::new(JsonParseOp));
+
+        let factory = runtime.find_handler("cap:op=test").unwrap();
         let input = test_input_package(&[("media:bytes", b"not json {{{{")]);
         let (output, _out_rx) = test_output_stream();
-
-        let result = handler(input, &output, &no_peer);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            RuntimeError::Deserialize(_) => {}
-            other => panic!("Expected Deserialize error, got {:?}", other),
-        }
+        let result = invoke_op(&factory, input, output);
+        assert!(result.is_err(), "Invalid JSON must produce error");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("JSON"), "Error should mention JSON: {}", err_msg);
     }
 
     // TEST252: Test find_handler returns None for unregistered cap URNs
@@ -2966,28 +3187,45 @@ mod tests {
         assert!(runtime.find_handler("cap:op=nonexistent").is_none());
     }
 
-    // TEST253: Test handler function can be cloned via Arc and sent across threads (Send + Sync)
+    // TEST253: Test OpFactory can be cloned via Arc and sent across threads (Send + Sync)
     #[test]
     fn test_handler_is_send_sync() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
-
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        runtime.register::<serde_json::Value, _>("cap:op=threaded", move |_req, output, _peer| {
-            output.emit_cbor(&ciborium::Value::Bytes(b"done".to_vec()))?;
-            *received_clone.lock().unwrap() = b"done".to_vec();
-            Ok(())
+        runtime.register_op("cap:op=threaded", move || {
+            let r = Arc::clone(&received_clone);
+            Box::new(EmitAndRecordOp { data: b"done".to_vec(), received: r }) as Box<dyn Op<()>>
         });
 
-        let handler = runtime.find_handler("cap:op=threaded").unwrap();
-        let handler_clone = Arc::clone(&handler);
+        /// Test Op: emits fixed bytes and records in shared state
+        struct EmitAndRecordOp {
+            data: Vec<u8>,
+            received: Arc<Mutex<Vec<u8>>>,
+        }
+        #[async_trait]
+        impl Op<()> for EmitAndRecordOp {
+            async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let _input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                *self.received.lock().unwrap() = self.data.clone();
+                Ok(())
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("EmitAndRecordOp").build() }
+        }
+
+        let factory = runtime.find_handler("cap:op=threaded").unwrap();
+        let factory_clone = Arc::clone(&factory);
 
         let handle = std::thread::spawn(move || {
-            let no_peer = NoPeerInvoker;
             let input = test_input_package(&[("media:bytes", b"{}")]);
             let (output, _out_rx) = test_output_stream();
-            handler_clone(input, &output, &no_peer).unwrap();
+            invoke_op(&factory_clone, input, output).unwrap();
         });
 
         handle.join().unwrap();
@@ -3218,94 +3456,76 @@ mod tests {
         assert!(format!("{}", err6).contains("timeout"));
     }
 
-    // TEST270: Test registering multiple handlers for different caps and finding each independently
+    // TEST270: Test registering multiple Op handlers for different caps and finding each independently
     #[test]
     fn test_multiple_handlers() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_raw("cap:op=alpha", |input, output, _| {
-            for stream in input {
-                for chunk in stream? {
-                    output.emit_cbor(&chunk?)?;
-                }
-            }
-            output.emit_cbor(&ciborium::Value::Bytes(b"a".to_vec()))?;
-            Ok(())
-        });
-        runtime.register_raw("cap:op=beta", |input, output, _| {
-            for stream in input {
-                for chunk in stream? {
-                    output.emit_cbor(&chunk?)?;
-                }
-            }
-            output.emit_cbor(&ciborium::Value::Bytes(b"b".to_vec()))?;
-            Ok(())
-        });
-        runtime.register_raw("cap:op=gamma", |input, output, _| {
-            for stream in input {
-                for chunk in stream? {
-                    output.emit_cbor(&chunk?)?;
-                }
-            }
-            output.emit_cbor(&ciborium::Value::Bytes(b"g".to_vec()))?;
-            Ok(())
-        });
+        runtime.register_op("cap:op=alpha", || Box::new(EchoTagOp { tag: b"a".to_vec() }));
+        runtime.register_op("cap:op=beta", || Box::new(EchoTagOp { tag: b"b".to_vec() }));
+        runtime.register_op("cap:op=gamma", || Box::new(EchoTagOp { tag: b"g".to_vec() }));
 
-        let no_peer = NoPeerInvoker;
-
-        let h_alpha = runtime.find_handler("cap:op=alpha").unwrap();
+        let f_alpha = runtime.find_handler("cap:op=alpha").unwrap();
         let input = test_input_package(&[("media:bytes", b"")]);
         let (output, _out_rx) = test_output_stream();
-        h_alpha(input, &output, &no_peer).unwrap();
+        invoke_op(&f_alpha, input, output).unwrap();
 
-        let h_beta = runtime.find_handler("cap:op=beta").unwrap();
+        let f_beta = runtime.find_handler("cap:op=beta").unwrap();
         let input = test_input_package(&[("media:bytes", b"")]);
         let (output, _out_rx) = test_output_stream();
-        h_beta(input, &output, &no_peer).unwrap();
+        invoke_op(&f_beta, input, output).unwrap();
 
-        let h_gamma = runtime.find_handler("cap:op=gamma").unwrap();
+        let f_gamma = runtime.find_handler("cap:op=gamma").unwrap();
         let input = test_input_package(&[("media:bytes", b"")]);
         let (output, _out_rx) = test_output_stream();
-        h_gamma(input, &output, &no_peer).unwrap();
+        invoke_op(&f_gamma, input, output).unwrap();
     }
 
-    // TEST271: Test handler replacing an existing registration for the same cap URN
+    // TEST271: Test Op handler replacing an existing registration for the same cap URN
     #[test]
     fn test_handler_replacement() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
-        let result1 = Arc::new(Mutex::new(Vec::new()));
-        let result1_clone = Arc::clone(&result1);
-        let result2 = Arc::new(Mutex::new(Vec::new()));
+        let result1: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let result2: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let result2_clone = Arc::clone(&result2);
 
-        runtime.register_raw("cap:op=test", move |input, output, _| {
-            for stream in input {
-                for chunk in stream? {
-                    output.emit_cbor(&chunk?)?;
-                }
-            }
-            output.emit_cbor(&ciborium::Value::Bytes(b"first".to_vec()))?;
-            *result1_clone.lock().unwrap() = b"first".to_vec();
-            Ok(())
+        runtime.register_op("cap:op=test", move || {
+            Box::new(EchoTagOp { tag: b"first".to_vec() }) as Box<dyn Op<()>>
         });
-        runtime.register_raw("cap:op=test", move |input, output, _| {
-            for stream in input {
-                for chunk in stream? {
-                    output.emit_cbor(&chunk?)?;
-                }
-            }
-            output.emit_cbor(&ciborium::Value::Bytes(b"second".to_vec()))?;
-            *result2_clone.lock().unwrap() = b"second".to_vec();
-            Ok(())
+        runtime.register_op("cap:op=test", move || {
+            let r = Arc::clone(&result2_clone);
+            Box::new(EmitAndRecordOp2 { data: b"second".to_vec(), received: r }) as Box<dyn Op<()>>
         });
 
-        let handler = runtime.find_handler("cap:op=test").unwrap();
-        let no_peer = NoPeerInvoker;
+        /// Op that emits fixed data and records it
+        struct EmitAndRecordOp2 {
+            data: Vec<u8>,
+            received: Arc<Mutex<Vec<u8>>>,
+        }
+        #[async_trait]
+        impl Op<()> for EmitAndRecordOp2 {
+            async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                let input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                for stream in input { for chunk in stream.map_err(|e| OpError::ExecutionFailed(e.to_string()))? { let _ = chunk.map_err(|e| OpError::ExecutionFailed(e.to_string()))?; } }
+                req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                *self.received.lock().unwrap() = self.data.clone();
+                Ok(())
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("EmitAndRecordOp2").build() }
+        }
+
+        let factory = runtime.find_handler("cap:op=test").unwrap();
         let input = test_input_package(&[("media:bytes", b"")]);
         let (output, _out_rx) = test_output_stream();
-        handler(input, &output, &no_peer).unwrap();
+        invoke_op(&factory, input, output).unwrap();
         assert_eq!(&*result2.lock().unwrap(), b"second", "later registration must replace earlier");
+        // result1 should NOT have been called
+        assert!(result1.lock().unwrap().is_empty(), "first handler must not be called after replacement");
     }
 
     // TEST272: Test extract_effective_payload CBOR with multiple arguments selects the correct one
@@ -3457,30 +3677,10 @@ mod tests {
         let received_payload = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received_payload);
 
-        runtime.register_raw(
+        runtime.register_op(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
-            move |input, output, _peer| {
-                // Collect all stream bytes — file-path conversion already happened
-                let bytes = input.collect_all_bytes()
-                    .map_err(|e| RuntimeError::Handler(format!("Stream error: {}", e)))?;
-                // The payload is a CBOR arg array — parse and extract value bytes
-                let cbor_val: ciborium::Value = ciborium::from_reader(&bytes[..]).unwrap();
-                if let ciborium::Value::Array(args) = cbor_val {
-                    for arg in args {
-                        if let ciborium::Value::Map(map) = arg {
-                            for (k, v) in map {
-                                if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v) {
-                                    if key == "value" {
-                                        *received_clone.lock().unwrap() = b.clone();
-                                        output.emit_cbor(&ciborium::Value::Bytes(b))?;
-                                        return Ok(());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(())
+            move || {
+                Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
             },
         );
 
@@ -3498,13 +3698,12 @@ mod tests {
             true,  // CLI mode
         ).unwrap();
 
-        let handler = runtime.find_handler(&cap.urn_string()).unwrap();
-        let peer = NoPeerInvoker;
+        let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
         // Simulate CLI mode: parse CBOR args → send as streams → InputPackage
         let input = test_input_package(&[("media:bytes", &payload)]);
         let (output, _out_rx) = test_output_stream();
-        handler(input, &output, &peer).unwrap();
+        invoke_op(&factory, input, output).unwrap();
 
         // Verify handler received file bytes (not file path string)
         let received = received_payload.lock().unwrap();
@@ -4021,28 +4220,10 @@ mod tests {
         let received_payload = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received_payload);
 
-        runtime.register_raw(
+        runtime.register_op(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
-            move |input, output, _peer| {
-                let bytes = input.collect_all_bytes()
-                    .map_err(|e| RuntimeError::Handler(format!("Stream error: {}", e)))?;
-                let cbor_val: ciborium::Value = ciborium::from_reader(&bytes[..]).unwrap();
-                if let ciborium::Value::Array(args) = cbor_val {
-                    for arg in args {
-                        if let ciborium::Value::Map(map) = arg {
-                            for (k, v) in map {
-                                if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v) {
-                                    if key == "value" {
-                                        *received_clone.lock().unwrap() = b.clone();
-                                        output.emit_cbor(&ciborium::Value::Bytes(b))?;
-                                        return Ok(());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(())
+            move || {
+                Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
             },
         );
 
@@ -4059,12 +4240,11 @@ mod tests {
             true,  // CLI mode
         ).unwrap();
 
-        let handler = runtime.find_handler(&cap.urn_string()).unwrap();
-        let peer = NoPeerInvoker;
+        let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
         let input = test_input_package(&[("media:bytes", &payload)]);
         let (output, _out_rx) = test_output_stream();
-        handler(input, &output, &peer).unwrap();
+        invoke_op(&factory, input, output).unwrap();
 
         // Verify handler received file bytes
         let received = received_payload.lock().unwrap();
@@ -4754,27 +4934,6 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
 
-        let handler = move |input: InputPackage, output: &OutputStream, _peer: &dyn PeerInvoker| {
-            // Collect all stream bytes and verify
-            let bytes = input.collect_all_bytes()
-                .map_err(|e| RuntimeError::Handler(format!("Stream error: {}", e)))?;
-            // Parse CBOR array to extract value
-            let cbor_val: ciborium::Value = ciborium::from_reader(&bytes[..]).unwrap();
-            if let ciborium::Value::Array(arr) = cbor_val {
-                if let ciborium::Value::Map(map) = &arr[0] {
-                    for (k, v) in map {
-                        if let (ciborium::Value::Text(key), ciborium::Value::Bytes(data)) = (k, v) {
-                            if key == "value" {
-                                *received_clone.lock().unwrap() = data.clone();
-                                output.emit_cbor(&ciborium::Value::Bytes(data.clone()))?;
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(())
-        };
-
         let cap = create_test_cap(
             "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
             "Process",
@@ -4788,7 +4947,9 @@ mod tests {
 
         let manifest = create_test_manifest("TestPlugin", "1.0.0", "Test", vec![cap.clone()]);
         let mut runtime = PluginRuntime::with_manifest(manifest);
-        runtime.register_raw(&cap.urn_string(), handler);
+        runtime.register_op(&cap.urn_string(), move || {
+            Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
+        });
 
         // Build CBOR payload with pdf_content
         let mut payload_bytes = Vec::new();
@@ -4800,13 +4961,12 @@ mod tests {
         ]);
         ciborium::into_writer(&cbor_args, &mut payload_bytes).unwrap();
 
-        let handler_func = runtime.find_handler(&cap.urn_string()).unwrap();
-        let no_peer = NoPeerInvoker;
+        let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
         // Send payload as InputPackage
         let input = test_input_package(&[("media:bytes", &payload_bytes)]);
         let (output, _out_rx) = test_output_stream();
-        handler_func(input, &output, &no_peer).unwrap();
+        invoke_op(&factory, input, output).unwrap();
 
         assert_eq!(*received.lock().unwrap(), pdf_content, "Handler receives chunked content");
     }
@@ -5142,9 +5302,20 @@ mod tests {
             "Standard handlers must not catch arbitrary specific requests");
     }
 
-    // TEST479: Custom identity handler overrides auto-registered default
+    // TEST479: Custom identity Op overrides auto-registered default
     #[test]
     fn test479_custom_identity_overrides_default() {
+        /// Op that always fails (to verify it's the custom handler that gets called)
+        #[derive(Default)]
+        struct FailOp;
+        #[async_trait]
+        impl Op<()> for FailOp {
+            async fn perform(&self, _dry: &mut DryContext, _wet: &mut WetContext) -> OpResult<()> {
+                Err(OpError::ExecutionFailed("custom identity".to_string()))
+            }
+            fn metadata(&self) -> OpMetadata { OpMetadata::builder("FailOp").build() }
+        }
+
         let mut runtime = PluginRuntime::new(VALID_MANIFEST.as_bytes());
 
         // Auto-registered identity handler must exist
@@ -5154,10 +5325,8 @@ mod tests {
         // Count handlers before override
         let handlers_before = runtime.handlers.len();
 
-        // Override identity with a custom handler
-        runtime.register_raw(CAP_IDENTITY, |_input, _output, _peer| {
-            Err(RuntimeError::Handler("custom identity".to_string()))
-        });
+        // Override identity with a custom Op
+        runtime.register_op_type::<FailOp>(CAP_IDENTITY);
 
         // Handler count must not change (HashMap insert replaces, doesn't add)
         assert_eq!(runtime.handlers.len(), handlers_before,

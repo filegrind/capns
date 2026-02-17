@@ -14,13 +14,13 @@
 
 use anyhow::Result;
 use capns::{
-    ArgSource, Cap, CapArg, CapManifest, CapUrn, PeerInvoker, PluginRuntime, RuntimeError,
-    StreamEmitter,
+    ArgSource, Cap, CapArg, CapManifest, CapUrn, PluginRuntime,
+    OutputStream, Request, WET_KEY_REQUEST,
+    Op, OpMetadata, DryContext, WetContext, OpResult, OpError, async_trait,
 };
-use capns::cbor_frame::{Frame, FrameType};
-use crossbeam_channel::Receiver;
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 // =============================================================================
 // Manifest Building
@@ -264,348 +264,260 @@ fn build_manifest() -> CapManifest {
 }
 
 // =============================================================================
-// Handler Implementations
+// Helper: collect all input streams by media_urn
 // =============================================================================
 
-/// Helper to collect CBOR frames into a HashMap of media_urn → bytes.
-/// Processes STREAM_START, CHUNK, STREAM_END, END frames.
-/// Returns error if ERR frame is encountered.
-fn collect_args_by_media_urn(frames: Receiver<Frame>) -> Result<HashMap<String, Vec<u8>>, RuntimeError> {
+fn collect_args(req: &Request) -> std::result::Result<HashMap<String, Vec<u8>>, OpError> {
+    let input = req.take_input()
+        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
     let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    let mut current_stream: Option<(String, String)> = None; // (stream_id, media_urn)
-
-    for frame in frames {
-        match frame.frame_type {
-            FrameType::StreamStart => {
-                let stream_id = frame.stream_id.ok_or_else(|| {
-                    RuntimeError::Handler("STREAM_START missing stream_id".to_string())
-                })?;
-                let media_urn = frame.media_urn.ok_or_else(|| {
-                    RuntimeError::Handler("STREAM_START missing media_urn".to_string())
-                })?;
-                current_stream = Some((stream_id, media_urn.clone()));
-                args.entry(media_urn).or_insert_with(Vec::new);
-            }
-            FrameType::Chunk => {
-                if let Some((_, media_urn)) = &current_stream {
-                    if let Some(payload) = frame.payload {
-                        args.entry(media_urn.clone())
-                            .or_insert_with(Vec::new)
-                            .extend_from_slice(&payload);
-                    }
-                }
-            }
-            FrameType::StreamEnd => {
-                current_stream = None;
-            }
-            FrameType::End => break,
-            FrameType::Err => {
-                let code = frame.error_code().unwrap_or("UNKNOWN");
-                let message = frame.error_message().unwrap_or("Unknown error");
-                return Err(RuntimeError::Handler(format!("[{}] {}", code, message)));
-            }
-            _ => {} // Ignore other frame types
-        }
+    for stream_result in input {
+        let stream = stream_result
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let media_urn = stream.media_urn().to_string();
+        let bytes = stream.collect_bytes()
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        args.insert(media_urn, bytes);
     }
-
     Ok(args)
 }
 
-/// Helper to collect CHUNK frames from peer response into bytes.
-fn collect_peer_response(frames: Receiver<Frame>) -> Result<Vec<u8>, RuntimeError> {
-    let mut data = Vec::new();
-    for frame in frames {
-        match frame.frame_type {
-            FrameType::Chunk => {
-                if let Some(payload) = frame.payload {
-                    data.extend_from_slice(&payload);
-                }
+fn get_req(wet: &mut WetContext) -> std::result::Result<Arc<Request>, OpError> {
+    wet.get_required::<Request>(WET_KEY_REQUEST)
+        .map_err(|e| OpError::ExecutionFailed(e.to_string()))
+}
+
+fn emit(output: &OutputStream, value: &ciborium::Value) -> OpResult<()> {
+    output.emit_cbor(value)
+        .map_err(|e| OpError::ExecutionFailed(e.to_string()))
+}
+
+// =============================================================================
+// Op Implementations
+// =============================================================================
+
+#[derive(Default)]
+struct Edge1Op;
+
+#[async_trait]
+impl Op<()> for Edge1Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
+
+        let input = args.get("media:node1;textable")
+            .ok_or_else(|| OpError::ExecutionFailed("node1 input required".to_string()))?;
+        let prefix = args.get("media:edge1arg1;textable;form=scalar")
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_else(|| "[PREPEND]".to_string());
+
+        let result = format!("{}{}", prefix, String::from_utf8_lossy(input));
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge1Op").build() }
+}
+
+#[derive(Default)]
+struct Edge2Op;
+
+#[async_trait]
+impl Op<()> for Edge2Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
+
+        let input = args.get("media:node2;textable")
+            .ok_or_else(|| OpError::ExecutionFailed("node2 input required".to_string()))?;
+        let suffix = args.get("media:edge2arg1;textable;form=scalar")
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_else(|| "[APPEND]".to_string());
+
+        let result = format!("{}{}", String::from_utf8_lossy(input), suffix);
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge2Op").build() }
+}
+
+#[derive(Default)]
+struct Edge3Op;
+
+#[async_trait]
+impl Op<()> for Edge3Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
+
+        let input_list = args.get("media:node1;textable;form=list")
+            .ok_or_else(|| OpError::ExecutionFailed("node1 list required".to_string()))?;
+        let transform = args.get("media:edge3arg1;textable;form=scalar")
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_else(|| "[TRANSFORMED]".to_string());
+
+        let cbor_value: ciborium::Value = ciborium::from_reader(&input_list[..])
+            .map_err(|e| OpError::ExecutionFailed(format!("Failed to parse CBOR: {}", e)))?;
+        let items = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => return Err(OpError::ExecutionFailed("Expected CBOR array".to_string())),
+        };
+
+        let mut results = Vec::new();
+        for item in items {
+            if let ciborium::Value::Bytes(bytes) = item {
+                let transformed = format!("{}{}", transform, String::from_utf8_lossy(&bytes));
+                results.push(ciborium::Value::Bytes(transformed.into_bytes()));
             }
-            FrameType::End => break,
-            FrameType::Err => {
-                let code = frame.error_code().unwrap_or("UNKNOWN");
-                let message = frame.error_message().unwrap_or("Unknown error");
-                return Err(RuntimeError::PeerRequest(format!("[{}] {}", code, message)));
-            }
-            _ => {} // Ignore STREAM_START, STREAM_END
         }
+        emit(req.output(), &ciborium::Value::Array(results))
     }
-    Ok(data)
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge3Op").build() }
 }
 
-fn handle_edge1(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    // Collect all argument streams by media_urn
-    let args = collect_args_by_media_urn(frames)?;
+#[derive(Default)]
+struct Edge4Op;
 
-    // REQUIRED: node1 bytes (file-path already converted)
-    let input = args
-        .get("media:node1;textable")
-        .ok_or_else(|| RuntimeError::MissingArgument("node1 input required".to_string()))?;
+#[async_trait]
+impl Op<()> for Edge4Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
 
-    // OPTIONAL: prefix
-    let prefix = args
-        .get("media:edge1arg1;textable;form=scalar")
-        .map(|b| String::from_utf8_lossy(b).to_string())
-        .unwrap_or_else(|| "[PREPEND]".to_string());
+        let input_list = args.get("media:node4;textable;form=list")
+            .ok_or_else(|| OpError::ExecutionFailed("node4 list required".to_string()))?;
+        let separator = args.get("media:edge4arg1;textable;form=scalar")
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_else(|| " ".to_string());
 
-    let input_str = String::from_utf8_lossy(input);
-    let result = format!("{}{}", prefix, input_str);
+        let cbor_value: ciborium::Value = ciborium::from_reader(&input_list[..])
+            .map_err(|e| OpError::ExecutionFailed(format!("Failed to parse CBOR: {}", e)))?;
+        let items = match cbor_value {
+            ciborium::Value::Array(arr) => arr,
+            _ => return Err(OpError::ExecutionFailed("Expected CBOR array".to_string())),
+        };
 
-    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
-    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
-    emitter.emit_cbor(&cbor_value);
-    Ok(())
+        let parts: Vec<String> = items.iter().filter_map(|item| {
+            if let ciborium::Value::Bytes(bytes) = item {
+                Some(String::from_utf8_lossy(bytes).to_string())
+            } else { None }
+        }).collect();
+        let result = parts.join(&separator);
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge4Op").build() }
 }
 
-fn handle_edge2(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
+#[derive(Default)]
+struct Edge5Op;
 
-    let input = args
-        .get("media:node2;textable")
-        .ok_or_else(|| RuntimeError::MissingArgument("node2 input required".to_string()))?;
+#[async_trait]
+impl Op<()> for Edge5Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
 
-    eprintln!("[edge2] Input bytes: {:?}", input);
-    eprintln!("[edge2] Input as string: {}", String::from_utf8_lossy(input));
+        let input1 = args.get("media:node2;textable")
+            .ok_or_else(|| OpError::ExecutionFailed("node2 input required".to_string()))?;
+        let input2 = args.get("media:node3;textable")
+            .ok_or_else(|| OpError::ExecutionFailed("node3 input required".to_string()))?;
+        let separator = args.get("media:edge5arg3;textable;form=scalar")
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_else(|| " ".to_string());
 
-    let suffix = args
-        .get("media:edge2arg1;textable;form=scalar")
-        .map(|b| String::from_utf8_lossy(b).to_string())
-        .unwrap_or_else(|| "[APPEND]".to_string());
-
-    let input_str = String::from_utf8_lossy(input);
-    let result = format!("{}{}", input_str, suffix);
-
-    eprintln!("[edge2] Result: {}", result);
-
-    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
-    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
-    emitter.emit_cbor(&cbor_value);
-    Ok(())
+        let result = format!("{}{}{}", String::from_utf8_lossy(input1), separator, String::from_utf8_lossy(input2));
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge5Op").build() }
 }
 
-fn handle_edge3(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
+#[derive(Default)]
+struct Edge6Op;
 
-    // Input is a list of node1 items (file-path array already expanded and converted)
-    let input_list = args
-        .get("media:node1;textable;form=list")
-        .ok_or_else(|| RuntimeError::MissingArgument("node1 list required".to_string()))?;
+#[async_trait]
+impl Op<()> for Edge6Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
 
-    let transform = args
-        .get("media:edge3arg1;textable;form=scalar")
-        .map(|b| String::from_utf8_lossy(b).to_string())
-        .unwrap_or_else(|| "[TRANSFORMED]".to_string());
+        let input = args.get("media:node1;textable")
+            .ok_or_else(|| OpError::ExecutionFailed("node1 input required".to_string()))?;
+        let count = args.get("media:edge6arg1;textable;numeric;form=scalar")
+            .and_then(|b| String::from_utf8_lossy(b).parse::<usize>().ok())
+            .unwrap_or(1);
+        let item_prefix = args.get("media:edge6arg2;textable;form=scalar")
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .unwrap_or_default();
 
-    // Parse CBOR array
-    let mut cursor = std::io::Cursor::new(input_list);
-    let cbor_value: ciborium::Value = ciborium::from_reader(&mut cursor)
-        .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse CBOR: {}", e)))?;
-
-    let items = match cbor_value {
-        ciborium::Value::Array(arr) => arr,
-        _ => return Err(RuntimeError::Deserialize("Expected CBOR array".to_string())),
-    };
-
-    // Transform each item
-    let mut results = Vec::new();
-    for item in items {
-        if let ciborium::Value::Bytes(bytes) = item {
-            let content = String::from_utf8_lossy(&bytes);
-            let transformed = format!("{}{}", transform, content);
-            results.push(ciborium::Value::Bytes(transformed.into_bytes()));
+        let input_str = String::from_utf8_lossy(input);
+        let mut results = Vec::new();
+        for _ in 0..count {
+            let item = format!("{}{}", item_prefix, input_str);
+            results.push(ciborium::Value::Bytes(item.into_bytes()));
         }
+        emit(req.output(), &ciborium::Value::Array(results))
     }
-
-    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
-    let result_array = ciborium::Value::Array(results);
-    emitter.emit_cbor(&result_array);
-    Ok(())
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge6Op").build() }
 }
 
-fn handle_edge4(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
+#[derive(Default)]
+struct LargeOp;
 
-    let input_list = args
-        .get("media:node4;textable;form=list")
-        .ok_or_else(|| RuntimeError::MissingArgument("node4 list required".to_string()))?;
+#[async_trait]
+impl Op<()> for LargeOp {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
 
-    let separator = args
-        .get("media:edge4arg1;textable;form=scalar")
-        .map(|b| String::from_utf8_lossy(b).to_string())
-        .unwrap_or_else(|| " ".to_string());
+        let size = args.get("media:payload-size;textable;numeric;form=scalar")
+            .and_then(|b| String::from_utf8_lossy(b).parse::<usize>().ok())
+            .unwrap_or(1_048_576);
 
-    // Parse CBOR array
-    let mut cursor = std::io::Cursor::new(input_list);
-    let cbor_value: ciborium::Value = ciborium::from_reader(&mut cursor)
-        .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse CBOR: {}", e)))?;
-
-    let items = match cbor_value {
-        ciborium::Value::Array(arr) => arr,
-        _ => return Err(RuntimeError::Deserialize("Expected CBOR array".to_string())),
-    };
-
-    // Collect all items into single output
-    let mut parts = Vec::new();
-    for item in items {
-        if let ciborium::Value::Bytes(bytes) = item {
-            parts.push(String::from_utf8_lossy(&bytes).to_string());
+        let mut payload = Vec::with_capacity(size);
+        for i in 0..size {
+            payload.push((i % 256) as u8);
         }
+        emit(req.output(), &ciborium::Value::Bytes(payload))
     }
-
-    let result = parts.join(&separator);
-    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
-    emitter.emit_cbor(&cbor_value);
-    Ok(())
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("LargeOp").build() }
 }
 
-fn handle_edge5(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
+#[derive(Default)]
+struct PeerOp;
 
-    let input1 = args
-        .get("media:node2;textable")
-        .ok_or_else(|| RuntimeError::MissingArgument("node2 input required".to_string()))?;
+#[async_trait]
+impl Op<()> for PeerOp {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let args = collect_args(&req)?;
 
-    let input2 = args
-        .get("media:node3;textable")
-        .ok_or_else(|| RuntimeError::MissingArgument("node3 input required (--second-input)".to_string()))?;
+        let input = args.get("media:node1;textable")
+            .ok_or_else(|| OpError::ExecutionFailed("node1 input required".to_string()))?;
 
-    let separator = args
-        .get("media:edge5arg3;textable;form=scalar")
-        .map(|b| String::from_utf8_lossy(b).to_string())
-        .unwrap_or_else(|| " ".to_string());
+        // Call edge1 via PeerInvoker (node1 → node2)
+        let edge1_urn = "cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\"";
+        let edge1_response = req.peer().call_with_bytes(
+            edge1_urn,
+            &[("media:node1;textable", input)],
+        ).map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
 
-    let input1_str = String::from_utf8_lossy(input1);
-    let input2_str = String::from_utf8_lossy(input2);
-    let result = format!("{}{}{}", input1_str, separator, input2_str);
+        // Collect edge1 response and decode CBOR
+        let edge1_cbor = edge1_response.collect_value()
+            .map_err(|e| OpError::ExecutionFailed(format!("Edge1 response error: {}", e)))?;
+        let edge1_bytes = match edge1_cbor {
+            ciborium::Value::Bytes(b) => b,
+            _ => return Err(OpError::ExecutionFailed("Expected Bytes from edge1".to_string())),
+        };
 
-    let cbor_value = ciborium::Value::Bytes(result.into_bytes());
-    emitter.emit_cbor(&cbor_value);
-    Ok(())
-}
+        // Call edge2 via PeerInvoker (node2 → node3)
+        let edge2_urn = "cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\"";
+        let edge2_response = req.peer().call_with_bytes(
+            edge2_urn,
+            &[("media:node2;textable", &edge1_bytes)],
+        ).map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
 
-fn handle_edge6(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
-
-    let input = args
-        .get("media:node1;textable")
-        .ok_or_else(|| RuntimeError::MissingArgument("node1 input required".to_string()))?;
-
-    let count = args
-        .get("media:edge6arg1;textable;numeric;form=scalar")
-        .and_then(|b| String::from_utf8_lossy(b).parse::<usize>().ok())
-        .unwrap_or(1);
-
-    let item_prefix = args
-        .get("media:edge6arg2;textable;form=scalar")
-        .map(|b| String::from_utf8_lossy(b).to_string())
-        .unwrap_or_else(|| "".to_string());
-
-    let input_str = String::from_utf8_lossy(input);
-
-    // Create list with count copies
-    let mut results = Vec::new();
-    for _ in 0..count {
-        let item = format!("{}{}", item_prefix, input_str);
-        results.push(ciborium::Value::Bytes(item.into_bytes()));
+        let edge2_cbor = edge2_response.collect_value()
+            .map_err(|e| OpError::ExecutionFailed(format!("Edge2 response error: {}", e)))?;
+        emit(req.output(), &edge2_cbor)
     }
-
-    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
-    let result_array = ciborium::Value::Array(results);
-    emitter.emit_cbor(&result_array);
-    Ok(())
-}
-
-fn handle_large(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    _peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
-
-    let size = args
-        .get("media:payload-size;textable;numeric;form=scalar")
-        .and_then(|b| String::from_utf8_lossy(b).parse::<usize>().ok())
-        .unwrap_or(1_048_576); // 1MB default
-
-    // Generate predictable pattern: byte at index i is (i % 256)
-    let mut payload = Vec::with_capacity(size);
-    for i in 0..size {
-        payload.push((i % 256) as u8);
-    }
-
-    // Emit CBOR Value directly (handlers MUST emit CBOR Values)
-    let cbor_value = ciborium::Value::Bytes(payload);
-    emitter.emit_cbor(&cbor_value);
-    Ok(())
-}
-
-fn handle_peer(
-    frames: Receiver<Frame>,
-    emitter: &dyn StreamEmitter,
-    peer: &dyn PeerInvoker,
-) -> Result<(), RuntimeError> {
-    let args = collect_args_by_media_urn(frames)?;
-
-    let input = args
-        .get("media:node1;textable")
-        .ok_or_else(|| RuntimeError::MissingArgument("node1 input required".to_string()))?;
-
-    // Call edge1 via PeerInvoker (node1 → node2)
-    let edge1_urn = "cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\"";
-    let edge1_rx = peer.invoke(edge1_urn, &[
-        capns::CapArgumentValue::new("media:node1;textable", input.to_vec())
-    ])?;
-
-    // Collect edge1 response frames (raw CBOR bytes)
-    let edge1_response = collect_peer_response(edge1_rx)?;
-
-    // Decode edge1 CBOR response to get raw bytes (point of consumption)
-    let edge1_value: ciborium::Value = ciborium::from_reader(&edge1_response[..])
-        .map_err(|e| RuntimeError::Deserialize(format!("Failed to decode edge1 response: {}", e)))?;
-    let edge1_bytes = match edge1_value {
-        ciborium::Value::Bytes(b) => b,
-        _ => return Err(RuntimeError::Deserialize("Expected Bytes from edge1".to_string())),
-    };
-
-    // Call edge2 via PeerInvoker (node2 → node3)
-    let edge2_urn = "cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\"";
-    let edge2_rx = peer.invoke(edge2_urn, &[
-        capns::CapArgumentValue::new("media:node2;textable", edge1_bytes)
-    ])?;
-
-    // Collect edge2 response frames (raw CBOR bytes)
-    let response_data = collect_peer_response(edge2_rx)?;
-
-    // Decode and re-emit (point of consumption → point of production)
-    let cbor_value: ciborium::Value = ciborium::from_reader(&response_data[..])
-        .map_err(|e| RuntimeError::Deserialize(format!("Failed to decode peer response: {}", e)))?;
-    emitter.emit_cbor(&cbor_value)?;
-
-    Ok(())
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("PeerOp").build() }
 }
 
 // =============================================================================
@@ -616,45 +528,30 @@ fn main() -> Result<()> {
     let manifest = build_manifest();
     let mut runtime = PluginRuntime::with_manifest(manifest);
 
-    // Register all handlers
-    runtime.register_raw(
+    // Register all handlers as Op types
+    runtime.register_op_type::<Edge1Op>(
         "cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\"",
-        handle_edge1,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<Edge2Op>(
         "cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\"",
-        handle_edge2,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<Edge3Op>(
         "cap:in=\"media:node1;textable;form=list\";op=test_edge3;out=\"media:node4;textable;form=list\"",
-        handle_edge3,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<Edge4Op>(
         "cap:in=\"media:node4;textable;form=list\";op=test_edge4;out=\"media:node5;textable\"",
-        handle_edge4,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<Edge5Op>(
         "cap:in=\"media:node2;textable\";in2=\"media:node3;textable\";op=test_edge5;out=\"media:node5;textable\"",
-        handle_edge5,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<Edge6Op>(
         "cap:in=\"media:node1;textable\";op=test_edge6;out=\"media:node4;textable;form=list\"",
-        handle_edge6,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<LargeOp>(
         "cap:in=\"media:void\";op=test_large;out=\"media:bytes\"",
-        handle_large,
     );
-
-    runtime.register_raw(
+    runtime.register_op_type::<PeerOp>(
         "cap:in=\"media:node1;textable\";op=test_peer;out=\"media:node5;textable\"",
-        handle_peer,
     );
 
     // Run the plugin runtime (handles both CLI and CBOR modes)
