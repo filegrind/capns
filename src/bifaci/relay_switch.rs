@@ -149,6 +149,8 @@ pub struct RelaySwitch {
     negotiated_limits: Limits,
     /// Channel receiver for frames from master reader threads
     frame_rx: mpsc::Receiver<(usize, Result<Frame, CborError>)>,
+    /// Channel sender for spawning new reader threads (stored for add_master)
+    frame_tx: mpsc::Sender<(usize, Result<Frame, CborError>)>,
     /// XID counter for assigning unique routing IDs (RelaySwitch assigns on first arrival)
     xid_counter: u64,
     /// RID → XID mapping for engine-initiated requests (so continuation frames can find their XID)
@@ -165,12 +167,6 @@ impl RelaySwitch {
     /// Each tuple is (read_stream, write_stream) for one RelayMaster.
     /// Performs handshake with all masters and builds initial capability table.
     pub fn new(sockets: Vec<(UnixStream, UnixStream)>) -> Result<Self, RelaySwitchError> {
-        if sockets.is_empty() {
-            return Err(RelaySwitchError::Protocol(
-                "RelaySwitch requires at least one master".to_string(),
-            ));
-        }
-
         let mut masters = Vec::new();
         let (frame_tx, frame_rx) = mpsc::channel();
         let mut xid_counter: u64 = 0;
@@ -360,9 +356,6 @@ impl RelaySwitch {
             masters[master_idx].reader_handle = Some(reader_handle);
         }
 
-        // Drop the original tx so receiver knows when all threads are done
-        drop(frame_tx);
-
         let mut switch = Self {
             masters,
             cap_table: Vec::new(),
@@ -373,6 +366,7 @@ impl RelaySwitch {
             aggregate_capabilities: Vec::new(),
             negotiated_limits: Limits::default(),
             frame_rx,
+            frame_tx,
             xid_counter,
             rid_to_xid: HashMap::new(),
         };
@@ -491,6 +485,184 @@ impl RelaySwitch {
         self.write_to_master_idx(dest_idx, &mut frame_with_xid)?;
 
         Ok(rx)
+    }
+
+    /// Dynamically add a new master connection to the switch.
+    ///
+    /// Performs handshake (reads RelayNotify, verifies identity) with the new master,
+    /// spawns a reader thread, and returns the master index.
+    ///
+    /// This is used for dynamically connecting new hosts (e.g., Mac client connecting via gRPC).
+    pub fn add_master(
+        &mut self,
+        read_sock: UnixStream,
+        write_sock: UnixStream,
+    ) -> Result<usize, RelaySwitchError> {
+        let master_idx = self.masters.len();
+        let mut socket_reader = FrameReader::new(BufReader::new(read_sock));
+        let mut socket_writer = FrameWriter::new(BufWriter::new(write_sock));
+
+        // Read RelayNotify
+        let notify_frame = socket_reader.read()
+            .map_err(|e| RelaySwitchError::Cbor(format!("new master {}: {}", master_idx, e)))?
+            .ok_or_else(|| RelaySwitchError::Protocol(
+                format!("new master {}: closed before RelayNotify", master_idx)
+            ))?;
+
+        if notify_frame.frame_type != FrameType::RelayNotify {
+            return Err(RelaySwitchError::Protocol(format!(
+                "new master {}: expected RelayNotify, got {:?}",
+                master_idx, notify_frame.frame_type
+            )));
+        }
+
+        let mut caps_payload = notify_frame.relay_notify_manifest()
+            .ok_or_else(|| RelaySwitchError::Protocol(
+                format!("new master {}: RelayNotify has no manifest", master_idx)
+            ))?
+            .to_vec();
+
+        let mut caps = parse_caps_from_relay_notify(&caps_payload)?;
+        let mut limits = notify_frame.relay_notify_limits().unwrap_or_default();
+
+        // Identity verification (same as in new())
+        let mut seq_assigner = SeqAssigner::new();
+        self.xid_counter += 1;
+        let xid = MessageId::Uint(self.xid_counter);
+        {
+            use crate::standard::caps::CAP_IDENTITY;
+
+            let nonce = identity_nonce();
+            let req_id = MessageId::new_uuid();
+            let stream_id = "identity-verify".to_string();
+
+            let mut req = Frame::req(req_id.clone(), CAP_IDENTITY, vec![], "application/cbor");
+            req.routing_id = Some(xid.clone());
+            seq_assigner.assign(&mut req);
+            socket_writer.write(&req).map_err(|e| RelaySwitchError::Protocol(format!(
+                "new master {}: identity send failed: {}", master_idx, e
+            )))?;
+
+            let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:bytes".to_string());
+            ss.routing_id = Some(xid.clone());
+            seq_assigner.assign(&mut ss);
+            socket_writer.write(&ss).map_err(|e| RelaySwitchError::Protocol(format!(
+                "new master {}: identity send failed: {}", master_idx, e
+            )))?;
+
+            let checksum = Frame::compute_checksum(&nonce);
+            let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, nonce.clone(), 0, checksum);
+            chunk.routing_id = Some(xid.clone());
+            seq_assigner.assign(&mut chunk);
+            socket_writer.write(&chunk).map_err(|e| RelaySwitchError::Protocol(format!(
+                "new master {}: identity send failed: {}", master_idx, e
+            )))?;
+
+            let mut se = Frame::stream_end(req_id.clone(), stream_id, 1);
+            se.routing_id = Some(xid.clone());
+            seq_assigner.assign(&mut se);
+            socket_writer.write(&se).map_err(|e| RelaySwitchError::Protocol(format!(
+                "new master {}: identity send failed: {}", master_idx, e
+            )))?;
+
+            let mut end = Frame::end(req_id.clone(), None);
+            end.routing_id = Some(xid.clone());
+            seq_assigner.assign(&mut end);
+            socket_writer.write(&end).map_err(|e| RelaySwitchError::Protocol(format!(
+                "new master {}: identity send failed: {}", master_idx, e
+            )))?;
+
+            seq_assigner.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
+
+            // Read response
+            let mut accumulated = Vec::new();
+            loop {
+                let frame = socket_reader.read()
+                    .map_err(|e| RelaySwitchError::Protocol(format!(
+                        "new master {}: identity read failed: {}", master_idx, e
+                    )))?
+                    .ok_or_else(|| RelaySwitchError::Protocol(format!(
+                        "new master {}: closed during identity verification", master_idx
+                    )))?;
+
+                match frame.frame_type {
+                    FrameType::RelayNotify => {
+                        if let Some(manifest) = frame.relay_notify_manifest() {
+                            caps_payload = manifest.to_vec();
+                            caps = parse_caps_from_relay_notify(&caps_payload)?;
+                        }
+                        if let Some(l) = frame.relay_notify_limits() {
+                            limits = l;
+                        }
+                    }
+                    FrameType::StreamStart => {}
+                    FrameType::Chunk => {
+                        if let Some(payload) = frame.payload {
+                            accumulated.extend_from_slice(&payload);
+                        }
+                    }
+                    FrameType::StreamEnd => {}
+                    FrameType::End => {
+                        if accumulated != nonce {
+                            return Err(RelaySwitchError::Protocol(format!(
+                                "new master {}: identity payload mismatch ({} vs {} bytes)",
+                                master_idx, nonce.len(), accumulated.len()
+                            )));
+                        }
+                        break;
+                    }
+                    FrameType::Err => {
+                        let code = frame.error_code().unwrap_or("UNKNOWN");
+                        let msg = frame.error_message().unwrap_or("no message");
+                        return Err(RelaySwitchError::Protocol(format!(
+                            "new master {}: identity failed: [{code}] {msg}", master_idx
+                        )));
+                    }
+                    other => {
+                        return Err(RelaySwitchError::Protocol(format!(
+                            "new master {}: identity: unexpected {:?}", master_idx, other
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Spawn reader thread
+        let tx = self.frame_tx.clone();
+        let reader_handle = std::thread::spawn(move || {
+            let mut reader = socket_reader;
+            loop {
+                match reader.read() {
+                    Ok(Some(frame)) => {
+                        if tx.send((master_idx, Ok(frame))).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        let _ = tx.send((master_idx, Err(e)));
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.masters.push(MasterConnection {
+            socket_writer,
+            seq_assigner,
+            manifest: caps_payload,
+            limits,
+            caps,
+            healthy: true,
+            reader_handle: Some(reader_handle),
+        });
+
+        // Rebuild tables
+        self.rebuild_cap_table();
+        self.rebuild_capabilities();
+        self.rebuild_limits();
+
+        Ok(master_idx)
     }
 
     /// Send a frame to the appropriate master (engine → plugin direction).
@@ -1468,15 +1640,17 @@ mod tests {
         assert_eq!(response.payload, Some(vec![42]));
     }
 
-    // TEST432: Empty masters list returns error
+    // TEST432: Empty masters list creates empty switch, add_master works
     #[test]
-    fn test432_empty_masters_list_error() {
-        let result = RelaySwitch::new(vec![]);
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            RelaySwitchError::Protocol(ref msg) if msg.contains("at least one master")
-        ));
+    fn test432_empty_masters_allowed() {
+        let switch = RelaySwitch::new(vec![]).unwrap();
+
+        // Empty switch has no caps
+        let caps: Vec<String> = serde_json::from_slice(switch.capabilities()).unwrap();
+        assert!(caps.is_empty(), "empty switch should have no caps");
+
+        // No handler for any cap
+        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:"), None);
     }
 
     // TEST433: Capability aggregation deduplicates caps
@@ -1640,5 +1814,266 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.to_string().contains("identity verification failed"),
             "error must mention identity verification: {}", err);
+    }
+
+    // TEST488: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessPluginHost roundtrip
+    #[test]
+    fn test488_send_to_master_build_request_frames_roundtrip() {
+        use crate::bifaci::in_process_host::InProcessPluginHost;
+        use crate::bifaci::relay::RelaySlave;
+        use crate::cap::caller::{CapArgumentValue, CapSet};
+        use crate::cap::definition::Cap;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        /// Echo provider: concatenates all argument values and returns them.
+        #[derive(Debug)]
+        struct EchoProvider;
+        impl CapSet for EchoProvider {
+            fn execute_cap(
+                &self,
+                _cap_urn: &str,
+                arguments: &[CapArgumentValue],
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
+                let data: Vec<u8> = arguments.iter().flat_map(|a| a.value.clone()).collect();
+                Box::pin(async move { Ok((Some(data), None)) })
+            }
+        }
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let cap_urn_str = "cap:in=\"media:text;bytes\";op=echo;out=\"media:text;bytes\"";
+        let cap = Cap {
+            urn: crate::CapUrn::from_string(cap_urn_str).unwrap(),
+            title: "echo".to_string(),
+            cap_description: None,
+            metadata: std::collections::HashMap::new(),
+            command: String::new(),
+            args: Vec::new(),
+            output: None,
+            media_specs: Vec::new(),
+            metadata_json: None,
+            registered_by: None,
+        };
+
+        let host = InProcessPluginHost::new(vec![(
+            "echo".to_string(),
+            vec![cap],
+            std::sync::Arc::new(EchoProvider) as std::sync::Arc<dyn CapSet>,
+        )]);
+
+        // Create socket pairs
+        let (slave_write, switch_read) = UnixStream::pair().unwrap();
+        let (switch_write, slave_read) = UnixStream::pair().unwrap();
+        let (host_write, slave_local_read) = UnixStream::pair().unwrap();
+        let (slave_local_write, host_read) = UnixStream::pair().unwrap();
+
+        let host_handle = rt.handle().clone();
+        let host_thread = std::thread::spawn(move || {
+            host.run(host_read, host_write, host_handle).unwrap();
+        });
+
+        let slave = RelaySlave::new(slave_local_read, slave_local_write);
+        let slave_thread = std::thread::spawn(move || {
+            let socket_reader = FrameReader::new(BufReader::new(slave_read));
+            let socket_writer = FrameWriter::new(BufWriter::new(slave_write));
+            slave.run(socket_reader, socket_writer, None).unwrap();
+        });
+
+        let mut switch = RelaySwitch::new(vec![(switch_read, switch_write)]).unwrap();
+
+        // Verify the switch has our echo cap registered
+        let caps_json: Vec<String> = serde_json::from_slice(switch.capabilities()).unwrap();
+        assert!(caps_json.iter().any(|c| c.contains("echo")),
+            "switch should have echo cap, got: {:?}", caps_json);
+
+        // Build request frames using the helper
+        let rid = MessageId::new_uuid();
+        let max_chunk = switch.limits().max_chunk;
+        let frames = CapArgumentValue::build_request_frames(
+            &rid,
+            cap_urn_str,
+            &[CapArgumentValue::new("media:text;bytes", b"hello streaming world".to_vec())],
+            max_chunk,
+        );
+
+        // Send each frame via send_to_master
+        for frame in frames {
+            switch.send_to_master(frame).unwrap();
+        }
+
+        // Read response frames via read_from_masters_timeout
+        let mut response_data = Vec::new();
+        let mut got_end = false;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            match switch.read_from_masters_timeout(std::time::Duration::from_millis(200)) {
+                Ok(Some(frame)) if frame.id == rid => {
+                    match frame.frame_type {
+                        FrameType::Chunk => {
+                            if let Some(payload) = &frame.payload {
+                                response_data.extend_from_slice(payload);
+                            }
+                        }
+                        FrameType::End => {
+                            got_end = true;
+                            break;
+                        }
+                        FrameType::Err => {
+                            panic!("Got ERR: [{:?}] {:?}", frame.error_code(), frame.error_message());
+                        }
+                        _ => {} // STREAM_START, STREAM_END — skip
+                    }
+                }
+                Ok(Some(_)) => {} // Frame for different RID (e.g., RelayNotify)
+                Ok(None) => {}    // Timeout — retry
+                Err(e) => panic!("read_from_masters_timeout error: {}", e),
+            }
+        }
+
+        assert!(got_end, "should have received END frame");
+        assert_eq!(response_data, b"hello streaming world", "echo provider should return input");
+
+        drop(switch);
+        slave_thread.join().unwrap();
+        host_thread.join().unwrap();
+    }
+
+    // TEST489: add_master dynamically connects new host to running switch
+    #[test]
+    fn test489_add_master_dynamic() {
+        use crate::bifaci::in_process_host::InProcessPluginHost;
+        use crate::bifaci::relay::RelaySlave;
+        use crate::cap::caller::{CapArgumentValue, CapSet};
+        use crate::cap::definition::Cap;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        #[derive(Debug)]
+        struct ConstProvider(&'static str);
+        impl CapSet for ConstProvider {
+            fn execute_cap(
+                &self,
+                _cap_urn: &str,
+                _arguments: &[CapArgumentValue],
+            ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
+                let val = self.0.as_bytes().to_vec();
+                Box::pin(async move { Ok((Some(val), None)) })
+            }
+        }
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        // Helper to wire up host + slave and return switch-side sockets + thread handles
+        fn wire_host(
+            rt: &tokio::runtime::Runtime,
+            host: InProcessPluginHost,
+        ) -> (UnixStream, UnixStream, std::thread::JoinHandle<()>, std::thread::JoinHandle<()>) {
+            let (slave_write, switch_read) = UnixStream::pair().unwrap();
+            let (switch_write, slave_read) = UnixStream::pair().unwrap();
+            let (host_write, slave_local_read) = UnixStream::pair().unwrap();
+            let (slave_local_write, host_read) = UnixStream::pair().unwrap();
+
+            let handle = rt.handle().clone();
+            let host_thread = std::thread::spawn(move || {
+                host.run(host_read, host_write, handle).unwrap();
+            });
+
+            let slave = RelaySlave::new(slave_local_read, slave_local_write);
+            let slave_thread = std::thread::spawn(move || {
+                let sr = FrameReader::new(BufReader::new(slave_read));
+                let sw = FrameWriter::new(BufWriter::new(slave_write));
+                slave.run(sr, sw, None).unwrap();
+            });
+
+            (switch_read, switch_write, host_thread, slave_thread)
+        }
+
+        // Create initial switch with provider A
+        let cap_a = "cap:in=\"media:void\";op=alpha;out=\"media:void\"";
+        let host_a = InProcessPluginHost::new(vec![(
+            "alpha".to_string(),
+            vec![Cap {
+                urn: crate::CapUrn::from_string(cap_a).unwrap(),
+                title: "alpha".to_string(),
+                cap_description: None,
+                metadata: std::collections::HashMap::new(),
+                command: String::new(),
+                args: Vec::new(),
+                output: None,
+                media_specs: Vec::new(),
+                metadata_json: None,
+                registered_by: None,
+            }],
+            std::sync::Arc::new(ConstProvider("alpha")) as std::sync::Arc<dyn CapSet>,
+        )]);
+
+        let (sr_a, sw_a, ht_a, st_a) = wire_host(&rt, host_a);
+        let mut switch = RelaySwitch::new(vec![(sr_a, sw_a)]).unwrap();
+        assert_eq!(switch.masters.len(), 1);
+
+        // Add provider B dynamically
+        let cap_b = "cap:in=\"media:void\";op=beta;out=\"media:void\"";
+        let host_b = InProcessPluginHost::new(vec![(
+            "beta".to_string(),
+            vec![Cap {
+                urn: crate::CapUrn::from_string(cap_b).unwrap(),
+                title: "beta".to_string(),
+                cap_description: None,
+                metadata: std::collections::HashMap::new(),
+                command: String::new(),
+                args: Vec::new(),
+                output: None,
+                media_specs: Vec::new(),
+                metadata_json: None,
+                registered_by: None,
+            }],
+            std::sync::Arc::new(ConstProvider("beta")) as std::sync::Arc<dyn CapSet>,
+        )]);
+
+        let (sr_b, sw_b, ht_b, st_b) = wire_host(&rt, host_b);
+        let idx = switch.add_master(sr_b, sw_b).unwrap();
+        assert_eq!(idx, 1);
+        assert_eq!(switch.masters.len(), 2);
+
+        // Verify both caps are in aggregate capabilities
+        let caps_json: Vec<String> = serde_json::from_slice(switch.capabilities()).unwrap();
+        assert!(caps_json.iter().any(|c| c.contains("alpha")));
+        assert!(caps_json.iter().any(|c| c.contains("beta")));
+
+        // Execute against beta (dynamically added master) using send_to_master + build_request_frames
+        let rid = MessageId::new_uuid();
+        let max_chunk = switch.limits().max_chunk;
+        let frames = CapArgumentValue::build_request_frames(&rid, cap_b, &[], max_chunk);
+        for frame in frames {
+            switch.send_to_master(frame).unwrap();
+        }
+
+        let mut response_data = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while std::time::Instant::now() < deadline {
+            match switch.read_from_masters_timeout(std::time::Duration::from_millis(200)) {
+                Ok(Some(frame)) if frame.id == rid => {
+                    match frame.frame_type {
+                        FrameType::Chunk => {
+                            if let Some(p) = &frame.payload { response_data.extend_from_slice(p); }
+                        }
+                        FrameType::End => break,
+                        FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
+                        _ => {}
+                    }
+                }
+                Ok(Some(_)) => {} // Other frame (RelayNotify, etc)
+                Ok(None) => {}    // Timeout
+                Err(e) => panic!("read error: {}", e),
+            }
+        }
+
+        assert_eq!(response_data, b"beta");
+
+        drop(switch);
+        st_a.join().unwrap();
+        ht_a.join().unwrap();
+        st_b.join().unwrap();
+        ht_b.join().unwrap();
     }
 }

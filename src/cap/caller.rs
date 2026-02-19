@@ -4,6 +4,7 @@ use anyhow::{Result, anyhow};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use crate::{CapUrn, ResponseWrapper, Cap};
+use crate::bifaci::frame::{Frame, MessageId};
 use crate::media::spec::{resolve_media_urn, ResolvedMediaSpec};
 use crate::media::registry::MediaUrnRegistry;
 
@@ -55,6 +56,70 @@ impl CapArgumentValue {
     /// Get the value as a UTF-8 string (may fail for binary data)
     pub fn value_as_str(&self) -> Result<&str, std::str::Utf8Error> {
         std::str::from_utf8(&self.value)
+    }
+
+    /// Build the sequence of frames for a cap request with streaming arguments.
+    ///
+    /// Produces: REQ(empty payload) → for each arg: STREAM_START + CHUNK(s) + STREAM_END → END.
+    /// The caller sends these frames one by one via `send_to_master()`.
+    pub fn build_request_frames(
+        rid: &MessageId,
+        cap_urn: &str,
+        args: &[Self],
+        max_chunk: usize,
+    ) -> Vec<Frame> {
+        let mut frames = Vec::new();
+
+        // REQ with empty payload (arguments follow as streams)
+        frames.push(Frame::req(rid.clone(), cap_urn, vec![], "application/cbor"));
+
+        // Each argument as a named stream
+        for (arg_idx, arg) in args.iter().enumerate() {
+            let stream_id = format!("arg{}", arg_idx);
+
+            // STREAM_START
+            frames.push(Frame::stream_start(
+                rid.clone(),
+                stream_id.clone(),
+                arg.media_urn.clone(),
+            ));
+
+            // CHUNKs — payload must be CBOR-encoded (matching StreamEmitter::send_chunk)
+            let data = &arg.value;
+            if data.is_empty() {
+                let mut cbor_payload = Vec::new();
+                ciborium::into_writer(&ciborium::Value::Bytes(Vec::new()), &mut cbor_payload)
+                    .expect("BUG: failed to CBOR-encode empty bytes");
+                let checksum = Frame::compute_checksum(&cbor_payload);
+                frames.push(Frame::chunk(rid.clone(), stream_id.clone(), 0, cbor_payload, 0, checksum));
+            } else {
+                for (i, chunk_data) in data.chunks(max_chunk).enumerate() {
+                    let mut cbor_payload = Vec::new();
+                    ciborium::into_writer(
+                        &ciborium::Value::Bytes(chunk_data.to_vec()),
+                        &mut cbor_payload,
+                    ).expect("BUG: failed to CBOR-encode chunk");
+                    let checksum = Frame::compute_checksum(&cbor_payload);
+                    frames.push(Frame::chunk(
+                        rid.clone(),
+                        stream_id.clone(),
+                        0, // seq assigned at output stage
+                        cbor_payload,
+                        i as u64,
+                        checksum,
+                    ));
+                }
+            }
+
+            // STREAM_END
+            let chunk_count = if data.is_empty() { 1 } else { (data.len() + max_chunk - 1) / max_chunk } as u64;
+            frames.push(Frame::stream_end(rid.clone(), stream_id, chunk_count));
+        }
+
+        // END
+        frames.push(Frame::end(rid.clone(), None));
+
+        frames
     }
 }
 

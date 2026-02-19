@@ -93,3 +93,4 @@ pub use bifaci::host_runtime::AsyncHostError;
 // Relay exports
 pub use bifaci::relay::{RelaySlave, RelayMaster, AsyncRelayMaster};
 pub use bifaci::relay_switch::{RelaySwitch, RelaySwitchError};
+pub use bifaci::in_process_host::InProcessPluginHost;

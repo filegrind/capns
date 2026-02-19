@@ -13,6 +13,7 @@ pub mod plugin_runtime;
 pub mod host_runtime;
 pub mod relay;
 pub mod relay_switch;
+pub mod in_process_host;
 pub mod plugin_repo;
 
 #[cfg(test)]
