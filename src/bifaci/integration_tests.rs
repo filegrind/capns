@@ -18,7 +18,7 @@ mod tests {
 
     // TEST293: Test PluginRuntime Op registration and lookup by exact and non-existent cap URN
     #[test]
-    fn test_plugin_runtime_handler_registration() {
+    fn test293_plugin_runtime_handler_registration() {
         use crate::bifaci::plugin_runtime::{Request, WET_KEY_REQUEST, IdentityOp};
         use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
         use async_trait::async_trait;
@@ -162,7 +162,7 @@ mod tests {
 
     // TEST426: Full path: engine REQ → runtime → plugin → response back through relay
     #[tokio::test]
-    async fn test_full_path_engine_req_to_plugin_response() {
+    async fn test426_full_path_engine_req_to_plugin_response() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"EchoPlugin","version":"1.0","description":"Echo test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Test","command":"test","args":[]}]}"#;
@@ -271,7 +271,7 @@ mod tests {
 
     // TEST427: Plugin ERR frame flows back to engine through relay
     #[tokio::test]
-    async fn test_plugin_error_flows_to_engine() {
+    async fn test427_plugin_error_flows_to_engine() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"ErrPlugin","version":"1.0","description":"Error test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=fail;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -343,7 +343,7 @@ mod tests {
 
     // TEST428: Binary data integrity through full relay path (256 byte values)
     #[tokio::test]
-    async fn test_binary_integrity_through_relay() {
+    async fn test428_binary_integrity_through_relay() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"BinPlugin","version":"1.0","description":"Binary test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=binary;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -457,7 +457,7 @@ mod tests {
 
     // TEST429: Streaming chunks flow through relay without accumulation
     #[tokio::test]
-    async fn test_streaming_chunks_through_relay() {
+    async fn test429_streaming_chunks_through_relay() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"StreamPlugin","version":"1.0","description":"Streaming test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=stream;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -553,7 +553,7 @@ mod tests {
 
     // TEST431: Two plugins routed independently by cap_urn
     #[tokio::test]
-    async fn test_two_plugins_routed_independently() {
+    async fn test431_two_plugins_routed_independently() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -686,7 +686,7 @@ mod tests {
 
     // TEST432: REQ for unknown cap returns ERR frame (not fatal)
     #[tokio::test]
-    async fn test_req_for_unknown_cap_returns_err_frame() {
+    async fn test432_req_for_unknown_cap_returns_err_frame() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"OnePlugin","version":"1.0","description":"Known cap plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=known;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -792,7 +792,7 @@ mod tests {
 
     // TEST284: Handshake exchanges HELLO frames, negotiates limits
     #[test]
-    fn test_handshake_host_plugin() {
+    fn test284_handshake_host_plugin() {
         use crate::bifaci::io::{handshake, handshake_accept};
         use std::io::{BufReader, BufWriter};
 
@@ -823,7 +823,7 @@ mod tests {
 
     // TEST285: Simple request-response flow (REQ → END with payload)
     #[test]
-    fn test_request_response_simple() {
+    fn test285_request_response_simple() {
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -866,7 +866,7 @@ mod tests {
 
     // TEST286: Streaming response with multiple CHUNK frames
     #[test]
-    fn test_streaming_chunks() {
+    fn test286_streaming_chunks() {
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -933,7 +933,7 @@ mod tests {
 
     // TEST287: Host-initiated heartbeat
     #[test]
-    fn test_heartbeat_from_host() {
+    fn test287_heartbeat_from_host() {
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -973,7 +973,7 @@ mod tests {
 
     // TEST290: Limit negotiation picks minimum
     #[test]
-    fn test_limits_negotiation() {
+    fn test290_limits_negotiation() {
         use crate::bifaci::io::{handshake, handshake_accept};
         use std::io::{BufReader, BufWriter};
 
@@ -1001,7 +1001,7 @@ mod tests {
 
     // TEST291: Binary payload roundtrip (all 256 byte values)
     #[test]
-    fn test_binary_payload_roundtrip() {
+    fn test291_binary_payload_roundtrip() {
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();
@@ -1054,7 +1054,7 @@ mod tests {
 
     // TEST292: Sequential requests get distinct MessageIds
     #[test]
-    fn test_message_id_uniqueness() {
+    fn test292_message_id_uniqueness() {
         use std::io::{BufReader, BufWriter};
         use std::sync::{Arc, Mutex};
 
@@ -1107,7 +1107,7 @@ mod tests {
 
     // TEST299: Empty payload request/response roundtrip
     #[test]
-    fn test_empty_payload_roundtrip() {
+    fn test299_empty_payload_roundtrip() {
         use std::io::{BufReader, BufWriter};
 
         let (host_write, plugin_read, plugin_write, host_read) = create_sync_pipe_pair();

@@ -678,7 +678,7 @@ mod tests {
 
     // TEST307: Test model_availability_urn builds valid cap URN with correct op and media specs
     #[test]
-    fn test_model_availability_urn() {
+    fn test307_model_availability_urn() {
         let urn = model_availability_urn();
         assert!(urn.has_tag("op", "model-availability"), "URN must have op=model-availability");
         assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
@@ -687,7 +687,7 @@ mod tests {
 
     // TEST308: Test model_path_urn builds valid cap URN with correct op and media specs
     #[test]
-    fn test_model_path_urn() {
+    fn test308_model_path_urn() {
         let urn = model_path_urn();
         assert!(urn.has_tag("op", "model-path"), "URN must have op=model-path");
         assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
@@ -696,7 +696,7 @@ mod tests {
 
     // TEST309: Test model_availability_urn and model_path_urn produce distinct URNs
     #[test]
-    fn test_model_availability_and_path_are_distinct() {
+    fn test309_model_availability_and_path_are_distinct() {
         let avail = model_availability_urn();
         let path = model_path_urn();
         assert_ne!(avail.to_string(), path.to_string(),
@@ -705,7 +705,7 @@ mod tests {
 
     // TEST310: Test llm_conversation_urn uses unconstrained tag (not constrained)
     #[test]
-    fn test_llm_conversation_urn_unconstrained() {
+    fn test310_llm_conversation_urn_unconstrained() {
         let urn = llm_conversation_urn("en");
         assert!(urn.get_tag("unconstrained").is_some(), "LLM conversation URN must have 'unconstrained' tag");
         assert!(urn.has_tag("op", "conversation"), "must have op=conversation");
@@ -714,7 +714,7 @@ mod tests {
 
     // TEST311: Test llm_conversation_urn in/out specs match the expected media URNs semantically
     #[test]
-    fn test_llm_conversation_urn_specs() {
+    fn test311_llm_conversation_urn_specs() {
         use crate::urn::media_urn::MediaUrn;
         let urn = llm_conversation_urn("fr");
 
@@ -732,7 +732,7 @@ mod tests {
 
     // TEST312: Test all URN builders produce parseable cap URNs
     #[test]
-    fn test_all_urn_builders_produce_valid_urns() {
+    fn test312_all_urn_builders_produce_valid_urns() {
         // Each of these must not panic
         let _avail = model_availability_urn();
         let _path = model_path_urn();
@@ -781,5 +781,69 @@ mod tests {
             .expect("non-void cap must parse");
         assert!(!discard.accepts(&non_void),
             "CAP_DISCARD must NOT accept a cap with non-void output");
+    }
+
+    // TEST604: input_media_urn_for_ext maps known extensions correctly and falls back to binary
+    #[test]
+    fn test604_input_media_urn_for_ext() {
+        // Document types
+        assert_eq!(input_media_urn_for_ext(Some("pdf")), MEDIA_PDF);
+        assert_eq!(input_media_urn_for_ext(Some("epub")), MEDIA_EPUB);
+
+        // Text format types
+        assert_eq!(input_media_urn_for_ext(Some("md")), MEDIA_MD);
+        assert_eq!(input_media_urn_for_ext(Some("txt")), MEDIA_TXT);
+        assert_eq!(input_media_urn_for_ext(Some("rst")), MEDIA_RST);
+        assert_eq!(input_media_urn_for_ext(Some("log")), MEDIA_LOG);
+
+        // Generic text
+        assert_eq!(input_media_urn_for_ext(Some("text")), MEDIA_STRING);
+
+        // Unknown extension falls back to binary
+        assert_eq!(input_media_urn_for_ext(Some("xyz")), MEDIA_BINARY);
+
+        // None falls back to binary
+        assert_eq!(input_media_urn_for_ext(None), MEDIA_BINARY);
+    }
+
+    // TEST605: all_coercion_paths each entry builds a valid parseable CapUrn
+    #[test]
+    fn test605_all_coercion_paths_build_valid_urns() {
+        let paths = all_coercion_paths();
+        assert!(!paths.is_empty(), "Coercion paths must not be empty");
+
+        for (source, target) in &paths {
+            let urn = coercion_urn(source, target);
+            assert!(urn.has_tag("op", "coerce"),
+                "Coercion URN for {}→{} must have op=coerce", source, target);
+            assert!(urn.has_tag("target", target),
+                "Coercion URN for {}→{} must have target={}", source, target, target);
+
+            // Verify roundtrip through string parsing
+            let urn_str = urn.to_string();
+            let reparsed = crate::urn::cap_urn::CapUrn::from_string(&urn_str);
+            assert!(reparsed.is_ok(),
+                "Coercion URN for {}→{} must roundtrip through parsing: {:?}",
+                source, target, reparsed.err());
+        }
+    }
+
+    // TEST606: coercion_urn in/out specs match the type's media URN constant
+    #[test]
+    fn test606_coercion_urn_specs() {
+        use crate::urn::media_urn::MediaUrn;
+
+        let urn = coercion_urn("string", "integer");
+        // in_spec should conform to MEDIA_STRING
+        let in_urn = MediaUrn::from_string(urn.in_spec()).expect("in_spec should parse");
+        let expected_in = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING should parse");
+        assert!(in_urn.conforms_to(&expected_in).unwrap(),
+            "in_spec '{}' should conform to '{}'", urn.in_spec(), MEDIA_STRING);
+
+        // out_spec should conform to MEDIA_INTEGER
+        let out_urn = MediaUrn::from_string(urn.out_spec()).expect("out_spec should parse");
+        let expected_out = MediaUrn::from_string(MEDIA_INTEGER).expect("MEDIA_INTEGER should parse");
+        assert!(out_urn.conforms_to(&expected_out).unwrap(),
+            "out_spec '{}' should conform to '{}'", urn.out_spec(), MEDIA_INTEGER);
     }
 }

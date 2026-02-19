@@ -115,7 +115,7 @@ mod tests {
 
     // TEST148: Test creating cap manifest with name, version, description, and caps
     #[test]
-    fn test_cap_manifest_creation() {
+    fn test148_cap_manifest_creation() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
 
@@ -135,7 +135,7 @@ mod tests {
 
     // TEST149: Test cap manifest with author field sets author correctly
     #[test]
-    fn test_cap_manifest_with_author() {
+    fn test149_cap_manifest_with_author() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
 
@@ -151,7 +151,7 @@ mod tests {
 
     // TEST150: Test cap manifest JSON serialization and deserialization roundtrip
     #[test]
-    fn test_cap_manifest_json_serialization() {
+    fn test150_cap_manifest_json_serialization() {
         use crate::{CapArg, ArgSource};
 
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
@@ -191,7 +191,7 @@ mod tests {
 
     // TEST151: Test cap manifest deserialization fails when required fields are missing
     #[test]
-    fn test_cap_manifest_required_fields() {
+    fn test151_cap_manifest_required_fields() {
         // Test that deserialization fails when required fields are missing
         let invalid_json = r#"{"name": "TestComponent"}"#;
         let result: Result<CapManifest, _> = serde_json::from_str(invalid_json);
@@ -204,7 +204,7 @@ mod tests {
 
     // TEST152: Test cap manifest with multiple caps stores and retrieves all capabilities
     #[test]
-    fn test_cap_manifest_with_multiple_caps() {
+    fn test152_cap_manifest_with_multiple_caps() {
         let id1 = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let cap1 = Cap::new(id1, "Extract Metadata".to_string(), "extract-metadata".to_string());
 
@@ -231,7 +231,7 @@ mod tests {
 
     // TEST153: Test cap manifest with empty caps list serializes and deserializes correctly
     #[test]
-    fn test_cap_manifest_empty_caps() {
+    fn test153_cap_manifest_empty_caps() {
         let manifest = CapManifest::new(
             "EmptyComponent".to_string(),
             "1.0.0".to_string(),
@@ -249,7 +249,7 @@ mod tests {
 
     // TEST154: Test cap manifest optional author field skipped in serialization when None
     #[test]
-    fn test_cap_manifest_optional_author_field() {
+    fn test154_cap_manifest_optional_author_field() {
         let urn = CapUrn::from_string(&test_urn("op=validate;file")).unwrap();
         let cap = Cap::new(urn, "Validate".to_string(), "validate".to_string());
 
@@ -271,7 +271,7 @@ mod tests {
 
     // TEST155: Test ComponentMetadata trait provides manifest and caps accessor methods
     #[test]
-    fn test_component_metadata_trait() {
+    fn test155_component_metadata_trait() {
         struct TestComponent {
             name: String,
             caps: Vec<Cap>,

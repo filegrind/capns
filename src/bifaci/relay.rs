@@ -459,7 +459,7 @@ mod tests {
 
     // TEST404: Slave sends RelayNotify on connect (initial_notify parameter)
     #[test]
-    fn test_slave_sends_relay_notify_on_connect() {
+    fn test404_slave_sends_relay_notify_on_connect() {
         let manifest = b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\"]}";
         let limits = Limits::default();
 
@@ -493,7 +493,7 @@ mod tests {
 
     // TEST405: Master reads RelayNotify and extracts manifest + limits
     #[test]
-    fn test_master_reads_relay_notify() {
+    fn test405_master_reads_relay_notify() {
         let manifest = b"{\"caps\":[\"cap:in=\"media:void\";op=convert;out=\"media:void\"\"]}";
         let limits = Limits {
             max_frame: 1_000_000,
@@ -523,7 +523,7 @@ mod tests {
 
     // TEST406: Slave stores RelayState from master
     #[test]
-    fn test_slave_stores_relay_state() {
+    fn test406_slave_stores_relay_state() {
         let resources = b"{\"memory_mb\":4096}";
 
         // Socket: master writes → slave reads
@@ -566,7 +566,7 @@ mod tests {
 
     // TEST407: Protocol frames pass through slave transparently (both directions)
     #[test]
-    fn test_protocol_frames_pass_through() {
+    fn test407_protocol_frames_pass_through() {
         // Socket pair: master ↔ slave
         let (slave_socket_read, master_socket_write) = create_pipe_pair();
         let (master_socket_read, slave_socket_write) = create_pipe_pair();
@@ -658,7 +658,7 @@ mod tests {
 
     // TEST408: RelayNotify/RelayState are NOT forwarded through relay
     #[test]
-    fn test_relay_frames_not_forwarded() {
+    fn test408_relay_frames_not_forwarded() {
         // Master sends RelayState — slave should NOT forward it to local
         let (slave_socket_read, master_socket_write) = create_pipe_pair();
         let (_runtime_read, slave_local_write) = create_pipe_pair();
@@ -710,7 +710,7 @@ mod tests {
 
     // TEST409: Slave can inject RelayNotify mid-stream (cap change)
     #[test]
-    fn test_slave_injects_relay_notify_midstream() {
+    fn test409_slave_injects_relay_notify_midstream() {
         let (master_socket_read, slave_socket_write) = create_pipe_pair();
 
         let slave_handle = thread::spawn(move || {
@@ -783,7 +783,7 @@ mod tests {
 
     // TEST410: Master receives updated RelayNotify (cap change callback via read_frame)
     #[test]
-    fn test_master_receives_updated_relay_notify() {
+    fn test410_master_receives_updated_relay_notify() {
         let (master_socket_read, slave_socket_write) = create_pipe_pair();
 
         let limits = Limits {
@@ -854,7 +854,7 @@ mod tests {
 
     // TEST411: Socket close detection (both directions)
     #[test]
-    fn test_socket_close_detection() {
+    fn test411_socket_close_detection() {
         // Master → slave direction: master closes, slave detects
         let (slave_socket_read, master_socket_write) = create_pipe_pair();
 
@@ -895,7 +895,7 @@ mod tests {
 
     // TEST412: Bidirectional concurrent frame flow through relay
     #[test]
-    fn test_bidirectional_concurrent_flow() {
+    fn test412_bidirectional_concurrent_flow() {
         // Full relay setup: master ↔ socket ↔ slave ↔ local ↔ runtime
         let (slave_socket_read, master_socket_write) = create_pipe_pair();
         let (master_socket_read, slave_socket_write) = create_pipe_pair();

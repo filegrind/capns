@@ -521,14 +521,16 @@ mod tests {
         (registry, temp_dir)
     }
 
+    // TEST618: Verify profile schema registry creation succeeds with temp cache
     #[tokio::test]
-    async fn test_registry_creation() {
+    async fn test618_registry_creation() {
         let (registry, _temp_dir) = create_test_registry().await;
         assert!(registry.cache_dir.exists());
     }
 
+    // TEST619: Verify all 9 embedded standard schemas are loaded on creation
     #[tokio::test]
-    async fn test_embedded_schemas_loaded() {
+    async fn test619_embedded_schemas_loaded() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Check that embedded schemas are available
@@ -543,8 +545,9 @@ mod tests {
         assert!(registry.schema_exists(PROFILE_OBJ_ARRAY));
     }
 
+    // TEST620: Verify string schema validates strings and rejects non-strings
     #[tokio::test]
-    async fn test_string_validation() {
+    async fn test620_string_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string
@@ -554,8 +557,9 @@ mod tests {
         assert!(registry.validate(PROFILE_STR, &json!(42)).await.is_err());
     }
 
+    // TEST621: Verify integer schema validates integers and rejects floats and strings
     #[tokio::test]
-    async fn test_integer_validation() {
+    async fn test621_integer_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid integer
@@ -568,8 +572,9 @@ mod tests {
         assert!(registry.validate(PROFILE_INT, &json!("hello")).await.is_err());
     }
 
+    // TEST622: Verify number schema validates integers and floats, rejects strings
     #[tokio::test]
-    async fn test_number_validation() {
+    async fn test622_number_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid number (integer)
@@ -582,8 +587,9 @@ mod tests {
         assert!(registry.validate(PROFILE_NUM, &json!("hello")).await.is_err());
     }
 
+    // TEST623: Verify boolean schema validates true/false and rejects string "true"
     #[tokio::test]
-    async fn test_boolean_validation() {
+    async fn test623_boolean_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid boolean
@@ -594,8 +600,9 @@ mod tests {
         assert!(registry.validate(PROFILE_BOOL, &json!("true")).await.is_err());
     }
 
+    // TEST624: Verify object schema validates objects and rejects arrays
     #[tokio::test]
-    async fn test_object_validation() {
+    async fn test624_object_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid object
@@ -605,8 +612,9 @@ mod tests {
         assert!(registry.validate(PROFILE_OBJ, &json!([1, 2, 3])).await.is_err());
     }
 
+    // TEST625: Verify string array schema validates string arrays and rejects mixed arrays
     #[tokio::test]
-    async fn test_string_array_validation() {
+    async fn test625_string_array_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string array
@@ -619,8 +627,9 @@ mod tests {
         assert!(registry.validate(PROFILE_STR_ARRAY, &json!("hello")).await.is_err());
     }
 
+    // TEST626: Verify unknown profile URL skips validation and returns Ok
     #[tokio::test]
-    async fn test_unknown_profile_skips_validation() {
+    async fn test626_unknown_profile_skips_validation() {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Unknown profile should return Ok - skip validation
@@ -628,10 +637,75 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // TEST627: Verify is_embedded_profile recognizes standard and rejects custom URLs
     #[test]
-    fn test_is_embedded_profile() {
+    fn test627_is_embedded_profile() {
         assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_STR));
         assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_INT));
         assert!(!ProfileSchemaRegistry::is_embedded_profile("https://example.com/custom"));
+    }
+
+    // TEST611: is_embedded_profile recognizes all 9 embedded profiles and rejects non-embedded
+    #[test]
+    fn test611_is_embedded_profile_comprehensive() {
+        let embedded = [
+            PROFILE_STR, PROFILE_INT, PROFILE_NUM, PROFILE_BOOL, PROFILE_OBJ,
+            PROFILE_STR_ARRAY, PROFILE_NUM_ARRAY, PROFILE_BOOL_ARRAY, PROFILE_OBJ_ARRAY,
+        ];
+
+        for url in &embedded {
+            assert!(
+                ProfileSchemaRegistry::is_embedded_profile(url),
+                "'{}' should be recognized as embedded", url
+            );
+        }
+
+        // Non-embedded profiles
+        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://capns.org/schema/custom"));
+        assert!(!ProfileSchemaRegistry::is_embedded_profile(""));
+        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://example.com/schema/str"));
+    }
+
+    // TEST612: clear_cache empties all in-memory schemas
+    #[tokio::test]
+    async fn test612_clear_cache() {
+        let (registry, _temp_dir) = create_test_registry().await;
+
+        // Standard schemas should be loaded
+        assert!(registry.schema_exists(PROFILE_STR));
+        assert!(!registry.get_cached_profiles().is_empty());
+
+        // Clear
+        registry.clear_cache().expect("clear_cache should succeed");
+
+        // All schemas should be gone
+        assert!(!registry.schema_exists(PROFILE_STR));
+        assert!(registry.get_cached_profiles().is_empty());
+    }
+
+    // TEST613: validate_cached validates against cached standard schemas
+    #[tokio::test]
+    async fn test613_validate_cached() {
+        let (registry, _temp_dir) = create_test_registry().await;
+
+        // Valid string against string schema
+        assert!(registry.validate_cached(PROFILE_STR, &json!("hello")).is_ok());
+
+        // Invalid: number against string schema
+        let result = registry.validate_cached(PROFILE_STR, &json!(42));
+        assert!(result.is_err(), "Number should not validate as string");
+
+        // Valid integer
+        assert!(registry.validate_cached(PROFILE_INT, &json!(42)).is_ok());
+
+        // Valid object array
+        assert!(registry.validate_cached(PROFILE_OBJ_ARRAY, &json!([{"a": 1}])).is_ok());
+
+        // Invalid: string array against object array schema
+        let result = registry.validate_cached(PROFILE_OBJ_ARRAY, &json!(["a", "b"]));
+        assert!(result.is_err());
+
+        // Non-cached profile returns Ok (skip validation)
+        assert!(registry.validate_cached("https://example.com/unknown", &json!("anything")).is_ok());
     }
 }

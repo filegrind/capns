@@ -90,8 +90,9 @@ pub type ArcCapRouter = Arc<dyn CapRouter>;
 mod tests {
     use super::*;
 
+    // TEST638: Verify NoPeerRouter rejects all requests with PeerInvokeNotSupported
     #[test]
-    fn test_no_peer_router_rejects_all() {
+    fn test638_no_peer_router_rejects_all() {
         let router = NoPeerRouter;
         let req_id = [0u8; 16];
         let result = router.begin_request(

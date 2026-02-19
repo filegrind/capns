@@ -855,7 +855,7 @@ mod tests {
 
     // TEST108: Test creating new cap with URN, title, and command verifies correct initialization
     #[test]
-    fn test_cap_creation() {
+    fn test108_cap_creation() {
         let urn = CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
 
@@ -871,7 +871,7 @@ mod tests {
 
     // TEST109: Test creating cap with metadata initializes and retrieves metadata correctly
     #[test]
-    fn test_cap_with_metadata() {
+    fn test109_cap_with_metadata() {
         let urn = CapUrn::from_string(&test_urn("op=arithmetic;compute;subtype=math")).unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
@@ -888,7 +888,7 @@ mod tests {
 
     // TEST110: Test cap matching with subset semantics for request fulfillment
     #[test]
-    fn test_cap_matching() {
+    fn test110_cap_matching() {
         // Use type=data_processing key-value instead of flag for proper matching
         let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
         let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
@@ -901,7 +901,7 @@ mod tests {
 
     // TEST111: Test getting and setting cap title updates correctly
     #[test]
-    fn test_cap_title() {
+    fn test111_cap_title() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
         let mut cap = Cap::new(urn, "Extract Document Metadata".to_string(), "extract-metadata".to_string());
 
@@ -915,7 +915,7 @@ mod tests {
 
     // TEST112: Test cap equality based on URN and title matching
     #[test]
-    fn test_cap_definition_equality() {
+    fn test112_cap_definition_equality() {
         let urn1 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
         let urn2 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
 
@@ -930,7 +930,7 @@ mod tests {
 
     // TEST113: Test cap stdin support via args with stdin source and serialization roundtrip
     #[test]
-    fn test_cap_stdin() {
+    fn test113_cap_stdin() {
         let urn = CapUrn::from_string(&test_urn("op=generate;target=embeddings")).unwrap();
         let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
 
@@ -963,7 +963,7 @@ mod tests {
 
     // TEST114: Test ArgSource type variants stdin, position, and cli_flag with their accessors
     #[test]
-    fn test_arg_source_types() {
+    fn test114_arg_source_types() {
         // Test stdin source
         let stdin_source = ArgSource::Stdin { stdin: "media:text".to_string() };
         assert_eq!(stdin_source.get_type(), "stdin");
@@ -988,7 +988,7 @@ mod tests {
 
     // TEST115: Test CapArg serialization and deserialization with multiple sources
     #[test]
-    fn test_cap_arg_serialization() {
+    fn test115_cap_arg_serialization() {
         let arg = CapArg {
             media_urn: "media:string".to_string(),
             required: true,
@@ -1013,7 +1013,7 @@ mod tests {
 
     // TEST116: Test CapArg constructor methods basic and with_description create args correctly
     #[test]
-    fn test_cap_arg_constructors() {
+    fn test116_cap_arg_constructors() {
         // Test basic constructor
         let arg = CapArg::new(
             "media:string",
@@ -1035,5 +1035,206 @@ mod tests {
         assert_eq!(arg.media_urn, "media:integer");
         assert!(!arg.required);
         assert_eq!(arg.arg_description, Some("The count argument".to_string()));
+    }
+
+    // TEST591: is_more_specific_than returns true when self has more tags for same request
+    #[test]
+    fn test591_is_more_specific_than() {
+        let general = Cap::new(
+            CapUrn::from_string(&test_urn("op=transform")).unwrap(),
+            "General".to_string(),
+            "cmd".to_string(),
+        );
+        let specific = Cap::new(
+            CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap(),
+            "Specific".to_string(),
+            "cmd".to_string(),
+        );
+        let unrelated = Cap::new(
+            CapUrn::from_string(&test_urn("op=convert")).unwrap(),
+            "Unrelated".to_string(),
+            "cmd".to_string(),
+        );
+
+        // Specific is more specific than general for the general request
+        assert!(
+            specific.is_more_specific_than(&general, &test_urn("op=transform")),
+            "specific cap must be more specific than general"
+        );
+        assert!(
+            !general.is_more_specific_than(&specific, &test_urn("op=transform")),
+            "general cap must not be more specific than specific"
+        );
+
+        // If either doesn't accept the request, returns false
+        assert!(
+            !general.is_more_specific_than(&unrelated, &test_urn("op=transform")),
+            "unrelated cap doesn't accept request, so no comparison possible"
+        );
+    }
+
+    // TEST592: remove_metadata adds then removes metadata correctly
+    #[test]
+    fn test592_remove_metadata() {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+
+        cap.set_metadata("key1".to_string(), "val1".to_string());
+        cap.set_metadata("key2".to_string(), "val2".to_string());
+        assert!(cap.has_metadata("key1"));
+        assert!(cap.has_metadata("key2"));
+
+        let removed = cap.remove_metadata("key1");
+        assert_eq!(removed, Some("val1".to_string()));
+        assert!(!cap.has_metadata("key1"));
+        assert!(cap.has_metadata("key2"));
+
+        // Removing non-existent returns None
+        assert_eq!(cap.remove_metadata("nonexistent"), None);
+    }
+
+    // TEST593: registered_by lifecycle — set, get, clear
+    #[test]
+    fn test593_registered_by_lifecycle() {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+
+        // Initially None
+        assert!(cap.get_registered_by().is_none());
+
+        // Set
+        let reg = RegisteredBy::new("alice", "2026-02-19T10:00:00Z");
+        cap.set_registered_by(reg);
+        let got = cap.get_registered_by().expect("should have registered_by");
+        assert_eq!(got.username, "alice");
+        assert_eq!(got.registered_at, "2026-02-19T10:00:00Z");
+
+        // Clear
+        cap.clear_registered_by();
+        assert!(cap.get_registered_by().is_none());
+    }
+
+    // TEST594: metadata_json lifecycle — set, get, clear
+    #[test]
+    fn test594_metadata_json_lifecycle() {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+
+        // Initially None
+        assert!(cap.get_metadata_json().is_none());
+
+        // Set
+        let json = serde_json::json!({"version": 2, "tags": ["experimental"]});
+        cap.set_metadata_json(json.clone());
+        assert_eq!(cap.get_metadata_json(), Some(&json));
+
+        // Clear
+        cap.clear_metadata_json();
+        assert!(cap.get_metadata_json().is_none());
+    }
+
+    // TEST595: with_args constructor stores args correctly
+    #[test]
+    fn test595_with_args_constructor() {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let args = vec![
+            CapArg::new("media:string", true, vec![ArgSource::Position { position: 0 }]),
+            CapArg::new("media:integer", false, vec![ArgSource::CliFlag { cli_flag: "--count".to_string() }]),
+        ];
+
+        let cap = Cap::with_args(urn, "Test".to_string(), "cmd".to_string(), args);
+        assert_eq!(cap.get_args().len(), 2);
+        assert_eq!(cap.get_args()[0].media_urn, "media:string");
+        assert!(cap.get_args()[0].required);
+        assert_eq!(cap.get_args()[1].media_urn, "media:integer");
+        assert!(!cap.get_args()[1].required);
+    }
+
+    // TEST596: with_full_definition constructor stores all fields
+    #[test]
+    fn test596_with_full_definition_constructor() {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut metadata = HashMap::new();
+        metadata.insert("env".to_string(), "prod".to_string());
+        let args = vec![CapArg::new("media:string", true, vec![])];
+        let output = CapOutput::new("media:object", "Output object");
+        let json_meta = serde_json::json!({"v": 1});
+
+        let cap = Cap::with_full_definition(
+            urn, "Full Cap".to_string(), Some("Description".to_string()),
+            metadata, "full-cmd".to_string(), Vec::new(), args,
+            Some(output), Some(json_meta.clone()),
+        );
+
+        assert_eq!(cap.title, "Full Cap");
+        assert_eq!(cap.cap_description, Some("Description".to_string()));
+        assert_eq!(cap.get_metadata("env"), Some(&"prod".to_string()));
+        assert_eq!(cap.get_command(), &"full-cmd".to_string());
+        assert_eq!(cap.get_args().len(), 1);
+        assert!(cap.get_output().is_some());
+        assert_eq!(cap.get_output().unwrap().media_urn, "media:object");
+        assert_eq!(cap.get_metadata_json(), Some(&json_meta));
+        // registered_by is not set by with_full_definition
+        assert!(cap.get_registered_by().is_none());
+    }
+
+    // TEST597: CapArg::with_full_definition stores all fields including optional ones
+    #[test]
+    fn test597_cap_arg_with_full_definition() {
+        let default_val = serde_json::json!("default_text");
+        let meta = serde_json::json!({"hint": "enter name"});
+
+        let arg = CapArg::with_full_definition(
+            "media:string", true,
+            vec![ArgSource::CliFlag { cli_flag: "--name".to_string() }],
+            Some("User name".to_string()),
+            Some(default_val.clone()),
+            Some(meta.clone()),
+        );
+
+        assert_eq!(arg.media_urn, "media:string");
+        assert!(arg.required);
+        assert_eq!(arg.arg_description, Some("User name".to_string()));
+        assert_eq!(arg.default_value, Some(default_val));
+        assert_eq!(arg.get_metadata(), Some(&meta));
+
+        // Metadata lifecycle
+        let mut arg2 = arg.clone();
+        arg2.clear_metadata();
+        assert!(arg2.get_metadata().is_none());
+        arg2.set_metadata(serde_json::json!("new"));
+        assert_eq!(arg2.get_metadata(), Some(&serde_json::json!("new")));
+    }
+
+    // TEST598: CapOutput lifecycle — set_output, set/clear metadata
+    #[test]
+    fn test598_cap_output_lifecycle() {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+
+        // Initially no output
+        assert!(cap.get_output().is_none());
+
+        // Set output
+        let mut output = CapOutput::new("media:string", "Text output");
+        output.set_metadata(serde_json::json!({"format": "plain"}));
+        cap.set_output(output);
+
+        let got = cap.get_output().expect("output should be set");
+        assert_eq!(got.get_media_urn(), "media:string");
+        assert_eq!(got.output_description, "Text output");
+        assert!(got.get_metadata().is_some());
+
+        // CapOutput with_full_definition
+        let output2 = CapOutput::with_full_definition(
+            "media:json", "JSON output", Some(serde_json::json!({"v": 2})),
+        );
+        assert_eq!(output2.get_media_urn(), "media:json");
+        assert!(output2.get_metadata().is_some());
+
+        // Clear metadata on output
+        let mut output3 = output2.clone();
+        output3.clear_metadata();
+        assert!(output3.get_metadata().is_none());
     }
 }

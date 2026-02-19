@@ -586,14 +586,14 @@ mod tests {
 
     // TEST135: Test registry creation with temporary cache directory succeeds
     #[tokio::test]
-    async fn test_registry_creation() {
+    async fn test135_registry_creation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         assert!(registry.cache_dir.exists());
     }
 
     // TEST136: Test cache key generation produces consistent hashes for same URN
     #[tokio::test]
-    async fn test_cache_key_generation() {
+    async fn test136_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         // Use URNs with required in/out (new media URN format)
         let key1 = registry.cache_key("cap:in=media:void;op=extract;out=media:form=map;target=metadata");
@@ -611,7 +611,7 @@ mod json_parse_tests {
 
     // TEST137: Test parsing registry JSON without stdin args verifies cap structure
     #[test]
-    fn test_parse_registry_json() {
+    fn test137_parse_registry_json() {
         // JSON without stdin args - means cap doesn't accept stdin
         // media_specs is now an array of media spec objects with urn field
         let json = r#"{"urn":"cap:in=\"media:listing-id\";op=use_grinder;out=\"media:task-id\"","command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":[{"urn":"media:listing-id","media_type":"text/plain","title":"Listing ID","profile_uri":"https://filegrind.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"FileGrind listing UUID"}},{"urn":"media:task-id","media_type":"application/json","title":"Task ID","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}],"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
@@ -624,7 +624,7 @@ mod json_parse_tests {
 
     // TEST138: Test parsing registry JSON with stdin args verifies stdin media URN extraction
     #[test]
-    fn test_parse_registry_json_with_stdin() {
+    fn test138_parse_registry_json_with_stdin() {
         // JSON with stdin args - means cap accepts stdin of specified media type
         let json = r#"{"urn":"cap:in=\"media:pdf;bytes\";op=extract_metadata;out=\"media:file-metadata;textable;form=map\"","command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:pdf;bytes","required":true,"sources":[{"stdin":"media:pdf;bytes"}]}]}"#;
 
@@ -643,7 +643,7 @@ mod url_encoding_tests {
     /// This guards against the bug where encoding "cap:" as "cap%3A" causes 404s
     // TEST139: Test URL construction keeps cap prefix literal and only encodes tags part
     #[test]
-    fn test_url_keeps_cap_prefix_literal() {
+    fn test139_url_keeps_cap_prefix_literal() {
         let config = RegistryConfig::default();
         let urn = r#"cap:in="media:string";op=test;out="media:object""#;
         let normalized = normalize_cap_urn(urn);
@@ -659,7 +659,7 @@ mod url_encoding_tests {
     /// Test that media URNs in cap URNs are properly URL-encoded
     // TEST140: Test URL encodes media URNs with proper percent encoding for special characters
     #[test]
-    fn test_url_encodes_quoted_media_urns() {
+    fn test140_url_encodes_quoted_media_urns() {
         let config = RegistryConfig::default();
         // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
         let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task-id"#;
@@ -679,7 +679,7 @@ mod url_encoding_tests {
     /// Test the URL format for a simple cap URN
     // TEST141: Test exact URL format contains properly encoded media URN components
     #[test]
-    fn test_exact_url_format() {
+    fn test141_exact_url_format() {
         let config = RegistryConfig::default();
         // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
         let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task-id"#;
@@ -696,7 +696,7 @@ mod url_encoding_tests {
     /// Test that normalization handles various input formats
     // TEST142: Test normalize handles different tag orders producing same canonical form
     #[test]
-    fn test_normalize_handles_different_tag_orders() {
+    fn test142_normalize_handles_different_tag_orders() {
         // Different tag orders should normalize to the same canonical form
         let urn1 = r#"cap:op=test;in="media:string";out="media:object""#;
         let urn2 = r#"cap:in="media:string";out="media:object";op=test"#;
@@ -714,7 +714,7 @@ mod config_tests {
 
     // TEST143: Test default config uses capns.org or environment variable values
     #[test]
-    fn test_default_config() {
+    fn test143_default_config() {
         let config = RegistryConfig::default();
         // Default should use capns.org (unless env var is set)
         assert!(config.registry_base_url.contains("capns.org") ||
@@ -726,7 +726,7 @@ mod config_tests {
 
     // TEST144: Test custom registry URL updates both registry and schema base URLs
     #[test]
-    fn test_custom_registry_url() {
+    fn test144_custom_registry_url() {
         let config = RegistryConfig::new()
             .with_registry_url("https://localhost:8888");
         assert_eq!(config.registry_base_url, "https://localhost:8888");
@@ -735,7 +735,7 @@ mod config_tests {
 
     // TEST145: Test custom registry and schema URLs set independently
     #[test]
-    fn test_custom_registry_and_schema_url() {
+    fn test145_custom_registry_and_schema_url() {
         let config = RegistryConfig::new()
             .with_registry_url("https://localhost:8888")
             .with_schema_url("https://schemas.example.com");
@@ -745,7 +745,7 @@ mod config_tests {
 
     // TEST146: Test schema URL not overwritten when set explicitly before registry URL
     #[test]
-    fn test_schema_url_not_overwritten_when_explicit() {
+    fn test146_schema_url_not_overwritten_when_explicit() {
         // If schema URL is set explicitly first, changing registry URL shouldn't change it
         let config = RegistryConfig::new()
             .with_schema_url("https://schemas.example.com")
@@ -756,7 +756,7 @@ mod config_tests {
 
     // TEST147: Test registry for test with custom config creates registry with specified URLs
     #[test]
-    fn test_registry_for_test_with_config() {
+    fn test147_registry_for_test_with_config() {
         let config = RegistryConfig::new()
             .with_registry_url("https://test-registry.local");
         let registry = CapRegistry::new_for_test_with_config(config);

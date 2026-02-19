@@ -230,7 +230,7 @@ mod tests {
 
     // TEST163: Test argument schema validation succeeds with valid JSON matching schema
     #[tokio::test]
-    async fn test_argument_schema_validation_success() {
+    async fn test163_argument_schema_validation_success() {
         let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
@@ -270,7 +270,7 @@ mod tests {
 
     // TEST164: Test argument schema validation fails with JSON missing required fields
     #[tokio::test]
-    async fn test_argument_schema_validation_failure() {
+    async fn test164_argument_schema_validation_failure() {
         let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
@@ -309,7 +309,7 @@ mod tests {
 
     // TEST165: Test output schema validation succeeds with valid JSON matching schema
     #[tokio::test]
-    async fn test_output_schema_validation_success() {
+    async fn test165_output_schema_validation_success() {
         let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
@@ -345,7 +345,7 @@ mod tests {
 
     // TEST166: Test validation skipped when resolved media spec has no schema
     #[tokio::test]
-    async fn test_skip_validation_without_schema() {
+    async fn test166_skip_validation_without_schema() {
         let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
@@ -367,7 +367,7 @@ mod tests {
 
     // TEST167: Test validation fails hard when media URN cannot be resolved from any source
     #[tokio::test]
-    async fn test_unresolvable_media_urn_fails_hard() {
+    async fn test167_unresolvable_media_urn_fails_hard() {
         let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 

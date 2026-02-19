@@ -587,21 +587,24 @@ impl PluginRepoServer {
 mod tests {
     use super::*;
 
+    // TEST630: Verify PluginRepo creation starts with empty plugin list
     #[tokio::test]
-    async fn test_plugin_repo_creation() {
+    async fn test630_plugin_repo_creation() {
         let repo = PluginRepo::new(3600);
         assert!(repo.get_all_plugins().await.is_empty());
     }
 
+    // TEST631: Verify needs_sync returns true with empty cache and non-empty URLs
     #[tokio::test]
-    async fn test_needs_sync_empty_cache() {
+    async fn test631_needs_sync_empty_cache() {
         let repo = PluginRepo::new(3600);
         let urls = vec!["https://example.com/plugins".to_string()];
         assert!(repo.needs_sync(&urls).await);
     }
 
+    // TEST632: Verify PluginCapSummary deserializes null description as empty string
     #[test]
-    fn test_deserialize_cap_summary_with_null_description() {
+    fn test632_deserialize_cap_summary_with_null_description() {
         let json = r#"{"urn": "media:text;llm;gen", "title": "Generate Text", "description": null}"#;
         let cap: PluginCapSummary = serde_json::from_str(json).unwrap();
         assert_eq!(cap.urn, "media:text;llm;gen");
@@ -609,22 +612,25 @@ mod tests {
         assert_eq!(cap.description, "");
     }
 
+    // TEST633: Verify PluginCapSummary deserializes missing description as empty string
     #[test]
-    fn test_deserialize_cap_summary_with_missing_description() {
+    fn test633_deserialize_cap_summary_with_missing_description() {
         let json = r#"{"urn": "media:text;llm;gen", "title": "Generate Text"}"#;
         let cap: PluginCapSummary = serde_json::from_str(json).unwrap();
         assert_eq!(cap.description, "");
     }
 
+    // TEST634: Verify PluginCapSummary deserializes present description correctly
     #[test]
-    fn test_deserialize_cap_summary_with_present_description() {
+    fn test634_deserialize_cap_summary_with_present_description() {
         let json = r#"{"urn": "media:text;llm;gen", "title": "Generate Text", "description": "A real description"}"#;
         let cap: PluginCapSummary = serde_json::from_str(json).unwrap();
         assert_eq!(cap.description, "A real description");
     }
 
+    // TEST635: Verify PluginInfo deserializes null version/description/author as empty strings
     #[test]
-    fn test_deserialize_plugin_info_with_null_fields() {
+    fn test635_deserialize_plugin_info_with_null_fields() {
         let json = r#"{
             "id": "mlxcartridge",
             "name": "MLX Cartridge",
@@ -645,8 +651,9 @@ mod tests {
         assert_eq!(plugin.caps[0].description, "");
     }
 
+    // TEST636: Verify PluginRegistryResponse deserializes with mixed null/present descriptions
     #[test]
-    fn test_deserialize_registry_with_null_descriptions() {
+    fn test636_deserialize_registry_with_null_descriptions() {
         let json = r#"{
             "plugins": [{
                 "id": "test-plugin",
@@ -666,8 +673,9 @@ mod tests {
         assert_eq!(registry.plugins[0].caps[1].description, "Analyze images");
     }
 
+    // TEST637: Verify full PluginInfo deserialization with signature and binary fields
     #[test]
-    fn test_deserialize_full_plugin_with_signature() {
+    fn test637_deserialize_full_plugin_with_signature() {
         let json = r#"{
             "id": "pdfcartridge",
             "name": "pdfcartridge",

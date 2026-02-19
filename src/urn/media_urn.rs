@@ -356,16 +356,16 @@ impl MediaUrn {
         self.0.tags.contains_key("void")
     }
 
-    /// Check if this represents a file path type.
-    /// Returns true if the "file-path" marker tag is present.
+    /// Check if this represents a single file path type (not array).
+    /// Returns true if the "file-path" marker tag is present AND NOT form=list.
     pub fn is_file_path(&self) -> bool {
-        self.0.tags.get("file-path").map_or(false, |v| v == "*")
+        self.0.tags.get("file-path").map_or(false, |v| v == "*") && !self.is_list()
     }
 
     /// Check if this represents a file path array type.
-    /// Returns true if the "file-path-array" marker tag is present.
+    /// Returns true if the "file-path" marker tag is present AND form=list.
     pub fn is_file_path_array(&self) -> bool {
-        self.0.tags.get("file-path-array").map_or(false, |v| v == "*")
+        self.0.tags.get("file-path").map_or(false, |v| v == "*") && self.is_list()
     }
 
     /// Check if this represents any file path type (single or array).
@@ -468,7 +468,7 @@ mod tests {
 
     // TEST060: Test wrong prefix fails with InvalidPrefix error showing expected and actual prefix
     #[test]
-    fn test_wrong_prefix_fails() {
+    fn test060_wrong_prefix_fails() {
         let result = MediaUrn::from_string("cap:string");
         assert!(result.is_err());
         if let Err(MediaUrnError::InvalidPrefix { expected, actual }) = result {
@@ -481,7 +481,7 @@ mod tests {
 
     // TEST061: Test is_binary returns true only when bytes marker tag is present
     #[test]
-    fn test_is_binary() {
+    fn test061_is_binary() {
         // is_binary returns true only if "bytes" marker tag is present
         assert!(MediaUrn::from_string("media:bytes").unwrap().is_binary());
         assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:png;bytes"
@@ -494,7 +494,7 @@ mod tests {
 
     // TEST062: Test is_map returns true when form=map tag is present indicating key-value structure
     #[test]
-    fn test_is_map() {
+    fn test062_is_map() {
         // is_map returns true if form=map tag is present (key-value structure)
         assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_map()); // "media:form=map;textable"
         assert!(MediaUrn::from_string("media:custom;form=map").unwrap().is_map());
@@ -506,7 +506,7 @@ mod tests {
 
     // TEST063: Test is_scalar returns true when form=scalar tag is present indicating single value
     #[test]
-    fn test_is_scalar() {
+    fn test063_is_scalar() {
         // is_scalar returns true if form=scalar tag is present (single value)
         assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_scalar()); // "media:textable;form=scalar"
         assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_scalar()); // "media:integer;textable;numeric;form=scalar"
@@ -519,7 +519,7 @@ mod tests {
 
     // TEST064: Test is_list returns true when form=list tag is present indicating ordered collection
     #[test]
-    fn test_is_list() {
+    fn test064_is_list() {
         // is_list returns true if form=list tag is present (ordered collection)
         assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_list()); // "media:textable;form=list"
         assert!(MediaUrn::from_string(MEDIA_INTEGER_ARRAY).unwrap().is_list()); // "media:integer;textable;numeric;form=list"
@@ -531,7 +531,7 @@ mod tests {
 
     // TEST065: Test is_structured returns true for map or list forms indicating structured data types
     #[test]
-    fn test_is_structured() {
+    fn test065_is_structured() {
         // is_structured returns true if form=map OR form=list (structured data types)
         assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_structured()); // form=map
         assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_structured()); // form=list
@@ -545,7 +545,7 @@ mod tests {
 
     // TEST066: Test is_json returns true only when json marker tag is present for JSON representation
     #[test]
-    fn test_is_json() {
+    fn test066_is_json() {
         // is_json returns true only if "json" marker tag is present (JSON representation)
         assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:json;textable"
         assert!(MediaUrn::from_string("media:custom;json").unwrap().is_json());
@@ -556,7 +556,7 @@ mod tests {
 
     // TEST067: Test is_text returns true only when textable marker tag is present
     #[test]
-    fn test_is_text() {
+    fn test067_is_text() {
         // is_text returns true only if "textable" marker tag is present
         assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:textable;form=scalar"
         assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:integer;textable;numeric;form=scalar"
@@ -568,14 +568,14 @@ mod tests {
 
     // TEST068: Test is_void returns true when void flag or type=void tag is present
     #[test]
-    fn test_is_void() {
+    fn test068_is_void() {
         assert!(MediaUrn::from_string("media:void").unwrap().is_void());
         assert!(!MediaUrn::from_string("media:string").unwrap().is_void());
     }
 
     // TEST071: Test to_string roundtrip ensures serialization and deserialization preserve URN structure
     #[test]
-    fn test_to_string_roundtrip() {
+    fn test071_to_string_roundtrip() {
         let original = "media:string";
         let urn = MediaUrn::from_string(original).unwrap();
         let s = urn.to_string();
@@ -585,7 +585,7 @@ mod tests {
 
     // TEST072: Test all media URN constants parse successfully as valid media URNs
     #[test]
-    fn test_constants_parse() {
+    fn test072_constants_parse() {
         // Verify all constants are valid media URNs
         assert!(MediaUrn::from_string(MEDIA_VOID).is_ok());
         assert!(MediaUrn::from_string(MEDIA_STRING).is_ok());
@@ -619,7 +619,7 @@ mod tests {
 
     // TEST073: Test extension helper functions create media URNs with ext tag and correct format
     #[test]
-    fn test_extension_helpers() {
+    fn test073_extension_helpers() {
         // Test binary_media_urn_for_ext
         let pdf_urn = binary_media_urn_for_ext("pdf");
         let parsed = MediaUrn::from_string(&pdf_urn).unwrap();
@@ -635,7 +635,7 @@ mod tests {
 
     // TEST074: Test media URN conforms_to using tagged URN semantics with specific and generic requirements
     #[test]
-    fn test_media_urn_matching() {
+    fn test074_media_urn_matching() {
         // PDF listing conforms to PDF requirement (PRIMARY type naming)
         // A more specific URN (media:pdf;bytes) conforms to a less specific requirement (media:pdf)
         let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf;bytes"
@@ -655,7 +655,7 @@ mod tests {
 
     // TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests
     #[test]
-    fn test_matching() {
+    fn test075_matching() {
         let handler = MediaUrn::from_string("media:string").unwrap();
         let request = MediaUrn::from_string("media:string").unwrap();
         assert!(handler.accepts(&request).unwrap());
@@ -671,7 +671,7 @@ mod tests {
 
     // TEST076: Test specificity increases with more tags for ranking conformance
     #[test]
-    fn test_specificity() {
+    fn test076_specificity() {
         // More tags = higher specificity
         let urn1 = MediaUrn::from_string("media:string").unwrap();
         let urn2 = MediaUrn::from_string("media:textable").unwrap();
@@ -690,7 +690,7 @@ mod tests {
 
     // TEST077: Test serde roundtrip serializes to JSON string and deserializes back correctly
     #[test]
-    fn test_serde_roundtrip() {
+    fn test077_serde_roundtrip() {
         let urn = MediaUrn::from_string("media:string").unwrap();
         let json = serde_json::to_string(&urn).unwrap();
         assert_eq!(json, "\"media:string\"");
@@ -729,7 +729,7 @@ mod debug_tests {
 
     // TEST304: Test MEDIA_AVAILABILITY_OUTPUT constant parses as valid media URN with correct tags
     #[test]
-    fn test_media_availability_output_constant() {
+    fn test304_media_availability_output_constant() {
         let urn = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).expect("must parse");
         assert!(urn.is_text(), "model-availability must be textable");
         assert!(urn.is_map(), "model-availability must be form=map");
@@ -741,7 +741,7 @@ mod debug_tests {
 
     // TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags
     #[test]
-    fn test_media_path_output_constant() {
+    fn test305_media_path_output_constant() {
         let urn = MediaUrn::from_string(MEDIA_PATH_OUTPUT).expect("must parse");
         assert!(urn.is_text(), "model-path must be textable");
         assert!(urn.is_map(), "model-path must be form=map");
@@ -752,7 +752,7 @@ mod debug_tests {
 
     // TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs
     #[test]
-    fn test_availability_and_path_output_distinct() {
+    fn test306_availability_and_path_output_distinct() {
         assert_ne!(MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
             "availability and path output must be distinct media URNs");
         let avail = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).unwrap();
@@ -762,5 +762,182 @@ mod debug_tests {
             !avail.conforms_to(&path).unwrap_or(true),
             "availability must not conform to path"
         );
+    }
+
+    // TEST546: is_image returns true only when image marker tag is present
+    #[test]
+    fn test546_is_image() {
+        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_image());
+        assert!(MediaUrn::from_string(MEDIA_IMAGE_THUMBNAIL).unwrap().is_image());
+        assert!(MediaUrn::from_string("media:image;jpg;bytes").unwrap().is_image());
+        // Non-image types
+        assert!(!MediaUrn::from_string(MEDIA_PDF).unwrap().is_image());
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_image());
+        assert!(!MediaUrn::from_string(MEDIA_AUDIO).unwrap().is_image());
+        assert!(!MediaUrn::from_string(MEDIA_VIDEO).unwrap().is_image());
+    }
+
+    // TEST547: is_audio returns true only when audio marker tag is present
+    #[test]
+    fn test547_is_audio() {
+        assert!(MediaUrn::from_string(MEDIA_AUDIO).unwrap().is_audio());
+        assert!(MediaUrn::from_string(MEDIA_AUDIO_SPEECH).unwrap().is_audio());
+        assert!(MediaUrn::from_string("media:audio;mp3;bytes").unwrap().is_audio());
+        // Non-audio types
+        assert!(!MediaUrn::from_string(MEDIA_VIDEO).unwrap().is_audio());
+        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_audio());
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_audio());
+    }
+
+    // TEST548: is_video returns true only when video marker tag is present
+    #[test]
+    fn test548_is_video() {
+        assert!(MediaUrn::from_string(MEDIA_VIDEO).unwrap().is_video());
+        assert!(MediaUrn::from_string("media:video;mp4;bytes").unwrap().is_video());
+        // Non-video types
+        assert!(!MediaUrn::from_string(MEDIA_AUDIO).unwrap().is_video());
+        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_video());
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_video());
+    }
+
+    // TEST549: is_numeric returns true only when numeric marker tag is present
+    #[test]
+    fn test549_is_numeric() {
+        assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_NUMBER).unwrap().is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_INTEGER_ARRAY).unwrap().is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_NUMBER_ARRAY).unwrap().is_numeric());
+        // Non-numeric types
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_numeric());
+        assert!(!MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_numeric());
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_numeric());
+    }
+
+    // TEST550: is_bool returns true only when bool marker tag is present
+    #[test]
+    fn test550_is_bool() {
+        assert!(MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_bool());
+        assert!(MediaUrn::from_string(MEDIA_BOOLEAN_ARRAY).unwrap().is_bool());
+        assert!(MediaUrn::from_string(MEDIA_DECISION).unwrap().is_bool());
+        assert!(MediaUrn::from_string(MEDIA_DECISION_ARRAY).unwrap().is_bool());
+        // Non-bool types
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_bool());
+        assert!(!MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_bool());
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_bool());
+    }
+
+    // TEST551: is_file_path returns true for scalar file-path, false for array
+    #[test]
+    fn test551_is_file_path() {
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_file_path());
+        // Array file-path is NOT is_file_path (it's is_file_path_array)
+        assert!(!MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_file_path());
+        // Non-file-path types
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_file_path());
+    }
+
+    // TEST552: is_file_path_array returns true for list file-path, false for scalar
+    #[test]
+    fn test552_is_file_path_array() {
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_file_path_array());
+        // Scalar file-path is NOT is_file_path_array
+        assert!(!MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_file_path_array());
+        // Non-file-path types
+        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_file_path_array());
+    }
+
+    // TEST553: is_any_file_path returns true for both scalar and array file-path
+    #[test]
+    fn test553_is_any_file_path() {
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_any_file_path());
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_any_file_path());
+        // Non-file-path types
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_any_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_any_file_path());
+    }
+
+    // TEST554: is_collection returns true when collection marker tag is present
+    #[test]
+    fn test554_is_collection() {
+        assert!(MediaUrn::from_string(MEDIA_COLLECTION).unwrap().is_collection());
+        assert!(MediaUrn::from_string(MEDIA_COLLECTION_LIST).unwrap().is_collection());
+        // Non-collection types
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_collection());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_collection());
+    }
+
+    // TEST555: with_tag adds a tag and without_tag removes it
+    #[test]
+    fn test555_with_tag_and_without_tag() {
+        let urn = MediaUrn::from_string("media:string").unwrap();
+        let with_ext = urn.with_tag("ext", "pdf").unwrap();
+        assert_eq!(with_ext.extension(), Some("pdf"));
+        // Original unchanged
+        assert_eq!(urn.extension(), None);
+
+        // Remove the tag
+        let without_ext = with_ext.without_tag("ext");
+        assert_eq!(without_ext.extension(), None);
+        // Removing non-existent tag is a no-op
+        let same = urn.without_tag("nonexistent");
+        assert_eq!(same, urn);
+    }
+
+    // TEST556: image_media_urn_for_ext creates valid image media URN
+    #[test]
+    fn test556_image_media_urn_for_ext() {
+        let jpg_urn = image_media_urn_for_ext("jpg");
+        let parsed = MediaUrn::from_string(&jpg_urn).unwrap();
+        assert!(parsed.is_image(), "image helper must set image tag");
+        assert!(parsed.is_binary(), "image helper must set bytes tag");
+        assert_eq!(parsed.extension(), Some("jpg"));
+    }
+
+    // TEST557: audio_media_urn_for_ext creates valid audio media URN
+    #[test]
+    fn test557_audio_media_urn_for_ext() {
+        let mp3_urn = audio_media_urn_for_ext("mp3");
+        let parsed = MediaUrn::from_string(&mp3_urn).unwrap();
+        assert!(parsed.is_audio(), "audio helper must set audio tag");
+        assert!(parsed.is_binary(), "audio helper must set bytes tag");
+        assert_eq!(parsed.extension(), Some("mp3"));
+    }
+
+    // TEST558: predicates are consistent with constants — every constant triggers exactly the expected predicates
+    #[test]
+    fn test558_predicate_constant_consistency() {
+        // MEDIA_INTEGER must be numeric, text, scalar, NOT binary/bool/image/audio/video
+        let int = MediaUrn::from_string(MEDIA_INTEGER).unwrap();
+        assert!(int.is_numeric());
+        assert!(int.is_text());
+        assert!(int.is_scalar());
+        assert!(!int.is_binary());
+        assert!(!int.is_bool());
+        assert!(!int.is_image());
+        assert!(!int.is_list());
+
+        // MEDIA_BOOLEAN must be bool, text, scalar, NOT numeric
+        let bool_urn = MediaUrn::from_string(MEDIA_BOOLEAN).unwrap();
+        assert!(bool_urn.is_bool());
+        assert!(bool_urn.is_text());
+        assert!(bool_urn.is_scalar());
+        assert!(!bool_urn.is_numeric());
+
+        // MEDIA_JSON must be json, text, map, structured, NOT binary
+        let json_urn = MediaUrn::from_string(MEDIA_JSON).unwrap();
+        assert!(json_urn.is_json());
+        assert!(json_urn.is_text());
+        assert!(json_urn.is_map());
+        assert!(json_urn.is_structured());
+        assert!(!json_urn.is_binary());
+        assert!(!json_urn.is_list());
+
+        // MEDIA_VOID is void, NOT anything else
+        let void = MediaUrn::from_string(MEDIA_VOID).unwrap();
+        assert!(void.is_void());
+        assert!(!void.is_text());
+        assert!(!void.is_binary());
+        assert!(!void.is_numeric());
     }
 }

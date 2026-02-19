@@ -3080,7 +3080,7 @@ mod tests {
 
     // TEST248: Test register_op and find_handler by exact cap URN
     #[test]
-    fn test_register_and_find_handler() {
+    fn test248_register_and_find_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         runtime.register_op("cap:in=*;op=test;out=*", || Box::new(EmitBytesOp { data: b"result".to_vec() }));
         assert!(runtime.find_handler("cap:in=*;op=test;out=*").is_some());
@@ -3088,7 +3088,7 @@ mod tests {
 
     // TEST249: Test register_op handler echoes bytes directly
     #[test]
-    fn test_raw_handler() {
+    fn test249_raw_handler() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         let received: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
@@ -3106,7 +3106,7 @@ mod tests {
 
     // TEST250: Test Op handler collects input and processes it
     #[test]
-    fn test_typed_handler_deserialization() {
+    fn test250_typed_handler_deserialization() {
         /// Test Op: parses JSON, extracts "key" field, emits as bytes
         struct JsonKeyOp {
             received: Arc<Mutex<Vec<u8>>>,
@@ -3149,7 +3149,7 @@ mod tests {
 
     // TEST251: Test Op handler propagates errors through RuntimeError::Handler
     #[test]
-    fn test_typed_handler_rejects_invalid_json() {
+    fn test251_typed_handler_rejects_invalid_json() {
         /// Op that parses JSON — fails on invalid input
         struct JsonParseOp;
         #[async_trait]
@@ -3182,14 +3182,14 @@ mod tests {
 
     // TEST252: Test find_handler returns None for unregistered cap URNs
     #[test]
-    fn test_find_handler_unknown_cap() {
+    fn test252_find_handler_unknown_cap() {
         let runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         assert!(runtime.find_handler("cap:op=nonexistent").is_none());
     }
 
     // TEST253: Test OpFactory can be cloned via Arc and sent across threads (Send + Sync)
     #[test]
-    fn test_handler_is_send_sync() {
+    fn test253_handler_is_send_sync() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
         let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = Arc::clone(&received);
@@ -3234,7 +3234,7 @@ mod tests {
 
     // TEST254: Test NoPeerInvoker always returns PeerRequest error
     #[test]
-    fn test_no_peer_invoker() {
+    fn test254_no_peer_invoker() {
         let no_peer = NoPeerInvoker;
         let result = no_peer.call("cap:op=test");
         assert!(result.is_err());
@@ -3248,7 +3248,7 @@ mod tests {
 
     // TEST255: Test NoPeerInvoker call_with_bytes also returns error
     #[test]
-    fn test_no_peer_invoker_with_arguments() {
+    fn test255_no_peer_invoker_with_arguments() {
         let no_peer = NoPeerInvoker;
         let result = no_peer.call_with_bytes("cap:op=test", &[("media:test", b"value")]);
         assert!(result.is_err());
@@ -3256,7 +3256,7 @@ mod tests {
 
     // TEST256: Test PluginRuntime::with_manifest_json stores manifest data and parses when valid
     #[test]
-    fn test_with_manifest_json() {
+    fn test256_with_manifest_json() {
         // TEST_MANIFEST has "cap:op=test" — missing in/out defaults to media: (wildcard).
         // ensure_identity() adds identity since cap:op=test is NOT identity.
         let runtime_basic = PluginRuntime::with_manifest_json(TEST_MANIFEST);
@@ -3273,7 +3273,7 @@ mod tests {
 
     // TEST257: Test PluginRuntime::new with invalid JSON still creates runtime (manifest is None)
     #[test]
-    fn test_new_with_invalid_json() {
+    fn test257_new_with_invalid_json() {
         let runtime = PluginRuntime::new(b"not json");
         assert!(!runtime.manifest_data.is_empty());
         assert!(runtime.manifest.is_none(), "invalid JSON should leave manifest as None");
@@ -3281,7 +3281,7 @@ mod tests {
 
     // TEST258: Test PluginRuntime::with_manifest creates runtime with valid manifest data
     #[test]
-    fn test_with_manifest_struct() {
+    fn test258_with_manifest_struct() {
         let manifest: crate::bifaci::manifest::CapManifest = serde_json::from_str(VALID_MANIFEST).unwrap();
         let runtime = PluginRuntime::with_manifest(manifest);
         assert!(!runtime.manifest_data.is_empty());
@@ -3290,7 +3290,7 @@ mod tests {
 
     // TEST259: Test extract_effective_payload with non-CBOR content_type returns raw payload unchanged
     #[test]
-    fn test_extract_effective_payload_non_cbor() {
+    fn test259_extract_effective_payload_non_cbor() {
         let registry = MockRegistry::with_test_caps();
         let cap = registry.get(r#"cap:in="media:void";op=test;out="media:void""#).unwrap();
         let payload = b"raw data";
@@ -3300,7 +3300,7 @@ mod tests {
 
     // TEST260: Test extract_effective_payload with None content_type returns raw payload unchanged
     #[test]
-    fn test_extract_effective_payload_no_content_type() {
+    fn test260_extract_effective_payload_no_content_type() {
         let registry = MockRegistry::with_test_caps();
         let cap = registry.get(r#"cap:in="media:void";op=test;out="media:void""#).unwrap();
         let payload = b"raw data";
@@ -3310,7 +3310,7 @@ mod tests {
 
     // TEST261: Test extract_effective_payload with CBOR content extracts matching argument value
     #[test]
-    fn test_extract_effective_payload_cbor_match() {
+    fn test261_extract_effective_payload_cbor_match() {
         // Build CBOR arguments: [{media_urn: "media:string;textable;form=scalar", value: bytes("hello")}]
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
@@ -3358,7 +3358,7 @@ mod tests {
 
     // TEST262: Test extract_effective_payload with CBOR content fails when no argument matches expected input
     #[test]
-    fn test_extract_effective_payload_cbor_no_match() {
+    fn test262_extract_effective_payload_cbor_no_match() {
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
                 (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:other-type".to_string())),
@@ -3387,7 +3387,7 @@ mod tests {
 
     // TEST263: Test extract_effective_payload with invalid CBOR bytes returns deserialization error
     #[test]
-    fn test_extract_effective_payload_invalid_cbor() {
+    fn test263_extract_effective_payload_invalid_cbor() {
         let registry = MockRegistry::with_test_caps();
         let cap = registry.get(r#"cap:in="*";op=test;out="*""#).unwrap();
         let result = extract_effective_payload(
@@ -3401,7 +3401,7 @@ mod tests {
 
     // TEST264: Test extract_effective_payload with CBOR non-array (e.g. map) returns error
     #[test]
-    fn test_extract_effective_payload_cbor_not_array() {
+    fn test264_extract_effective_payload_cbor_not_array() {
         let value = ciborium::Value::Map(vec![]);
         let mut payload = Vec::new();
         ciborium::into_writer(&value, &mut payload).unwrap();
@@ -3425,7 +3425,7 @@ mod tests {
 
     // TEST266: Test CliFrameSender wraps CliStreamEmitter correctly (basic construction)
     #[test]
-    fn test_cli_frame_sender_construction() {
+    fn test266_cli_frame_sender_construction() {
         let sender = CliFrameSender::new();
         assert!(sender.emitter.ndjson, "default CLI sender must use NDJSON");
 
@@ -3436,7 +3436,7 @@ mod tests {
 
     // TEST268: Test RuntimeError variants display correct messages
     #[test]
-    fn test_runtime_error_display() {
+    fn test268_runtime_error_display() {
         let err = RuntimeError::NoHandler("cap:op=missing".to_string());
         assert!(format!("{}", err).contains("cap:op=missing"));
 
@@ -3458,7 +3458,7 @@ mod tests {
 
     // TEST270: Test registering multiple Op handlers for different caps and finding each independently
     #[test]
-    fn test_multiple_handlers() {
+    fn test270_multiple_handlers() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         runtime.register_op("cap:op=alpha", || Box::new(EchoTagOp { tag: b"a".to_vec() }));
@@ -3483,7 +3483,7 @@ mod tests {
 
     // TEST271: Test Op handler replacing an existing registration for the same cap URN
     #[test]
-    fn test_handler_replacement() {
+    fn test271_handler_replacement() {
         let mut runtime = PluginRuntime::new(TEST_MANIFEST.as_bytes());
 
         let result1: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
@@ -3530,7 +3530,7 @@ mod tests {
 
     // TEST272: Test extract_effective_payload CBOR with multiple arguments selects the correct one
     #[test]
-    fn test_extract_effective_payload_multiple_args() {
+    fn test272_extract_effective_payload_multiple_args() {
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
                 (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:other-type;textable".to_string())),
@@ -3603,7 +3603,7 @@ mod tests {
 
     // TEST273: Test extract_effective_payload with binary data in CBOR value (not just text)
     #[test]
-    fn test_extract_effective_payload_binary_value() {
+    fn test273_extract_effective_payload_binary_value() {
         let binary_data: Vec<u8> = (0u8..=255).collect();
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
@@ -5133,7 +5133,7 @@ mod tests {
 
     // TEST395: Small payload (< max_chunk) produces correct CBOR arguments
     #[test]
-    fn test_build_payload_small() {
+    fn test395_build_payload_small() {
         use std::io::Cursor;
 
         let cap = create_test_cap(
@@ -5176,7 +5176,7 @@ mod tests {
 
     // TEST396: Large payload (> max_chunk) accumulates across chunks correctly
     #[test]
-    fn test_build_payload_large() {
+    fn test396_build_payload_large() {
         use std::io::Cursor;
 
         let cap = create_test_cap(
@@ -5217,7 +5217,7 @@ mod tests {
 
     // TEST397: Empty reader produces valid empty CBOR arguments
     #[test]
-    fn test_build_payload_empty() {
+    fn test397_build_payload_empty() {
         use std::io::Cursor;
 
         let cap = create_test_cap(
@@ -5255,7 +5255,7 @@ mod tests {
 
     // TEST398: IO error from reader propagates as RuntimeError::Io
     #[test]
-    fn test_build_payload_io_error() {
+    fn test398_build_payload_io_error() {
         struct ErrorReader;
         impl std::io::Read for ErrorReader {
             fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
@@ -5364,7 +5364,7 @@ mod tests {
 
     // TEST529: InputStream iterator yields chunks in order
     #[test]
-    fn test_input_stream_iterator_order() {
+    fn test529_input_stream_iterator_order() {
         let chunks = vec![
             Ok(Value::Bytes(b"chunk1".to_vec())),
             Ok(Value::Bytes(b"chunk2".to_vec())),
@@ -5381,7 +5381,7 @@ mod tests {
 
     // TEST530: InputStream::collect_bytes concatenates byte chunks
     #[test]
-    fn test_input_stream_collect_bytes() {
+    fn test530_input_stream_collect_bytes() {
         let chunks = vec![
             Ok(Value::Bytes(b"hello".to_vec())),
             Ok(Value::Bytes(b" ".to_vec())),
@@ -5395,7 +5395,7 @@ mod tests {
 
     // TEST531: InputStream::collect_bytes handles text chunks
     #[test]
-    fn test_input_stream_collect_bytes_text() {
+    fn test531_input_stream_collect_bytes_text() {
         let chunks = vec![
             Ok(Value::Text("hello".to_string())),
             Ok(Value::Text(" world".to_string())),
@@ -5408,7 +5408,7 @@ mod tests {
 
     // TEST532: InputStream empty stream produces empty bytes
     #[test]
-    fn test_input_stream_empty() {
+    fn test532_input_stream_empty() {
         let chunks = vec![];
         let stream = create_test_input_stream("media:void", chunks);
 
@@ -5418,7 +5418,7 @@ mod tests {
 
     // TEST533: InputStream propagates errors
     #[test]
-    fn test_input_stream_error_propagation() {
+    fn test533_input_stream_error_propagation() {
         let chunks = vec![
             Ok(Value::Bytes(b"data".to_vec())),
             Err(StreamError::Protocol("test error".to_string())),
@@ -5437,7 +5437,7 @@ mod tests {
 
     // TEST534: InputStream::media_urn returns correct URN
     #[test]
-    fn test_input_stream_media_urn() {
+    fn test534_input_stream_media_urn() {
         let chunks = vec![Ok(Value::Bytes(b"data".to_vec()))];
         let stream = create_test_input_stream("media:image;format=png", chunks);
 
@@ -5446,7 +5446,7 @@ mod tests {
 
     // TEST535: InputPackage iterator yields streams
     #[test]
-    fn test_input_package_iteration() {
+    fn test535_input_package_iteration() {
         let (tx, rx) = unbounded();
 
         // Send 3 streams
@@ -5479,7 +5479,7 @@ mod tests {
 
     // TEST536: InputPackage::collect_all_bytes aggregates all streams
     #[test]
-    fn test_input_package_collect_all_bytes() {
+    fn test536_input_package_collect_all_bytes() {
         let (tx, rx) = unbounded();
 
         // Stream 1: "hello"
@@ -5513,7 +5513,7 @@ mod tests {
 
     // TEST537: InputPackage empty package produces empty bytes
     #[test]
-    fn test_input_package_empty() {
+    fn test537_input_package_empty() {
         let (tx, rx) = unbounded();
         drop(tx); // No streams
 
@@ -5528,7 +5528,7 @@ mod tests {
 
     // TEST538: InputPackage propagates stream errors
     #[test]
-    fn test_input_package_error_propagation() {
+    fn test538_input_package_error_propagation() {
         let (tx, rx) = unbounded();
 
         // Good stream
@@ -5584,7 +5584,7 @@ mod tests {
 
     // TEST539: OutputStream sends STREAM_START on first write
     #[test]
-    fn test_output_stream_sends_stream_start() {
+    fn test539_output_stream_sends_stream_start() {
         let (sender, frames) = MockFrameSender::new();
         let mut stream = OutputStream::new(
             Arc::new(sender),
@@ -5606,7 +5606,7 @@ mod tests {
 
     // TEST540: OutputStream::close sends STREAM_END with correct chunk_count
     #[test]
-    fn test_output_stream_close_sends_stream_end() {
+    fn test540_output_stream_close_sends_stream_end() {
         let (sender, frames) = MockFrameSender::new();
         let mut stream = OutputStream::new(
             Arc::new(sender),
@@ -5633,7 +5633,7 @@ mod tests {
 
     // TEST541: OutputStream chunks large data correctly
     #[test]
-    fn test_output_stream_chunks_large_data() {
+    fn test541_output_stream_chunks_large_data() {
         let (sender, frames) = MockFrameSender::new();
         let max_chunk = 100; // Small chunk size for testing
         let mut stream = OutputStream::new(
@@ -5660,7 +5660,7 @@ mod tests {
 
     // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
     #[test]
-    fn test_output_stream_empty() {
+    fn test542_output_stream_empty() {
         let (sender, frames) = MockFrameSender::new();
         let mut stream = OutputStream::new(
             Arc::new(sender),
@@ -5685,7 +5685,7 @@ mod tests {
 
     // TEST543: PeerCall::arg creates OutputStream with correct stream_id
     #[test]
-    fn test_peer_call_arg_creates_stream() {
+    fn test543_peer_call_arg_creates_stream() {
         let (sender, _frames) = MockFrameSender::new();
         let (response_tx, response_rx) = unbounded();
         drop(response_tx); // Close immediately for test
@@ -5704,7 +5704,7 @@ mod tests {
 
     // TEST544: PeerCall::finish sends END frame
     #[test]
-    fn test_peer_call_finish_sends_end() {
+    fn test544_peer_call_finish_sends_end() {
         let (sender, frames) = MockFrameSender::new();
         let (response_tx, response_rx) = unbounded();
 
@@ -5730,7 +5730,7 @@ mod tests {
 
     // TEST545: PeerCall::finish returns InputStream for response
     #[test]
-    fn test_peer_call_finish_returns_response_stream() {
+    fn test545_peer_call_finish_returns_response_stream() {
         let (sender, _frames) = MockFrameSender::new();
         let (response_tx, response_rx) = unbounded();
 

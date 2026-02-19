@@ -57,8 +57,9 @@ pub use crate::media::spec::{
 mod tests {
     use super::*;
 
+    // TEST628: Verify media URN constants all start with "media:" prefix
     #[test]
-    fn test_media_urn_constants_format() {
+    fn test628_media_urn_constants_format() {
         // Verify media URNs have expected format
         assert!(MEDIA_STRING.starts_with("media:"));
         assert!(MEDIA_INTEGER.starts_with("media:"));
@@ -66,8 +67,9 @@ mod tests {
         assert!(MEDIA_BINARY.starts_with("media:"));
     }
 
+    // TEST629: Verify profile URL constants all start with capns.org schema prefix
     #[test]
-    fn test_profile_constants_format() {
+    fn test629_profile_constants_format() {
         // Verify profile URLs have expected format
         assert!(PROFILE_STR.starts_with("https://capns.org/schema/"));
         assert!(PROFILE_OBJ.starts_with("https://capns.org/schema/"));

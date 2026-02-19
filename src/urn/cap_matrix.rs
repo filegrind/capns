@@ -980,7 +980,7 @@ mod tests {
 
     // TEST117: Test registering cap set and finding by exact and subset matching
     #[tokio::test]
-    async fn test_register_and_find_cap_set() {
+    async fn test117_register_and_find_cap_set() {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
@@ -1017,7 +1017,7 @@ mod tests {
 
     // TEST118: Test selecting best cap set based on specificity ranking
     #[tokio::test]
-    async fn test_best_cap_set_selection() {
+    async fn test118_best_cap_set_selection() {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
@@ -1068,7 +1068,7 @@ mod tests {
 
     // TEST119: Test invalid URN returns InvalidUrn error
     #[tokio::test]
-    async fn test_invalid_urn_handling() {
+    async fn test119_invalid_urn_handling() {
         let (media_registry, _temp_dir) = test_media_registry();
         let registry = CapMatrix::new(media_registry);
 
@@ -1078,7 +1078,7 @@ mod tests {
 
     // TEST120: Test accepts_request checks if registry can handle a capability request
     #[tokio::test]
-    async fn test_accepts_request() {
+    async fn test120_accepts_request() {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
@@ -1132,7 +1132,7 @@ mod tests {
 
     // TEST121: Test CapBlock selects more specific cap over less specific regardless of registry order
     #[tokio::test]
-    async fn test_cap_block_more_specific_wins() {
+    async fn test121_cap_block_more_specific_wins() {
         // This is the key test: provider has less specific cap, plugin has more specific
         // The more specific one should win regardless of registry order
         let (media_registry, _temp_dir) = test_media_registry();
@@ -1183,7 +1183,7 @@ mod tests {
 
     // TEST122: Test CapBlock breaks specificity ties by first registered registry
     #[tokio::test]
-    async fn test_cap_block_tie_goes_to_first() {
+    async fn test122_cap_block_tie_goes_to_first() {
         // When specificity is equal, first registry wins
         let (media_registry, _temp_dir) = test_media_registry();
 
@@ -1212,7 +1212,7 @@ mod tests {
 
     // TEST123: Test CapBlock polls all registries to find most specific match
     #[tokio::test]
-    async fn test_cap_block_polls_all() {
+    async fn test123_cap_block_polls_all() {
         // Test that all registries are polled
         let (media_registry, _temp_dir) = test_media_registry();
 
@@ -1248,7 +1248,7 @@ mod tests {
 
     // TEST124: Test CapBlock returns error when no registries match the request
     #[tokio::test]
-    async fn test_cap_block_no_match() {
+    async fn test124_cap_block_no_match() {
         let (media_registry, _temp_dir) = test_media_registry();
         let registry = CapMatrix::new(media_registry.clone());
 
@@ -1261,7 +1261,7 @@ mod tests {
 
     // TEST125: Test CapBlock prefers specific plugin over generic provider fallback
     #[tokio::test]
-    async fn test_cap_block_fallback_scenario() {
+    async fn test125_cap_block_fallback_scenario() {
         // Test the exact scenario from the user's issue:
         // Provider: generic fallback (can handle any file type)
         // Plugin:   PDF-specific handler
@@ -1321,7 +1321,7 @@ mod tests {
 
     // TEST126: Test composite can method returns CapCaller for capability execution
     #[tokio::test]
-    async fn test_composite_can_method() {
+    async fn test126_composite_can_method() {
         // Test the can() method that returns a CapCaller
         let (media_registry, _temp_dir) = test_media_registry();
 
@@ -1356,7 +1356,7 @@ mod tests {
 
     // TEST127: Test CapGraph adds nodes and edges from capability definitions
     #[test]
-    fn test_cap_graph_basic_construction() {
+    fn test127_cap_graph_basic_construction() {
         let mut graph = CapGraph::new();
 
         // Create a cap that converts binary to str
@@ -1387,7 +1387,7 @@ mod tests {
 
     // TEST128: Test CapGraph tracks outgoing and incoming edges for spec conversions
     #[test]
-    fn test_cap_graph_outgoing_incoming() {
+    fn test128_cap_graph_outgoing_incoming() {
         let mut graph = CapGraph::new();
 
         // binary -> str - use full constants for proper matching
@@ -1436,7 +1436,7 @@ mod tests {
 
     // TEST129: Test CapGraph detects direct and indirect conversion paths between specs
     #[test]
-    fn test_cap_graph_can_convert() {
+    fn test129_cap_graph_can_convert() {
         let mut graph = CapGraph::new();
 
         // binary -> str - use full constants
@@ -1489,7 +1489,7 @@ mod tests {
 
     // TEST130: Test CapGraph finds shortest path for spec conversion chain
     #[test]
-    fn test_cap_graph_find_path() {
+    fn test130_cap_graph_find_path() {
         let mut graph = CapGraph::new();
 
         // Create a chain: binary -> str -> obj
@@ -1545,7 +1545,7 @@ mod tests {
 
     // TEST131: Test CapGraph finds all conversion paths sorted by length
     #[test]
-    fn test_cap_graph_find_all_paths() {
+    fn test131_cap_graph_find_all_paths() {
         let mut graph = CapGraph::new();
 
         // Create multiple paths: A -> B -> C and A -> C directly
@@ -1603,7 +1603,7 @@ mod tests {
 
     // TEST132: Test CapGraph returns direct edges sorted by specificity
     #[test]
-    fn test_cap_graph_get_direct_edges_sorted() {
+    fn test132_cap_graph_get_direct_edges_sorted() {
         let mut graph = CapGraph::new();
 
         // Add multiple caps with different specificities for same conversion
@@ -1645,7 +1645,7 @@ mod tests {
 
     // TEST133: Test CapBlock graph integration with multiple registries and conversion paths
     #[tokio::test]
-    async fn test_cap_block_graph_integration() {
+    async fn test133_cap_block_graph_integration() {
         // Test that CapBlock.graph() works correctly
         let (media_registry, _temp_dir) = test_media_registry();
 
@@ -1730,7 +1730,7 @@ mod tests {
 
     // TEST134: Test CapGraph stats provides counts of nodes and edges
     #[test]
-    fn test_cap_graph_stats() {
+    fn test134_cap_graph_stats() {
         let mut graph = CapGraph::new();
 
         let cap1 = Cap {
@@ -1767,5 +1767,222 @@ mod tests {
         assert_eq!(stats.edge_count, 2);
         assert_eq!(stats.input_spec_count, 2); // binary, str
         assert_eq!(stats.output_spec_count, 2); // str, obj
+    }
+
+    // TEST568: CapGraph::find_best_path returns highest-specificity path over shortest
+    #[test]
+    fn test568_cap_graph_find_best_path() {
+        let mut graph = CapGraph::new();
+
+        // Direct path: binary -> obj (low specificity, just op)
+        let cap_direct = Cap {
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=direct;out="media:object""#).unwrap(),
+            title: "Direct Low Spec".to_string(),
+            cap_description: None, metadata: HashMap::new(),
+            command: "d".to_string(), media_specs: Vec::new(),
+            args: vec![], output: None, metadata_json: None, registered_by: None,
+        };
+
+        // Two-hop path: binary -> string -> obj (high specificity, ext=pdf on first hop)
+        let cap_hop1 = Cap {
+            urn: CapUrn::from_string(r#"cap:ext=pdf;in="media:binary";op=extract;out="media:string""#).unwrap(),
+            title: "Hop1 High Spec".to_string(),
+            cap_description: None, metadata: HashMap::new(),
+            command: "h1".to_string(), media_specs: Vec::new(),
+            args: vec![], output: None, metadata_json: None, registered_by: None,
+        };
+
+        let cap_hop2 = Cap {
+            urn: CapUrn::from_string(r#"cap:ext=json;in="media:string";op=parse;out="media:object""#).unwrap(),
+            title: "Hop2 High Spec".to_string(),
+            cap_description: None, metadata: HashMap::new(),
+            command: "h2".to_string(), media_specs: Vec::new(),
+            args: vec![], output: None, metadata_json: None, registered_by: None,
+        };
+
+        graph.add_cap(&cap_direct, "r1");
+        graph.add_cap(&cap_hop1, "r2");
+        graph.add_cap(&cap_hop2, "r2");
+
+        // find_path returns shortest (1 hop)
+        let shortest = graph.find_path("media:binary", "media:object").unwrap();
+        assert_eq!(shortest.len(), 1);
+
+        // find_best_path returns highest total specificity (2 hops, each with ext tag)
+        let best = graph.find_best_path("media:binary", "media:object", 5).unwrap();
+        let total_spec: usize = best.iter().map(|e| e.specificity).sum();
+        let direct_spec = shortest[0].specificity;
+        assert!(total_spec > direct_spec,
+            "Best path total specificity {} must exceed direct path {}", total_spec, direct_spec);
+        assert_eq!(best.len(), 2);
+    }
+
+    // TEST569: unregister_cap_set removes a host and returns true, false if not found
+    #[tokio::test]
+    async fn test569_unregister_cap_set() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
+
+        let host = Box::new(MockCapSet { name: "removable".to_string() });
+        let cap = make_cap(&test_urn("op=test"), "Removable Cap");
+        registry.register_cap_set("removable".to_string(), host, vec![cap]).unwrap();
+
+        assert!(registry.accepts_request(&test_urn("op=test")));
+
+        // Unregister
+        assert!(registry.unregister_cap_set("removable"), "Should return true for existing host");
+        assert!(!registry.accepts_request(&test_urn("op=test")), "Cap should be gone after unregister");
+
+        // Unregister non-existent
+        assert!(!registry.unregister_cap_set("nonexistent"), "Should return false for missing host");
+    }
+
+    // TEST570: clear removes all registered sets
+    #[tokio::test]
+    async fn test570_clear() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
+
+        let host1 = Box::new(MockCapSet { name: "h1".to_string() });
+        let host2 = Box::new(MockCapSet { name: "h2".to_string() });
+        registry.register_cap_set("h1".to_string(), host1, vec![make_cap(&test_urn("op=a"), "A")]).unwrap();
+        registry.register_cap_set("h2".to_string(), host2, vec![make_cap(&test_urn("op=b"), "B")]).unwrap();
+
+        assert_eq!(registry.get_host_names().len(), 2);
+        registry.clear();
+        assert_eq!(registry.get_host_names().len(), 0);
+        assert!(!registry.accepts_request(&test_urn("op=a")));
+    }
+
+    // TEST571: get_all_capabilities returns caps from all hosts
+    #[tokio::test]
+    async fn test571_get_all_capabilities() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
+
+        let host1 = Box::new(MockCapSet { name: "h1".to_string() });
+        let host2 = Box::new(MockCapSet { name: "h2".to_string() });
+        let cap1 = make_cap(&test_urn("op=a"), "Cap A");
+        let cap2 = make_cap(&test_urn("op=b"), "Cap B");
+        let cap3 = make_cap(&test_urn("op=c"), "Cap C");
+        registry.register_cap_set("h1".to_string(), host1, vec![cap1, cap2]).unwrap();
+        registry.register_cap_set("h2".to_string(), host2, vec![cap3]).unwrap();
+
+        let all = registry.get_all_capabilities();
+        assert_eq!(all.len(), 3);
+    }
+
+    // TEST572: get_capabilities_for_host returns caps for specific host, None for unknown
+    #[tokio::test]
+    async fn test572_get_capabilities_for_host() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
+
+        let host = Box::new(MockCapSet { name: "myhost".to_string() });
+        let cap = make_cap(&test_urn("op=test"), "Test");
+        registry.register_cap_set("myhost".to_string(), host, vec![cap]).unwrap();
+
+        let caps = registry.get_capabilities_for_host("myhost");
+        assert!(caps.is_some());
+        assert_eq!(caps.unwrap().len(), 1);
+
+        assert!(registry.get_capabilities_for_host("unknown").is_none());
+    }
+
+    // TEST573: iter_hosts_and_caps iterates all hosts with their capabilities
+    #[tokio::test]
+    async fn test573_iter_hosts_and_caps() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut registry = CapMatrix::new(media_registry);
+
+        let host1 = Box::new(MockCapSet { name: "h1".to_string() });
+        let host2 = Box::new(MockCapSet { name: "h2".to_string() });
+        registry.register_cap_set("h1".to_string(), host1, vec![make_cap(&test_urn("op=a"), "A")]).unwrap();
+        registry.register_cap_set("h2".to_string(), host2, vec![make_cap(&test_urn("op=b"), "B")]).unwrap();
+
+        let entries: Vec<_> = registry.iter_hosts_and_caps().collect();
+        assert_eq!(entries.len(), 2);
+        for (name, caps) in &entries {
+            assert!(!name.is_empty());
+            assert_eq!(caps.len(), 1);
+        }
+    }
+
+    // TEST574: CapBlock::remove_registry removes by name, returns Arc
+    #[tokio::test]
+    async fn test574_cap_block_remove_registry() {
+        let (media_registry, _temp_dir) = test_media_registry();
+
+        let mut reg1 = CapMatrix::new(media_registry.clone());
+        let host = Box::new(MockCapSet { name: "h1".to_string() });
+        reg1.register_cap_set("h1".to_string(), host, vec![make_cap(&test_urn("op=a"), "A")]).unwrap();
+
+        let mut block = CapBlock::new(media_registry.clone());
+        block.add_registry("r1".to_string(), Arc::new(RwLock::new(reg1)));
+
+        assert!(block.accepts_request(&test_urn("op=a")));
+        let removed = block.remove_registry("r1");
+        assert!(removed.is_some());
+        assert!(!block.accepts_request(&test_urn("op=a")));
+
+        // Removing non-existent returns None
+        assert!(block.remove_registry("nonexistent").is_none());
+    }
+
+    // TEST575: CapBlock::get_registry returns Arc clone by name
+    #[tokio::test]
+    async fn test575_cap_block_get_registry() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let reg = CapMatrix::new(media_registry.clone());
+        let reg_arc = Arc::new(RwLock::new(reg));
+
+        let mut block = CapBlock::new(media_registry.clone());
+        block.add_registry("r1".to_string(), reg_arc.clone());
+
+        let retrieved = block.get_registry("r1");
+        assert!(retrieved.is_some());
+
+        assert!(block.get_registry("nonexistent").is_none());
+    }
+
+    // TEST576: CapBlock::get_registry_names returns names in insertion order
+    #[tokio::test]
+    async fn test576_cap_block_get_registry_names() {
+        let (media_registry, _temp_dir) = test_media_registry();
+        let mut block = CapBlock::new(media_registry.clone());
+
+        block.add_registry("alpha".to_string(), Arc::new(RwLock::new(CapMatrix::new(media_registry.clone()))));
+        block.add_registry("beta".to_string(), Arc::new(RwLock::new(CapMatrix::new(media_registry.clone()))));
+
+        let names = block.get_registry_names();
+        assert_eq!(names.len(), 2);
+        assert_eq!(names[0], "alpha");
+        assert_eq!(names[1], "beta");
+    }
+
+    // TEST577: CapGraph::get_input_specs and get_output_specs return correct sets
+    #[test]
+    fn test577_cap_graph_input_output_specs() {
+        let mut graph = CapGraph::new();
+
+        let cap = Cap {
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=x;out="media:string""#).unwrap(),
+            title: "X".to_string(),
+            cap_description: None, metadata: HashMap::new(),
+            command: "x".to_string(), media_specs: Vec::new(),
+            args: vec![], output: None, metadata_json: None, registered_by: None,
+        };
+        graph.add_cap(&cap, "r");
+
+        let inputs = graph.get_input_specs();
+        assert!(inputs.contains(&"media:binary"), "binary should be an input spec");
+
+        let outputs = graph.get_output_specs();
+        assert!(outputs.contains(&"media:string"), "string should be an output spec");
+
+        // binary is only an input (no edges pointing TO it)
+        assert!(!outputs.contains(&"media:binary"));
+        // string is only an output (no edges FROM it)
+        assert!(!inputs.contains(&"media:string"));
     }
 }

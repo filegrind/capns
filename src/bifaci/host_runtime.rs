@@ -1401,7 +1401,7 @@ mod tests {
 
     // TEST235: Test ResponseChunk stores payload, seq, offset, len, and eof fields correctly
     #[test]
-    fn test_response_chunk() {
+    fn test235_response_chunk() {
         let chunk = ResponseChunk {
             payload: b"hello".to_vec(),
             seq: 0,
@@ -1417,7 +1417,7 @@ mod tests {
 
     // TEST236: Test ResponseChunk with all fields populated preserves offset, len, and eof
     #[test]
-    fn test_response_chunk_with_all_fields() {
+    fn test236_response_chunk_with_all_fields() {
         let chunk = ResponseChunk {
             payload: b"data".to_vec(),
             seq: 5,
@@ -1433,7 +1433,7 @@ mod tests {
 
     // TEST237: Test PluginResponse::Single final_payload returns the single payload slice
     #[test]
-    fn test_plugin_response_single() {
+    fn test237_plugin_response_single() {
         let response = PluginResponse::Single(b"result".to_vec());
         assert_eq!(response.final_payload(), Some(b"result".as_slice()));
         assert_eq!(response.concatenated(), b"result");
@@ -1441,7 +1441,7 @@ mod tests {
 
     // TEST238: Test PluginResponse::Single with empty payload returns empty slice and empty vec
     #[test]
-    fn test_plugin_response_single_empty() {
+    fn test238_plugin_response_single_empty() {
         let response = PluginResponse::Single(vec![]);
         assert_eq!(response.final_payload(), Some(b"".as_slice()));
         assert_eq!(response.concatenated(), b"");
@@ -1449,7 +1449,7 @@ mod tests {
 
     // TEST239: Test PluginResponse::Streaming concatenated joins all chunk payloads in order
     #[test]
-    fn test_plugin_response_streaming() {
+    fn test239_plugin_response_streaming() {
         let chunks = vec![
             ResponseChunk { payload: b"hello".to_vec(), seq: 0, offset: Some(0), len: Some(11), is_eof: false },
             ResponseChunk { payload: b" world".to_vec(), seq: 1, offset: Some(5), len: None, is_eof: true },
@@ -1460,7 +1460,7 @@ mod tests {
 
     // TEST240: Test PluginResponse::Streaming final_payload returns the last chunk's payload
     #[test]
-    fn test_plugin_response_streaming_final_payload() {
+    fn test240_plugin_response_streaming_final_payload() {
         let chunks = vec![
             ResponseChunk { payload: b"first".to_vec(), seq: 0, offset: None, len: None, is_eof: false },
             ResponseChunk { payload: b"last".to_vec(), seq: 1, offset: None, len: None, is_eof: true },
@@ -1471,7 +1471,7 @@ mod tests {
 
     // TEST241: Test PluginResponse::Streaming with empty chunks vec returns empty concatenation
     #[test]
-    fn test_plugin_response_streaming_empty_chunks() {
+    fn test241_plugin_response_streaming_empty_chunks() {
         let response = PluginResponse::Streaming(vec![]);
         assert_eq!(response.concatenated(), b"");
         assert!(response.final_payload().is_none());
@@ -1479,7 +1479,7 @@ mod tests {
 
     // TEST242: Test PluginResponse::Streaming concatenated capacity is pre-allocated correctly for large payloads
     #[test]
-    fn test_plugin_response_streaming_large_payload() {
+    fn test242_plugin_response_streaming_large_payload() {
         let chunk1_data = vec![0xAA; 1000];
         let chunk2_data = vec![0xBB; 2000];
         let chunks = vec![
@@ -1495,7 +1495,7 @@ mod tests {
 
     // TEST243: Test AsyncHostError variants display correct error messages
     #[test]
-    fn test_async_host_error_display() {
+    fn test243_async_host_error_display() {
         let err = AsyncHostError::PluginError { code: "NOT_FOUND".to_string(), message: "Cap not found".to_string() };
         let msg = format!("{}", err);
         assert!(msg.contains("NOT_FOUND"));
@@ -1509,7 +1509,7 @@ mod tests {
 
     // TEST244: Test AsyncHostError::from converts CborError to Cbor variant
     #[test]
-    fn test_async_host_error_from_cbor() {
+    fn test244_async_host_error_from_cbor() {
         let cbor_err = crate::bifaci::io::CborError::InvalidFrame("test".to_string());
         let host_err: AsyncHostError = cbor_err.into();
         match host_err {
@@ -1520,7 +1520,7 @@ mod tests {
 
     // TEST245: Test AsyncHostError::from converts io::Error to Io variant
     #[test]
-    fn test_async_host_error_from_io() {
+    fn test245_async_host_error_from_io() {
         let io_err = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broken");
         let host_err: AsyncHostError = io_err.into();
         match host_err {
@@ -1531,7 +1531,7 @@ mod tests {
 
     // TEST246: Test AsyncHostError Clone implementation produces equal values
     #[test]
-    fn test_async_host_error_clone() {
+    fn test246_async_host_error_clone() {
         let err = AsyncHostError::PluginError { code: "ERR".to_string(), message: "msg".to_string() };
         let cloned = err.clone();
         assert_eq!(format!("{}", err), format!("{}", cloned));
@@ -1539,7 +1539,7 @@ mod tests {
 
     // TEST247: Test ResponseChunk Clone produces independent copy with same data
     #[test]
-    fn test_response_chunk_clone() {
+    fn test247_response_chunk_clone() {
         let chunk = ResponseChunk { payload: b"data".to_vec(), seq: 3, offset: Some(100), len: Some(500), is_eof: true };
         let cloned = chunk.clone();
         assert_eq!(chunk.payload, cloned.payload);
@@ -1551,7 +1551,7 @@ mod tests {
 
     // TEST413: Register plugin adds entries to cap_table
     #[test]
-    fn test_register_plugin_adds_to_cap_table() {
+    fn test413_register_plugin_adds_to_cap_table() {
         let mut runtime = PluginHostRuntime::new();
         runtime.register_plugin(Path::new("/usr/bin/test-plugin"), &[
             "cap:in=\"media:void\";op=convert;out=\"media:void\"".to_string(),
@@ -1569,7 +1569,7 @@ mod tests {
 
     // TEST414: capabilities() returns empty JSON initially (no running plugins)
     #[test]
-    fn test_capabilities_empty_initially() {
+    fn test414_capabilities_empty_initially() {
         let runtime = PluginHostRuntime::new();
         assert!(runtime.capabilities().is_empty(), "No plugins registered = empty capabilities");
 
@@ -1582,7 +1582,7 @@ mod tests {
 
     // TEST415: REQ for known cap triggers spawn attempt (verified by expected spawn error for non-existent binary)
     #[tokio::test]
-    async fn test_req_for_known_cap_triggers_spawn() {
+    async fn test415_req_for_known_cap_triggers_spawn() {
         let mut runtime = PluginHostRuntime::new();
         runtime.register_plugin(
             Path::new("/nonexistent/plugin/binary"),
@@ -1637,7 +1637,7 @@ mod tests {
 
     // TEST416: Attach plugin performs HELLO handshake, extracts manifest, updates capabilities
     #[tokio::test]
-    async fn test_attach_plugin_handshake_updates_capabilities() {
+    async fn test416_attach_plugin_handshake_updates_capabilities() {
         let manifest = r#"{"name":"Test","version":"1.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Test","command":"test","args":[]}]}"#;
 
         // Plugin pipe pair
@@ -1683,7 +1683,7 @@ mod tests {
 
     // TEST417: Route REQ to correct plugin by cap_urn (with two attached plugins)
     #[tokio::test]
-    async fn test_route_req_to_correct_plugin() {
+    async fn test417_route_req_to_correct_plugin() {
         let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
         let manifest_b = r#"{"name":"PluginB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=analyze;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
@@ -1830,7 +1830,7 @@ mod tests {
 
     // TEST419: Plugin HEARTBEAT handled locally (not forwarded to relay)
     #[tokio::test]
-    async fn test_plugin_heartbeat_handled_locally() {
+    async fn test419_plugin_heartbeat_handled_locally() {
         let manifest = r#"{"name":"HBPlugin","version":"1.0","description":"Heartbeat plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=hb;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1911,7 +1911,7 @@ mod tests {
 
     // TEST420: Plugin non-HELLO/non-HB frames forwarded to relay (pass-through)
     #[tokio::test]
-    async fn test_plugin_frames_forwarded_to_relay() {
+    async fn test420_plugin_frames_forwarded_to_relay() {
         let manifest = r#"{"name":"FwdPlugin","version":"1.0","description":"Forward plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=fwd;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2046,7 +2046,7 @@ mod tests {
     // frames with the same req_id are routed to the same plugin — even though no cap_urn
     // is present on those frames.
     #[tokio::test]
-    async fn test_route_continuation_frames_by_req_id() {
+    async fn test418_route_continuation_frames_by_req_id() {
         let manifest = r#"{"name":"ContPlugin","version":"1.0","description":"Continuation plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=cont;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2188,7 +2188,7 @@ mod tests {
 
     // TEST421: Plugin death updates capability list (caps removed)
     #[tokio::test]
-    async fn test_plugin_death_updates_capabilities() {
+    async fn test421_plugin_death_updates_capabilities() {
         let manifest = r#"{"name":"Dying","version":"1.0","description":"Dying plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=die;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2261,7 +2261,7 @@ mod tests {
 
     // TEST422: Plugin death sends ERR for all pending requests via relay
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_plugin_death_sends_err_for_pending_requests() {
+    async fn test422_plugin_death_sends_err_for_pending_requests() {
         let manifest = r#"{"name":"DiePlugin","version":"1.0","description":"Die plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=die;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2346,7 +2346,7 @@ mod tests {
 
     // TEST423: Multiple plugins registered with distinct caps route independently
     #[tokio::test]
-    async fn test_multiple_plugins_route_independently() {
+    async fn test423_multiple_plugins_route_independently() {
         let manifest_a = r#"{"name":"PA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
         let manifest_b = r#"{"name":"PB","version":"1.0","description":"Plugin B","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=beta;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
@@ -2506,7 +2506,7 @@ mod tests {
 
     // TEST424: Concurrent requests to the same plugin are handled independently
     #[tokio::test]
-    async fn test_concurrent_requests_to_same_plugin() {
+    async fn test424_concurrent_requests_to_same_plugin() {
         let manifest = r#"{"name":"ConcPlugin","version":"1.0","description":"Concurrent plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=conc;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2643,7 +2643,7 @@ mod tests {
 
     // TEST425: find_plugin_for_cap returns None for unregistered cap
     #[test]
-    fn test_find_plugin_for_cap_unknown() {
+    fn test425_find_plugin_for_cap_unknown() {
         let mut runtime = PluginHostRuntime::new();
         runtime.register_plugin(Path::new("/test"), &["cap:in=\"media:void\";op=known;out=\"media:void\"".to_string()]);
         assert!(runtime.find_plugin_for_cap("cap:in=\"media:void\";op=known;out=\"media:void\"").is_some());
@@ -2656,7 +2656,7 @@ mod tests {
 
     // TEST485: attach_plugin completes identity verification with working plugin
     #[tokio::test]
-    async fn test_attach_plugin_identity_verification_succeeds() {
+    async fn test485_attach_plugin_identity_verification_succeeds() {
         let manifest = r#"{"name":"IdentityTest","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let (p_to_rt, rt_from_p) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2690,7 +2690,7 @@ mod tests {
 
     // TEST486: attach_plugin rejects plugin that fails identity verification
     #[tokio::test]
-    async fn test_attach_plugin_identity_verification_fails() {
+    async fn test486_attach_plugin_identity_verification_fails() {
         let manifest = r#"{"name":"BrokenIdentity","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]}]}"#;
 
         let (p_to_rt, rt_from_p) = std::os::unix::net::UnixStream::pair().unwrap();

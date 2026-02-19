@@ -883,7 +883,7 @@ mod tests {
 
     // TEST171: Test all FrameType discriminants roundtrip through u8 conversion preserving identity
     #[test]
-    fn test_frame_type_roundtrip() {
+    fn test171_frame_type_roundtrip() {
         for t in [
             FrameType::Hello,
             FrameType::Req,
@@ -906,7 +906,7 @@ mod tests {
 
     // TEST172: Test FrameType::from_u8 returns None for values outside the valid discriminant range
     #[test]
-    fn test_invalid_frame_type() {
+    fn test172_invalid_frame_type() {
         assert!(FrameType::from_u8(12).is_none(), "value 12 is one past RelayState");
         assert!(FrameType::from_u8(100).is_none());
         assert!(FrameType::from_u8(255).is_none());
@@ -914,7 +914,7 @@ mod tests {
 
     // TEST173: Test FrameType discriminant values match the wire protocol specification exactly
     #[test]
-    fn test_frame_type_discriminant_values() {
+    fn test173_frame_type_discriminant_values() {
         assert_eq!(FrameType::Hello as u8, 0);
         assert_eq!(FrameType::Req as u8, 1);
         // 2 = Res REMOVED - old protocol
@@ -931,7 +931,7 @@ mod tests {
 
     // TEST174: Test MessageId::new_uuid generates valid UUID that roundtrips through string conversion
     #[test]
-    fn test_message_id_uuid() {
+    fn test174_message_id_uuid() {
         let id = MessageId::new_uuid();
         let s = id.to_uuid_string().expect("should be uuid");
         let recovered = MessageId::from_uuid_str(&s).expect("should parse");
@@ -940,7 +940,7 @@ mod tests {
 
     // TEST175: Test two MessageId::new_uuid calls produce distinct IDs (no collisions)
     #[test]
-    fn test_message_id_uuid_uniqueness() {
+    fn test175_message_id_uuid_uniqueness() {
         let id1 = MessageId::new_uuid();
         let id2 = MessageId::new_uuid();
         assert_ne!(id1, id2, "two UUIDs must be distinct");
@@ -948,14 +948,14 @@ mod tests {
 
     // TEST176: Test MessageId::Uint does not produce a UUID string, to_uuid_string returns None
     #[test]
-    fn test_message_id_uint_has_no_uuid_string() {
+    fn test176_message_id_uint_has_no_uuid_string() {
         let id = MessageId::Uint(42);
         assert!(id.to_uuid_string().is_none(), "Uint IDs have no UUID representation");
     }
 
     // TEST177: Test MessageId::from_uuid_str rejects invalid UUID strings
     #[test]
-    fn test_message_id_from_invalid_uuid_str() {
+    fn test177_message_id_from_invalid_uuid_str() {
         assert!(MessageId::from_uuid_str("not-a-uuid").is_none());
         assert!(MessageId::from_uuid_str("").is_none());
         assert!(MessageId::from_uuid_str("12345678").is_none());
@@ -963,7 +963,7 @@ mod tests {
 
     // TEST178: Test MessageId::as_bytes produces correct byte representations for Uuid and Uint variants
     #[test]
-    fn test_message_id_as_bytes() {
+    fn test178_message_id_as_bytes() {
         let uuid_id = MessageId::new_uuid();
         let uuid_bytes = uuid_id.as_bytes();
         assert_eq!(uuid_bytes.len(), 16, "UUID must be 16 bytes");
@@ -976,14 +976,14 @@ mod tests {
 
     // TEST179: Test MessageId::default creates a UUID variant (not Uint)
     #[test]
-    fn test_message_id_default_is_uuid() {
+    fn test179_message_id_default_is_uuid() {
         let id = MessageId::default();
         assert!(id.to_uuid_string().is_some(), "default MessageId must be UUID");
     }
 
     // TEST180: Test Frame::hello without manifest produces correct HELLO frame for host side
     #[test]
-    fn test_hello_frame() {
+    fn test180_hello_frame() {
         let frame = Frame::hello(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER });
         assert_eq!(frame.frame_type, FrameType::Hello);
         assert_eq!(frame.version, PROTOCOL_VERSION);
@@ -997,7 +997,7 @@ mod tests {
 
     // TEST181: Test Frame::hello_with_manifest produces HELLO with manifest bytes for plugin side
     #[test]
-    fn test_hello_frame_with_manifest() {
+    fn test181_hello_frame_with_manifest() {
         let manifest_json = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test","caps":[]}"#;
         let frame = Frame::hello_with_manifest(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER }, manifest_json.as_bytes());
         assert_eq!(frame.frame_type, FrameType::Hello);
@@ -1009,7 +1009,7 @@ mod tests {
 
     // TEST182: Test Frame::req stores cap URN, payload, and content_type correctly
     #[test]
-    fn test_req_frame() {
+    fn test182_req_frame() {
         let id = MessageId::new_uuid();
         let frame = Frame::req(id.clone(), r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
         assert_eq!(frame.frame_type, FrameType::Req);
@@ -1025,7 +1025,7 @@ mod tests {
 
     // TEST184: Test Frame::chunk stores seq and payload for streaming (with stream_id)
     #[test]
-    fn test_chunk_frame() {
+    fn test184_chunk_frame() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-123".to_string();
         let payload = b"data".to_vec();
@@ -1041,7 +1041,7 @@ mod tests {
 
     // TEST185: Test Frame::err stores error code and message in metadata
     #[test]
-    fn test_err_frame() {
+    fn test185_err_frame() {
         let id = MessageId::new_uuid();
         let frame = Frame::err(id, "NOT_FOUND", "Cap not found");
         assert_eq!(frame.frame_type, FrameType::Err);
@@ -1051,7 +1051,7 @@ mod tests {
 
     // TEST186: Test Frame::log stores level and message in metadata
     #[test]
-    fn test_log_frame() {
+    fn test186_log_frame() {
         let id = MessageId::new_uuid();
         let frame = Frame::log(id.clone(), "info", "Processing started");
         assert_eq!(frame.frame_type, FrameType::Log);
@@ -1062,7 +1062,7 @@ mod tests {
 
     // TEST187: Test Frame::end with payload sets eof and optional final payload
     #[test]
-    fn test_end_frame_with_payload() {
+    fn test187_end_frame_with_payload() {
         let id = MessageId::new_uuid();
         let frame = Frame::end(id.clone(), Some(b"final".to_vec()));
         assert_eq!(frame.frame_type, FrameType::End);
@@ -1072,7 +1072,7 @@ mod tests {
 
     // TEST188: Test Frame::end without payload still sets eof marker
     #[test]
-    fn test_end_frame_without_payload() {
+    fn test188_end_frame_without_payload() {
         let id = MessageId::new_uuid();
         let frame = Frame::end(id, None);
         assert_eq!(frame.frame_type, FrameType::End);
@@ -1082,7 +1082,7 @@ mod tests {
 
     // TEST189: Test chunk_with_offset sets offset on all chunks but len only on seq=0 (with stream_id)
     #[test]
-    fn test_chunk_with_offset() {
+    fn test189_chunk_with_offset() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-456".to_string();
         let payload1 = b"data".to_vec();
@@ -1108,7 +1108,7 @@ mod tests {
 
     // TEST190: Test Frame::heartbeat creates minimal frame with no payload or metadata
     #[test]
-    fn test_heartbeat_frame() {
+    fn test190_heartbeat_frame() {
         let id = MessageId::new_uuid();
         let frame = Frame::heartbeat(id.clone());
         assert_eq!(frame.frame_type, FrameType::Heartbeat);
@@ -1120,7 +1120,7 @@ mod tests {
 
     // TEST191: Test error_code and error_message return None for non-Err frame types
     #[test]
-    fn test_error_accessors_on_non_err_frame() {
+    fn test191_error_accessors_on_non_err_frame() {
         let req = Frame::req(MessageId::new_uuid(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
         assert!(req.error_code().is_none(), "REQ must have no error_code");
         assert!(req.error_message().is_none(), "REQ must have no error_message");
@@ -1131,7 +1131,7 @@ mod tests {
 
     // TEST192: Test log_level and log_message return None for non-Log frame types
     #[test]
-    fn test_log_accessors_on_non_log_frame() {
+    fn test192_log_accessors_on_non_log_frame() {
         let req = Frame::req(MessageId::new_uuid(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
         assert!(req.log_level().is_none(), "REQ must have no log_level");
         assert!(req.log_message().is_none(), "REQ must have no log_message");
@@ -1139,7 +1139,7 @@ mod tests {
 
     // TEST193: Test hello_max_frame and hello_max_chunk return None for non-Hello frame types
     #[test]
-    fn test_hello_accessors_on_non_hello_frame() {
+    fn test193_hello_accessors_on_non_hello_frame() {
         let err = Frame::err(MessageId::new_uuid(), "E", "m");
         assert!(err.hello_max_frame().is_none());
         assert!(err.hello_max_chunk().is_none());
@@ -1148,7 +1148,7 @@ mod tests {
 
     // TEST194: Test Frame::new sets version and defaults correctly, optional fields are None
     #[test]
-    fn test_frame_new_defaults() {
+    fn test194_frame_new_defaults() {
         let id = MessageId::new_uuid();
         let frame = Frame::new(FrameType::Chunk, id.clone());
         assert_eq!(frame.version, PROTOCOL_VERSION);
@@ -1166,7 +1166,7 @@ mod tests {
 
     // TEST195: Test Frame::default creates a Req frame (the documented default)
     #[test]
-    fn test_frame_default() {
+    fn test195_frame_default() {
         let frame = Frame::default();
         assert_eq!(frame.frame_type, FrameType::Req);
         assert_eq!(frame.version, PROTOCOL_VERSION);
@@ -1174,14 +1174,14 @@ mod tests {
 
     // TEST196: Test is_eof returns false when eof field is None (unset)
     #[test]
-    fn test_is_eof_when_none() {
+    fn test196_is_eof_when_none() {
         let frame = Frame::new(FrameType::Chunk, MessageId::Uint(0));
         assert!(!frame.is_eof(), "eof=None must mean not EOF");
     }
 
     // TEST197: Test is_eof returns false when eof field is explicitly Some(false)
     #[test]
-    fn test_is_eof_when_false() {
+    fn test197_is_eof_when_false() {
         let mut frame = Frame::new(FrameType::Chunk, MessageId::Uint(0));
         frame.eof = Some(false);
         assert!(!frame.is_eof());
@@ -1189,7 +1189,7 @@ mod tests {
 
     // TEST198: Test Limits::default provides the documented default values
     #[test]
-    fn test_limits_default() {
+    fn test198_limits_default() {
         let limits = Limits::default();
         assert_eq!(limits.max_frame, DEFAULT_MAX_FRAME);
         assert_eq!(limits.max_chunk, DEFAULT_MAX_CHUNK);
@@ -1199,13 +1199,13 @@ mod tests {
 
     // TEST199: Test PROTOCOL_VERSION is 2
     #[test]
-    fn test_protocol_version_constant() {
+    fn test199_protocol_version_constant() {
         assert_eq!(PROTOCOL_VERSION, 2);
     }
 
     // TEST200: Test integer key constants match the protocol specification
     #[test]
-    fn test_key_constants() {
+    fn test200_key_constants() {
         assert_eq!(keys::VERSION, 0);
         assert_eq!(keys::FRAME_TYPE, 1);
         assert_eq!(keys::ID, 2);
@@ -1221,7 +1221,7 @@ mod tests {
 
     // TEST201: Test hello_with_manifest preserves binary manifest data (not just JSON text)
     #[test]
-    fn test_hello_manifest_binary_data() {
+    fn test201_hello_manifest_binary_data() {
         let binary_manifest = vec![0x00, 0x01, 0xFF, 0xFE, 0x80];
         let frame = Frame::hello_with_manifest(&Limits { max_frame: 1000, max_chunk: 500, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER }, &binary_manifest);
         assert_eq!(frame.hello_manifest().unwrap(), &binary_manifest);
@@ -1229,7 +1229,7 @@ mod tests {
 
     // TEST202: Test MessageId Eq/Hash semantics: equal UUIDs are equal, different ones are not
     #[test]
-    fn test_message_id_equality_and_hash() {
+    fn test202_message_id_equality_and_hash() {
         use std::collections::HashSet;
 
         let id1 = MessageId::Uuid([1; 16]);
@@ -1252,7 +1252,7 @@ mod tests {
 
     // TEST203: Test Uuid and Uint variants of MessageId are never equal even for coincidental byte values
     #[test]
-    fn test_message_id_cross_variant_inequality() {
+    fn test203_message_id_cross_variant_inequality() {
         let uuid_id = MessageId::Uuid([0; 16]);
         let uint_id = MessageId::Uint(0);
         assert_ne!(uuid_id, uint_id, "different variants must not be equal");
@@ -1260,14 +1260,14 @@ mod tests {
 
     // TEST204: Test Frame::req with empty payload stores Some(empty vec) not None
     #[test]
-    fn test_req_frame_empty_payload() {
+    fn test204_req_frame_empty_payload() {
         let frame = Frame::req(MessageId::new_uuid(), r#"cap:in="media:void";op=test;out="media:void""#, vec![], "text/plain");
         assert_eq!(frame.payload, Some(vec![]), "empty payload is still Some(vec![])");
     }
 
     // TEST365: Frame::stream_start stores request_id, stream_id, and media_urn
     #[test]
-    fn test_stream_start_frame() {
+    fn test365_stream_start_frame() {
         let req_id = MessageId::new_uuid();
         let stream_id = "stream-abc-123".to_string();
         let media_urn = "media:bytes".to_string();
@@ -1284,7 +1284,7 @@ mod tests {
 
     // TEST366: Frame::stream_end stores request_id and stream_id
     #[test]
-    fn test_stream_end_frame() {
+    fn test366_stream_end_frame() {
         let req_id = MessageId::new_uuid();
         let stream_id = "stream-xyz-789".to_string();
 
@@ -1300,7 +1300,7 @@ mod tests {
 
     // TEST367: StreamStart frame with empty stream_id still constructs (validation happens elsewhere)
     #[test]
-    fn test_stream_start_with_empty_stream_id() {
+    fn test367_stream_start_with_empty_stream_id() {
         let req_id = MessageId::new_uuid();
         let frame = Frame::stream_start(req_id.clone(), String::new(), "media:bytes".to_string());
 
@@ -1311,7 +1311,7 @@ mod tests {
 
     // TEST368: StreamStart frame with empty media_urn still constructs (validation happens elsewhere)
     #[test]
-    fn test_stream_start_with_empty_media_urn() {
+    fn test368_stream_start_with_empty_media_urn() {
         let req_id = MessageId::new_uuid();
         let frame = Frame::stream_start(req_id.clone(), "stream-id".to_string(), String::new());
 
@@ -1322,7 +1322,7 @@ mod tests {
 
     // TEST399: Verify RelayNotify frame type discriminant roundtrips through u8 (value 10)
     #[test]
-    fn test_relay_notify_discriminant_roundtrip() {
+    fn test399_relay_notify_discriminant_roundtrip() {
         let v = FrameType::RelayNotify as u8;
         assert_eq!(v, 10);
         let recovered = FrameType::from_u8(v).expect("10 must map to RelayNotify");
@@ -1331,7 +1331,7 @@ mod tests {
 
     // TEST400: Verify RelayState frame type discriminant roundtrips through u8 (value 11)
     #[test]
-    fn test_relay_state_discriminant_roundtrip() {
+    fn test400_relay_state_discriminant_roundtrip() {
         let v = FrameType::RelayState as u8;
         assert_eq!(v, 11);
         let recovered = FrameType::from_u8(v).expect("11 must map to RelayState");
@@ -1340,7 +1340,7 @@ mod tests {
 
     // TEST401: Verify relay_notify factory stores manifest and limits, and accessors extract them
     #[test]
-    fn test_relay_notify_frame() {
+    fn test401_relay_notify_frame() {
         let manifest = br#"{"caps":["cap:in=\"media:void\";op=test;out=\"media:void\""]}"#;        let limits = Limits { max_frame: 2_000_000, max_chunk: 128_000, ..Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
 
@@ -1355,7 +1355,7 @@ mod tests {
 
     // TEST402: Verify relay_state factory stores resource payload in frame payload field
     #[test]
-    fn test_relay_state_frame() {
+    fn test402_relay_state_frame() {
         let resources = b"{\"memory_mb\":4096,\"cpu_percent\":50}";
         let frame = Frame::relay_state(resources);
 
@@ -1367,14 +1367,14 @@ mod tests {
 
     // TEST403: Verify from_u8 returns None for value 12 (one past RelayState)
     #[test]
-    fn test_invalid_frame_type_past_relay_state() {
+    fn test403_invalid_frame_type_past_relay_state() {
         assert!(FrameType::from_u8(12).is_none(), "12 is past the last valid frame type");
         assert!(FrameType::from_u8(2).is_none(), "2 (old Res) is still invalid");
     }
 
     // TEST436: Verify FNV-1a checksum function produces consistent results
     #[test]
-    fn test_compute_checksum() {
+    fn test436_compute_checksum() {
         let data1 = b"hello world";
         let data2 = b"hello world";
         let data3 = b"hello world!";
@@ -1390,7 +1390,7 @@ mod tests {
 
     // TEST437: Verify FNV-1a checksum handles empty data
     #[test]
-    fn test_compute_checksum_empty() {
+    fn test437_compute_checksum_empty() {
         let empty = b"";
         let checksum = Frame::compute_checksum(empty);
         assert_eq!(checksum, 0xcbf29ce484222325, "empty data produces FNV offset basis");
@@ -1398,7 +1398,7 @@ mod tests {
 
     // TEST438: Verify CHUNK frame can store chunk_index and checksum fields
     #[test]
-    fn test_chunk_with_chunk_index_and_checksum() {
+    fn test438_chunk_with_chunk_index_and_checksum() {
         let id = MessageId::Uuid([1; 16]);
         let stream_id = "test-stream".to_string();
         let payload = b"chunk data".to_vec();
@@ -1416,7 +1416,7 @@ mod tests {
 
     // TEST439: Verify STREAM_END frame can store chunk_count field
     #[test]
-    fn test_stream_end_with_chunk_count() {
+    fn test439_stream_end_with_chunk_count() {
         let id = MessageId::Uuid([1; 16]);
         let stream_id = "test-stream".to_string();
 
@@ -1434,7 +1434,7 @@ mod tests {
 
     // TEST442: SeqAssigner assigns seq 0,1,2,3 for consecutive frames with same RID
     #[test]
-    fn test_seq_assigner_monotonic_same_rid() {
+    fn test442_seq_assigner_monotonic_same_rid() {
         let mut assigner = SeqAssigner::new();
         let rid = MessageId::new_uuid();
 
@@ -1456,7 +1456,7 @@ mod tests {
 
     // TEST443: SeqAssigner maintains independent counters for different RIDs
     #[test]
-    fn test_seq_assigner_independent_rids() {
+    fn test443_seq_assigner_independent_rids() {
         let mut assigner = SeqAssigner::new();
         let rid_a = MessageId::new_uuid();
         let rid_b = MessageId::new_uuid();
@@ -1482,7 +1482,7 @@ mod tests {
 
     // TEST444: SeqAssigner skips non-flow frames (Heartbeat, RelayNotify, RelayState, Hello)
     #[test]
-    fn test_seq_assigner_skips_non_flow() {
+    fn test444_seq_assigner_skips_non_flow() {
         let mut assigner = SeqAssigner::new();
 
         let mut hello = Frame::new(FrameType::Hello, MessageId::Uint(0));
@@ -1503,7 +1503,7 @@ mod tests {
 
     // TEST445: SeqAssigner.remove with FlowKey(rid, None) resets that flow; FlowKey(rid, Some(xid)) is unaffected
     #[test]
-    fn test_seq_assigner_remove_by_flow_key() {
+    fn test445_seq_assigner_remove_by_flow_key() {
         let mut assigner = SeqAssigner::new();
         let rid = MessageId::new_uuid();
         let xid = MessageId::new_uuid();
@@ -1542,7 +1542,7 @@ mod tests {
 
     // TEST445a: Same RID with different XIDs get independent seq counters
     #[test]
-    fn test_seq_assigner_same_rid_different_xids_independent() {
+    fn test445a_seq_assigner_same_rid_different_xids_independent() {
         let mut assigner = SeqAssigner::new();
         let rid = MessageId::new_uuid();
         let xid_a = MessageId::Uint(1);
@@ -1574,7 +1574,7 @@ mod tests {
 
     // TEST446: SeqAssigner handles mixed frame types (REQ, CHUNK, LOG, END) for same RID
     #[test]
-    fn test_seq_assigner_mixed_types() {
+    fn test446_seq_assigner_mixed_types() {
         let mut assigner = SeqAssigner::new();
         let rid = MessageId::new_uuid();
 
@@ -1600,7 +1600,7 @@ mod tests {
 
     // TEST447: FlowKey::from_frame extracts (rid, Some(xid)) when routing_id present
     #[test]
-    fn test_flow_key_with_xid() {
+    fn test447_flow_key_with_xid() {
         let rid = MessageId::new_uuid();
         let xid = MessageId::new_uuid();
         let mut frame = Frame::new(FrameType::Chunk, rid.clone());
@@ -1613,7 +1613,7 @@ mod tests {
 
     // TEST448: FlowKey::from_frame extracts (rid, None) when routing_id absent
     #[test]
-    fn test_flow_key_without_xid() {
+    fn test448_flow_key_without_xid() {
         let rid = MessageId::new_uuid();
         let frame = Frame::new(FrameType::Req, rid.clone());
 
@@ -1624,7 +1624,7 @@ mod tests {
 
     // TEST449: FlowKey equality: same rid+xid equal, different xid different key
     #[test]
-    fn test_flow_key_equality() {
+    fn test449_flow_key_equality() {
         let rid = MessageId::new_uuid();
         let xid1 = MessageId::new_uuid();
         let xid2 = MessageId::new_uuid();
@@ -1641,7 +1641,7 @@ mod tests {
 
     // TEST450: FlowKey hash: same keys hash equal (HashMap lookup)
     #[test]
-    fn test_flow_key_hash_lookup() {
+    fn test450_flow_key_hash_lookup() {
         let rid = MessageId::new_uuid();
         let xid = MessageId::new_uuid();
 
@@ -1667,7 +1667,7 @@ mod tests {
 
     // TEST451: ReorderBuffer in-order delivery: seq 0,1,2 delivered immediately
     #[test]
-    fn test_reorder_buffer_in_order() {
+    fn test451_reorder_buffer_in_order() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1686,7 +1686,7 @@ mod tests {
 
     // TEST452: ReorderBuffer out-of-order: seq 1 then 0 delivers both in order
     #[test]
-    fn test_reorder_buffer_out_of_order() {
+    fn test452_reorder_buffer_out_of_order() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1701,7 +1701,7 @@ mod tests {
 
     // TEST453: ReorderBuffer gap fill: seq 0,2,1 delivers 0, buffers 2, then delivers 1+2
     #[test]
-    fn test_reorder_buffer_gap_fill() {
+    fn test453_reorder_buffer_gap_fill() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1719,7 +1719,7 @@ mod tests {
 
     // TEST454: ReorderBuffer stale seq is hard error
     #[test]
-    fn test_reorder_buffer_stale_seq() {
+    fn test454_reorder_buffer_stale_seq() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1734,7 +1734,7 @@ mod tests {
 
     // TEST455: ReorderBuffer overflow triggers protocol error
     #[test]
-    fn test_reorder_buffer_overflow() {
+    fn test455_reorder_buffer_overflow() {
         let mut buf = ReorderBuffer::new(3); // tiny buffer
         let rid = MessageId::new_uuid();
 
@@ -1750,7 +1750,7 @@ mod tests {
 
     // TEST456: Multiple concurrent flows reorder independently
     #[test]
-    fn test_reorder_buffer_independent_flows() {
+    fn test456_reorder_buffer_independent_flows() {
         let mut buf = ReorderBuffer::new(64);
         let rid_a = MessageId::new_uuid();
         let rid_b = MessageId::new_uuid();
@@ -1773,7 +1773,7 @@ mod tests {
 
     // TEST457: cleanup_flow removes state; new frames start at seq 0
     #[test]
-    fn test_reorder_buffer_cleanup() {
+    fn test457_reorder_buffer_cleanup() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1790,7 +1790,7 @@ mod tests {
 
     // TEST458: Non-flow frames bypass reorder entirely
     #[test]
-    fn test_reorder_buffer_non_flow_bypass() {
+    fn test458_reorder_buffer_non_flow_bypass() {
         let mut buf = ReorderBuffer::new(64);
 
         let hello = Frame::new(FrameType::Hello, MessageId::Uint(0));
@@ -1806,7 +1806,7 @@ mod tests {
 
     // TEST459: Terminal END frame flows through correctly
     #[test]
-    fn test_reorder_buffer_end_frame() {
+    fn test459_reorder_buffer_end_frame() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1824,7 +1824,7 @@ mod tests {
 
     // TEST460: Terminal ERR frame flows through correctly
     #[test]
-    fn test_reorder_buffer_err_frame() {
+    fn test460_reorder_buffer_err_frame() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -1846,7 +1846,7 @@ mod tests {
 
     // TEST491: Frame::chunk constructor requires and sets chunk_index and checksum
     #[test]
-    fn test_chunk_requires_chunk_index_and_checksum() {
+    fn test491_chunk_requires_chunk_index_and_checksum() {
         let req_id = MessageId::new_uuid();
         let payload = b"test data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
@@ -1861,7 +1861,7 @@ mod tests {
 
     // TEST492: Frame::stream_end constructor requires and sets chunk_count
     #[test]
-    fn test_stream_end_requires_chunk_count() {
+    fn test492_stream_end_requires_chunk_count() {
         let req_id = MessageId::new_uuid();
 
         let frame = Frame::stream_end(req_id.clone(), "stream-1".to_string(), 42);
@@ -1873,7 +1873,7 @@ mod tests {
 
     // TEST493: compute_checksum produces correct FNV-1a hash for known test vectors
     #[test]
-    fn test_compute_checksum_fnv1a_test_vectors() {
+    fn test493_compute_checksum_fnv1a_test_vectors() {
         // FNV-1a standard test vectors
         assert_eq!(Frame::compute_checksum(b""), 0xcbf29ce484222325, "empty string hash");
         assert_eq!(Frame::compute_checksum(b"a"), 0xaf63dc4c8601ec8c, "single byte 'a'");
@@ -1882,7 +1882,7 @@ mod tests {
 
     // TEST494: compute_checksum is deterministic
     #[test]
-    fn test_compute_checksum_deterministic() {
+    fn test494_compute_checksum_deterministic() {
         let data = b"test data for hashing".to_vec();
         let hash1 = Frame::compute_checksum(&data);
         let hash2 = Frame::compute_checksum(&data);
@@ -1894,7 +1894,7 @@ mod tests {
 
     // TEST495: CBOR decode REJECTS CHUNK frame missing chunk_index field
     #[test]
-    fn test_cbor_rejects_chunk_without_chunk_index() {
+    fn test495_cbor_rejects_chunk_without_chunk_index() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -1920,7 +1920,7 @@ mod tests {
 
     // TEST496: CBOR decode REJECTS CHUNK frame missing checksum field
     #[test]
-    fn test_cbor_rejects_chunk_without_checksum() {
+    fn test496_cbor_rejects_chunk_without_checksum() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -1945,7 +1945,7 @@ mod tests {
 
     // TEST497: CBOR decode REJECTS STREAM_END frame missing chunk_count field
     #[test]
-    fn test_cbor_rejects_stream_end_without_chunk_count() {
+    fn test497_cbor_rejects_stream_end_without_chunk_count() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -1967,7 +1967,7 @@ mod tests {
 
     // TEST498: routing_id field roundtrips through CBOR encoding
     #[test]
-    fn test_routing_id_cbor_roundtrip() {
+    fn test498_routing_id_cbor_roundtrip() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -1985,7 +1985,7 @@ mod tests {
 
     // TEST499: chunk_index and checksum roundtrip through CBOR encoding
     #[test]
-    fn test_chunk_index_checksum_cbor_roundtrip() {
+    fn test499_chunk_index_checksum_cbor_roundtrip() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -2004,7 +2004,7 @@ mod tests {
 
     // TEST500: chunk_count roundtrips through CBOR encoding
     #[test]
-    fn test_chunk_count_cbor_roundtrip() {
+    fn test500_chunk_count_cbor_roundtrip() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();
@@ -2020,7 +2020,7 @@ mod tests {
 
     // TEST501: Frame::new initializes new fields to None
     #[test]
-    fn test_frame_new_initializes_optional_fields_none() {
+    fn test501_frame_new_initializes_optional_fields_none() {
         let frame = Frame::new(FrameType::Req, MessageId::new_uuid());
 
         assert_eq!(frame.routing_id, None);
@@ -2031,7 +2031,7 @@ mod tests {
 
     // TEST502: Keys module has constants for new fields
     #[test]
-    fn test_keys_module_new_field_constants() {
+    fn test502_keys_module_new_field_constants() {
         assert_eq!(keys::ROUTING_ID, 13);
         assert_eq!(keys::INDEX, 14);
         assert_eq!(keys::CHUNK_COUNT, 15);
@@ -2040,14 +2040,14 @@ mod tests {
 
     // TEST503: compute_checksum handles empty data correctly
     #[test]
-    fn test_compute_checksum_empty_data() {
+    fn test503_compute_checksum_empty_data() {
         let hash = Frame::compute_checksum(b"");
         assert_eq!(hash, 0xcbf29ce484222325, "empty data should produce FNV offset basis");
     }
 
     // TEST504: compute_checksum handles large payloads without overflow
     #[test]
-    fn test_compute_checksum_large_payload() {
+    fn test504_compute_checksum_large_payload() {
         let large_data = vec![0xAA; 1_000_000];
         let hash = Frame::compute_checksum(&large_data);
         assert_ne!(hash, 0, "large payload should produce non-zero hash");
@@ -2059,7 +2059,7 @@ mod tests {
 
     // TEST505: chunk_with_offset sets chunk_index correctly
     #[test]
-    fn test_chunk_with_offset_sets_chunk_index() {
+    fn test505_chunk_with_offset_sets_chunk_index() {
         let req_id = MessageId::new_uuid();
         let payload = b"data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
@@ -2083,7 +2083,7 @@ mod tests {
 
     // TEST506: Different data produces different checksums
     #[test]
-    fn test_compute_checksum_different_data_different_hash() {
+    fn test506_compute_checksum_different_data_different_hash() {
         let data1 = b"hello".to_vec();
         let data2 = b"world".to_vec();
 
@@ -2099,7 +2099,7 @@ mod tests {
 
     // TEST507: ReorderBuffer isolates flows by XID (routing_id) - same RID different XIDs
     #[test]
-    fn test_reorder_buffer_xid_isolation() {
+    fn test507_reorder_buffer_xid_isolation() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
         let xid_a = MessageId::new_uuid();
@@ -2127,7 +2127,7 @@ mod tests {
 
     // TEST508: ReorderBuffer rejects duplicate seq already in buffer
     #[test]
-    fn test_reorder_buffer_duplicate_buffered_seq() {
+    fn test508_reorder_buffer_duplicate_buffered_seq() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2144,7 +2144,7 @@ mod tests {
 
     // TEST509: ReorderBuffer handles large seq gaps without DOS
     #[test]
-    fn test_reorder_buffer_large_gap_rejected() {
+    fn test509_reorder_buffer_large_gap_rejected() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2169,7 +2169,7 @@ mod tests {
 
     // TEST510: ReorderBuffer with multiple interleaved gaps fills correctly
     #[test]
-    fn test_reorder_buffer_multiple_gaps() {
+    fn test510_reorder_buffer_multiple_gaps() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2202,7 +2202,7 @@ mod tests {
 
     // TEST511: ReorderBuffer cleanup with buffered frames discards them
     #[test]
-    fn test_reorder_buffer_cleanup_with_buffered_frames() {
+    fn test511_reorder_buffer_cleanup_with_buffered_frames() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2225,7 +2225,7 @@ mod tests {
 
     // TEST512: ReorderBuffer delivers burst of consecutive buffered frames
     #[test]
-    fn test_reorder_buffer_burst_delivery() {
+    fn test512_reorder_buffer_burst_delivery() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2245,7 +2245,7 @@ mod tests {
 
     // TEST513: ReorderBuffer different frame types in same flow maintain order
     #[test]
-    fn test_reorder_buffer_mixed_types_same_flow() {
+    fn test513_reorder_buffer_mixed_types_same_flow() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2270,7 +2270,7 @@ mod tests {
 
     // TEST514: ReorderBuffer with XID cleanup doesn't affect different XID
     #[test]
-    fn test_reorder_buffer_xid_cleanup_isolation() {
+    fn test514_reorder_buffer_xid_cleanup_isolation() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
         let xid_a = MessageId::new_uuid();
@@ -2295,7 +2295,7 @@ mod tests {
 
     // TEST515: ReorderBuffer overflow error includes diagnostic information
     #[test]
-    fn test_reorder_buffer_overflow_error_details() {
+    fn test515_reorder_buffer_overflow_error_details() {
         let max_buffer = 3;
         let mut buf = ReorderBuffer::new(max_buffer);
         let rid = MessageId::new_uuid();
@@ -2318,7 +2318,7 @@ mod tests {
 
     // TEST516: ReorderBuffer stale error includes diagnostic information
     #[test]
-    fn test_reorder_buffer_stale_error_details() {
+    fn test516_reorder_buffer_stale_error_details() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2338,7 +2338,7 @@ mod tests {
 
     // TEST517: FlowKey with None XID differs from Some(xid)
     #[test]
-    fn test_flow_key_none_vs_some_xid() {
+    fn test517_flow_key_none_vs_some_xid() {
         let rid = MessageId::new_uuid();
         let xid = MessageId::new_uuid();
 
@@ -2364,7 +2364,7 @@ mod tests {
 
     // TEST518: ReorderBuffer handles zero-length ready vec correctly
     #[test]
-    fn test_reorder_buffer_empty_ready_vec() {
+    fn test518_reorder_buffer_empty_ready_vec() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2376,7 +2376,7 @@ mod tests {
 
     // TEST519: ReorderBuffer state persists across accept calls
     #[test]
-    fn test_reorder_buffer_state_persistence() {
+    fn test519_reorder_buffer_state_persistence() {
         let mut buf = ReorderBuffer::new(64);
         let rid = MessageId::new_uuid();
 
@@ -2394,7 +2394,7 @@ mod tests {
 
     // TEST520: ReorderBuffer max_buffer_per_flow is per-flow not global
     #[test]
-    fn test_reorder_buffer_per_flow_limit() {
+    fn test520_reorder_buffer_per_flow_limit() {
         let mut buf = ReorderBuffer::new(2); // max 2 buffered per flow
         let rid_a = MessageId::new_uuid();
         let rid_b = MessageId::new_uuid();
@@ -2422,7 +2422,7 @@ mod tests {
 
     // TEST521: RelayNotify CBOR roundtrip preserves manifest and limits
     #[test]
-    fn test_relay_notify_cbor_roundtrip() {
+    fn test521_relay_notify_cbor_roundtrip() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let manifest = br#"{"caps":["cap:in=\"media:void\";op=convert;out=\"media:image\""#;
@@ -2448,7 +2448,7 @@ mod tests {
 
     // TEST522: RelayState CBOR roundtrip preserves payload
     #[test]
-    fn test_relay_state_cbor_roundtrip() {
+    fn test522_relay_state_cbor_roundtrip() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let state_data = br#"{"memory_mb":8192,"cpu_cores":16,"active_flows":42}"#;
@@ -2465,7 +2465,7 @@ mod tests {
 
     // TEST523: is_flow_frame returns false for RelayNotify
     #[test]
-    fn test_relay_notify_not_flow_frame() {
+    fn test523_relay_notify_not_flow_frame() {
         let manifest = b"test";
         let limits = Limits::default();
         let frame = Frame::relay_notify(manifest, &limits);
@@ -2476,7 +2476,7 @@ mod tests {
 
     // TEST524: is_flow_frame returns false for RelayState
     #[test]
-    fn test_relay_state_not_flow_frame() {
+    fn test524_relay_state_not_flow_frame() {
         let state = b"test";
         let frame = Frame::relay_state(state);
 
@@ -2486,7 +2486,7 @@ mod tests {
 
     // TEST525: RelayNotify with empty manifest is valid
     #[test]
-    fn test_relay_notify_empty_manifest() {
+    fn test525_relay_notify_empty_manifest() {
         let empty_manifest = b"";
         let limits = Limits::default();
         let frame = Frame::relay_notify(empty_manifest, &limits);
@@ -2497,7 +2497,7 @@ mod tests {
 
     // TEST526: RelayState with empty payload is valid
     #[test]
-    fn test_relay_state_empty_payload() {
+    fn test526_relay_state_empty_payload() {
         let empty_state = b"";
         let frame = Frame::relay_state(empty_state);
 
@@ -2507,7 +2507,7 @@ mod tests {
 
     // TEST527: RelayNotify with large manifest roundtrips correctly
     #[test]
-    fn test_relay_notify_large_manifest() {
+    fn test527_relay_notify_large_manifest() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         // Create a large manifest (simulating many caps)
@@ -2534,7 +2534,7 @@ mod tests {
 
     // TEST528: RelayNotify and RelayState use MessageId::Uint(0)
     #[test]
-    fn test_relay_frames_use_uint_zero_id() {
+    fn test528_relay_frames_use_uint_zero_id() {
         let notify = Frame::relay_notify(b"test", &Limits::default());
         let state = Frame::relay_state(b"test");
 

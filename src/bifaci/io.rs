@@ -1010,7 +1010,7 @@ mod tests {
 
     // TEST205: Test REQ frame encode/decode roundtrip preserves all fields
     #[test]
-    fn test_encode_decode_roundtrip() {
+    fn test205_encode_decode_roundtrip() {
         let id = MessageId::new_uuid();
         let original = Frame::req(id.clone(), r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
 
@@ -1027,7 +1027,7 @@ mod tests {
 
     // TEST206: Test HELLO frame encode/decode roundtrip preserves max_frame, max_chunk, max_reorder_buffer
     #[test]
-    fn test_hello_frame_roundtrip() {
+    fn test206_hello_frame_roundtrip() {
         let original = Frame::hello(&Limits { max_frame: 500_000, max_chunk: 50_000, max_reorder_buffer: 128 });
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
@@ -1040,7 +1040,7 @@ mod tests {
 
     // TEST207: Test ERR frame encode/decode roundtrip preserves error code and message
     #[test]
-    fn test_err_frame_roundtrip() {
+    fn test207_err_frame_roundtrip() {
         let id = MessageId::new_uuid();
         let original = Frame::err(id, "NOT_FOUND", "Cap not found");
         let bytes = encode_frame(&original).expect("encode should succeed");
@@ -1053,7 +1053,7 @@ mod tests {
 
     // TEST208: Test LOG frame encode/decode roundtrip preserves level and message
     #[test]
-    fn test_log_frame_roundtrip() {
+    fn test208_log_frame_roundtrip() {
         let id = MessageId::new_uuid();
         let original = Frame::log(id, "warn", "Something happened");
         let bytes = encode_frame(&original).expect("encode should succeed");
@@ -1069,7 +1069,7 @@ mod tests {
 
     // TEST210: Test END frame encode/decode roundtrip preserves eof marker and optional payload
     #[test]
-    fn test_end_frame_roundtrip() {
+    fn test210_end_frame_roundtrip() {
         let id = MessageId::new_uuid();
         let original = Frame::end(id.clone(), Some(b"final".to_vec()));
         let bytes = encode_frame(&original).expect("encode should succeed");
@@ -1083,7 +1083,7 @@ mod tests {
 
     // TEST211: Test HELLO with manifest encode/decode roundtrip preserves manifest bytes and limits
     #[test]
-    fn test_hello_with_manifest_roundtrip() {
+    fn test211_hello_with_manifest_roundtrip() {
         let manifest = b"{\"name\":\"Test\",\"version\":\"1.0\"}";
         let original = Frame::hello_with_manifest(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: 48 }, manifest);
         let bytes = encode_frame(&original).expect("encode should succeed");
@@ -1097,7 +1097,7 @@ mod tests {
 
     // TEST212: Test chunk_with_offset encode/decode roundtrip preserves offset, len, eof (with stream_id)
     #[test]
-    fn test_chunk_with_offset_roundtrip() {
+    fn test212_chunk_with_offset_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-test".to_string();
         let payload = b"data".to_vec();
@@ -1117,7 +1117,7 @@ mod tests {
 
     // TEST213: Test heartbeat frame encode/decode roundtrip preserves ID with no extra fields
     #[test]
-    fn test_heartbeat_roundtrip() {
+    fn test213_heartbeat_roundtrip() {
         let id = MessageId::new_uuid();
         let original = Frame::heartbeat(id.clone());
         let bytes = encode_frame(&original).expect("encode should succeed");
@@ -1131,7 +1131,7 @@ mod tests {
 
     // TEST214: Test write_frame/read_frame IO roundtrip through length-prefixed wire format
     #[test]
-    fn test_frame_io_roundtrip() {
+    fn test214_frame_io_roundtrip() {
         let limits = Limits::default();
         let id = MessageId::new_uuid();
         let original = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
@@ -1156,7 +1156,7 @@ mod tests {
 
     // TEST215: Test reading multiple sequential frames from a single buffer
     #[test]
-    fn test_multiple_frames() {
+    fn test215_multiple_frames() {
         let limits = Limits::default();
         let mut buf = Vec::new();
 
@@ -1194,7 +1194,7 @@ mod tests {
 
     // TEST216: Test write_frame rejects frames exceeding max_frame limit
     #[test]
-    fn test_frame_too_large() {
+    fn test216_frame_too_large() {
         let limits = Limits {
             max_frame: 100,
             max_chunk: 50,
@@ -1212,7 +1212,7 @@ mod tests {
 
     // TEST217: Test read_frame rejects incoming frames exceeding the negotiated max_frame limit
     #[test]
-    fn test_read_frame_too_large() {
+    fn test217_read_frame_too_large() {
         let write_limits = Limits { max_frame: 10_000_000, max_chunk: 1_000_000, ..Limits::default() };
         let read_limits = Limits { max_frame: 50, max_chunk: 50, ..Limits::default() };
 
@@ -1232,7 +1232,7 @@ mod tests {
     // Chunks from write_chunked have seq=0. SeqAssigner at the output stage assigns final seq.
     // Chunk ordering within a stream is tracked by chunk_index (chunk_index field).
     #[test]
-    fn test_write_chunked() {
+    fn test218_write_chunked() {
         let limits = Limits {
             max_frame: 1_000_000,
             max_chunk: 10, // Very small for testing
@@ -1299,7 +1299,7 @@ mod tests {
 
     // TEST219: Test write_chunked with empty data produces a single EOF chunk
     #[test]
-    fn test_write_chunked_empty_data() {
+    fn test219_write_chunked_empty_data() {
         let limits = Limits { max_frame: 1_000_000, max_chunk: 100, ..Limits::default() };
         let mut buf = Vec::new();
         let mut writer = FrameWriter::with_limits(&mut buf, limits);
@@ -1317,7 +1317,7 @@ mod tests {
 
     // TEST220: Test write_chunked with data exactly equal to max_chunk produces exactly one chunk
     #[test]
-    fn test_write_chunked_exact_fit() {
+    fn test220_write_chunked_exact_fit() {
         let limits = Limits { max_frame: 1_000_000, max_chunk: 10, ..Limits::default() };
         let mut buf = Vec::new();
         let mut writer = FrameWriter::with_limits(&mut buf, limits);
@@ -1337,7 +1337,7 @@ mod tests {
 
     // TEST221: Test read_frame returns Ok(None) on clean EOF (empty stream)
     #[test]
-    fn test_eof_handling() {
+    fn test221_eof_handling() {
         let limits = Limits::default();
         let mut cursor = Cursor::new(Vec::<u8>::new());
         let result = read_frame(&mut cursor, &limits).unwrap();
@@ -1346,7 +1346,7 @@ mod tests {
 
     // TEST222: Test read_frame handles truncated length prefix (fewer than 4 bytes available)
     #[test]
-    fn test_truncated_length_prefix() {
+    fn test222_truncated_length_prefix() {
         let limits = Limits::default();
         // Only 2 bytes, but 4 needed for length prefix
         let mut cursor = Cursor::new(vec![0x00, 0x01]);
@@ -1362,7 +1362,7 @@ mod tests {
 
     // TEST223: Test read_frame returns error on truncated frame body (length prefix says more bytes than available)
     #[test]
-    fn test_truncated_frame_body() {
+    fn test223_truncated_frame_body() {
         let limits = Limits::default();
         // Length prefix says 100 bytes, but only 5 bytes of data follow
         let mut data = vec![0x00, 0x00, 0x00, 100]; // length = 100
@@ -1374,7 +1374,7 @@ mod tests {
 
     // TEST224: Test MessageId::Uint roundtrips through encode/decode
     #[test]
-    fn test_message_id_uint() {
+    fn test224_message_id_uint() {
         let id = MessageId::Uint(12345);
         let frame = Frame::new(FrameType::Req, id.clone());
 
@@ -1386,7 +1386,7 @@ mod tests {
 
     // TEST225: Test decode_frame rejects non-map CBOR values (e.g., array, integer, string)
     #[test]
-    fn test_decode_non_map_value() {
+    fn test225_decode_non_map_value() {
         // Encode a CBOR array instead of map
         let value = ciborium::Value::Array(vec![ciborium::Value::Integer(1.into())]);
         let mut bytes = Vec::new();
@@ -1398,7 +1398,7 @@ mod tests {
 
     // TEST226: Test decode_frame rejects CBOR map missing required version field
     #[test]
-    fn test_decode_missing_version() {
+    fn test226_decode_missing_version() {
         // Build CBOR map with frame_type and id but missing version
         let map = ciborium::Value::Map(vec![
             (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(1.into())),
@@ -1413,7 +1413,7 @@ mod tests {
 
     // TEST227: Test decode_frame rejects CBOR map with invalid frame_type value
     #[test]
-    fn test_decode_invalid_frame_type_value() {
+    fn test227_decode_invalid_frame_type_value() {
         let map = ciborium::Value::Map(vec![
             (ciborium::Value::Integer(keys::VERSION.into()), ciborium::Value::Integer(1.into())),
             (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(99.into())),
@@ -1428,7 +1428,7 @@ mod tests {
 
     // TEST228: Test decode_frame rejects CBOR map missing required id field
     #[test]
-    fn test_decode_missing_id() {
+    fn test228_decode_missing_id() {
         let map = ciborium::Value::Map(vec![
             (ciborium::Value::Integer(keys::VERSION.into()), ciborium::Value::Integer(1.into())),
             (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(1.into())),
@@ -1443,7 +1443,7 @@ mod tests {
 
     // TEST229: Test FrameReader/FrameWriter set_limits updates the negotiated limits
     #[test]
-    fn test_frame_reader_writer_set_limits() {
+    fn test229_frame_reader_writer_set_limits() {
         let buf: Vec<u8> = Vec::new();
         let mut reader = FrameReader::new(Cursor::new(buf));
         let mut writer = FrameWriter::new(Vec::new());
@@ -1460,7 +1460,7 @@ mod tests {
 
     // TEST230: Test sync handshake exchanges HELLO frames and negotiates minimum limits
     #[test]
-    fn test_sync_handshake() {
+    fn test230_sync_handshake() {
         use std::thread;
 
         let (host_std, plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1492,7 +1492,7 @@ mod tests {
 
     // TEST231: Test handshake fails when peer sends non-HELLO frame
     #[test]
-    fn test_handshake_rejects_non_hello() {
+    fn test231_handshake_rejects_non_hello() {
         let (host_std, plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (plugin_write_std, host_read_std) = std::os::unix::net::UnixStream::pair().unwrap();
 
@@ -1519,7 +1519,7 @@ mod tests {
 
     // TEST232: Test handshake fails when plugin HELLO is missing required manifest
     #[test]
-    fn test_handshake_rejects_missing_manifest() {
+    fn test232_handshake_rejects_missing_manifest() {
         let (host_std, plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (plugin_write_std, host_read_std) = std::os::unix::net::UnixStream::pair().unwrap();
 
@@ -1542,7 +1542,7 @@ mod tests {
 
     // TEST233: Test binary payload with all 256 byte values roundtrips through encode/decode
     #[test]
-    fn test_binary_payload_all_byte_values() {
+    fn test233_binary_payload_all_byte_values() {
         let mut data = Vec::with_capacity(256);
         for i in 0u8..=255 {
             data.push(i);
@@ -1559,7 +1559,7 @@ mod tests {
 
     // TEST234: Test decode_frame handles garbage CBOR bytes gracefully with an error
     #[test]
-    fn test_decode_garbage_bytes() {
+    fn test234_decode_garbage_bytes() {
         let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB];
         let result = decode_frame(&garbage);
         assert!(result.is_err(), "garbage bytes must produce decode error");
@@ -1567,7 +1567,7 @@ mod tests {
 
     // TEST399a: RelayNotify encode/decode roundtrip preserves manifest and limits
     #[test]
-    fn test_relay_notify_roundtrip() {
+    fn test399a_relay_notify_roundtrip() {
         let manifest = br#"{"caps":["cap:in=\"media:void\";op=test;out=\"media:void\"","cap:in=\"media:void\";op=convert;out=\"media:void\""]}"#;
         let limits = crate::bifaci::frame::Limits { max_frame: 2_000_000, max_chunk: 128_000, ..crate::bifaci::frame::Limits::default() };
         let frame = Frame::relay_notify(manifest, &limits);
@@ -1585,7 +1585,7 @@ mod tests {
 
     // TEST400a: RelayState encode/decode roundtrip preserves resource payload
     #[test]
-    fn test_relay_state_roundtrip() {
+    fn test400a_relay_state_roundtrip() {
         let resources = b"{\"memory_mb\":8192,\"cpu_cores\":8}";
         let frame = Frame::relay_state(resources);
 
@@ -1599,7 +1599,7 @@ mod tests {
 
     // TEST389: StreamStart encode/decode roundtrip preserves stream_id and media_urn
     #[test]
-    fn test_stream_start_roundtrip() {
+    fn test389_stream_start_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-abc-123".to_string();
         let media_urn = "media:bytes".to_string();
@@ -1616,7 +1616,7 @@ mod tests {
 
     // TEST390: StreamEnd encode/decode roundtrip preserves stream_id, no media_urn
     #[test]
-    fn test_stream_end_roundtrip() {
+    fn test390_stream_end_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-xyz-789".to_string();
 
@@ -1662,7 +1662,7 @@ mod tests {
 
     // TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode
     #[test]
-    fn test_chunk_index_checksum_roundtrip() {
+    fn test440_chunk_index_checksum_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
         let payload = b"test chunk data".to_vec();
@@ -1684,7 +1684,7 @@ mod tests {
 
     // TEST441: STREAM_END frame with chunk_count roundtrips through encode/decode
     #[test]
-    fn test_stream_end_chunk_count_roundtrip() {
+    fn test441_stream_end_chunk_count_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "test-stream".to_string();
 
@@ -1701,7 +1701,7 @@ mod tests {
 
     // TEST461: write_chunked produces frames with seq=0; SeqAssigner assigns at output stage
     #[test]
-    fn test_write_chunked_seq_zero() {
+    fn test461_write_chunked_seq_zero() {
         let limits = Limits {
             max_frame: 1_000_000,
             max_chunk: 5,
@@ -1740,7 +1740,7 @@ mod tests {
 
     // TEST472: Handshake negotiates max_reorder_buffer (minimum of both sides)
     #[test]
-    fn test_handshake_negotiates_reorder_buffer() {
+    fn test472_handshake_negotiates_reorder_buffer() {
         // Simulate plugin sending HELLO with max_reorder_buffer=32
         let plugin_limits = Limits {
             max_frame: DEFAULT_MAX_FRAME,
@@ -1836,7 +1836,7 @@ mod tests {
 
     // TEST481: verify_identity succeeds with standard identity echo handler
     #[tokio::test]
-    async fn test_verify_identity_succeeds() {
+    async fn test481_verify_identity_succeeds() {
         let (host_to_plugin_std, plugin_from_host_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (plugin_to_host_std, host_from_plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
 
@@ -1864,7 +1864,7 @@ mod tests {
 
     // TEST482: verify_identity fails when plugin returns ERR on identity call
     #[tokio::test]
-    async fn test_verify_identity_fails_on_err() {
+    async fn test482_verify_identity_fails_on_err() {
         let (host_to_plugin_std, plugin_from_host_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (plugin_to_host_std, host_from_plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
 
@@ -1899,7 +1899,7 @@ mod tests {
 
     // TEST483: verify_identity fails when connection closes before response
     #[tokio::test]
-    async fn test_verify_identity_fails_on_close() {
+    async fn test483_verify_identity_fails_on_close() {
         let (host_to_plugin_std, plugin_from_host_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (plugin_to_host_std, host_from_plugin_std) = std::os::unix::net::UnixStream::pair().unwrap();
 

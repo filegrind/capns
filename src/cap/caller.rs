@@ -256,7 +256,7 @@ mod tests {
 
     // TEST156: Test creating StdinSource Data variant with byte vector
     #[test]
-    fn test_stdin_source_data_creation() {
+    fn test156_stdin_source_data_creation() {
         let data = vec![0x48, 0x65, 0x6c, 0x6c, 0x6f]; // "Hello"
         let source = StdinSource::Data(data.clone());
 
@@ -268,7 +268,7 @@ mod tests {
 
     // TEST157: Test creating StdinSource FileReference variant with all required fields
     #[test]
-    fn test_stdin_source_file_reference_creation() {
+    fn test157_stdin_source_file_reference_creation() {
         let tracked_file_id = "tracked-file-123".to_string();
         let original_path = "/path/to/original.pdf".to_string();
         let security_bookmark = vec![0x62, 0x6f, 0x6f, 0x6b]; // "book"
@@ -299,7 +299,7 @@ mod tests {
 
     // TEST158: Test StdinSource Data with empty vector stores and retrieves correctly
     #[test]
-    fn test_stdin_source_empty_data() {
+    fn test158_stdin_source_empty_data() {
         let source = StdinSource::Data(vec![]);
 
         match source {
@@ -310,7 +310,7 @@ mod tests {
 
     // TEST159: Test StdinSource Data with binary content like PNG header bytes
     #[test]
-    fn test_stdin_source_binary_content() {
+    fn test159_stdin_source_binary_content() {
         // PNG header bytes
         let png_header = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         let source = StdinSource::Data(png_header.clone());
@@ -328,7 +328,7 @@ mod tests {
 
     // TEST160: Test StdinSource Data clone creates independent copy with same data
     #[test]
-    fn test_stdin_source_clone() {
+    fn test160_stdin_source_clone() {
         let data = vec![1, 2, 3, 4, 5];
         let source = StdinSource::Data(data.clone());
         let cloned = source.clone();
@@ -341,7 +341,7 @@ mod tests {
 
     // TEST161: Test StdinSource FileReference clone creates independent copy with same fields
     #[test]
-    fn test_stdin_source_file_reference_clone() {
+    fn test161_stdin_source_file_reference_clone() {
         let source = StdinSource::FileReference {
             tracked_file_id: "test-id".to_string(),
             original_path: "/test/path.pdf".to_string(),
@@ -376,7 +376,7 @@ mod tests {
 
     // TEST162: Test StdinSource Debug format displays variant type and relevant fields
     #[test]
-    fn test_stdin_source_debug() {
+    fn test162_stdin_source_debug() {
         let data_source = StdinSource::Data(vec![1, 2, 3]);
         let debug_str = format!("{:?}", data_source);
         assert!(debug_str.contains("Data"));
@@ -395,7 +395,7 @@ mod tests {
 
     // TEST274: Test CapArgumentValue::new stores media_urn and raw byte value
     #[test]
-    fn test_cap_argument_value_new() {
+    fn test274_cap_argument_value_new() {
         let arg = CapArgumentValue::new("media:model-spec;textable;form=scalar", b"gpt-4".to_vec());
         assert_eq!(arg.media_urn, "media:model-spec;textable;form=scalar");
         assert_eq!(arg.value, b"gpt-4");
@@ -403,7 +403,7 @@ mod tests {
 
     // TEST275: Test CapArgumentValue::from_str converts string to UTF-8 bytes
     #[test]
-    fn test_cap_argument_value_from_str() {
+    fn test275_cap_argument_value_from_str() {
         let arg = CapArgumentValue::from_str("media:string;textable", "hello world");
         assert_eq!(arg.media_urn, "media:string;textable");
         assert_eq!(arg.value, b"hello world");
@@ -411,21 +411,21 @@ mod tests {
 
     // TEST276: Test CapArgumentValue::value_as_str succeeds for UTF-8 data
     #[test]
-    fn test_cap_argument_value_as_str_valid() {
+    fn test276_cap_argument_value_as_str_valid() {
         let arg = CapArgumentValue::from_str("media:string", "test");
         assert_eq!(arg.value_as_str().unwrap(), "test");
     }
 
     // TEST277: Test CapArgumentValue::value_as_str fails for non-UTF-8 binary data
     #[test]
-    fn test_cap_argument_value_as_str_invalid_utf8() {
+    fn test277_cap_argument_value_as_str_invalid_utf8() {
         let arg = CapArgumentValue::new("media:pdf;bytes", vec![0xFF, 0xFE, 0x80]);
         assert!(arg.value_as_str().is_err(), "non-UTF-8 data must fail");
     }
 
     // TEST278: Test CapArgumentValue::new with empty value stores empty vec
     #[test]
-    fn test_cap_argument_value_empty() {
+    fn test278_cap_argument_value_empty() {
         let arg = CapArgumentValue::new("media:void", vec![]);
         assert!(arg.value.is_empty());
         assert_eq!(arg.value_as_str().unwrap(), "");
@@ -433,7 +433,7 @@ mod tests {
 
     // TEST279: Test CapArgumentValue Clone produces independent copy with same data
     #[test]
-    fn test_cap_argument_value_clone() {
+    fn test279_cap_argument_value_clone() {
         let arg = CapArgumentValue::new("media:test", b"data".to_vec());
         let cloned = arg.clone();
         assert_eq!(arg.media_urn, cloned.media_urn);
@@ -442,7 +442,7 @@ mod tests {
 
     // TEST280: Test CapArgumentValue Debug format includes media_urn and value
     #[test]
-    fn test_cap_argument_value_debug() {
+    fn test280_cap_argument_value_debug() {
         let arg = CapArgumentValue::from_str("media:test", "val");
         let debug = format!("{:?}", arg);
         assert!(debug.contains("media:test"), "debug must include media_urn");
@@ -450,7 +450,7 @@ mod tests {
 
     // TEST281: Test CapArgumentValue::new accepts Into<String> for media_urn (String and &str)
     #[test]
-    fn test_cap_argument_value_into_string() {
+    fn test281_cap_argument_value_into_string() {
         let s = String::from("media:owned");
         let arg1 = CapArgumentValue::new(s, vec![]);
         assert_eq!(arg1.media_urn, "media:owned");
@@ -461,14 +461,14 @@ mod tests {
 
     // TEST282: Test CapArgumentValue::from_str with Unicode string preserves all characters
     #[test]
-    fn test_cap_argument_value_unicode() {
+    fn test282_cap_argument_value_unicode() {
         let arg = CapArgumentValue::from_str("media:string", "hello 世界 🌍");
         assert_eq!(arg.value_as_str().unwrap(), "hello 世界 🌍");
     }
 
     // TEST283: Test CapArgumentValue with large binary payload preserves all bytes
     #[test]
-    fn test_cap_argument_value_large_binary() {
+    fn test283_cap_argument_value_large_binary() {
         let data: Vec<u8> = (0u8..=255).cycle().take(10000).collect();
         let arg = CapArgumentValue::new("media:pdf;bytes", data.clone());
         assert_eq!(arg.value.len(), 10000);

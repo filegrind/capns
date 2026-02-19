@@ -667,14 +667,16 @@ mod tests {
         (registry, temp_dir)
     }
 
+    // TEST614: Verify registry creation succeeds and cache directory exists
     #[tokio::test]
-    async fn test_registry_creation() {
+    async fn test614_registry_creation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         assert!(registry.cache_dir.exists());
     }
 
+    // TEST615: Verify cache key generation is deterministic and distinct for different URNs
     #[tokio::test]
-    async fn test_cache_key_generation() {
+    async fn test615_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         let key1 = registry.cache_key("media:textable;form=scalar");
         let key2 = registry.cache_key("media:textable;form=scalar");
@@ -684,8 +686,9 @@ mod tests {
         assert_ne!(key1, key3);
     }
 
+    // TEST616: Verify StoredMediaSpec converts to MediaSpecDef preserving all fields
     #[test]
-    fn test_stored_media_spec_to_def() {
+    fn test616_stored_media_spec_to_def() {
         let spec = StoredMediaSpec {
             urn: "media:pdf;bytes".to_string(),
             media_type: "application/pdf".to_string(),
@@ -707,13 +710,111 @@ mod tests {
         assert_eq!(def.extensions, vec!["pdf".to_string()]);
     }
 
+    // TEST617: Verify normalize_media_urn produces consistent non-empty results
     #[test]
-    fn test_normalize_media_urn() {
+    fn test617_normalize_media_urn() {
         // Same URN should normalize to same value
         let urn1 = normalize_media_urn("media:string");
         let urn2 = normalize_media_urn("media:string");
         // Note: actual equality depends on TaggedUrn canonicalization
         assert!(!urn1.is_empty());
         assert!(!urn2.is_empty());
+    }
+
+    // TEST607: media_urns_for_extension returns error for unknown extension
+    #[tokio::test]
+    async fn test607_media_urns_for_extension_unknown() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+        let result = registry.media_urns_for_extension("zzzzunknown");
+        assert!(result.is_err(), "Unknown extension should return error");
+        match result.unwrap_err() {
+            MediaRegistryError::ExtensionNotFound(msg) => {
+                assert!(msg.contains("zzzzunknown"), "Error should mention the extension: {}", msg);
+            }
+            other => panic!("Expected ExtensionNotFound, got: {:?}", other),
+        }
+    }
+
+    // TEST608: media_urns_for_extension returns URNs after adding a spec with extensions
+    #[tokio::test]
+    async fn test608_media_urns_for_extension_populated() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+
+        // Add a spec with extensions
+        let spec = StoredMediaSpec {
+            urn: "media:pdf;bytes".to_string(),
+            media_type: "application/pdf".to_string(),
+            title: "PDF Document".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            validation: None,
+            metadata: None,
+            extensions: vec!["pdf".to_string()],
+        };
+
+        // Manually insert into cache and update index
+        {
+            let mut cached = registry.cached_specs.lock().unwrap();
+            cached.insert("media:bytes;pdf".to_string(), spec.clone());
+        }
+        registry.update_extension_index(&spec);
+
+        let urns = registry.media_urns_for_extension("pdf").expect("pdf should be found");
+        assert!(!urns.is_empty(), "Should have at least one URN for pdf");
+        assert!(urns.iter().any(|u| u.contains("pdf")), "URNs should contain pdf: {:?}", urns);
+
+        // Case-insensitive
+        let urns_upper = registry.media_urns_for_extension("PDF").expect("PDF should work case-insensitively");
+        assert_eq!(urns, urns_upper);
+    }
+
+    // TEST609: get_extension_mappings returns all registered extension->URN pairs
+    #[tokio::test]
+    async fn test609_get_extension_mappings() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+
+        // Add two specs with different extensions
+        for (urn, ext) in &[("media:pdf;bytes", "pdf"), ("media:epub;bytes", "epub")] {
+            let spec = StoredMediaSpec {
+                urn: urn.to_string(),
+                media_type: "application/octet-stream".to_string(),
+                title: "Test".to_string(),
+                profile_uri: None, schema: None, description: None,
+                validation: None, metadata: None,
+                extensions: vec![ext.to_string()],
+            };
+            registry.cached_specs.lock().unwrap().insert(urn.to_string(), spec.clone());
+            registry.update_extension_index(&spec);
+        }
+
+        let mappings = registry.get_extension_mappings().expect("should return mappings");
+        let ext_names: Vec<String> = mappings.iter().map(|(k, _)| k.clone()).collect();
+        assert!(ext_names.contains(&"pdf".to_string()), "Should contain pdf");
+        assert!(ext_names.contains(&"epub".to_string()), "Should contain epub");
+    }
+
+    // TEST610: get_cached_spec returns None for unknown and Some for known
+    #[tokio::test]
+    async fn test610_get_cached_spec() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+
+        // Unknown spec
+        assert!(registry.get_cached_spec("media:nonexistent;xyzzy").is_none());
+
+        // Add a spec and verify we can retrieve it
+        let spec = StoredMediaSpec {
+            urn: "media:test-spec;textable".to_string(),
+            media_type: "text/plain".to_string(),
+            title: "Test Spec".to_string(),
+            profile_uri: None, schema: None, description: None,
+            validation: None, metadata: None, extensions: vec![],
+        };
+        let normalized = normalize_media_urn(&spec.urn);
+        registry.cached_specs.lock().unwrap().insert(normalized.clone(), spec);
+
+        let retrieved = registry.get_cached_spec("media:test-spec;textable");
+        assert!(retrieved.is_some(), "Should find spec by URN");
+        assert_eq!(retrieved.unwrap().title, "Test Spec");
     }
 }

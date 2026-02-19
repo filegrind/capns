@@ -633,7 +633,7 @@ mod tests {
 
     // TEST088: Test resolving string media URN from registry returns correct media type and profile
     #[tokio::test]
-    async fn test_resolve_from_registry_str() {
+    async fn test088_resolve_from_registry_str() {
         let registry = test_registry().await;
         let resolved = resolve_media_urn("media:textable;form=scalar", None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "text/plain");
@@ -643,7 +643,7 @@ mod tests {
 
     // TEST089: Test resolving object media URN from registry returns JSON media type
     #[tokio::test]
-    async fn test_resolve_from_registry_obj() {
+    async fn test089_resolve_from_registry_obj() {
         let registry = test_registry().await;
         let resolved = resolve_media_urn("media:form=map;textable", None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/json");
@@ -651,7 +651,7 @@ mod tests {
 
     // TEST090: Test resolving binary media URN from registry returns octet-stream and is_binary true
     #[tokio::test]
-    async fn test_resolve_from_registry_binary() {
+    async fn test090_resolve_from_registry_binary() {
         let registry = test_registry().await;
         let resolved = resolve_media_urn("media:bytes", None, &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/octet-stream");
@@ -660,7 +660,7 @@ mod tests {
 
     // TEST091: Test resolving custom media URN from local media_specs takes precedence over registry
     #[tokio::test]
-    async fn test_resolve_custom_media_spec() {
+    async fn test091_resolve_custom_media_spec() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -689,7 +689,7 @@ mod tests {
 
     // TEST092: Test resolving custom object form media spec with schema from local media_specs
     #[tokio::test]
-    async fn test_resolve_custom_with_schema() {
+    async fn test092_resolve_custom_with_schema() {
         let registry = test_registry().await;
         let schema = serde_json::json!({
             "type": "object",
@@ -723,7 +723,7 @@ mod tests {
 
     // TEST093: Test resolving unknown media URN fails with UnresolvableMediaUrn error
     #[tokio::test]
-    async fn test_resolve_unresolvable_fails_hard() {
+    async fn test093_resolve_unresolvable_fails_hard() {
         let registry = test_registry().await;
         // URN not in local media_specs and not in registry
         let result = resolve_media_urn("media:completely-unknown-urn-not-in-registry", None, &registry).await;
@@ -737,7 +737,7 @@ mod tests {
 
     // TEST094: Test local media_specs definition overrides registry definition for same URN
     #[tokio::test]
-    async fn test_local_overrides_registry() {
+    async fn test094_local_overrides_registry() {
         let registry = test_registry().await;
         // Custom definition in media_specs takes precedence over registry
         let media_specs = create_media_specs(vec![
@@ -769,7 +769,7 @@ mod tests {
 
     // TEST095: Test MediaSpecDef serializes with required fields and skips None fields
     #[test]
-    fn test_media_spec_def_serialize() {
+    fn test095_media_spec_def_serialize() {
         let def = MediaSpecDef {
             urn: "media:test;json".to_string(),
             media_type: "application/json".to_string(),
@@ -794,7 +794,7 @@ mod tests {
 
     // TEST096: Test deserializing MediaSpecDef from JSON object
     #[test]
-    fn test_media_spec_def_deserialize() {
+    fn test096_media_spec_def_deserialize() {
         let json = r#"{"urn":"media:test;json","media_type":"application/json","title":"Test"}"#;
         let def: MediaSpecDef = serde_json::from_str(json).unwrap();
         assert_eq!(def.urn, "media:test;json");
@@ -809,7 +809,7 @@ mod tests {
 
     // TEST097: Test duplicate URN validation catches duplicates
     #[test]
-    fn test_validate_no_duplicate_urns_catches_duplicates() {
+    fn test097_validate_no_duplicate_urns_catches_duplicates() {
         let media_specs = vec![
             MediaSpecDef::new("media:dup;json", "application/json", "First"),
             MediaSpecDef::new("media:dup;json", "application/json", "Second"), // duplicate
@@ -825,7 +825,7 @@ mod tests {
 
     // TEST098: Test duplicate URN validation passes for unique URNs
     #[test]
-    fn test_validate_no_duplicate_urns_passes_for_unique() {
+    fn test098_validate_no_duplicate_urns_passes_for_unique() {
         let media_specs = vec![
             MediaSpecDef::new("media:first;json", "application/json", "First"),
             MediaSpecDef::new("media:second;json", "application/json", "Second"),
@@ -840,7 +840,7 @@ mod tests {
 
     // TEST099: Test ResolvedMediaSpec is_binary returns true for bytes media URN
     #[test]
-    fn test_resolved_is_binary() {
+    fn test099_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
             media_urn: "media:bytes".to_string(),
             media_type: "application/octet-stream".to_string(),
@@ -859,7 +859,7 @@ mod tests {
 
     // TEST100: Test ResolvedMediaSpec is_map returns true for form=map media URN
     #[test]
-    fn test_resolved_is_map() {
+    fn test100_resolved_is_map() {
         let resolved = ResolvedMediaSpec {
             media_urn: "media:textable;form=map".to_string(),
             media_type: "application/json".to_string(),
@@ -879,7 +879,7 @@ mod tests {
 
     // TEST101: Test ResolvedMediaSpec is_scalar returns true for form=scalar media URN
     #[test]
-    fn test_resolved_is_scalar() {
+    fn test101_resolved_is_scalar() {
         let resolved = ResolvedMediaSpec {
             media_urn: "media:textable;form=scalar".to_string(),
             media_type: "text/plain".to_string(),
@@ -898,7 +898,7 @@ mod tests {
 
     // TEST102: Test ResolvedMediaSpec is_list returns true for form=list media URN
     #[test]
-    fn test_resolved_is_list() {
+    fn test102_resolved_is_list() {
         let resolved = ResolvedMediaSpec {
             media_urn: "media:textable;form=list".to_string(),
             media_type: "application/json".to_string(),
@@ -917,7 +917,7 @@ mod tests {
 
     // TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present
     #[test]
-    fn test_resolved_is_json() {
+    fn test103_resolved_is_json() {
         let resolved = ResolvedMediaSpec {
             media_urn: "media:json;textable;form=map".to_string(),
             media_type: "application/json".to_string(),
@@ -936,7 +936,7 @@ mod tests {
 
     // TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present
     #[test]
-    fn test_resolved_is_text() {
+    fn test104_resolved_is_text() {
         let resolved = ResolvedMediaSpec {
             media_urn: "media:textable".to_string(),
             media_type: "text/plain".to_string(),
@@ -959,7 +959,7 @@ mod tests {
 
     // TEST105: Test metadata propagates from media spec def to resolved media spec
     #[tokio::test]
-    async fn test_metadata_propagation() {
+    async fn test105_metadata_propagation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -987,7 +987,7 @@ mod tests {
 
     // TEST106: Test metadata and validation can coexist in media spec definition
     #[tokio::test]
-    async fn test_metadata_with_validation() {
+    async fn test106_metadata_with_validation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -1033,7 +1033,7 @@ mod tests {
 
     // TEST107: Test extensions field propagates from media spec def to resolved
     #[tokio::test]
-    async fn test_extensions_propagation() {
+    async fn test107_extensions_propagation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -1055,7 +1055,7 @@ mod tests {
 
     // TEST108: Test extensions serializes/deserializes correctly in MediaSpecDef
     #[test]
-    fn test_extensions_serialization() {
+    fn test108_extensions_serialization() {
         let def = MediaSpecDef {
             urn: "media:json-data".to_string(),
             media_type: "application/json".to_string(),
@@ -1077,7 +1077,7 @@ mod tests {
 
     // TEST109: Test extensions can coexist with metadata and validation
     #[tokio::test]
-    async fn test_extensions_with_metadata_and_validation() {
+    async fn test109_extensions_with_metadata_and_validation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -1112,7 +1112,7 @@ mod tests {
 
     // TEST110: Test multiple extensions in a media spec
     #[tokio::test]
-    async fn test_multiple_extensions() {
+    async fn test110_multiple_extensions() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {

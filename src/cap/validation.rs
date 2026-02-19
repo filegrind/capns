@@ -1062,7 +1062,7 @@ mod tests {
 
     // TEST051: Test input validation succeeds with valid positional argument
     #[tokio::test]
-    async fn test_input_validation_success() {
+    async fn test051_input_validation_success() {
         let (schema_registry, media_registry) = test_registries().await;
         let validator = InputValidator::new(schema_registry, media_registry);
 
@@ -1083,7 +1083,7 @@ mod tests {
 
     // TEST052: Test input validation fails with MissingRequiredArgument when required arg missing
     #[tokio::test]
-    async fn test_input_validation_missing_required() {
+    async fn test052_input_validation_missing_required() {
         let (schema_registry, media_registry) = test_registries().await;
         let validator = InputValidator::new(schema_registry, media_registry);
 
@@ -1111,7 +1111,7 @@ mod tests {
 
     // TEST053: Test input validation fails with InvalidArgumentType when wrong type provided
     #[tokio::test]
-    async fn test_input_validation_wrong_type() {
+    async fn test053_input_validation_wrong_type() {
         let (schema_registry, media_registry) = test_registries().await;
         let validator = InputValidator::new(schema_registry, media_registry);
 
@@ -1153,7 +1153,7 @@ mod tests {
 
     // TEST054: XV5 - Test inline media spec redefinition of existing registry spec is detected and rejected
     #[tokio::test]
-    async fn test_xv5_inline_spec_redefinition_detected() {
+    async fn test054_xv5_inline_spec_redefinition_detected() {
         // Create a cap that tries to redefine a standard media spec (MEDIA_STRING)
         let (_schema_registry, media_registry) = test_registries().await;
 
@@ -1187,7 +1187,7 @@ mod tests {
 
     // TEST055: XV5 - Test new inline media spec (not in registry) is allowed
     #[tokio::test]
-    async fn test_xv5_new_inline_spec_allowed() {
+    async fn test055_xv5_new_inline_spec_allowed() {
         // Create a cap with a new media spec that doesn't exist in the registry
         let (_schema_registry, media_registry) = test_registries().await;
 
@@ -1217,7 +1217,7 @@ mod tests {
 
     // TEST056: XV5 - Test empty media_specs (no inline specs) passes XV5 validation
     #[tokio::test]
-    async fn test_xv5_empty_media_specs_allowed() {
+    async fn test056_xv5_empty_media_specs_allowed() {
         // A cap without inline media_specs should pass XV5 validation
         let (_schema_registry, media_registry) = test_registries().await;
 
@@ -1226,6 +1226,189 @@ mod tests {
 
         let result = validate_no_inline_media_spec_redefinition(&cap, &media_registry).await;
         assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // validate_cap_args RULE tests (TEST578-TEST590)
+    // =========================================================================
+
+    fn make_test_cap_with_args(args: Vec<CapArg>) -> Cap {
+        let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+        for arg in args {
+            cap.add_arg(arg);
+        }
+        cap
+    }
+
+    // TEST578: RULE1 - duplicate media_urns rejected
+    #[test]
+    fn test578_rule1_duplicate_media_urns() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Position { position: 0 }]),
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Position { position: 1 }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE1"), "Error should mention RULE1: {}", err);
+    }
+
+    // TEST579: RULE2 - empty sources rejected
+    #[test]
+    fn test579_rule2_empty_sources() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![]), // empty sources
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE2"), "Error should mention RULE2: {}", err);
+    }
+
+    // TEST580: RULE3 - multiple stdin sources with different URNs rejected
+    #[test]
+    fn test580_rule3_different_stdin_urns() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Stdin { stdin: "media:txt;textable".to_string() }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Stdin { stdin: "media:bytes".to_string() }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE3"), "Error should mention RULE3: {}", err);
+    }
+
+    // TEST581: RULE3 - multiple stdin sources with same URN is OK
+    #[test]
+    fn test581_rule3_same_stdin_urns_ok() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Stdin { stdin: "media:txt;textable".to_string() }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Stdin { stdin: "media:txt;textable".to_string() }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_ok(), "Same stdin URNs should be allowed: {:?}", result.err());
+    }
+
+    // TEST582: RULE4 - duplicate source type in single arg rejected
+    #[test]
+    fn test582_rule4_duplicate_source_type() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![
+                ArgSource::Position { position: 0 },
+                ArgSource::Position { position: 1 }, // same source type twice
+            ]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE4"), "Error should mention RULE4: {}", err);
+    }
+
+    // TEST583: RULE5 - duplicate position across args rejected
+    #[test]
+    fn test583_rule5_duplicate_position() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Position { position: 0 }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Position { position: 0 }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE5"), "Error should mention RULE5: {}", err);
+    }
+
+    // TEST584: RULE6 - position gap rejected (0, 2 without 1)
+    #[test]
+    fn test584_rule6_position_gap() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Position { position: 0 }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Position { position: 2 }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE6"), "Error should mention RULE6: {}", err);
+    }
+
+    // TEST585: RULE6 - sequential positions (0, 1, 2) pass
+    #[test]
+    fn test585_rule6_sequential_ok() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::Position { position: 0 }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Position { position: 1 }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_ok(), "Sequential positions should pass: {:?}", result.err());
+    }
+
+    // TEST586: RULE7 - arg with both position and cli_flag rejected
+    #[test]
+    fn test586_rule7_position_and_cli_flag() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![
+                ArgSource::Position { position: 0 },
+                ArgSource::CliFlag { cli_flag: "--file".to_string() },
+            ]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE7"), "Error should mention RULE7: {}", err);
+    }
+
+    // TEST587: RULE9 - duplicate cli_flag across args rejected
+    #[test]
+    fn test587_rule9_duplicate_cli_flag() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::CliFlag { cli_flag: "--file".to_string() }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::CliFlag { cli_flag: "--file".to_string() }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("RULE9"), "Error should mention RULE9: {}", err);
+    }
+
+    // TEST588: RULE10 - reserved cli_flags rejected
+    #[test]
+    fn test588_rule10_reserved_cli_flags() {
+        for &reserved in RESERVED_CLI_FLAGS {
+            let cap = make_test_cap_with_args(vec![
+                CapArg::new(MEDIA_STRING, true, vec![ArgSource::CliFlag { cli_flag: reserved.to_string() }]),
+            ]);
+            let result = validate_cap_args(&cap);
+            assert!(result.is_err(), "Reserved flag '{}' should be rejected", reserved);
+            let err = format!("{}", result.unwrap_err());
+            assert!(err.contains("RULE10"), "Error for '{}' should mention RULE10: {}", reserved, err);
+        }
+    }
+
+    // TEST589: valid cap args with mixed sources pass all rules
+    #[test]
+    fn test589_all_rules_pass() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![
+                ArgSource::Position { position: 0 },
+                ArgSource::Stdin { stdin: "media:txt;textable".to_string() },
+            ]),
+            CapArg::new(MEDIA_INTEGER, false, vec![
+                ArgSource::Position { position: 1 },
+            ]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_ok(), "Valid cap args should pass: {:?}", result.err());
+    }
+
+    // TEST590: validate_cap_args accepts cap with only cli_flag sources (no positions)
+    #[test]
+    fn test590_cli_flag_only_args() {
+        let cap = make_test_cap_with_args(vec![
+            CapArg::new(MEDIA_STRING, true, vec![ArgSource::CliFlag { cli_flag: "--input".to_string() }]),
+            CapArg::new(MEDIA_INTEGER, false, vec![ArgSource::CliFlag { cli_flag: "--count".to_string() }]),
+        ]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_ok(), "CLI-flag-only args should pass: {:?}", result.err());
     }
 }
 
