@@ -294,7 +294,6 @@ impl MediaUrnRegistry {
                     cached_specs.insert(normalized_urn.clone(), spec);
                 }
 
-                eprintln!("Standard {}", normalized_urn);
             } else {
                 // Spec already cached, but still need to ensure extension index is up to date
                 if let Ok(cached_specs) = self.cached_specs.lock() {

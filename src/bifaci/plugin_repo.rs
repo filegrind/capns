@@ -234,8 +234,6 @@ impl PluginRepo {
 
     /// Fetch plugin registry from a URL
     async fn fetch_registry(&self, repo_url: &str) -> Result<PluginRegistryResponse> {
-        eprintln!("[DEBUG] Fetching plugin registry from: {}", repo_url);
-
         let response = self.http_client
             .get(repo_url)
             .send()
@@ -251,7 +249,6 @@ impl PluginRepo {
             .await
             .map_err(|e| PluginRepoError::ParseError(format!("Failed to parse from {}: {}", repo_url, e)))?;
 
-        eprintln!("[INFO] Fetched {} plugins from {}", registry.plugins.len(), repo_url);
         Ok(registry)
     }
 
@@ -288,7 +285,7 @@ impl PluginRepo {
                     Self::update_cache(&mut caches, repo_url, registry);
                 }
                 Err(e) => {
-                    eprintln!("[WARN] Failed to sync plugin repo {}: {}", repo_url, e);
+                    eprintln!("Failed to sync plugin repo {}: {}", repo_url, e);
                     // Continue with other repos
                 }
             }
