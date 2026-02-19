@@ -593,7 +593,6 @@ impl CapMatrix {
                             }
                         }
                     }
-                    break; // Found a matching capability for this host, check next host
                 }
             }
         }
@@ -751,7 +750,6 @@ impl CapSet for CompositeCapSet {
                                     }
                                 }
                             }
-                            break;
                         }
                     }
                 }
@@ -925,7 +923,6 @@ impl CapBlock {
                             }
                         }
                     }
-                    break; // Found match for this entry, check next entry
                 }
             }
         }
