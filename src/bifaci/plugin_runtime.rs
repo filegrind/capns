@@ -215,6 +215,64 @@ impl InputPackage {
         }
         Ok(all)
     }
+
+    /// Collect each stream individually into a Vec of (media_urn, bytes) pairs.
+    /// Each stream's bytes are accumulated separately — NOT concatenated.
+    /// Use `find_stream()` helpers to retrieve args by URN pattern matching.
+    pub fn collect_streams(self) -> Result<Vec<(String, Vec<u8>)>, StreamError> {
+        let mut result = Vec::new();
+        for stream_result in self {
+            let stream = stream_result?;
+            let urn = stream.media_urn().to_string();
+            let bytes = stream.collect_bytes()?;
+            result.push((urn, bytes));
+        }
+        Ok(result)
+    }
+}
+
+/// Find a stream's bytes by exact URN equivalence.
+///
+/// Uses `MediaUrn::is_equivalent()` — matches only if both URNs have the
+/// exact same tag set (order-independent). Both the caller and the plugin
+/// know the arg media URNs from the cap definition, so this is always an
+/// exact match — never a subsumption/pattern match.
+///
+/// The `media_urn` parameter must be the FULL media URN from the cap arg
+/// definition (e.g., `"media:model-spec;textable;form=scalar"`).
+pub fn find_stream<'a>(streams: &'a [(String, Vec<u8>)], media_urn: &str) -> Option<&'a [u8]> {
+    let target = match crate::MediaUrn::from_string(media_urn) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
+    streams.iter().find_map(|(urn_str, bytes)| {
+        let urn = crate::MediaUrn::from_string(urn_str).ok()?;
+        if target.is_equivalent(&urn).unwrap_or(false) {
+            Some(bytes.as_slice())
+        } else {
+            None
+        }
+    })
+}
+
+/// Like `find_stream` but returns a UTF-8 string.
+pub fn find_stream_str(streams: &[(String, Vec<u8>)], media_urn: &str) -> Option<String> {
+    find_stream(streams, media_urn).and_then(|b| String::from_utf8(b.to_vec()).ok())
+}
+
+/// Like `find_stream` but fails hard if not found.
+pub fn require_stream<'a>(streams: &'a [(String, Vec<u8>)], media_urn: &str) -> Result<&'a [u8], StreamError> {
+    find_stream(streams, media_urn).ok_or_else(|| StreamError::Protocol(
+        format!("Missing required arg: {}", media_urn)
+    ))
+}
+
+/// Like `require_stream` but returns a UTF-8 string.
+pub fn require_stream_str(streams: &[(String, Vec<u8>)], media_urn: &str) -> Result<String, StreamError> {
+    let bytes = require_stream(streams, media_urn)?;
+    String::from_utf8(bytes.to_vec()).map_err(|e| StreamError::Decode(
+        format!("Arg '{}' is not valid UTF-8: {}", media_urn, e)
+    ))
 }
 
 impl Iterator for InputPackage {
@@ -2508,10 +2566,14 @@ impl PluginRuntime {
 
             match frame.frame_type {
                 FrameType::Req => {
+                    // Extract routing_id (XID) FIRST — all error paths must include it
+                    let routing_id = frame.routing_id.clone();
+
                     let cap_urn = match frame.cap.as_ref() {
                         Some(urn) => urn.clone(),
                         None => {
-                            let err_frame = Frame::err(frame.id, "INVALID_REQUEST", "Request missing cap URN");
+                            let mut err_frame = Frame::err(frame.id, "INVALID_REQUEST", "Request missing cap URN");
+                            err_frame.routing_id = routing_id;
                             let _ = output_tx.send(err_frame);
                             continue;
                         }
@@ -2520,22 +2582,23 @@ impl PluginRuntime {
                     let factory = match self.find_handler(&cap_urn) {
                         Some(f) => f,
                         None => {
-                            let err_frame = Frame::err(frame.id.clone(), "NO_HANDLER",
+                            let mut err_frame = Frame::err(frame.id.clone(), "NO_HANDLER",
                                 &format!("No handler registered for cap: {}", cap_urn));
+                            err_frame.routing_id = routing_id;
                             let _ = output_tx.send(err_frame);
                             continue;
                         }
                     };
 
                     if frame.payload.as_ref().map_or(false, |p| !p.is_empty()) {
-                        let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
+                        let mut err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
                             "REQ frame must have empty payload - use STREAM_START for arguments");
+                        err_frame.routing_id = routing_id;
                         let _ = output_tx.send(err_frame);
                         continue;
                     }
 
                     let request_id = frame.id.clone();
-                    let routing_id = frame.routing_id.clone();
 
                     // Create channel for streaming frames to handler
                     let (raw_tx, raw_rx) = crossbeam_channel::unbounded();

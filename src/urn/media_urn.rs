@@ -264,6 +264,18 @@ impl MediaUrn {
         self.0.accepts(&instance.0).map_err(MediaUrnError::Match)
     }
 
+    /// Check if two media URNs have the exact same tag set (order-independent).
+    /// Equivalent to `self.accepts(other) && other.accepts(self)`.
+    pub fn is_equivalent(&self, other: &MediaUrn) -> Result<bool, MediaUrnError> {
+        self.0.is_equivalent(&other.0).map_err(MediaUrnError::Match)
+    }
+
+    /// String variant of `is_equivalent`.
+    pub fn is_equivalent_str(&self, other_str: &str) -> Result<bool, MediaUrnError> {
+        let other = MediaUrn::from_string(other_str)?;
+        self.is_equivalent(&other)
+    }
+
     /// Get the specificity of this media URN
     ///
     /// Specificity is the count of non-wildcard tags.

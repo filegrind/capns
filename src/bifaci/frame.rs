@@ -145,6 +145,15 @@ impl MessageId {
     }
 }
 
+impl std::fmt::Display for MessageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MessageId::Uuid(bytes) => write!(f, "{}", uuid::Uuid::from_bytes(*bytes)),
+            MessageId::Uint(n) => write!(f, "{}", n),
+        }
+    }
+}
+
 impl Default for MessageId {
     fn default() -> Self {
         MessageId::new_uuid()

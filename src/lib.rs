@@ -66,7 +66,7 @@ pub use bifaci::io::{
     verify_identity,
 };
 pub use bifaci::manifest::*;
-pub use bifaci::plugin_runtime::{PluginRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, PeerCall, StreamError, Request, OpFactory, IdentityOp, DiscardOp, WET_KEY_REQUEST};
+pub use bifaci::plugin_runtime::{PluginRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, PeerCall, StreamError, Request, OpFactory, IdentityOp, DiscardOp, WET_KEY_REQUEST, find_stream, find_stream_str, require_stream, require_stream_str};
 
 // Re-export ops crate types used by Op-based handlers
 pub use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
