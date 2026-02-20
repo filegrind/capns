@@ -449,8 +449,8 @@ impl RelaySwitch {
         // We need to register the response channel BEFORE sending, because
         // responses might arrive immediately
 
-        // Find master that can handle this cap
-        let dest_idx = self.find_master_for_cap(cap_urn).ok_or_else(|| {
+        // Find master that can handle this cap (no preference for internal requests)
+        let dest_idx = self.find_master_for_cap(cap_urn, None).ok_or_else(|| {
             RelaySwitchError::NoHandler(cap_urn.to_string())
         })?;
 
@@ -669,7 +669,16 @@ impl RelaySwitch {
     ///
     /// REQ frames: Assigned XID if absent, routed by cap URN.
     /// Continuation frames: Routed by (XID, RID) pair.
-    pub fn send_to_master(&mut self, mut frame: Frame) -> Result<(), RelaySwitchError> {
+    /// Send a frame to the appropriate master.
+    ///
+    /// `preferred_cap`: when `Some`, uses `is_comparable` routing and prefers
+    /// the master whose registered cap is equivalent to this URN.
+    /// When `None`, uses standard `accepts` + closest-specificity routing.
+    pub fn send_to_master(
+        &mut self,
+        mut frame: Frame,
+        preferred_cap: Option<&str>,
+    ) -> Result<(), RelaySwitchError> {
         eprintln!("[RelaySwitch.send_to_master] Received {:?} (id={:?})", frame.frame_type, frame.id);
         match frame.frame_type {
             FrameType::Req => {
@@ -679,7 +688,7 @@ impl RelaySwitch {
                 eprintln!("[RelaySwitch.send_to_master] REQ for cap: {}", cap_urn);
 
                 // Find master that can handle this cap
-                let dest_idx = self.find_master_for_cap(cap_urn).ok_or_else(|| {
+                let dest_idx = self.find_master_for_cap(cap_urn, preferred_cap).ok_or_else(|| {
                     eprintln!("[RelaySwitch.send_to_master] No handler found for cap: {}", cap_urn);
                     RelaySwitchError::NoHandler(cap_urn.clone())
                 })?;
@@ -845,10 +854,24 @@ impl RelaySwitch {
     // =========================================================================
 
     /// Find which master handles a given cap URN.
-    /// Prefers the match whose specificity is CLOSEST to the request's specificity.
-    /// This ensures generic requests (e.g., identity) route to generic handlers,
-    /// and specific requests route to specific handlers.
-    fn find_master_for_cap(&self, cap_urn: &str) -> Option<usize> {
+    ///
+    /// ## Without preference (`preferred_cap = None`)
+    ///
+    /// Uses `request.accepts(registered)` with closest-specificity matching.
+    /// This is the standard routing mode: specific requests route to specific
+    /// handlers, generic requests route to generic handlers.
+    ///
+    /// ## With preference (`preferred_cap = Some(cap_urn)`)
+    ///
+    /// Uses `is_comparable` (order-theoretic: `a.accepts(b) || b.accepts(a)`)
+    /// to find ALL masters on the same specialization chain as the request.
+    /// This is broader than `accepts` — it also finds masters whose caps are
+    /// more general than the request.
+    ///
+    /// Among the comparable matches, the master whose registered cap is
+    /// equivalent to the preferred cap wins. If no equivalent match, falls
+    /// back to closest-specificity among the comparable set.
+    fn find_master_for_cap(&self, cap_urn: &str, preferred_cap: Option<&str>) -> Option<usize> {
         let request_urn = match crate::CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
@@ -856,15 +879,30 @@ impl RelaySwitch {
 
         let request_specificity = request_urn.specificity();
 
-        // Collect ALL matching masters with their specificity scores
-        let mut matches: Vec<(usize, usize)> = Vec::new(); // (master_idx, specificity)
+        // Parse preferred cap URN if provided
+        let preferred_urn = preferred_cap.and_then(|p| crate::CapUrn::from_string(p).ok());
+
+        // Collect ALL matching masters with their specificity scores.
+        // When preferred_cap is set, use is_comparable (broader); otherwise accepts (standard).
+        let mut matches: Vec<(usize, usize, bool)> = Vec::new(); // (master_idx, specificity, is_preferred)
 
         for (registered_cap, master_idx) in &self.cap_table {
             if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
-                // Request is pattern, registered cap is instance
-                if request_urn.accepts(&registered_urn) {
+                let is_match = if preferred_urn.is_some() {
+                    // Comparable: either side accepts the other (broader match set)
+                    request_urn.accepts(&registered_urn) || registered_urn.accepts(&request_urn)
+                } else {
+                    // Standard: request is pattern, registered cap is instance
+                    request_urn.accepts(&registered_urn)
+                };
+
+                if is_match {
                     let specificity = registered_urn.specificity();
-                    matches.push((*master_idx, specificity));
+                    // Check if this registered cap is equivalent to the preferred cap
+                    let is_preferred = preferred_urn.as_ref().map_or(false, |pref| {
+                        pref.accepts(&registered_urn) && registered_urn.accepts(pref)
+                    });
+                    matches.push((*master_idx, specificity, is_preferred));
                 }
             }
         }
@@ -873,17 +911,21 @@ impl RelaySwitch {
             return None;
         }
 
-        // Prefer the match with specificity closest to the request's specificity.
-        // Ties broken by first match (deterministic).
+        // If any match is preferred, pick the first preferred match.
+        if let Some(&(idx, _, _)) = matches.iter().find(|(_, _, pref)| *pref) {
+            return Some(idx);
+        }
+
+        // Fall back to closest-specificity (ties broken by first match).
         let min_distance = matches.iter()
-            .map(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs())
+            .map(|(_, s, _)| (*s as isize - request_specificity as isize).unsigned_abs())
             .min()
             .unwrap();
 
         matches
             .iter()
-            .find(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs() == min_distance)
-            .map(|(idx, _)| *idx)
+            .find(|(_, s, _)| (*s as isize - request_specificity as isize).unsigned_abs() == min_distance)
+            .map(|(idx, _, _)| *idx)
     }
 
     /// Handle a frame arriving from a master (plugin → engine direction).
@@ -904,8 +946,8 @@ impl RelaySwitch {
                 eprintln!("[RelaySwitch.handle_master_frame] Peer REQ from master {} (id={:?}) for cap: {}",
                           source_idx, frame.id, cap_urn);
 
-                // Find destination master
-                let dest_idx = self.find_master_for_cap(cap_urn).ok_or_else(|| {
+                // Find destination master (no preference for peer requests)
+                let dest_idx = self.find_master_for_cap(cap_urn, None).ok_or_else(|| {
                     eprintln!("[RelaySwitch.handle_master_frame] No handler found for peer cap: {}", cap_urn);
                     RelaySwitchError::NoHandler(cap_urn.clone())
                 })?;
@@ -1372,9 +1414,9 @@ mod tests {
         ]).unwrap();
 
         // Verify routing (caps already populated during construction)
-        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:"), Some(0));
-        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=double;out=\"media:void\""), Some(1));
-        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\""), None);
+        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:", None), Some(0));
+        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=double;out=\"media:void\"", None), Some(1));
+        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\"", None), None);
 
         // Verify aggregate capabilities (plain JSON array)
         let cap_list: Vec<String> = serde_json::from_slice(switch.capabilities()).unwrap();
@@ -1418,9 +1460,9 @@ mod tests {
         // Send REQ + END (caps already populated from construction)
         let req_id = MessageId::Uint(1);
         let req = Frame::req(req_id.clone(), "cap:in=media:;out=media:", vec![1, 2, 3], "text/plain");
-        switch.send_to_master(req).unwrap();
+        switch.send_to_master(req, None).unwrap();
         let end = Frame::end(req_id.clone(), None);
-        switch.send_to_master(end).unwrap();
+        switch.send_to_master(end, None).unwrap();
 
         let response = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(response.frame_type, FrameType::End);
@@ -1488,14 +1530,14 @@ mod tests {
 
         // Caps already populated from construction — send requests directly
         let req1_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req1_id.clone(), "cap:in=media:;out=media:", vec![], "text/plain")).unwrap();
-        switch.send_to_master(Frame::end(req1_id, None)).unwrap();
+        switch.send_to_master(Frame::req(req1_id.clone(), "cap:in=media:;out=media:", vec![], "text/plain"), None).unwrap();
+        switch.send_to_master(Frame::end(req1_id, None), None).unwrap();
         let resp1 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![1]));
 
         let req2_id = MessageId::Uint(2);
-        switch.send_to_master(Frame::req(req2_id.clone(), "cap:in=\"media:void\";op=double;out=\"media:void\"", vec![], "text/plain")).unwrap();
-        switch.send_to_master(Frame::end(req2_id, None)).unwrap();
+        switch.send_to_master(Frame::req(req2_id.clone(), "cap:in=\"media:void\";op=double;out=\"media:void\"", vec![], "text/plain"), None).unwrap();
+        switch.send_to_master(Frame::end(req2_id, None), None).unwrap();
         let resp2 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![2]));
     }
@@ -1514,7 +1556,7 @@ mod tests {
         let mut switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
 
         let req = Frame::req(MessageId::Uint(1), "cap:in=\"media:void\";op=unknown;out=\"media:void\"", vec![], "text/plain");
-        let result = switch.send_to_master(req);
+        let result = switch.send_to_master(req, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RelaySwitchError::NoHandler(_)));
     }
@@ -1580,15 +1622,15 @@ mod tests {
 
         // First request — should go to master 0 (first match)
         let req1_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req1_id.clone(), same_cap, vec![], "text/plain")).unwrap();
-        switch.send_to_master(Frame::end(req1_id, None)).unwrap();
+        switch.send_to_master(Frame::req(req1_id.clone(), same_cap, vec![], "text/plain"), None).unwrap();
+        switch.send_to_master(Frame::end(req1_id, None), None).unwrap();
         let resp1 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![1]));
 
         // Second request — should ALSO go to master 0 (consistent routing)
         let req2_id = MessageId::Uint(2);
-        switch.send_to_master(Frame::req(req2_id.clone(), same_cap, vec![], "text/plain")).unwrap();
-        switch.send_to_master(Frame::end(req2_id, None)).unwrap();
+        switch.send_to_master(Frame::req(req2_id.clone(), same_cap, vec![], "text/plain"), None).unwrap();
+        switch.send_to_master(Frame::end(req2_id, None), None).unwrap();
         let resp2 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![1]));
     }
@@ -1629,11 +1671,11 @@ mod tests {
         let mut switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
 
         let req_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain")).unwrap();
+        switch.send_to_master(Frame::req(req_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain"), None).unwrap();
         let payload = vec![1, 2, 3];
         let checksum = Frame::compute_checksum(&payload);
-        switch.send_to_master(Frame::chunk(req_id.clone(), "stream1".to_string(), 0, payload, 0, checksum)).unwrap();
-        switch.send_to_master(Frame::end(req_id.clone(), None)).unwrap();
+        switch.send_to_master(Frame::chunk(req_id.clone(), "stream1".to_string(), 0, payload, 0, checksum), None).unwrap();
+        switch.send_to_master(Frame::end(req_id.clone(), None), None).unwrap();
 
         let response = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(response.frame_type, FrameType::End);
@@ -1650,7 +1692,7 @@ mod tests {
         assert!(caps.is_empty(), "empty switch should have no caps");
 
         // No handler for any cap
-        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:"), None);
+        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:", None), None);
     }
 
     // TEST433: Capability aggregation deduplicates caps
@@ -1752,16 +1794,112 @@ mod tests {
 
         // Exact match should work
         let req1_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req1_id.clone(), registered_cap, vec![], "text/plain")).unwrap();
-        switch.send_to_master(Frame::end(req1_id, None)).unwrap();
+        switch.send_to_master(Frame::req(req1_id.clone(), registered_cap, vec![], "text/plain"), None).unwrap();
+        switch.send_to_master(Frame::end(req1_id, None), None).unwrap();
         let resp1 = switch.read_from_masters().unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![42]));
 
         // More specific request should NOT match less specific registered cap
         let req2 = Frame::req(MessageId::Uint(2), "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"", vec![], "text/plain");
-        let result = switch.send_to_master(req2);
+        let result = switch.send_to_master(req2, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RelaySwitchError::NoHandler(_)));
+    }
+
+    // =========================================================================
+    // Preferred cap routing tests
+    // =========================================================================
+
+    // TEST437: find_master_for_cap with preferred_cap routes to generic handler
+    #[test]
+    fn test437_preferred_cap_routes_to_generic() {
+        let (engine_read0, slave_write0) = UnixStream::pair().unwrap();
+        let (slave_read0, engine_write0) = UnixStream::pair().unwrap();
+        let (engine_read1, slave_write1) = UnixStream::pair().unwrap();
+        let (slave_read1, engine_write1) = UnixStream::pair().unwrap();
+
+        // Master 0: generic thumbnail handler (like internal ThumbnailProvider)
+        let generic_cap = "cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        std::thread::spawn(move || {
+            slave_notify_with_identity(slave_read0, slave_write0,
+                &serde_json::json!(["cap:in=media:;out=media:", generic_cap]),
+                &Limits::default());
+        });
+
+        // Master 1: specific thumbnail handler (like pdfcartridge)
+        let specific_cap = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        std::thread::spawn(move || {
+            slave_notify_with_identity(slave_read1, slave_write1,
+                &serde_json::json!(["cap:in=media:;out=media:", specific_cap]),
+                &Limits::default());
+        });
+
+        let switch = RelaySwitch::new(vec![
+            (engine_read0, engine_write0),
+            (engine_read1, engine_write1),
+        ]).unwrap();
+
+        // Specific request for PDF thumbnail
+        let request = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+
+        // Without preference: routes to master 1 (specific, closest-specificity)
+        assert_eq!(switch.find_master_for_cap(request, None), Some(1));
+
+        // With preference for generic cap: routes to master 0 (generic, via is_comparable)
+        assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)), Some(0));
+
+        // With preference for specific cap: routes to master 1 (specific, matches preference)
+        assert_eq!(switch.find_master_for_cap(request, Some(specific_cap)), Some(1));
+    }
+
+    // TEST438: find_master_for_cap with preference falls back to closest-specificity
+    //          when preferred cap is not in the comparable set
+    #[test]
+    fn test438_preferred_cap_falls_back_when_not_comparable() {
+        let (engine_read0, slave_write0) = UnixStream::pair().unwrap();
+        let (slave_read0, engine_write0) = UnixStream::pair().unwrap();
+
+        // Master 0: only has a specific cap
+        let registered = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        std::thread::spawn(move || {
+            slave_notify_with_identity(slave_read0, slave_write0,
+                &serde_json::json!(["cap:in=media:;out=media:", registered]),
+                &Limits::default());
+        });
+
+        let switch = RelaySwitch::new(vec![(engine_read0, engine_write0)]).unwrap();
+
+        let request = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+
+        // Preference for an unrelated cap — no equivalent match, falls back to closest-specificity
+        let unrelated = "cap:in=\"media:txt;textable\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        assert_eq!(switch.find_master_for_cap(request, Some(unrelated)), Some(0));
+    }
+
+    // TEST439: Without preference, specific request does NOT match generic handler
+    //          (confirms accepts semantics are unchanged)
+    #[test]
+    fn test439_no_preference_specific_rejects_generic() {
+        let (engine_read0, slave_write0) = UnixStream::pair().unwrap();
+        let (slave_read0, engine_write0) = UnixStream::pair().unwrap();
+
+        // Master 0: only generic handler
+        let generic_cap = "cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        std::thread::spawn(move || {
+            slave_notify_with_identity(slave_read0, slave_write0,
+                &serde_json::json!(["cap:in=media:;out=media:", generic_cap]),
+                &Limits::default());
+        });
+
+        let switch = RelaySwitch::new(vec![(engine_read0, engine_write0)]).unwrap();
+
+        // Specific PDF request — without preference, generic handler can't match
+        // because request pattern requires pdf tag which generic doesn't have
+        let request = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        assert_eq!(switch.find_master_for_cap(request, None), None);
+
+        // With preference for generic — now is_comparable finds it
+        assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)), Some(0));
     }
 
     // =========================================================================
@@ -1783,8 +1921,8 @@ mod tests {
         let switch = RelaySwitch::new(vec![(engine_read, engine_write)]).unwrap();
 
         // Construction succeeded — caps are populated
-        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:"), Some(0));
-        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=test;out=\"media:void\""), Some(0));
+        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:", None), Some(0));
+        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=test;out=\"media:void\"", None), Some(0));
     }
 
     // TEST488: RelaySwitch construction fails when master's identity verification fails
@@ -1819,24 +1957,29 @@ mod tests {
     // TEST488: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessPluginHost roundtrip
     #[test]
     fn test488_send_to_master_build_request_frames_roundtrip() {
-        use crate::bifaci::in_process_host::InProcessPluginHost;
+        use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter, accumulate_input};
         use crate::bifaci::relay::RelaySlave;
-        use crate::cap::caller::{CapArgumentValue, CapSet};
+        use crate::cap::caller::CapArgumentValue;
         use crate::cap::definition::Cap;
-        use std::future::Future;
-        use std::pin::Pin;
 
-        /// Echo provider: concatenates all argument values and returns them.
+        /// Echo handler: accumulates input, echoes raw bytes back.
         #[derive(Debug)]
-        struct EchoProvider;
-        impl CapSet for EchoProvider {
-            fn execute_cap(
+        struct EchoHandler;
+        impl FrameHandler for EchoHandler {
+            fn handle_request(
                 &self,
                 _cap_urn: &str,
-                arguments: &[CapArgumentValue],
-            ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
-                let data: Vec<u8> = arguments.iter().flat_map(|a| a.value.clone()).collect();
-                Box::pin(async move { Ok((Some(data), None)) })
+                input: std::sync::mpsc::Receiver<Frame>,
+                output: ResponseWriter,
+                _rt: &tokio::runtime::Handle,
+            ) {
+                match accumulate_input(&input) {
+                    Ok(args) => {
+                        let data: Vec<u8> = args.iter().flat_map(|a| a.value.clone()).collect();
+                        output.emit_response("media:text;bytes", &data);
+                    }
+                    Err(e) => output.emit_error("ACCUMULATE_ERROR", &e),
+                }
             }
         }
 
@@ -1858,7 +2001,7 @@ mod tests {
         let host = InProcessPluginHost::new(vec![(
             "echo".to_string(),
             vec![cap],
-            std::sync::Arc::new(EchoProvider) as std::sync::Arc<dyn CapSet>,
+            std::sync::Arc::new(EchoHandler) as std::sync::Arc<dyn FrameHandler>,
         )]);
 
         // Create socket pairs
@@ -1896,12 +2039,13 @@ mod tests {
             max_chunk,
         );
 
-        // Send each frame via send_to_master
+        // Send each frame via send_to_master (no preference)
         for frame in frames {
-            switch.send_to_master(frame).unwrap();
+            switch.send_to_master(frame, None).unwrap();
         }
 
         // Read response frames via read_from_masters_timeout
+        // Response chunks are CBOR-encoded (matching emit_response)
         let mut response_data = Vec::new();
         let mut got_end = false;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -1911,7 +2055,14 @@ mod tests {
                     match frame.frame_type {
                         FrameType::Chunk => {
                             if let Some(payload) = &frame.payload {
-                                response_data.extend_from_slice(payload);
+                                // CBOR-decode chunk payload to get raw bytes
+                                let value: ciborium::Value = ciborium::from_reader(&payload[..])
+                                    .expect("response chunk not valid CBOR");
+                                match value {
+                                    ciborium::Value::Bytes(b) => response_data.extend_from_slice(&b),
+                                    ciborium::Value::Text(s) => response_data.extend_from_slice(s.as_bytes()),
+                                    other => panic!("unexpected CBOR type in response: {:?}", other),
+                                }
                             }
                         }
                         FrameType::End => {
@@ -1931,7 +2082,7 @@ mod tests {
         }
 
         assert!(got_end, "should have received END frame");
-        assert_eq!(response_data, b"hello streaming world", "echo provider should return input");
+        assert_eq!(response_data, b"hello streaming world", "echo handler should return input");
 
         drop(switch);
         slave_thread.join().unwrap();
@@ -1941,23 +2092,27 @@ mod tests {
     // TEST489: add_master dynamically connects new host to running switch
     #[test]
     fn test489_add_master_dynamic() {
-        use crate::bifaci::in_process_host::InProcessPluginHost;
+        use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter};
         use crate::bifaci::relay::RelaySlave;
-        use crate::cap::caller::{CapArgumentValue, CapSet};
+        use crate::cap::caller::CapArgumentValue;
         use crate::cap::definition::Cap;
-        use std::future::Future;
-        use std::pin::Pin;
 
+        /// Handler that returns a constant byte string (ignores input).
         #[derive(Debug)]
-        struct ConstProvider(&'static str);
-        impl CapSet for ConstProvider {
-            fn execute_cap(
+        struct ConstHandler(&'static str);
+        impl FrameHandler for ConstHandler {
+            fn handle_request(
                 &self,
                 _cap_urn: &str,
-                _arguments: &[CapArgumentValue],
-            ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>> {
-                let val = self.0.as_bytes().to_vec();
-                Box::pin(async move { Ok((Some(val), None)) })
+                input: std::sync::mpsc::Receiver<Frame>,
+                output: ResponseWriter,
+                _rt: &tokio::runtime::Handle,
+            ) {
+                // Drain input
+                for frame in input.iter() {
+                    if frame.frame_type == FrameType::End { break; }
+                }
+                output.emit_response("media:bytes", self.0.as_bytes());
             }
         }
 
@@ -1988,7 +2143,7 @@ mod tests {
             (switch_read, switch_write, host_thread, slave_thread)
         }
 
-        // Create initial switch with provider A
+        // Create initial switch with handler A
         let cap_a = "cap:in=\"media:void\";op=alpha;out=\"media:void\"";
         let host_a = InProcessPluginHost::new(vec![(
             "alpha".to_string(),
@@ -2004,14 +2159,14 @@ mod tests {
                 metadata_json: None,
                 registered_by: None,
             }],
-            std::sync::Arc::new(ConstProvider("alpha")) as std::sync::Arc<dyn CapSet>,
+            std::sync::Arc::new(ConstHandler("alpha")) as std::sync::Arc<dyn FrameHandler>,
         )]);
 
         let (sr_a, sw_a, ht_a, st_a) = wire_host(&rt, host_a);
         let mut switch = RelaySwitch::new(vec![(sr_a, sw_a)]).unwrap();
         assert_eq!(switch.masters.len(), 1);
 
-        // Add provider B dynamically
+        // Add handler B dynamically
         let cap_b = "cap:in=\"media:void\";op=beta;out=\"media:void\"";
         let host_b = InProcessPluginHost::new(vec![(
             "beta".to_string(),
@@ -2027,7 +2182,7 @@ mod tests {
                 metadata_json: None,
                 registered_by: None,
             }],
-            std::sync::Arc::new(ConstProvider("beta")) as std::sync::Arc<dyn CapSet>,
+            std::sync::Arc::new(ConstHandler("beta")) as std::sync::Arc<dyn FrameHandler>,
         )]);
 
         let (sr_b, sw_b, ht_b, st_b) = wire_host(&rt, host_b);
@@ -2045,9 +2200,10 @@ mod tests {
         let max_chunk = switch.limits().max_chunk;
         let frames = CapArgumentValue::build_request_frames(&rid, cap_b, &[], max_chunk);
         for frame in frames {
-            switch.send_to_master(frame).unwrap();
+            switch.send_to_master(frame, None).unwrap();
         }
 
+        // Response chunks are CBOR-encoded
         let mut response_data = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while std::time::Instant::now() < deadline {
@@ -2055,15 +2211,22 @@ mod tests {
                 Ok(Some(frame)) if frame.id == rid => {
                     match frame.frame_type {
                         FrameType::Chunk => {
-                            if let Some(p) = &frame.payload { response_data.extend_from_slice(p); }
+                            if let Some(p) = &frame.payload {
+                                let value: ciborium::Value = ciborium::from_reader(&p[..])
+                                    .expect("response chunk not valid CBOR");
+                                match value {
+                                    ciborium::Value::Bytes(b) => response_data.extend_from_slice(&b),
+                                    other => panic!("unexpected CBOR: {:?}", other),
+                                }
+                            }
                         }
                         FrameType::End => break,
                         FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
                         _ => {}
                     }
                 }
-                Ok(Some(_)) => {} // Other frame (RelayNotify, etc)
-                Ok(None) => {}    // Timeout
+                Ok(Some(_)) => {}
+                Ok(None) => {}
                 Err(e) => panic!("read error: {}", e),
             }
         }

@@ -1,101 +1,330 @@
-//! In-Process Plugin Host — Direct dispatch to CapSet trait objects
+//! In-Process Plugin Host — Direct dispatch to FrameHandler trait objects
 //!
 //! Sits where PluginHostRuntime sits (connected to RelaySlave via local socket pair),
-//! but routes requests to `Arc<dyn CapSet>` trait objects instead of plugin binaries.
+//! but routes requests to `Arc<dyn FrameHandler>` trait objects instead of plugin binaries.
 //!
 //! ## Architecture
 //!
 //! ```text
-//! RelaySlave ←→ InProcessPluginHost ←→ Provider A (direct call)
-//!                                  ←→ Provider B (direct call)
-//!                                  ←→ Provider C (direct call)
+//! RelaySlave ←→ InProcessPluginHost ←→ Handler A (streaming frames)
+//!                                   ←→ Handler B (streaming frames)
+//!                                   ←→ Handler C (streaming frames)
 //! ```
 //!
-//! ## Key Differences from PluginHostRuntime
+//! ## Design
 //!
-//! - No HELLO handshake per provider (providers are in-process trait objects)
-//! - No identity verification per provider (providers are trusted)
-//! - No heartbeat monitoring (providers can't die independently)
-//! - No process management (no spawn/kill)
-//! - Provider execution via direct `CapSet::execute_cap()` calls
-//! - Uses tokio runtime handle for async provider dispatch
+//! The host does NOT accumulate data. On REQ, it spawns a handler thread with
+//! channels for frame I/O. All continuation frames (STREAM_START, CHUNK, STREAM_END,
+//! END) are forwarded to the handler. The handler processes frames natively —
+//! streaming or accumulating as it sees fit.
+//!
+//! This matches how real plugins work: PluginRuntime forwards frames to handlers,
+//! and each handler decides how to consume/produce data.
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
-use crate::cap::caller::{CapArgumentValue, CapSet};
+use crate::cap::caller::CapArgumentValue;
 use crate::cap::definition::Cap;
 use crate::standard::caps::CAP_IDENTITY;
 use crate::CapUrn;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::sync::Arc;
 
-/// Entry for a registered in-process provider.
-struct ProviderEntry {
+// =============================================================================
+// FRAME HANDLER TRAIT
+// =============================================================================
+
+/// Handler for streaming frame-based requests.
+///
+/// Handlers receive input frames (STREAM_START, CHUNK, STREAM_END, END) via a
+/// channel and send response frames via a ResponseWriter. The host never
+/// accumulates — handlers decide how to process input (stream or accumulate).
+///
+/// For handlers that don't need streaming, use `accumulate_input()` to collect
+/// all input streams into `Vec<CapArgumentValue>`.
+pub trait FrameHandler: Send + Sync + std::fmt::Debug {
+    /// Handle a streaming request.
+    ///
+    /// Called in a dedicated thread for each incoming request. The handler reads
+    /// input frames from `input` and sends response frames via `output`.
+    ///
+    /// The REQ frame has already been consumed by the host. `input` receives:
+    /// STREAM_START, CHUNK, STREAM_END (per argument stream), then END.
+    ///
+    /// The handler MUST send a complete response: either response frames
+    /// (STREAM_START + CHUNK(s) + STREAM_END + END) or an error (via `output.emit_error()`).
+    fn handle_request(
+        &self,
+        cap_urn: &str,
+        input: mpsc::Receiver<Frame>,
+        output: ResponseWriter,
+        rt: &tokio::runtime::Handle,
+    );
+}
+
+// =============================================================================
+// RESPONSE WRITER
+// =============================================================================
+
+/// Wraps an output channel with automatic request_id and routing_id stamping.
+///
+/// All frames sent via ResponseWriter get the correct request_id and routing_id
+/// for relay routing. Seq is left at 0 — the wire writer's SeqAssigner handles it.
+pub struct ResponseWriter {
+    request_id: MessageId,
+    routing_id: Option<MessageId>,
+    tx: mpsc::Sender<Frame>,
+    max_chunk: usize,
+}
+
+impl ResponseWriter {
+    fn new(
+        request_id: MessageId,
+        routing_id: Option<MessageId>,
+        tx: mpsc::Sender<Frame>,
+        max_chunk: usize,
+    ) -> Self {
+        Self { request_id, routing_id, tx, max_chunk }
+    }
+
+    /// Send a frame, stamping it with the request_id and routing_id.
+    pub fn send(&self, mut frame: Frame) {
+        frame.id = self.request_id.clone();
+        frame.routing_id = self.routing_id.clone();
+        frame.seq = 0; // SeqAssigner handles this
+        let _ = self.tx.send(frame);
+    }
+
+    /// Max chunk size for this connection.
+    pub fn max_chunk(&self) -> usize {
+        self.max_chunk
+    }
+
+    /// Send a complete data response: STREAM_START + CBOR-encoded CHUNK(s) + STREAM_END + END.
+    pub fn emit_response(&self, media_urn: &str, data: &[u8]) {
+        let stream_id = "result".to_string();
+
+        self.send(Frame::stream_start(
+            MessageId::Uint(0),
+            stream_id.clone(),
+            media_urn.to_string(),
+        ));
+
+        if data.is_empty() {
+            let mut cbor_payload = Vec::new();
+            ciborium::into_writer(&ciborium::Value::Bytes(Vec::new()), &mut cbor_payload)
+                .expect("BUG: CBOR encode empty bytes");
+            let checksum = Frame::compute_checksum(&cbor_payload);
+            self.send(Frame::chunk(
+                MessageId::Uint(0),
+                stream_id.clone(),
+                0,
+                cbor_payload,
+                0,
+                checksum,
+            ));
+            self.send(Frame::stream_end(MessageId::Uint(0), stream_id, 1));
+        } else {
+            let chunks: Vec<&[u8]> = data.chunks(self.max_chunk).collect();
+            let chunk_count = chunks.len() as u64;
+            for (i, chunk_data) in chunks.iter().enumerate() {
+                let mut cbor_payload = Vec::new();
+                ciborium::into_writer(
+                    &ciborium::Value::Bytes(chunk_data.to_vec()),
+                    &mut cbor_payload,
+                )
+                .expect("BUG: CBOR encode chunk bytes");
+                let checksum = Frame::compute_checksum(&cbor_payload);
+                self.send(Frame::chunk(
+                    MessageId::Uint(0),
+                    stream_id.clone(),
+                    0,
+                    cbor_payload,
+                    i as u64,
+                    checksum,
+                ));
+            }
+            self.send(Frame::stream_end(MessageId::Uint(0), stream_id, chunk_count));
+        }
+
+        self.send(Frame::end(MessageId::Uint(0), None));
+    }
+
+    /// Send an error response.
+    pub fn emit_error(&self, code: &str, message: &str) {
+        self.send(Frame::err(MessageId::Uint(0), code, message));
+    }
+}
+
+// =============================================================================
+// INPUT ACCUMULATION UTILITY
+// =============================================================================
+
+/// Accumulate all input streams from a frame channel into CapArgumentValues.
+///
+/// Reads frames until END. CBOR-decodes chunk payloads to extract raw bytes.
+/// For handlers that don't need streaming — they accumulate all input, process,
+/// then emit a response.
+///
+/// Returns Err on CBOR decode failure (protocol violation).
+pub fn accumulate_input(
+    input: &mpsc::Receiver<Frame>,
+) -> Result<Vec<CapArgumentValue>, String> {
+    let mut streams: Vec<(String, String, Vec<u8>)> = Vec::new(); // (stream_id, media_urn, data)
+    let mut active: HashMap<String, usize> = HashMap::new();
+
+    for frame in input.iter() {
+        match frame.frame_type {
+            FrameType::StreamStart => {
+                let sid = frame.stream_id.clone().unwrap_or_default();
+                let media_urn = frame.media_urn.clone().unwrap_or_default();
+                let idx = streams.len();
+                streams.push((sid.clone(), media_urn, Vec::new()));
+                active.insert(sid, idx);
+            }
+            FrameType::Chunk => {
+                let sid = frame.stream_id.clone().unwrap_or_default();
+                if let Some(&idx) = active.get(&sid) {
+                    if let Some(payload) = &frame.payload {
+                        // CBOR-decode chunk payload to extract raw bytes
+                        let value: ciborium::Value = ciborium::from_reader(&payload[..])
+                            .map_err(|e| format!(
+                                "chunk payload is not valid CBOR (stream={}, {} bytes): {}",
+                                sid, payload.len(), e
+                            ))?;
+                        match value {
+                            ciborium::Value::Bytes(b) => streams[idx].2.extend_from_slice(&b),
+                            ciborium::Value::Text(s) => streams[idx].2.extend_from_slice(s.as_bytes()),
+                            other => {
+                                return Err(format!(
+                                    "unexpected CBOR type in chunk payload: {:?}",
+                                    other
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            FrameType::StreamEnd => {} // nothing to do
+            FrameType::End => break,
+            _ => {} // ignore unexpected frame types
+        }
+    }
+
+    Ok(streams
+        .into_iter()
+        .map(|(_, media_urn, data)| CapArgumentValue::new(media_urn, data))
+        .collect())
+}
+
+// =============================================================================
+// BUILT-IN IDENTITY HANDLER
+// =============================================================================
+
+/// Identity handler: raw byte passthrough (no CBOR decode/encode).
+///
+/// Echoes all accumulated chunk payloads back as-is. This is the protocol-level
+/// identity verification — it proves the transport works end-to-end.
+#[derive(Debug)]
+struct IdentityHandler;
+
+impl FrameHandler for IdentityHandler {
+    fn handle_request(
+        &self,
+        _cap_urn: &str,
+        input: mpsc::Receiver<Frame>,
+        output: ResponseWriter,
+        _rt: &tokio::runtime::Handle,
+    ) {
+        // Accumulate raw payload bytes (no CBOR decode — identity is raw passthrough)
+        let mut data = Vec::new();
+        for frame in input.iter() {
+            match frame.frame_type {
+                FrameType::Chunk => {
+                    if let Some(p) = &frame.payload {
+                        data.extend_from_slice(p);
+                    }
+                }
+                FrameType::End => break,
+                _ => {} // STREAM_START, STREAM_END — skip
+            }
+        }
+
+        // Echo back as a single stream (raw bytes, no CBOR encode)
+        let stream_id = "identity".to_string();
+        output.send(Frame::stream_start(
+            MessageId::Uint(0),
+            stream_id.clone(),
+            "media:bytes".to_string(),
+        ));
+
+        let checksum = Frame::compute_checksum(&data);
+        output.send(Frame::chunk(
+            MessageId::Uint(0),
+            stream_id.clone(),
+            0,
+            data,
+            0,
+            checksum,
+        ));
+
+        output.send(Frame::stream_end(MessageId::Uint(0), stream_id, 1));
+        output.send(Frame::end(MessageId::Uint(0), None));
+    }
+}
+
+// =============================================================================
+// IN-PROCESS PLUGIN HOST
+// =============================================================================
+
+/// Entry for a registered in-process handler.
+struct HandlerEntry {
     #[allow(dead_code)]
     name: String,
     caps: Vec<Cap>,
-    cap_set: Arc<dyn CapSet>,
+    handler: Arc<dyn FrameHandler>,
 }
 
-/// Cap table entry: (cap_urn_string, provider_index).
+/// Cap table entry: (cap_urn_string, handler_index).
 type CapTable = Vec<(String, usize)>;
 
-/// State for a pending incoming request being accumulated.
-struct PendingRequest {
-    cap_urn: String,
-    /// Index into providers vec, or usize::MAX for identity cap.
-    provider_idx: usize,
-    /// XID from the incoming request (must be propagated to all response frames).
-    xid: Option<MessageId>,
-    /// Accumulated argument streams: (stream_id, media_urn, data).
-    streams: Vec<(String, String, Vec<u8>)>,
-    /// Map from active stream_id to index in `streams`.
-    active_streams: HashMap<String, usize>,
-    /// Stream IDs that have received STREAM_END.
-    ended_streams: HashSet<String>,
-}
-
-/// A plugin host that dispatches to in-process CapSet implementations.
+/// A plugin host that dispatches to in-process FrameHandler implementations.
 ///
 /// Speaks the Frame protocol to a RelaySlave, but routes requests to
-/// `Arc<dyn CapSet>` providers via direct Rust calls — no serialization
-/// per provider, no socket pairs per provider.
+/// `Arc<dyn FrameHandler>` trait objects via frame channels — no accumulation
+/// at the host level, handlers own the streaming.
 pub struct InProcessPluginHost {
-    providers: Vec<ProviderEntry>,
+    handlers: Vec<HandlerEntry>,
 }
 
 impl std::fmt::Debug for InProcessPluginHost {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InProcessPluginHost")
-            .field("provider_count", &self.providers.len())
+            .field("handler_count", &self.handlers.len())
             .finish()
     }
 }
 
 impl InProcessPluginHost {
-    /// Create a new in-process plugin host with the given providers.
+    /// Create a new in-process plugin host with the given handlers.
     ///
-    /// Each provider is a tuple of (name, caps, cap_set).
-    pub fn new(providers: Vec<(String, Vec<Cap>, Arc<dyn CapSet>)>) -> Self {
-        let providers = providers
+    /// Each handler is a tuple of (name, caps, handler).
+    pub fn new(handlers: Vec<(String, Vec<Cap>, Arc<dyn FrameHandler>)>) -> Self {
+        let handlers = handlers
             .into_iter()
-            .map(|(name, caps, cap_set)| ProviderEntry {
-                name,
-                caps,
-                cap_set,
-            })
+            .map(|(name, caps, handler)| HandlerEntry { name, caps, handler })
             .collect();
-        Self { providers }
+        Self { handlers }
     }
 
     /// Build the aggregate manifest as a JSON array of cap URN strings.
     /// Always includes CAP_IDENTITY as the first entry.
     fn build_manifest(&self) -> Vec<u8> {
         let mut cap_urns: Vec<String> = vec![CAP_IDENTITY.to_string()];
-        for provider in &self.providers {
-            for cap in &provider.caps {
+        for entry in &self.handlers {
+            for cap in &entry.caps {
                 let urn = cap.urn.to_string();
                 if urn != CAP_IDENTITY {
                     cap_urns.push(urn);
@@ -105,40 +334,37 @@ impl InProcessPluginHost {
         serde_json::to_vec(&cap_urns).unwrap_or_else(|_| b"[]".to_vec())
     }
 
-    /// Build the cap table for routing: flat list of (cap_urn, provider_idx).
-    fn build_cap_table(providers: &[ProviderEntry]) -> CapTable {
+    /// Build the cap table for routing: flat list of (cap_urn, handler_idx).
+    fn build_cap_table(handlers: &[HandlerEntry]) -> CapTable {
         let mut table = Vec::new();
-        for (idx, provider) in providers.iter().enumerate() {
-            for cap in &provider.caps {
+        for (idx, entry) in handlers.iter().enumerate() {
+            for cap in &entry.caps {
                 table.push((cap.urn.to_string(), idx));
             }
         }
         table
     }
 
-    /// Find the best provider for a cap URN using closest-specificity matching.
+    /// Find the best handler for a cap URN using closest-specificity matching.
     ///
     /// Mirrors `PluginHostRuntime::find_plugin_for_cap()` exactly:
     /// - Request is pattern, registered cap is instance
     /// - Closest specificity to request wins
     /// - Ties broken by first match (deterministic)
-    fn find_provider_for_cap(cap_table: &CapTable, cap_urn: &str) -> Option<usize> {
+    fn find_handler_for_cap(cap_table: &CapTable, cap_urn: &str) -> Option<usize> {
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
         };
 
         let request_specificity = request_urn.specificity();
+        let mut matches: Vec<(usize, usize)> = Vec::new(); // (handler_idx, specificity)
 
-        // Collect ALL matching providers with their specificity scores
-        let mut matches: Vec<(usize, usize)> = Vec::new(); // (provider_idx, specificity)
-
-        for (registered_cap, provider_idx) in cap_table {
+        for (registered_cap, handler_idx) in cap_table {
             if let Ok(registered_urn) = CapUrn::from_string(registered_cap) {
-                // Request is pattern, registered cap is instance
                 if request_urn.accepts(&registered_urn) {
                     let specificity = registered_urn.specificity();
-                    matches.push((*provider_idx, specificity));
+                    matches.push((*handler_idx, specificity));
                 }
             }
         }
@@ -147,8 +373,6 @@ impl InProcessPluginHost {
             return None;
         }
 
-        // Prefer the match with specificity closest to the request's specificity.
-        // Ties broken by first match (deterministic).
         let min_distance = matches
             .iter()
             .map(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs())
@@ -166,7 +390,7 @@ impl InProcessPluginHost {
     /// Run the host. Blocks until the local connection closes.
     ///
     /// `local_read` / `local_write` connect to the RelaySlave's local side.
-    /// `rt` is a tokio runtime handle for spawning async provider calls.
+    /// `rt` is a tokio runtime handle for async handler calls.
     pub fn run<R: Read + Send + 'static, W: Write + Send + 'static>(
         self,
         local_read: R,
@@ -187,7 +411,6 @@ impl InProcessPluginHost {
                     eprintln!("[InProcessPluginHost] writer error: {}", e);
                     break;
                 }
-                // Clean up seq tracking on terminal frames
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
                     seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
@@ -201,17 +424,17 @@ impl InProcessPluginHost {
             .send(notify)
             .map_err(|_| CborError::Protocol("writer channel closed on startup".into()))?;
 
-        // Move providers to Arc for sharing with tokio tasks
-        let providers = Arc::new(self.providers);
-        let cap_table = Self::build_cap_table(&providers);
+        // Move handlers to Arc for sharing with handler threads
+        let handlers = Arc::new(self.handlers);
+        let cap_table = Self::build_cap_table(&handlers);
 
-        // Request tracking
-        let mut pending: HashMap<MessageId, PendingRequest> = HashMap::new();
+        // Active request channels: request_id → input_tx for forwarding frames to handler
+        let mut active: HashMap<MessageId, mpsc::Sender<Frame>> = HashMap::new();
 
-        // Sentinel for identity cap routing
-        const IDENTITY_SENTINEL: usize = usize::MAX;
+        // Built-in identity handler
+        let identity_handler: Arc<dyn FrameHandler> = Arc::new(IdentityHandler);
 
-        // Main read loop
+        // Main read loop — forward frames to handlers, no accumulation
         loop {
             let frame = match reader.read() {
                 Ok(Some(f)) => f,
@@ -237,118 +460,57 @@ impl InProcessPluginHost {
                         }
                     };
 
-                    // Identity cap is "cap:" — sent by RelaySwitch for identity verification.
-                    // Must be exact string match, NOT conforms_to (everything conforms to wildcard).
+                    // Identity cap is "cap:" — exact string match, NOT conforms_to.
                     let is_identity = cap_urn == CAP_IDENTITY;
 
-                    if is_identity {
-                        pending.insert(
-                            rid,
-                            PendingRequest {
-                                cap_urn,
-                                provider_idx: IDENTITY_SENTINEL,
-                                xid,
-                                streams: Vec::new(),
-                                active_streams: HashMap::new(),
-                                ended_streams: HashSet::new(),
-                            },
-                        );
+                    let handler: Arc<dyn FrameHandler> = if is_identity {
+                        Arc::clone(&identity_handler)
                     } else {
-                        match Self::find_provider_for_cap(&cap_table, &cap_urn) {
-                            Some(idx) => {
-                                pending.insert(
-                                    rid,
-                                    PendingRequest {
-                                        cap_urn,
-                                        provider_idx: idx,
-                                        xid,
-                                        streams: Vec::new(),
-                                        active_streams: HashMap::new(),
-                                        ended_streams: HashSet::new(),
-                                    },
-                                );
-                            }
+                        match Self::find_handler_for_cap(&cap_table, &cap_urn) {
+                            Some(idx) => Arc::clone(&handlers[idx].handler),
                             None => {
                                 let mut err = Frame::err(
                                     rid,
                                     "NO_HANDLER",
-                                    &format!("no provider handles cap: {}", cap_urn),
+                                    &format!("no handler for cap: {}", cap_urn),
                                 );
                                 err.routing_id = xid;
                                 let _ = write_tx.send(err);
-                            }
-                        }
-                    }
-                }
-
-                FrameType::StreamStart => {
-                    let rid = frame.id.clone();
-                    if let Some(req) = pending.get_mut(&rid) {
-                        let stream_id = match &frame.stream_id {
-                            Some(s) => s.clone(),
-                            None => {
-                                eprintln!(
-                                    "[InProcessPluginHost] STREAM_START missing stream_id for {:?}",
-                                    rid
-                                );
                                 continue;
                             }
-                        };
-                        let media_urn = frame.media_urn.clone().unwrap_or_default();
-                        let idx = req.streams.len();
-                        req.streams
-                            .push((stream_id.clone(), media_urn, Vec::new()));
-                        req.active_streams.insert(stream_id, idx);
-                    }
+                        }
+                    };
+
+                    // Create channel for forwarding frames to handler
+                    let (input_tx, input_rx) = mpsc::channel::<Frame>();
+                    active.insert(rid.clone(), input_tx);
+
+                    // Spawn handler thread
+                    let output = ResponseWriter::new(
+                        rid,
+                        xid,
+                        write_tx.clone(),
+                        Limits::default().max_chunk,
+                    );
+                    let cap_urn_owned = cap_urn;
+                    let rt_clone = rt.clone();
+                    std::thread::spawn(move || {
+                        handler.handle_request(&cap_urn_owned, input_rx, output, &rt_clone);
+                    });
                 }
 
-                FrameType::Chunk => {
-                    let rid = frame.id.clone();
-                    if let Some(req) = pending.get_mut(&rid) {
-                        let stream_id = match &frame.stream_id {
-                            Some(s) => s.clone(),
-                            None => {
-                                eprintln!(
-                                    "[InProcessPluginHost] CHUNK missing stream_id for {:?}",
-                                    rid
-                                );
-                                continue;
-                            }
-                        };
-                        if let Some(&idx) = req.active_streams.get(&stream_id) {
-                            if let Some(payload) = &frame.payload {
-                                req.streams[idx].2.extend_from_slice(payload);
-                            }
-                        }
-                    }
-                }
-
-                FrameType::StreamEnd => {
-                    let rid = frame.id.clone();
-                    if let Some(req) = pending.get_mut(&rid) {
-                        if let Some(stream_id) = &frame.stream_id {
-                            req.ended_streams.insert(stream_id.clone());
-                        }
+                // Continuation frames: forward to handler
+                FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd => {
+                    if let Some(tx) = active.get(&frame.id) {
+                        let _ = tx.send(frame);
                     }
                 }
 
                 FrameType::End => {
-                    let rid = frame.id.clone();
-                    if let Some(req) = pending.remove(&rid) {
-                        if req.provider_idx == IDENTITY_SENTINEL {
-                            // Identity verification: echo all accumulated data back
-                            Self::send_identity_response(&write_tx, rid, &req);
-                        } else {
-                            // Regular provider dispatch
-                            Self::dispatch_to_provider(
-                                &rt,
-                                &write_tx,
-                                &providers,
-                                &cap_table,
-                                rid,
-                                req,
-                            );
-                        }
+                    // Forward END to handler, then remove from active
+                    if let Some(tx) = active.remove(&frame.id) {
+                        let _ = tx.send(frame);
+                        // tx dropped here — handler sees channel close after END
                     }
                 }
 
@@ -358,8 +520,9 @@ impl InProcessPluginHost {
                 }
 
                 FrameType::Err => {
-                    // Error from relay for a pending request — clean up
-                    pending.remove(&frame.id);
+                    // Error from relay for a pending request — close handler's input
+                    active.remove(&frame.id);
+                    // input_tx dropped — handler sees channel close and should exit
                 }
 
                 _ => {
@@ -368,187 +531,12 @@ impl InProcessPluginHost {
             }
         }
 
+        // Drop all active channels to signal handlers to exit
+        active.clear();
+
         drop(write_tx);
         let _ = writer_thread.join();
         Ok(())
-    }
-
-    /// Send identity response: echo all accumulated stream data back.
-    fn send_identity_response(
-        write_tx: &mpsc::Sender<Frame>,
-        rid: MessageId,
-        req: &PendingRequest,
-    ) {
-        let mut response_data = Vec::new();
-        for (_, _, data) in &req.streams {
-            response_data.extend_from_slice(data);
-        }
-
-        let xid = req.xid.clone();
-
-        let stream_id = "identity".to_string();
-        let mut start =
-            Frame::stream_start(rid.clone(), stream_id.clone(), "media:bytes".to_string());
-        start.routing_id = xid.clone();
-        let _ = write_tx.send(start);
-
-        let checksum = Frame::compute_checksum(&response_data);
-        let mut chunk = Frame::chunk(rid.clone(), stream_id.clone(), 0, response_data, 0, checksum);
-        chunk.routing_id = xid.clone();
-        let _ = write_tx.send(chunk);
-
-        let mut end_stream = Frame::stream_end(rid.clone(), stream_id, 1);
-        end_stream.routing_id = xid.clone();
-        let _ = write_tx.send(end_stream);
-
-        let mut end = Frame::end(rid, None);
-        end.routing_id = xid;
-        let _ = write_tx.send(end);
-    }
-
-    /// Dispatch a completed request to the matching provider via tokio.
-    fn dispatch_to_provider(
-        rt: &tokio::runtime::Handle,
-        write_tx: &mpsc::Sender<Frame>,
-        providers: &Arc<Vec<ProviderEntry>>,
-        cap_table: &CapTable,
-        rid: MessageId,
-        req: PendingRequest,
-    ) {
-        let provider = Arc::clone(&providers[req.provider_idx].cap_set);
-        let cap_urn = req.cap_urn.clone();
-        let xid = req.xid.clone();
-
-        // Build CapArgumentValues from accumulated streams
-        let arguments: Vec<CapArgumentValue> = req
-            .streams
-            .into_iter()
-            .map(|(_, media_urn, data)| CapArgumentValue::new(media_urn, data))
-            .collect();
-
-        // Determine output media URN from the matched cap's out_spec
-        let out_media = Self::find_matched_cap_out_spec(cap_table, providers, &cap_urn);
-
-        let write_tx = write_tx.clone();
-        let max_chunk = Limits::default().max_chunk;
-
-        rt.spawn(async move {
-            let result = provider.execute_cap(&cap_urn, &arguments).await;
-
-            match result {
-                Ok((binary, text)) => {
-                    let response_data = if let Some(b) = binary {
-                        b
-                    } else if let Some(t) = text {
-                        t.into_bytes()
-                    } else {
-                        Vec::new()
-                    };
-
-                    Self::send_response_frames(&write_tx, rid, xid.as_ref(), &out_media, &response_data, max_chunk);
-                }
-                Err(e) => {
-                    let mut err = Frame::err(rid, "PROVIDER_ERROR", &e.to_string());
-                    err.routing_id = xid;
-                    let _ = write_tx.send(err);
-                }
-            }
-        });
-    }
-
-    /// Find the out_spec of the cap that matched the request URN.
-    fn find_matched_cap_out_spec(
-        cap_table: &CapTable,
-        providers: &[ProviderEntry],
-        cap_urn: &str,
-    ) -> String {
-        let request_urn = match CapUrn::from_string(cap_urn) {
-            Ok(u) => u,
-            Err(_) => return "media:bytes".to_string(),
-        };
-
-        let request_specificity = request_urn.specificity();
-        let mut best: Option<(&str, usize)> = None; // (out_spec, distance)
-
-        for (registered_cap_str, provider_idx) in cap_table {
-            if let Ok(registered_urn) = CapUrn::from_string(registered_cap_str) {
-                if request_urn.accepts(&registered_urn) {
-                    let distance = (registered_urn.specificity() as isize
-                        - request_specificity as isize)
-                        .unsigned_abs();
-                    let should_replace = match &best {
-                        None => true,
-                        Some((_, best_d)) => distance < *best_d,
-                    };
-                    if should_replace {
-                        // Find the Cap object for this entry to get out_spec
-                        for cap in &providers[*provider_idx].caps {
-                            if cap.urn.to_string() == *registered_cap_str {
-                                best = Some((cap.urn.out_spec(), distance));
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        best.map(|(s, _)| s.to_string())
-            .unwrap_or_else(|| "media:bytes".to_string())
-    }
-
-    /// Send response frames: STREAM_START → CHUNK(s) → STREAM_END → END.
-    /// All frames carry the XID from the original request for relay routing.
-    fn send_response_frames(
-        write_tx: &mpsc::Sender<Frame>,
-        rid: MessageId,
-        xid: Option<&MessageId>,
-        media_urn: &str,
-        data: &[u8],
-        max_chunk: usize,
-    ) {
-        let stream_id = "result".to_string();
-
-        let mut start = Frame::stream_start(rid.clone(), stream_id.clone(), media_urn.to_string());
-        start.routing_id = xid.cloned();
-        let _ = write_tx.send(start);
-
-        // Chunk the response respecting max_chunk
-        if data.is_empty() {
-            let checksum = Frame::compute_checksum(&[]);
-            let mut chunk = Frame::chunk(rid.clone(), stream_id.clone(), 0, Vec::new(), 0, checksum);
-            chunk.routing_id = xid.cloned();
-            let _ = write_tx.send(chunk);
-
-            let mut end_stream = Frame::stream_end(rid.clone(), stream_id, 1);
-            end_stream.routing_id = xid.cloned();
-            let _ = write_tx.send(end_stream);
-        } else {
-            let chunks: Vec<&[u8]> = data.chunks(max_chunk).collect();
-            let chunk_count = chunks.len() as u64;
-
-            for (i, chunk_data) in chunks.iter().enumerate() {
-                let checksum = Frame::compute_checksum(chunk_data);
-                let mut chunk = Frame::chunk(
-                    rid.clone(),
-                    stream_id.clone(),
-                    0, // seq assigned by writer thread's SeqAssigner
-                    chunk_data.to_vec(),
-                    i as u64,
-                    checksum,
-                );
-                chunk.routing_id = xid.cloned();
-                let _ = write_tx.send(chunk);
-            }
-
-            let mut end_stream = Frame::stream_end(rid.clone(), stream_id, chunk_count);
-            end_stream.routing_id = xid.cloned();
-            let _ = write_tx.send(end_stream);
-        }
-
-        let mut end = Frame::end(rid, None);
-        end.routing_id = xid.cloned();
-        let _ = write_tx.send(end);
     }
 }
 
@@ -556,25 +544,30 @@ impl InProcessPluginHost {
 mod tests {
     use super::*;
     use crate::bifaci::io::{FrameReader, FrameWriter};
-    use crate::cap::caller::CapSet;
     use crate::Cap;
-    use std::future::Future;
     use std::os::unix::net::UnixStream;
-    use std::pin::Pin;
 
-    /// Simple echo provider for testing: returns binary input as binary output.
+    /// Echo handler: accumulates input, echoes raw bytes back.
     #[derive(Debug)]
-    struct EchoProvider;
+    struct EchoHandler;
 
-    impl CapSet for EchoProvider {
-        fn execute_cap(
+    impl FrameHandler for EchoHandler {
+        fn handle_request(
             &self,
             _cap_urn: &str,
-            arguments: &[CapArgumentValue],
-        ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>>
-        {
-            let data: Vec<u8> = arguments.iter().flat_map(|a| a.value.clone()).collect();
-            Box::pin(async move { Ok((Some(data), None)) })
+            input: mpsc::Receiver<Frame>,
+            output: ResponseWriter,
+            _rt: &tokio::runtime::Handle,
+        ) {
+            match accumulate_input(&input) {
+                Ok(args) => {
+                    let data: Vec<u8> = args.iter().flat_map(|a| a.value.clone()).collect();
+                    output.emit_response("media:bytes", &data);
+                }
+                Err(e) => {
+                    output.emit_error("ACCUMULATE_ERROR", &e);
+                }
+            }
         }
     }
 
@@ -593,31 +586,45 @@ mod tests {
         }
     }
 
-    // TEST481: InProcessPluginHost routes REQ to matching provider and returns response
+    /// Build a CBOR-encoded chunk payload from raw bytes (matching build_request_frames).
+    fn cbor_bytes_payload(data: &[u8]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        ciborium::into_writer(&ciborium::Value::Bytes(data.to_vec()), &mut buf)
+            .expect("BUG: CBOR encode");
+        buf
+    }
+
+    /// CBOR-decode a response chunk payload to extract raw bytes.
+    fn decode_chunk_payload(payload: &[u8]) -> Vec<u8> {
+        let value: ciborium::Value =
+            ciborium::from_reader(payload).expect("response chunk not valid CBOR");
+        match value {
+            ciborium::Value::Bytes(b) => b,
+            ciborium::Value::Text(s) => s.into_bytes(),
+            other => panic!("unexpected CBOR type in response chunk: {:?}", other),
+        }
+    }
+
+    // TEST654: InProcessPluginHost routes REQ to matching handler and returns response
     #[test]
-    fn test481_routes_req_to_provider() {
+    fn test654_routes_req_to_handler() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let cap_urn = "cap:in=\"media:text;bytes\";op=echo;out=\"media:text;bytes\"";
         let cap = make_test_cap(cap_urn);
-        let providers = vec![(
+        let handlers = vec![(
             "echo".to_string(),
             vec![cap],
-            Arc::new(EchoProvider) as Arc<dyn CapSet>,
+            Arc::new(EchoHandler) as Arc<dyn FrameHandler>,
         )];
 
-        let host = InProcessPluginHost::new(providers);
+        let host = InProcessPluginHost::new(handlers);
 
-        // Create socket pair for communication
         let (host_sock, test_sock) = UnixStream::pair().unwrap();
         let (host_sock2, test_sock2) = UnixStream::pair().unwrap();
 
-        // Host reads from host_sock, writes to host_sock2
         let handle = rt.handle().clone();
-        let host_thread = std::thread::spawn(move || {
-            host.run(host_sock, host_sock2, handle)
-        });
+        let host_thread = std::thread::spawn(move || host.run(host_sock, host_sock2, handle));
 
-        // Test side: reads from test_sock2, writes to test_sock
         let mut reader = FrameReader::new(test_sock2);
         let mut writer = FrameWriter::new(test_sock);
 
@@ -629,18 +636,22 @@ mod tests {
         assert!(cap_urns.len() >= 2); // identity + echo cap
         assert_eq!(cap_urns[0], CAP_IDENTITY);
 
-        // Send a REQ + STREAM_START + CHUNK + STREAM_END + END
+        // Send a REQ + STREAM_START + CHUNK (CBOR-encoded) + STREAM_END + END
         let rid = MessageId::new_uuid();
         let mut req = Frame::req(rid.clone(), cap_urn, vec![], "application/cbor");
-        req.routing_id = Some(MessageId::Uint(1)); // XID
+        req.routing_id = Some(MessageId::Uint(1));
         writer.write(&req).unwrap();
 
-        let ss = Frame::stream_start(rid.clone(), "arg0".to_string(), "media:text;bytes".to_string());
+        let ss = Frame::stream_start(
+            rid.clone(),
+            "arg0".to_string(),
+            "media:text;bytes".to_string(),
+        );
         writer.write(&ss).unwrap();
 
-        let payload = b"hello world";
-        let checksum = Frame::compute_checksum(payload);
-        let chunk = Frame::chunk(rid.clone(), "arg0".to_string(), 0, payload.to_vec(), 0, checksum);
+        let payload = cbor_bytes_payload(b"hello world");
+        let checksum = Frame::compute_checksum(&payload);
+        let chunk = Frame::chunk(rid.clone(), "arg0".to_string(), 0, payload, 0, checksum);
         writer.write(&chunk).unwrap();
 
         let se = Frame::stream_end(rid.clone(), "arg0".to_string(), 1);
@@ -649,7 +660,7 @@ mod tests {
         let end = Frame::end(rid.clone(), None);
         writer.write(&end).unwrap();
 
-        // Read response: STREAM_START + CHUNK + STREAM_END + END
+        // Read response: STREAM_START + CHUNK (CBOR-encoded) + STREAM_END + END
         let resp_ss = reader.read().unwrap().unwrap();
         assert_eq!(resp_ss.frame_type, FrameType::StreamStart);
         assert_eq!(resp_ss.id, rid);
@@ -657,7 +668,8 @@ mod tests {
 
         let resp_chunk = reader.read().unwrap().unwrap();
         assert_eq!(resp_chunk.frame_type, FrameType::Chunk);
-        assert_eq!(resp_chunk.payload.as_deref(), Some(payload.as_slice()));
+        let resp_data = decode_chunk_payload(resp_chunk.payload.as_deref().unwrap());
+        assert_eq!(resp_data, b"hello world");
 
         let resp_se = reader.read().unwrap().unwrap();
         assert_eq!(resp_se.frame_type, FrameType::StreamEnd);
@@ -665,15 +677,14 @@ mod tests {
         let resp_end = reader.read().unwrap().unwrap();
         assert_eq!(resp_end.frame_type, FrameType::End);
 
-        // Close and wait
         drop(writer);
         drop(reader);
         host_thread.join().unwrap().unwrap();
     }
 
-    // TEST482: InProcessPluginHost handles identity verification (echo nonce)
+    // TEST655: InProcessPluginHost handles identity verification (echo nonce)
     #[test]
-    fn test482_identity_verification() {
+    fn test655_identity_verification() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let host = InProcessPluginHost::new(vec![]);
 
@@ -681,9 +692,7 @@ mod tests {
         let (host_sock2, test_sock2) = UnixStream::pair().unwrap();
 
         let handle = rt.handle().clone();
-        let host_thread = std::thread::spawn(move || {
-            host.run(host_sock, host_sock2, handle)
-        });
+        let host_thread = std::thread::spawn(move || host.run(host_sock, host_sock2, handle));
 
         let mut reader = FrameReader::new(test_sock2);
         let mut writer = FrameWriter::new(test_sock);
@@ -697,13 +706,24 @@ mod tests {
         req.routing_id = Some(MessageId::Uint(0));
         writer.write(&req).unwrap();
 
-        // Send nonce via stream
+        // Send nonce via stream (already CBOR-encoded by identity_nonce)
         let nonce = crate::bifaci::io::identity_nonce();
-        let ss = Frame::stream_start(rid.clone(), "identity-verify".to_string(), "media:bytes".to_string());
+        let ss = Frame::stream_start(
+            rid.clone(),
+            "identity-verify".to_string(),
+            "media:bytes".to_string(),
+        );
         writer.write(&ss).unwrap();
 
         let checksum = Frame::compute_checksum(&nonce);
-        let chunk = Frame::chunk(rid.clone(), "identity-verify".to_string(), 0, nonce.clone(), 0, checksum);
+        let chunk = Frame::chunk(
+            rid.clone(),
+            "identity-verify".to_string(),
+            0,
+            nonce.clone(),
+            0,
+            checksum,
+        );
         writer.write(&chunk).unwrap();
 
         let se = Frame::stream_end(rid.clone(), "identity-verify".to_string(), 1);
@@ -712,7 +732,7 @@ mod tests {
         let end = Frame::end(rid.clone(), None);
         writer.write(&end).unwrap();
 
-        // Read echoed response
+        // Read echoed response — identity echoes raw bytes (no CBOR decode/encode)
         let resp_ss = reader.read().unwrap().unwrap();
         assert_eq!(resp_ss.frame_type, FrameType::StreamStart);
 
@@ -731,9 +751,9 @@ mod tests {
         host_thread.join().unwrap().unwrap();
     }
 
-    // TEST483: InProcessPluginHost returns NO_HANDLER for unregistered cap
+    // TEST656: InProcessPluginHost returns NO_HANDLER for unregistered cap
     #[test]
-    fn test483_no_handler_returns_err() {
+    fn test656_no_handler_returns_err() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let host = InProcessPluginHost::new(vec![]);
 
@@ -741,9 +761,7 @@ mod tests {
         let (host_sock2, test_sock2) = UnixStream::pair().unwrap();
 
         let handle = rt.handle().clone();
-        let host_thread = std::thread::spawn(move || {
-            host.run(host_sock, host_sock2, handle)
-        });
+        let host_thread = std::thread::spawn(move || host.run(host_sock, host_sock2, handle));
 
         let mut reader = FrameReader::new(test_sock2);
         let mut writer = FrameWriter::new(test_sock);
@@ -772,15 +790,15 @@ mod tests {
         host_thread.join().unwrap().unwrap();
     }
 
-    // TEST484: InProcessPluginHost manifest includes identity cap and provider caps
+    // TEST657: InProcessPluginHost manifest includes identity cap and handler caps
     #[test]
-    fn test484_manifest_includes_all_caps() {
+    fn test657_manifest_includes_all_caps() {
         let cap_urn = "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
         let cap = make_test_cap(cap_urn);
         let host = InProcessPluginHost::new(vec![(
             "thumb".to_string(),
             vec![cap],
-            Arc::new(EchoProvider) as Arc<dyn CapSet>,
+            Arc::new(EchoHandler) as Arc<dyn FrameHandler>,
         )]);
 
         let manifest = host.build_manifest();
@@ -789,9 +807,9 @@ mod tests {
         assert!(cap_urns.iter().any(|u| u.contains("thumbnail")));
     }
 
-    // TEST485: InProcessPluginHost handles heartbeat by echoing same ID
+    // TEST658: InProcessPluginHost handles heartbeat by echoing same ID
     #[test]
-    fn test485_heartbeat_response() {
+    fn test658_heartbeat_response() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let host = InProcessPluginHost::new(vec![]);
 
@@ -799,9 +817,7 @@ mod tests {
         let (host_sock2, test_sock2) = UnixStream::pair().unwrap();
 
         let handle = rt.handle().clone();
-        let host_thread = std::thread::spawn(move || {
-            host.run(host_sock, host_sock2, handle)
-        });
+        let host_thread = std::thread::spawn(move || host.run(host_sock, host_sock2, handle));
 
         let mut reader = FrameReader::new(test_sock2);
         let mut writer = FrameWriter::new(test_sock);
@@ -822,21 +838,28 @@ mod tests {
         host_thread.join().unwrap().unwrap();
     }
 
-    // TEST486: InProcessPluginHost provider error returns ERR frame
+    // TEST659: InProcessPluginHost handler error returns ERR frame
     #[test]
-    fn test486_provider_error_returns_err_frame() {
-        /// Provider that always fails.
+    fn test659_handler_error_returns_err_frame() {
+        /// Handler that always fails.
         #[derive(Debug)]
-        struct FailProvider;
+        struct FailHandler;
 
-        impl CapSet for FailProvider {
-            fn execute_cap(
+        impl FrameHandler for FailHandler {
+            fn handle_request(
                 &self,
                 _cap_urn: &str,
-                _arguments: &[CapArgumentValue],
-            ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>>
-            {
-                Box::pin(async move { Err(anyhow::anyhow!("provider crashed")) })
+                input: mpsc::Receiver<Frame>,
+                output: ResponseWriter,
+                _rt: &tokio::runtime::Handle,
+            ) {
+                // Drain input
+                for frame in input.iter() {
+                    if frame.frame_type == FrameType::End {
+                        break;
+                    }
+                }
+                output.emit_error("PROVIDER_ERROR", "provider crashed");
             }
         }
 
@@ -846,16 +869,14 @@ mod tests {
         let host = InProcessPluginHost::new(vec![(
             "fail".to_string(),
             vec![cap],
-            Arc::new(FailProvider) as Arc<dyn CapSet>,
+            Arc::new(FailHandler) as Arc<dyn FrameHandler>,
         )]);
 
         let (host_sock, test_sock) = UnixStream::pair().unwrap();
         let (host_sock2, test_sock2) = UnixStream::pair().unwrap();
 
         let handle = rt.handle().clone();
-        let host_thread = std::thread::spawn(move || {
-            host.run(host_sock, host_sock2, handle)
-        });
+        let host_thread = std::thread::spawn(move || host.run(host_sock, host_sock2, handle));
 
         let mut reader = FrameReader::new(test_sock2);
         let mut writer = FrameWriter::new(test_sock);
@@ -877,60 +898,70 @@ mod tests {
         assert_eq!(err_frame.frame_type, FrameType::Err);
         assert_eq!(err_frame.id, rid);
         assert_eq!(err_frame.error_code(), Some("PROVIDER_ERROR"));
-        assert!(err_frame.error_message().unwrap().contains("provider crashed"));
+        assert!(err_frame
+            .error_message()
+            .unwrap()
+            .contains("provider crashed"));
 
         drop(writer);
         drop(reader);
         host_thread.join().unwrap().unwrap();
     }
 
-    // TEST487: InProcessPluginHost closest-specificity routing prefers specific over identity
+    // TEST660: InProcessPluginHost closest-specificity routing prefers specific over identity
     #[test]
-    fn test487_closest_specificity_routing() {
-        let specific_urn = "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
-        let generic_urn = "cap:in=\"media:image;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
+    fn test660_closest_specificity_routing() {
+        let specific_urn =
+            "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
+        let generic_urn =
+            "cap:in=\"media:image;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
 
         let specific_cap = make_test_cap(specific_urn);
         let generic_cap = make_test_cap(generic_urn);
 
-        /// Provider that tags its output with its name.
+        /// Handler that tags its output with its name.
         #[derive(Debug)]
-        struct TaggedProvider(String);
+        struct TaggedHandler(String);
 
-        impl CapSet for TaggedProvider {
-            fn execute_cap(
+        impl FrameHandler for TaggedHandler {
+            fn handle_request(
                 &self,
                 _cap_urn: &str,
-                _arguments: &[CapArgumentValue],
-            ) -> Pin<Box<dyn Future<Output = anyhow::Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>>
-            {
-                let tag = self.0.clone();
-                Box::pin(async move { Ok((Some(tag.into_bytes()), None)) })
+                input: mpsc::Receiver<Frame>,
+                output: ResponseWriter,
+                _rt: &tokio::runtime::Handle,
+            ) {
+                // Drain input
+                for frame in input.iter() {
+                    if frame.frame_type == FrameType::End {
+                        break;
+                    }
+                }
+                output.emit_response("media:text;bytes", self.0.as_bytes());
             }
         }
 
-        let providers = vec![
+        let handlers = vec![
             (
                 "generic".to_string(),
                 vec![generic_cap],
-                Arc::new(TaggedProvider("generic".into())) as Arc<dyn CapSet>,
+                Arc::new(TaggedHandler("generic".into())) as Arc<dyn FrameHandler>,
             ),
             (
                 "specific".to_string(),
                 vec![specific_cap],
-                Arc::new(TaggedProvider("specific".into())) as Arc<dyn CapSet>,
+                Arc::new(TaggedHandler("specific".into())) as Arc<dyn FrameHandler>,
             ),
         ];
 
-        let host = InProcessPluginHost::new(providers);
-        let providers_arc = Arc::new(host.providers);
-        let cap_table = InProcessPluginHost::build_cap_table(&providers_arc);
+        let host = InProcessPluginHost::new(handlers);
+        let cap_table = InProcessPluginHost::build_cap_table(&host.handlers);
 
         // Request for pdf thumbnail should match specific (pdf, specificity 3) over generic (image, specificity 2)
-        let result = InProcessPluginHost::find_provider_for_cap(
+        let result = InProcessPluginHost::find_handler_for_cap(
             &cap_table,
             "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"",
         );
-        assert_eq!(result, Some(1)); // specific provider
+        assert_eq!(result, Some(1)); // specific handler
     }
 }

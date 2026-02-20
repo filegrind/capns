@@ -48,29 +48,6 @@ pub const CAP_DISCARD: &str = "cap:in=media:;out=media:void";
 // =============================================================================
 
 
-/// Get the input media URN for a file extension
-///
-/// Uses PRIMARY type naming where the type IS the format.
-/// - Document files (pdf, epub): type=pdf, type=epub
-/// - Text format files (md, txt, rst, log): type=md, type=txt, etc.
-/// - Generic/unknown: type=binary (fallback)
-pub fn input_media_urn_for_ext(ext: Option<&str>) -> &'static str {
-    match ext {
-        // Document types (PRIMARY naming)
-        Some("pdf") => MEDIA_PDF,
-        Some("epub") => MEDIA_EPUB,
-        // Text format types (PRIMARY naming)
-        Some("md") => MEDIA_MD,
-        Some("txt") => MEDIA_TXT,
-        Some("rst") => MEDIA_RST,
-        Some("log") => MEDIA_LOG,
-        // Generic text - uses string type
-        Some("text") => MEDIA_STRING,
-        // Fallbacks
-        None => MEDIA_BINARY,
-        Some(_) => MEDIA_BINARY,
-    }
-}
 
 // =============================================================================
 // URN BUILDER FUNCTIONS (synchronous, return CapUrn directly)
@@ -252,57 +229,50 @@ pub fn model_path_urn() -> CapUrn {
 // DOCUMENT PROCESSING URN BUILDERS
 // -----------------------------------------------------------------------------
 
-/// Build URN for generate-thumbnail capability
+/// Build URN for generate-thumbnail capability.
 ///
-/// If `ext` is Some, builds a URN with the extension tag and appropriate input type.
-/// If `ext` is None, builds a generic fallback URN that matches binary files.
+/// `input_media` is the media URN for the input type (e.g., MEDIA_PDF, MEDIA_BINARY).
 /// Output is always an image (PNG thumbnail).
-///
-/// Input types by extension (PRIMARY type naming):
-/// - pdf: media:pdf;bytes
-/// - epub: media:epub;bytes
-/// - md: media:md;textable
-/// - txt: media:txt;textable
-/// - rst: media:rst;textable
-/// - log: media:log;textable
-/// - text: media:textable
-/// - None/other: media:bytes
-pub fn generate_thumbnail_urn(ext: Option<&str>) -> CapUrn {
-    let input_spec = input_media_urn_for_ext(ext);
-
+pub fn generate_thumbnail_urn(input_media: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "generate_thumbnail")
-        .in_spec(input_spec)
+        .in_spec(input_media)
         .out_spec(MEDIA_IMAGE_THUMBNAIL)
         .build()
         .expect("Failed to build generate-thumbnail cap URN")
 }
 
-/// Build URN for disbind capability
-pub fn disbind_urn(ext: Option<&str>) -> CapUrn {
+/// Build URN for disbind capability.
+///
+/// `input_media` is the media URN for the input type (e.g., MEDIA_PDF, MEDIA_TXT).
+pub fn disbind_urn(input_media: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "disbind")
-        .in_spec(input_media_urn_for_ext(ext))
+        .in_spec(input_media)
         .out_spec(MEDIA_DISBOUND_PAGE)
         .build()
         .expect("Failed to build disbind cap URN")
 }
 
-/// Build URN for extract-metadata capability
-pub fn extract_metadata_urn(ext: Option<&str>) -> CapUrn {
+/// Build URN for extract-metadata capability.
+///
+/// `input_media` is the media URN for the input type (e.g., MEDIA_PDF, MEDIA_TXT).
+pub fn extract_metadata_urn(input_media: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_metadata")
-        .in_spec(input_media_urn_for_ext(ext))
+        .in_spec(input_media)
         .out_spec(MEDIA_FILE_METADATA)
         .build()
         .expect("Failed to build extract-metadata cap URN")
 }
 
-/// Build URN for extract-outline capability
-pub fn extract_outline_urn(ext: Option<&str>) -> CapUrn {
+/// Build URN for extract-outline capability.
+///
+/// `input_media` is the media URN for the input type (e.g., MEDIA_PDF, MEDIA_TXT).
+pub fn extract_outline_urn(input_media: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_outline")
-        .in_spec(input_media_urn_for_ext(ext))
+        .in_spec(input_media)
         .out_spec(MEDIA_DOCUMENT_OUTLINE)
         .build()
         .expect("Failed to build extract-outline cap URN")
@@ -597,26 +567,26 @@ pub async fn model_path_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryE
 // -----------------------------------------------------------------------------
 
 /// Get extract-metadata cap from registry
-pub async fn extract_metadata_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
-    let urn = extract_metadata_urn(ext);
+pub async fn extract_metadata_cap(registry: Arc<CapRegistry>, input_media: &str) -> Result<Cap, RegistryError> {
+    let urn = extract_metadata_urn(input_media);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get generate-thumbnail cap from registry
-pub async fn generate_thumbnail_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
-    let urn = generate_thumbnail_urn(ext);
+pub async fn generate_thumbnail_cap(registry: Arc<CapRegistry>, input_media: &str) -> Result<Cap, RegistryError> {
+    let urn = generate_thumbnail_urn(input_media);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get extract-outline cap from registry
-pub async fn extract_outline_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
-    let urn = extract_outline_urn(ext);
+pub async fn extract_outline_cap(registry: Arc<CapRegistry>, input_media: &str) -> Result<Cap, RegistryError> {
+    let urn = extract_outline_urn(input_media);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get disbind cap from registry
-pub async fn disbind_cap(registry: Arc<CapRegistry>, ext: Option<&str>) -> Result<Cap, RegistryError> {
-    let urn = disbind_urn(ext);
+pub async fn disbind_cap(registry: Arc<CapRegistry>, input_media: &str) -> Result<Cap, RegistryError> {
+    let urn = disbind_urn(input_media);
     registry.get_cap(&urn.to_string()).await
 }
 
@@ -781,29 +751,6 @@ mod tests {
             .expect("non-void cap must parse");
         assert!(!discard.accepts(&non_void),
             "CAP_DISCARD must NOT accept a cap with non-void output");
-    }
-
-    // TEST604: input_media_urn_for_ext maps known extensions correctly and falls back to binary
-    #[test]
-    fn test604_input_media_urn_for_ext() {
-        // Document types
-        assert_eq!(input_media_urn_for_ext(Some("pdf")), MEDIA_PDF);
-        assert_eq!(input_media_urn_for_ext(Some("epub")), MEDIA_EPUB);
-
-        // Text format types
-        assert_eq!(input_media_urn_for_ext(Some("md")), MEDIA_MD);
-        assert_eq!(input_media_urn_for_ext(Some("txt")), MEDIA_TXT);
-        assert_eq!(input_media_urn_for_ext(Some("rst")), MEDIA_RST);
-        assert_eq!(input_media_urn_for_ext(Some("log")), MEDIA_LOG);
-
-        // Generic text
-        assert_eq!(input_media_urn_for_ext(Some("text")), MEDIA_STRING);
-
-        // Unknown extension falls back to binary
-        assert_eq!(input_media_urn_for_ext(Some("xyz")), MEDIA_BINARY);
-
-        // None falls back to binary
-        assert_eq!(input_media_urn_for_ext(None), MEDIA_BINARY);
     }
 
     // TEST605: all_coercion_paths each entry builds a valid parseable CapUrn
