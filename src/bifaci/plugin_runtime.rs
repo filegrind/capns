@@ -656,9 +656,8 @@ impl CliStreamEmitter {
         Ok(())
     }
 
-    fn emit_log(&self, level: &str, message: &str) {
-        // In CLI mode, logs go to stderr
-        eprintln!("[{}] {}", level.to_uppercase(), message);
+    fn emit_log(&self, _level: &str, _message: &str) {
+        // In CLI mode, logs go to stderr (currently disabled)
     }
 }
 
@@ -722,7 +721,6 @@ impl FrameSender for CliFrameSender {
                 // Output error to stderr
                 let code = frame.error_code().unwrap_or("ERROR");
                 let msg = frame.error_message().unwrap_or("Unknown error");
-                eprintln!("[ERROR] [{}] {}", code, msg);
                 Err(RuntimeError::Handler(format!("[{}] {}", code, msg)))
             }
             _ => {
@@ -841,8 +839,12 @@ impl Op<()> for DiscardOp {
 
 /// Tracks a pending peer request (plugin invoking host cap).
 /// The reader loop forwards response frames to the channel.
+/// LOG frames are re-stamped with the origin request ID and forwarded
+/// back to the host automatically (no handler involvement).
 struct PendingPeerRequest {
     sender: Sender<Frame>,
+    origin_request_id: MessageId,
+    origin_routing_id: Option<MessageId>,
 }
 
 /// Implementation of PeerInvoker that sends REQ frames to the host.
@@ -850,6 +852,8 @@ struct PeerInvokerImpl {
     output_tx: crossbeam_channel::Sender<Frame>,
     pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
     max_chunk: usize,
+    origin_request_id: MessageId,
+    origin_routing_id: Option<MessageId>,
 }
 
 /// Extract the effective payload from a CBOR arguments payload.
@@ -940,8 +944,6 @@ fn extract_effective_payload(
                 }
             }
 
-            eprintln!("[PluginRuntime] Checking arg: media_urn={:?}, has_value={}", media_urn, value_ref.is_some());
-
             // Check if this is a file-path argument using pattern matching
             if let (Some(ref urn_str), Some(value)) = (media_urn, value_ref) {
                 let arg_urn = MediaUrn::from_string(urn_str)
@@ -951,16 +953,12 @@ fn extract_effective_payload(
                 let is_file_path = file_path_base.accepts(&arg_urn)
                     .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
 
-                eprintln!("[PluginRuntime] is_file_path={}", is_file_path);
-
                 if is_file_path {
                     // Determine if it's scalar or list using specific patterns
                     let is_scalar = file_path_scalar.accepts(&arg_urn)
                         .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
                     let is_list = file_path_list.accepts(&arg_urn)
                         .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
-
-                    eprintln!("[PluginRuntime] is_scalar={}, is_list={}", is_scalar, is_list);
 
                     // Hard failure if neither scalar nor list
                     if !is_scalar && !is_list {
@@ -999,7 +997,6 @@ fn extract_effective_payload(
                         };
 
                         let path_str = String::from_utf8_lossy(&path_bytes);
-                        eprintln!("[PluginRuntime] Converting single file-path '{}' to bytes", path_str);
                         let file_bytes = std::fs::read(path_str.as_ref())
                             .map_err(|e| RuntimeError::Handler(format!("Failed to read file '{}': {}", path_str, e)))?;
 
@@ -1007,8 +1004,6 @@ fn extract_effective_payload(
                         let target_urn = arg_to_stdin.get(urn_str)
                             .cloned()
                             .unwrap_or_else(|| expected_input.clone());
-
-                        eprintln!("[PluginRuntime] Read {} bytes, converting media_urn to '{}'", file_bytes.len(), target_urn);
 
                         // Replace value with file contents AND media_urn with target
                         for (k, v) in arg_map.iter_mut() {
@@ -1034,7 +1029,6 @@ fn extract_effective_payload(
                                 }
 
                                 // CBOR mode - extract each path from array
-                                eprintln!("[PluginRuntime] Converting CBOR array of {} file-paths to bytes", arr.len());
                                 let mut paths = Vec::new();
                                 for item in arr {
                                     match item {
@@ -1062,8 +1056,6 @@ fn extract_effective_payload(
                                 )));
                             }
                         };
-
-                        eprintln!("[PluginRuntime] Processing {} path(s)", paths_to_process.len());
 
                         let mut all_files = Vec::new();
 
@@ -1127,14 +1119,10 @@ fn extract_effective_payload(
                             files_data.push(ciborium::Value::Bytes(bytes));
                         }
 
-                        eprintln!("[PluginRuntime] Read {} files, total CBOR array elements", files_data.len());
-
                         // Find target media_urn from arg_to_stdin map
                         let target_urn = arg_to_stdin.get(urn_str)
                             .cloned()
                             .unwrap_or_else(|| expected_input.clone());
-
-                        eprintln!("[PluginRuntime] Converting media_urn to '{}'", target_urn);
 
                         // Store as CBOR Array directly (NOT double-encoded as bytes)
                         let cbor_array = ciborium::Value::Array(files_data);
@@ -1218,7 +1206,6 @@ fn extract_effective_payload(
     ciborium::into_writer(&modified_cbor, &mut serialized)
         .map_err(|e| RuntimeError::Serialize(format!("Failed to serialize modified CBOR: {}", e)))?;
 
-    eprintln!("[PluginRuntime] Returning modified CBOR array ({} bytes) with validated matching argument", serialized.len());
     Ok(serialized)
 }
 
@@ -1226,16 +1213,17 @@ impl PeerInvoker for PeerInvokerImpl {
     fn call(&self, cap_urn: &str) -> Result<PeerCall, RuntimeError> {
         let request_id = MessageId::new_uuid();
 
-        eprintln!("[PeerInvoker.call] cap={}, request_id={:?}", cap_urn, request_id);
-
         // Create channel for response frames
         let (sender, receiver) = bounded(64);
 
         // Register pending request before sending REQ
         {
             let mut pending = self.pending_requests.lock().unwrap();
-            pending.insert(request_id.clone(), PendingPeerRequest { sender });
-            eprintln!("[PeerInvoker.call] Registered pending_peer_requests[{:?}]", request_id);
+            pending.insert(request_id.clone(), PendingPeerRequest {
+                sender,
+                origin_request_id: self.origin_request_id.clone(),
+                origin_routing_id: self.origin_routing_id.clone(),
+            });
         }
 
         // Send REQ with empty payload
@@ -1361,7 +1349,6 @@ fn demux_multi_stream(
                         .map_or(false, |ctx| ctx.is_file_path(&media_urn));
 
                     if is_fp {
-                        eprintln!("[Demux] File-path stream detected: stream_id={}, media_urn={}", stream_id, media_urn);
                         fp_accumulators.insert(stream_id, (media_urn, Vec::new()));
                     } else {
                         let (chunk_tx, chunk_rx) = crossbeam_channel::bounded(64);
@@ -1449,7 +1436,6 @@ fn demux_multi_stream(
                             let is_scalar = ctx.is_scalar(&media_urn);
                             if is_scalar {
                                 let path_str = String::from_utf8_lossy(&path_bytes);
-                                eprintln!("[Demux] Reading file: {}", path_str);
                                 match std::fs::read(path_str.as_ref()) {
                                     Ok(file_bytes) => {
                                         let (chunk_tx, chunk_rx) = crossbeam_channel::bounded(64);
@@ -1899,7 +1885,6 @@ impl PluginRuntime {
             )?
         } else if stdin_is_piped && cap_accepts_stdin {
             // STREAMING PATH: No args, read stdin in chunks and accumulate
-            eprintln!("[PluginRuntime] CLI mode: streaming binary from stdin");
             self.build_payload_from_streaming_stdin(&cap)?
         } else {
             // No input provided
@@ -2019,16 +2004,9 @@ impl PluginRuntime {
 
         match result {
             Ok(()) => {
-                eprintln!("[PluginRuntime] CLI handler completed successfully");
                 Ok(())
             }
             Err(e) => {
-                // Output error as JSON to stderr
-                let error_json = serde_json::json!({
-                    "error": e.to_string(),
-                    "code": "HANDLER_ERROR"
-                });
-                eprintln!("{}", serde_json::to_string(&error_json).unwrap_or_default());
                 Err(e)
             }
         }
@@ -2067,8 +2045,6 @@ impl PluginRuntime {
         mut reader: R,
         max_chunk: usize,
     ) -> Result<Vec<u8>, RuntimeError> {
-        eprintln!("[PluginRuntime] CLI mode: streaming PURE BINARY from reader (NOT CBOR)");
-
         // Simulate accumulation structure (same as CBOR mode)
         struct PendingRequest {
             cap_urn: String,
@@ -2079,25 +2055,18 @@ impl PluginRuntime {
             cap_urn: cap.urn_string(),
             chunks: Vec::new(),
         };
-        let mut total_bytes = 0;
-
         loop {
             let mut buffer = vec![0u8; max_chunk];
             match reader.read(&mut buffer) {
                 Ok(0) => {
                     // EOF - simulate END frame
-                    eprintln!("[PluginRuntime] Reader EOF (simulated END frame), accumulated {} bytes in {} chunks",
-                        total_bytes, pending.chunks.len());
                     break;
                 }
                 Ok(n) => {
                     buffer.truncate(n);
-                    total_bytes += n;
 
                     // Simulate receiving CHUNK frame - add to accumulator immediately
                     pending.chunks.push(buffer);
-                    eprintln!("[PluginRuntime] Chunk {} received ({} bytes, total: {}) - simulated CHUNK frame",
-                        pending.chunks.len(), n, total_bytes);
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
                     continue;
@@ -2110,8 +2079,6 @@ impl PluginRuntime {
 
         // Concatenate chunks (same as accumulation does on END frame)
         let complete_payload = pending.chunks.concat();
-        eprintln!("[PluginRuntime] Accumulated payload complete: {} bytes from {} chunks",
-            complete_payload.len(), pending.chunks.len());
 
         // Build CBOR arguments array (same format as CBOR mode)
         let cap_urn = CapUrn::from_string(&pending.cap_urn)
@@ -2454,82 +2421,29 @@ impl PluginRuntime {
     }
 
     /// Print help message showing all available subcommands.
-    fn print_help(&self, manifest: &CapManifest) {
-        eprintln!("{} v{}", manifest.name, manifest.version);
-        eprintln!("{}", manifest.description);
-        eprintln!();
-        eprintln!("USAGE:");
-        eprintln!("    {} <COMMAND> [OPTIONS]", manifest.name.to_lowercase());
-        eprintln!();
-        eprintln!("COMMANDS:");
-        eprintln!("    manifest    Output the plugin manifest as JSON");
-
-        for cap in &manifest.caps {
-            let desc = cap.cap_description.as_deref().unwrap_or(&cap.title);
-            eprintln!("    {:<12} {}", cap.command, desc);
-        }
-
-        eprintln!();
-        eprintln!("Run '{} <COMMAND> --help' for more information on a command.", manifest.name.to_lowercase());
+    fn print_help(&self, _manifest: &CapManifest) {
     }
 
     /// Print help for a specific cap.
-    fn print_cap_help(&self, cap: &Cap) {
-        eprintln!("{}", cap.title);
-        if let Some(desc) = &cap.cap_description {
-            eprintln!("{}", desc);
-        }
-        eprintln!();
-        eprintln!("USAGE:");
-        eprintln!("    plugin {} [OPTIONS]", cap.command);
-        eprintln!();
-
-        let args = cap.get_args();
-        if !args.is_empty() {
-            eprintln!("OPTIONS:");
-            for arg in args {
-                let required = if arg.required { " (required)" } else { "" };
-                let desc = arg.arg_description.as_deref().unwrap_or("");
-
-                for source in &arg.sources {
-                    match source {
-                        ArgSource::CliFlag { cli_flag } => {
-                            eprintln!("    {:<16} {}{}", cli_flag, desc, required);
-                        }
-                        ArgSource::Position { position } => {
-                            eprintln!("    <arg{}>          {}{}", position, desc, required);
-                        }
-                        ArgSource::Stdin { stdin } => {
-                            eprintln!("    (stdin: {}) {}{}", stdin, desc, required);
-                        }
-                    }
-                }
-            }
-        }
+    fn print_cap_help(&self, _cap: &Cap) {
     }
 
     /// Run in Plugin CBOR mode - binary frame protocol via stdin/stdout.
     fn run_cbor_mode(&self) -> Result<(), RuntimeError> {
-        eprintln!("[PluginRuntime] Starting CBOR mode");
         let stdin = io::stdin();
         let stdout = io::stdout();
-        eprintln!("[PluginRuntime] Got stdin/stdout handles");
 
         // Lock stdin for reading (single reader thread)
         let reader = BufReader::new(stdin.lock());
-        eprintln!("[PluginRuntime] Created buffered reader");
 
         // Use direct stdout for writer (will be moved to writer thread)
         let writer = BufWriter::new(stdout);
 
         let mut frame_reader = FrameReader::new(reader);
         let mut frame_writer = FrameWriter::new(writer);
-        eprintln!("[PluginRuntime] Created frame reader/writer");
 
         // Perform handshake - send our manifest in the HELLO response
-        eprintln!("[PluginRuntime] Starting handshake (manifest {} bytes)", self.manifest_data.len());
         let negotiated_limits = handshake_accept(&mut frame_reader, &mut frame_writer, &self.manifest_data)?;
-        eprintln!("[PluginRuntime] Handshake successful, limits: {:?}", negotiated_limits);
         frame_reader.set_limits(negotiated_limits);
         frame_writer.set_limits(negotiated_limits);
 
@@ -2538,32 +2452,20 @@ impl PluginRuntime {
 
         // Spawn writer thread to drain output channel and write frames to stdout
         let writer_handle = std::thread::spawn(move || {
-            eprintln!("[PluginRuntime/writer] Writer thread started");
-            let mut frame_count = 0;
             let mut seq_assigner = SeqAssigner::new();
             for mut frame in output_rx {
-                frame_count += 1;
                 // Assign centralized seq per request ID before writing
                 seq_assigner.assign(&mut frame);
-                eprintln!("[PluginRuntime/writer] Writing frame #{}: {:?} (id={:?}, seq={})", frame_count, frame.frame_type, frame.id, frame.seq);
-                if let Err(e) = frame_writer.write(&frame) {
-                    eprintln!("[PluginRuntime/writer] Failed to write frame: {}", e);
+                if let Err(_) = frame_writer.write(&frame) {
                     break;
                 }
                 // Cleanup seq tracking on terminal frames
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
                     seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
-                eprintln!("[PluginRuntime/writer] Frame #{} written successfully", frame_count);
             }
             // CRITICAL: Flush buffered output before exiting!
-            eprintln!("[PluginRuntime/writer] Flushing buffered output ({} frames written)", frame_count);
-            if let Err(e) = frame_writer.inner_mut().flush() {
-                eprintln!("[PluginRuntime/writer] ERROR: Failed to flush output: {}", e);
-            } else {
-                eprintln!("[PluginRuntime/writer] Flush successful");
-            }
-            eprintln!("[PluginRuntime/writer] Writer thread exiting after writing {} frames", frame_count);
+            let _ = frame_writer.inner_mut().flush();
         });
 
         // Track pending peer requests (plugin invoking host caps)
@@ -2632,9 +2534,6 @@ impl PluginRuntime {
                     let cap_urn_clone = cap_urn.clone();
                     let max_chunk = negotiated_limits.max_chunk;
 
-                    eprintln!("[PluginRuntime] REQ: req_id={:?} cap={} XID={:?} - spawning handler",
-                        request_id, cap_urn, routing_id);
-
                     let handle = thread::spawn(move || {
                         // Build file-path context for Demux
                         let fp_ctx = FilePathContext::new(&cap_urn_clone, manifest_clone).ok();
@@ -2661,6 +2560,8 @@ impl PluginRuntime {
                             output_tx: output_tx_clone.clone(),
                             pending_requests: Arc::clone(&pending_clone),
                             max_chunk,
+                            origin_request_id: request_id.clone(),
+                            origin_routing_id: routing_id.clone(),
                         };
 
                         // Call Op handler via dispatch
@@ -2670,14 +2571,12 @@ impl PluginRuntime {
 
                         match result {
                             Ok(()) => {
-                                eprintln!("[PluginRuntime] Handler completed successfully");
                                 // Send END frame with routing_id
                                 let mut end_frame = Frame::end(request_id, None);
                                 end_frame.routing_id = routing_id;
                                 let _ = sender.send(&end_frame);
                             }
                             Err(e) => {
-                                eprintln!("[PluginRuntime] Handler error: {}", e);
                                 let mut err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
                                 err_frame.routing_id = routing_id;
                                 let _ = sender.send(&err_frame);
@@ -2690,13 +2589,9 @@ impl PluginRuntime {
 
                 // Route STREAM_START / CHUNK / STREAM_END to active request or peer response
                 FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd => {
-                    eprintln!("[PluginRuntime] {:?}: req_id={:?} stream_id={:?}",
-                        frame.frame_type, frame.id, frame.stream_id);
-
                     // Try active request first
                     if let Some(ar) = active_requests.get(&frame.id) {
                         if ar.raw_tx.send(frame.clone()).is_err() {
-                            eprintln!("[PluginRuntime] Active request channel closed, removing");
                             active_requests.remove(&frame.id);
                         }
                         continue;
@@ -2711,9 +2606,7 @@ impl PluginRuntime {
                 }
 
                 FrameType::End => {
-                    eprintln!("[PluginRuntime] END: req_id={:?}", frame.id);
-
-                    // Try active request first — send END then remove
+                    // Try active request first -- send END then remove
                     if let Some(ar) = active_requests.remove(&frame.id) {
                         let _ = ar.raw_tx.send(frame.clone());
                         // raw_tx dropped here → Demux sees channel close after END
@@ -2729,9 +2622,6 @@ impl PluginRuntime {
                 }
 
                 FrameType::Err => {
-                    eprintln!("[PluginRuntime] ERR: req_id={:?} code={:?} msg={:?}",
-                        frame.id, frame.error_code(), frame.error_message());
-
                     // Try active request first
                     if let Some(ar) = active_requests.remove(&frame.id) {
                         let _ = ar.raw_tx.send(frame.clone());
@@ -2757,7 +2647,18 @@ impl PluginRuntime {
                 }
 
                 FrameType::Log => {
-                    continue;
+                    // Forward peer response LOG frames back on the original request.
+                    // Re-stamp with origin RID/XID so the engine sees them as progress
+                    // on the cap execution that triggered the peer call.
+                    let peer = pending_peer_requests.lock().unwrap();
+                    if let Some(pr) = peer.get(&frame.id) {
+                        let level = frame.log_level().unwrap_or("INFO");
+                        let message = frame.log_message().unwrap_or("");
+                        let mut log_frame = Frame::log(pr.origin_request_id.clone(), level, message);
+                        log_frame.routing_id = pr.origin_routing_id.clone();
+                        let _ = output_tx.send(log_frame);
+                    }
+                    drop(peer);
                 }
 
                 FrameType::RelayNotify | FrameType::RelayState => {
@@ -2770,19 +2671,13 @@ impl PluginRuntime {
         }
 
         // Graceful shutdown
-        eprintln!("[PluginRuntime] Main loop exited (stdin closed), shutting down gracefully");
         drop(output_tx);
-        eprintln!("[PluginRuntime] Dropped output_tx, waiting for writer thread to finish");
 
-        if let Err(e) = writer_handle.join() {
-            eprintln!("[PluginRuntime] Writer thread panicked: {:?}", e);
-        }
-        eprintln!("[PluginRuntime] Writer thread finished");
+        let _ = writer_handle.join();
 
         for handle in active_handlers {
             let _ = handle.join();
         }
-        eprintln!("[PluginRuntime] All handlers completed");
 
         Ok(())
     }

@@ -399,27 +399,22 @@ impl PluginHostRuntime {
         let mut relay_connected = true; // Track relay connection state
         let relay_reader_task = tokio::spawn(async move {
             let mut reader = AsyncFrameReader::new(relay_read);
-            eprintln!("[PluginHostRuntime/relay_reader] Starting relay reader loop");
             loop {
                 match reader.read().await {
                     Ok(Some(frame)) => {
                         if relay_tx.send(Ok(frame)).is_err() {
-                            eprintln!("[PluginHostRuntime/relay_reader] Main loop dropped, exiting");
                             break; // Main loop dropped
                         }
                     }
                     Ok(None) => {
-                        eprintln!("[PluginHostRuntime/relay_reader] EOF from relay, relay connection closed!");
                         break; // Relay closed cleanly
                     }
                     Err(e) => {
-                        eprintln!("[PluginHostRuntime/relay_reader] Read error from relay: {}", e);
                         let _ = relay_tx.send(Err(e.into()));
                         break;
                     }
                 }
             }
-            eprintln!("[PluginHostRuntime/relay_reader] Relay reader task exiting");
         });
 
         let mut event_rx = self.event_rx.take().expect("run() must only be called once");
@@ -430,13 +425,9 @@ impl PluginHostRuntime {
         // Send discovery RelayNotify if plugins were pre-attached
         // At this point all async tasks are spawned and running, so the frame will be delivered
         // self.capabilities is already a JSON array of capability URN strings: ["cap:...", "cap:..."]
-        eprintln!("[PluginHostRuntime.run] Initial capabilities: {} bytes: {:?}",
-                  self.capabilities.len(),
-                  std::str::from_utf8(&self.capabilities).unwrap_or("<invalid UTF-8>"));
         if !self.capabilities.is_empty() {
             let notify_frame = Frame::relay_notify(&self.capabilities, &Limits::default());
             let _ = outbound_tx.send(notify_frame);
-            eprintln!("[PluginHostRuntime.run] Sent initial RelayNotify with {} bytes", self.capabilities.len());
         }
 
         let result = loop {
@@ -447,25 +438,18 @@ impl PluginHostRuntime {
                 Some(event) = event_rx.recv() => {
                     match event {
                         PluginEvent::Frame { plugin_idx, frame } => {
-                            eprintln!("[PluginHostRuntime.run] Processing plugin {} frame: {:?} (id={:?})", plugin_idx, frame.frame_type, frame.id);
                             if let Err(e) = self.handle_plugin_frame(plugin_idx, frame, &outbound_tx) {
-                                eprintln!("[PluginHostRuntime.run] handle_plugin_frame returned error: {}", e);
                                 break Err(e);
                             }
-                            eprintln!("[PluginHostRuntime.run] handle_plugin_frame completed successfully, continuing loop");
                         }
                         PluginEvent::Death { plugin_idx } => {
-                            eprintln!("[PluginHostRuntime.run] Processing plugin {} death event", plugin_idx);
                             if let Err(e) = self.handle_plugin_death(plugin_idx, &outbound_tx).await {
-                                eprintln!("[PluginHostRuntime.run] handle_plugin_death returned error: {}", e);
                                 break Err(e);
                             }
-                            eprintln!("[PluginHostRuntime.run] handle_plugin_death completed successfully, continuing loop");
 
                             // If relay disconnected AND all plugins dead, exit cleanly
                             let all_plugins_dead = self.plugins.iter().all(|p| !p.running);
                             if !relay_connected && all_plugins_dead {
-                                eprintln!("[PluginHostRuntime.run] Relay disconnected and all plugins dead, exiting cleanly");
                                 break Ok(());
                             }
                         }
@@ -476,32 +460,25 @@ impl PluginHostRuntime {
                 relay_result = relay_rx.recv(), if relay_connected => {
                     match relay_result {
                         Some(Ok(frame)) => {
-                            eprintln!("[PluginHostRuntime.run] Processing relay frame: {:?} (id={:?})", frame.frame_type, frame.id);
                             if let Err(e) = self.handle_relay_frame(frame, &outbound_tx, &resource_fn).await {
-                                eprintln!("[PluginHostRuntime.run] handle_relay_frame returned error: {}", e);
                                 break Err(e);
                             }
-                            eprintln!("[PluginHostRuntime.run] handle_relay_frame completed successfully, continuing loop");
                         }
-                        Some(Err(e)) => {
-                            eprintln!("[PluginHostRuntime.run] Relay error: {} - disconnecting relay but keeping plugins alive", e);
+                        Some(Err(_)) => {
                             relay_connected = false; // Disable relay branch, continue processing plugins
 
                             // If all plugins are also dead, exit cleanly
                             let all_plugins_dead = self.plugins.iter().all(|p| !p.running);
                             if all_plugins_dead {
-                                eprintln!("[PluginHostRuntime.run] Relay error and all plugins dead, exiting cleanly");
                                 break Ok(());
                             }
                         }
                         None => {
-                            eprintln!("[PluginHostRuntime.run] Relay disconnected (EOF) - keeping plugins alive!");
                             relay_connected = false; // Disable relay branch, continue processing plugins
 
                             // If all plugins are also dead, exit cleanly
                             let all_plugins_dead = self.plugins.iter().all(|p| !p.running);
                             if all_plugins_dead {
-                                eprintln!("[PluginHostRuntime.run] Relay disconnected and all plugins dead, exiting cleanly");
                                 break Ok(());
                             }
                         }
@@ -534,6 +511,8 @@ impl PluginHostRuntime {
         outbound_tx: &mpsc::UnboundedSender<Frame>,
         resource_fn: &(impl Fn() -> Vec<u8> + Send),
     ) -> Result<(), AsyncHostError> {
+        eprintln!("[PluginHostRuntime] handle_relay_frame: {:?} id={:?} cap={:?} xid={:?}",
+            frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 // PATH C: REQ coming FROM relay
@@ -556,15 +535,10 @@ impl PluginHostRuntime {
                     }
                 };
 
-                eprintln!("[PluginHostRuntime.handle_relay_frame] REQ from relay: cap={}, RID={:?}, XID={:?}",
-                    cap_urn, frame.id, xid);
-
                 // Route by cap URN to find handler plugin
                 let plugin_idx = match self.find_plugin_for_cap(&cap_urn) {
                     Some(idx) => idx,
                     None => {
-                        eprintln!("[PluginHostRuntime.handle_relay_frame] No handler for cap: {}", cap_urn);
-                        eprintln!("[PluginHostRuntime.handle_relay_frame] cap_table has {} entries", self.cap_table.len());
                         // No plugin handles this cap — send ERR back and continue.
                         let mut err = Frame::err(
                             frame.id.clone(),
@@ -572,28 +546,19 @@ impl PluginHostRuntime {
                             &format!("no plugin handles cap: {}", cap_urn),
                         );
                         err.routing_id = frame.routing_id.clone(); // Copy XID from incoming request
-                        eprintln!("[PluginHostRuntime.handle_relay_frame] Sending ERR frame: RID={:?}, XID={:?}", err.id, err.routing_id);
-                        let send_result = outbound_tx.send(err);
-                        eprintln!("[PluginHostRuntime.handle_relay_frame] ERR send result: {:?}", send_result.is_ok());
-                        send_result.map_err(|_| AsyncHostError::SendError)?;
-                        eprintln!("[PluginHostRuntime.handle_relay_frame] Returning Ok after sending ERR");
+                        outbound_tx.send(err).map_err(|_| AsyncHostError::SendError)?;
                         return Ok(());
                     }
                 };
 
-                eprintln!("[PluginHostRuntime.handle_relay_frame] Routing REQ to plugin {} (cap matched)", plugin_idx);
-
                 // Spawn on demand if not running
                 if !self.plugins[plugin_idx].running {
-                    eprintln!("[PluginHostRuntime.handle_relay_frame] Plugin {} not running, spawning on demand", plugin_idx);
                     self.spawn_plugin(plugin_idx, resource_fn).await?;
                     self.rebuild_capabilities(Some(outbound_tx)); // Send RelayNotify to relay
                 }
 
                 // Record in List 2: INCOMING_RXIDS (XID, RID) → plugin_idx
                 self.incoming_rxids.insert((xid.clone(), frame.id.clone()), plugin_idx);
-                eprintln!("[PluginHostRuntime.handle_relay_frame] Recorded incoming_rxids[({:?}, {:?})] = {}",
-                    xid, frame.id, plugin_idx);
 
                 // Forward to plugin WITH XID
                 self.send_to_plugin(plugin_idx, frame)
@@ -613,18 +578,13 @@ impl PluginHostRuntime {
                     }
                 };
 
-                eprintln!("[PluginHostRuntime.handle_relay_frame] Continuation {:?} from relay: RID={:?}, XID={:?}",
-                    frame.frame_type, frame.id, xid);
-
-                // Route by (XID, RID) - PluginRuntime will use media_urn to determine
-                // if frames go to incoming handler or peer invoker
+                // Route by (XID, RID) for incoming engine requests.
+                // If not found, check outgoing_rids[RID] for peer response routing.
                 let plugin_idx = if let Some(&idx) = self.incoming_rxids.get(&(xid.clone(), frame.id.clone())) {
-                    eprintln!("[PluginHostRuntime.handle_relay_frame] Matched incoming_rxids[({:?}, {:?})] → plugin {}",
-                        xid, frame.id, idx);
+                    idx
+                } else if let Some(&idx) = self.outgoing_rids.get(&frame.id) {
                     idx
                 } else {
-                    eprintln!("[PluginHostRuntime.handle_relay_frame] No routing found for RID={:?}, XID={:?} (already cleaned up)",
-                        frame.id, xid);
                     return Ok(()); // Already cleaned up
                 };
 
@@ -633,7 +593,6 @@ impl PluginHostRuntime {
 
                 // If the plugin is dead, send ERR to engine and clean up routing.
                 if self.send_to_plugin(plugin_idx, frame.clone()).is_err() {
-                    eprintln!("[PluginHostRuntime.handle_relay_frame] Plugin {} died, sending ERR", plugin_idx);
                     let flow_key = FlowKey { rid: frame.id.clone(), xid: Some(xid.clone()) };
                     let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
                     let mut err = Frame::err(
@@ -667,9 +626,15 @@ impl PluginHostRuntime {
             FrameType::Heartbeat => Err(AsyncHostError::Protocol(
                 "HEARTBEAT from relay — engine must not send heartbeats to runtime".to_string(),
             )),
-            FrameType::Log => Err(AsyncHostError::Protocol(
-                "LOG from relay — LOG frames flow plugin→engine, not engine→plugin".to_string(),
-            )),
+            FrameType::Log => {
+                // LOG frames from peer responses — route back to the plugin
+                // that made the peer request, identified by outgoing_rids[RID].
+                if let Some(&plugin_idx) = self.outgoing_rids.get(&frame.id) {
+                    let _ = self.send_to_plugin(plugin_idx, frame);
+                }
+                // If not a peer response LOG, ignore silently (stale routing)
+                Ok(())
+            }
             FrameType::RelayNotify | FrameType::RelayState => Err(AsyncHostError::Protocol(
                 format!(
                     "{:?} reached runtime — relay must intercept these, never forward",
@@ -686,6 +651,8 @@ impl PluginHostRuntime {
         frame: Frame,
         outbound_tx: &mpsc::UnboundedSender<Frame>,
     ) -> Result<(), AsyncHostError> {
+        eprintln!("[PluginHostRuntime] handle_plugin_frame: plugin={} {:?} id={:?} cap={:?} xid={:?}",
+            plugin_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             // HELLO after handshake is a fatal protocol error.
             FrameType::Hello => Err(AsyncHostError::Protocol(format!(
@@ -728,13 +695,8 @@ impl PluginHostRuntime {
                     )));
                 }
 
-                eprintln!("[PluginHostRuntime.handle_plugin_frame] Peer REQ from plugin {}: RID={:?}, cap={:?}",
-                    plugin_idx, frame.id, frame.cap);
-
                 // Record in List 1: OUTGOING_RIDS
                 self.outgoing_rids.insert(frame.id.clone(), plugin_idx);
-                eprintln!("[PluginHostRuntime.handle_plugin_frame] Recorded outgoing_rids[{:?}] = {}",
-                    frame.id, plugin_idx);
 
                 // Track max-seen seq for host-generated ERR on death
                 let flow_key = FlowKey::from_frame(&frame);
@@ -751,9 +713,6 @@ impl PluginHostRuntime {
             // When responding to direct requests, frames will NOT have XID
             // NO routing decisions - only one destination (relay)
             _ => {
-                eprintln!("[PluginHostRuntime.handle_plugin_frame] {:?} from plugin {}: RID={:?}",
-                    frame.frame_type, plugin_idx, frame.id);
-
                 // Track max-seen seq for flow, clean up on terminal
                 if frame.is_flow_frame() {
                     let flow_key = FlowKey::from_frame(&frame);
@@ -785,10 +744,8 @@ impl PluginHostRuntime {
         plugin_idx: usize,
         outbound_tx: &mpsc::UnboundedSender<Frame>,
     ) -> Result<(), AsyncHostError> {
-        eprintln!("[PluginHostRuntime.handle_plugin_death] Plugin {} death detected", plugin_idx);
         let plugin = &mut self.plugins[plugin_idx];
         plugin.running = false;
-        eprintln!("[PluginHostRuntime.handle_plugin_death] Closing writer to plugin {} (this closes stdin)", plugin_idx);
         plugin.writer_tx = None;
 
         // Kill the process if it's still around
@@ -812,9 +769,6 @@ impl PluginHostRuntime {
                 (rid.clone(), next_seq)
             })
             .collect();
-
-        eprintln!("[PluginHostRuntime.handle_plugin_death] Plugin {} died, failing {} outgoing peer requests",
-            plugin_idx, failed_outgoing.len());
 
         for (rid, next_seq) in &failed_outgoing {
             let mut err_frame = Frame::err(
@@ -1044,9 +998,6 @@ impl PluginHostRuntime {
                     .map(|(rid, _)| rid.clone())
                     .collect();
 
-                eprintln!("[PluginHostRuntime.heartbeat] Plugin {} unhealthy, failing {} incoming and {} outgoing requests",
-                    plugin_idx, failed_incoming_keys.len(), failed_outgoing_rids.len());
-
                 for (xid, rid) in &failed_incoming_keys {
                     let flow_key = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
                     let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
@@ -1197,8 +1148,7 @@ impl PluginHostRuntime {
             let mut seq_assigner = SeqAssigner::new();
             while let Some(mut frame) = rx.recv().await {
                 seq_assigner.assign(&mut frame);
-                if let Err(e) = writer.write(&frame).await {
-                    eprintln!("[PluginWriter] write error: {}", e);
+                if let Err(_) = writer.write(&frame).await {
                     break;
                 }
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
@@ -1215,13 +1165,9 @@ impl PluginHostRuntime {
         event_tx: mpsc::UnboundedSender<PluginEvent>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            eprintln!("[PluginReader {}] Starting reader loop", plugin_idx);
-            let mut frame_count = 0;
             loop {
                 match reader.read().await {
                     Ok(Some(frame)) => {
-                        frame_count += 1;
-                        eprintln!("[PluginReader {}] Read frame #{}: {:?} (id={:?})", plugin_idx, frame_count, frame.frame_type, frame.id);
                         if event_tx
                             .send(PluginEvent::Frame {
                                 plugin_idx,
@@ -1229,26 +1175,21 @@ impl PluginHostRuntime {
                             })
                             .is_err()
                         {
-                            eprintln!("[PluginReader {}] Event channel closed, main loop dropped", plugin_idx);
                             break; // Runtime dropped
                         }
-                        eprintln!("[PluginReader {}] Frame #{} sent to main loop", plugin_idx, frame_count);
                     }
                     Ok(None) => {
                         // EOF — plugin closed stdout
-                        eprintln!("[PluginReader {}] EOF from plugin stdout (after {} frames), sending Death event", plugin_idx, frame_count);
                         let _ = event_tx.send(PluginEvent::Death { plugin_idx });
                         break;
                     }
-                    Err(e) => {
+                    Err(_) => {
                         // Read error — treat as death
-                        eprintln!("[PluginReader {}] Read error (after {} frames): {}, sending Death event", plugin_idx, frame_count, e);
                         let _ = event_tx.send(PluginEvent::Death { plugin_idx });
                         break;
                     }
                 }
             }
-            eprintln!("[PluginReader {}] Reader task exiting (read {} frames total)", plugin_idx, frame_count);
         })
     }
 
@@ -1259,16 +1200,11 @@ impl PluginHostRuntime {
         mut rx: mpsc::UnboundedReceiver<Frame>,
     ) {
         let mut writer = AsyncFrameWriter::new(relay_write);
-        eprintln!("[PluginHostRuntime/outbound_writer] Starting outbound writer loop");
         while let Some(frame) = rx.recv().await {
-            eprintln!("[PluginHostRuntime/outbound_writer] Writing frame: {:?} (id={:?}, seq={})", frame.frame_type, frame.id, frame.seq);
-            if let Err(e) = writer.write(&frame).await {
-                eprintln!("[PluginHostRuntime/outbound_writer] Write error: {}", e);
+            if writer.write(&frame).await.is_err() {
                 break;
             }
-            eprintln!("[PluginHostRuntime/outbound_writer] Frame written successfully");
         }
-        eprintln!("[PluginHostRuntime/outbound_writer] Outbound writer loop exiting");
     }
 }
 

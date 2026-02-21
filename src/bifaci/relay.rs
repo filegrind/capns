@@ -150,16 +150,9 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
                         if frame.frame_type == FrameType::RelayState {
                             // Drop RelayState frames
                         } else {
-                            if frame.frame_type == FrameType::RelayNotify {
-                                eprintln!("[RelaySlave] Forwarding RelayNotify from local to socket");
-                            }
-                            eprintln!("[RelaySlave/t2] Read from local: {:?} (id={}, seq={}, xid={})",
-                                frame.frame_type, frame.id, frame.seq,
-                                frame.routing_id.as_ref().map_or("-".to_string(), |x| x.to_string()));
                             let ready_frames = match reorder.accept(frame) {
                                 Ok(frames) => frames,
                                 Err(e) => {
-                                    eprintln!("[RelaySlave/t2] ReorderBuffer ERROR: {}", e);
                                     let mut guard = err2.lock().unwrap();
                                     if guard.is_none() {
                                         *guard = Some(e);
@@ -167,17 +160,13 @@ impl<R: Read, W: Write> RelaySlave<R, W> {
                                     return;
                                 }
                             };
-                            eprintln!("[RelaySlave/t2] ReorderBuffer returned {} ready frames", ready_frames.len());
                             for f in &ready_frames {
                                 if matches!(f.frame_type, FrameType::End | FrameType::Err) {
                                     reorder.cleanup_flow(&FlowKey::from_frame(f));
                                 }
                             }
                             for f in ready_frames {
-                                eprintln!("[RelaySlave/t2] Writing to socket: {:?} (id={}, seq={})",
-                                    f.frame_type, f.id, f.seq);
                                 if let Err(e) = socket_write.write(&f) {
-                                    eprintln!("[RelaySlave/t2] Socket write ERROR: {}", e);
                                     let mut guard = err2.lock().unwrap();
                                     if guard.is_none() {
                                         *guard = Some(e);

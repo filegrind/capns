@@ -728,12 +728,9 @@ pub fn handshake_accept<R: Read, W: Write>(
     manifest: &[u8],
 ) -> Result<Limits, CborError> {
     // Read their HELLO first (host initiates)
-    eprintln!("[handshake_accept] Waiting for host HELLO");
     let their_frame = reader.read()?.ok_or_else(|| {
-        eprintln!("[handshake_accept] ERROR: Connection closed before receiving HELLO");
         CborError::Handshake("connection closed before receiving HELLO".to_string())
     })?;
-    eprintln!("[handshake_accept] Received frame type: {:?}", their_frame.frame_type);
 
     if their_frame.frame_type != FrameType::Hello {
         return Err(CborError::Handshake(format!(
@@ -754,10 +751,8 @@ pub fn handshake_accept<R: Read, W: Write>(
     };
 
     // Send our HELLO with manifest
-    eprintln!("[handshake_accept] Sending HELLO with manifest ({} bytes)", manifest.len());
     let our_hello = Frame::hello_with_manifest(&limits, manifest);
     writer.write(&our_hello)?;
-    eprintln!("[handshake_accept] HELLO sent successfully");
 
     // Update both reader and writer with negotiated limits
     reader.set_limits(limits);
@@ -840,17 +835,13 @@ pub async fn handshake_async<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     writer: &mut AsyncFrameWriter<W>,
 ) -> Result<HandshakeResult, CborError> {
     // Send our HELLO
-    eprintln!("[handshake_async] Sending HELLO to plugin");
     let our_hello = Frame::hello(&Limits::default());
     writer.write(&our_hello).await?;
-    eprintln!("[handshake_async] HELLO sent, waiting for response");
 
     // Read their HELLO (should include manifest)
     let their_frame = reader.read().await?.ok_or_else(|| {
-        eprintln!("[handshake_async] ERROR: Connection closed before receiving HELLO");
         CborError::Handshake("connection closed before receiving HELLO".to_string())
     })?;
-    eprintln!("[handshake_async] Received frame type: {:?}", their_frame.frame_type);
 
     if their_frame.frame_type != FrameType::Hello {
         return Err(CborError::Handshake(format!(

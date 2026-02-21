@@ -332,21 +332,14 @@ impl RelaySwitch {
                 loop {
                     match reader.read() {
                         Ok(Some(frame)) => {
-                            eprintln!("[RelaySwitch/reader-{}] Read frame: {:?} (id={}, seq={}, xid={}, payload_len={})",
-                                master_idx, frame.frame_type, frame.id, frame.seq,
-                                frame.routing_id.as_ref().map_or("-".to_string(), |x| x.to_string()),
-                                frame.payload.as_ref().map_or(0, |p| p.len()));
                             if tx.send((master_idx, Ok(frame))).is_err() {
-                                eprintln!("[RelaySwitch/reader-{}] Channel send failed, exiting", master_idx);
                                 break;
                             }
                         }
                         Ok(None) => {
-                            eprintln!("[RelaySwitch/reader-{}] EOF from master", master_idx);
                             break;
                         }
                         Err(e) => {
-                            eprintln!("[RelaySwitch/reader-{}] Read error: {}", master_idx, e);
                             let _ = tx.send((master_idx, Err(e)));
                             break;
                         }
@@ -679,20 +672,18 @@ impl RelaySwitch {
         mut frame: Frame,
         preferred_cap: Option<&str>,
     ) -> Result<(), RelaySwitchError> {
-        eprintln!("[RelaySwitch.send_to_master] Received {:?} (id={})", frame.frame_type, frame.id);
+        eprintln!("[RelaySwitch] send_to_master: {:?} id={:?} cap={:?} xid={:?}",
+            frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
                     RelaySwitchError::Protocol("REQ frame missing cap URN".to_string())
                 })?;
-                eprintln!("[RelaySwitch.send_to_master] REQ for cap: {}", cap_urn);
 
                 // Find master that can handle this cap
                 let dest_idx = self.find_master_for_cap(cap_urn, preferred_cap).ok_or_else(|| {
-                    eprintln!("[RelaySwitch.send_to_master] No handler found for cap: {}", cap_urn);
                     RelaySwitchError::NoHandler(cap_urn.clone())
                 })?;
-                eprintln!("[RelaySwitch.send_to_master] Routing to master {}", dest_idx);
 
                 // Assign XID if absent (first arrival at RelaySwitch)
                 let xid = if let Some(ref existing_xid) = frame.routing_id {
@@ -783,7 +774,6 @@ impl RelaySwitch {
                 }
                 Ok((master_idx, Err(e))) => {
                     // Error reading from master
-                    eprintln!("Error reading from master {}: {}", master_idx, e);
                     self.handle_master_death(master_idx)?;
                     // Continue reading from other masters
                 }
@@ -818,7 +808,6 @@ impl RelaySwitch {
                 }
                 Ok((master_idx, Err(e))) => {
                     // Error reading from master
-                    eprintln!("Error reading from master {}: {}", master_idx, e);
                     self.handle_master_death(master_idx)?;
                     // Continue reading from other masters
                 }
@@ -840,6 +829,8 @@ impl RelaySwitch {
     /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
     /// Cleans up seq tracking on terminal frames (END/ERR).
     fn write_to_master_idx(&mut self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
+        eprintln!("[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}",
+            master_idx, frame.frame_type, frame.id, frame.routing_id);
         let master = &mut self.masters[master_idx];
         master.seq_assigner.assign(frame);
         master.socket_writer.write(frame)?;
@@ -937,22 +928,19 @@ impl RelaySwitch {
         source_idx: usize,
         mut frame: Frame,
     ) -> Result<Option<Frame>, RelaySwitchError> {
+        eprintln!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} cap={:?} xid={:?}",
+            source_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
                     RelaySwitchError::Protocol("REQ frame missing cap URN".to_string())
                 })?;
 
-                eprintln!("[RelaySwitch.handle_master_frame] Peer REQ from master {} (id={}) for cap: {}",
-                          source_idx, frame.id, cap_urn);
 
                 // Find destination master (no preference for peer requests)
                 let dest_idx = self.find_master_for_cap(cap_urn, None).ok_or_else(|| {
-                    eprintln!("[RelaySwitch.handle_master_frame] No handler found for peer cap: {}", cap_urn);
                     RelaySwitchError::NoHandler(cap_urn.clone())
                 })?;
-
-                eprintln!("[RelaySwitch.handle_master_frame] Routing peer REQ to master {}", dest_idx);
 
                 // Assign XID if absent (first arrival at RelaySwitch)
                 // REQs from plugins should NOT have XID (per spec)
@@ -966,14 +954,12 @@ impl RelaySwitch {
                 let xid = MessageId::Uint(self.xid_counter);
                 frame.routing_id = Some(xid.clone());
 
-                eprintln!("[RelaySwitch.handle_master_frame] Assigned XID={} to peer REQ (RID={})", xid, frame.id);
 
                 let rid = frame.id.clone();
                 let key = (xid.clone(), rid.clone());
 
                 // Record RID → XID mapping for continuation frames
                 self.rid_to_xid.insert(rid.clone(), xid.clone());
-                eprintln!("[RelaySwitch.handle_master_frame] Recorded rid_to_xid mapping: {} -> {}", rid, xid);
 
                 // Record origin (where this request came from)
                 self.origin_map.insert(key.clone(), Some(source_idx));
@@ -991,11 +977,9 @@ impl RelaySwitch {
                 self.peer_requests.insert(key);
 
                 // Forward to destination with XID
-                eprintln!("[RelaySwitch.handle_master_frame] Forwarding peer REQ to master {} (with XID={})", dest_idx, xid);
                 self.write_to_master_idx(dest_idx, &mut frame)?;
 
                 // Do NOT return to engine (internal routing)
-                eprintln!("[RelaySwitch.handle_master_frame] Peer REQ routed internally (not forwarded to engine)");
                 Ok(None)
             }
 
@@ -1015,9 +999,6 @@ impl RelaySwitch {
                     let rid = frame.id.clone();
                     let key = (xid.clone(), rid.clone());
 
-                    eprintln!("[RelaySwitch.handle_master_frame] RESPONSE continuation {:?} from master {} (XID={}, payload len: {})",
-                              frame.frame_type, source_idx, xid,
-                              frame.payload.as_ref().map_or(0, |p| p.len()));
 
                     // Look up routing entry
                     let entry = self.request_routing.get(&key).ok_or_else(|| {
@@ -1039,9 +1020,7 @@ impl RelaySwitch {
                             // Check if there's a response channel registered
                             if let Some(tx) = self.external_response_channels.get(&key) {
                                 // Send to external response channel (keep XID for now)
-                                if tx.send(frame.clone()).is_err() {
-                                    eprintln!("[RelaySwitch] External response channel closed, dropping frame");
-                                }
+                                let _ = tx.send(frame.clone());
 
                                 // Cleanup on terminal frame
                                 if is_terminal {
@@ -1058,10 +1037,6 @@ impl RelaySwitch {
                                 // Strip XID and return to caller (final leg)
                                 frame.routing_id = None;
 
-                                eprintln!("[RelaySwitch.handle_master_frame] Returning {:?} to external caller (payload len: {})",
-                                          frame.frame_type,
-                                          frame.payload.as_ref().map_or(0, |p| p.len()));
-
                                 // Cleanup on terminal frame
                                 if is_terminal {
                                     self.request_routing.remove(&key);
@@ -1074,9 +1049,10 @@ impl RelaySwitch {
                             }
                         }
                         Some(master_idx) => {
-                            // Route back to source master (keep XID - still in relay network)
-                            eprintln!("[RelaySwitch.handle_master_frame] Routing response back to master {} (keeping XID for relay protocol)", master_idx);
-
+                            // Route back to source master — KEEP XID.
+                            // The source master's PluginHost needs XID to not drop the frame
+                            // (Swift PluginHost requires XID on all relay frames).
+                            // The PluginHost uses outgoingRids[RID] for peer response routing.
                             self.write_to_master_idx(master_idx, &mut frame)?;
 
                             // Cleanup on terminal frame
@@ -1097,17 +1073,11 @@ impl RelaySwitch {
                     // Frame has no XID, so it's a request continuation flowing to destination
                     let rid = frame.id.clone();
 
-                    eprintln!("[RelaySwitch.handle_master_frame] REQUEST continuation {:?} from master {} (no XID, payload len: {})",
-                              frame.frame_type, source_idx,
-                              frame.payload.as_ref().map_or(0, |p| p.len()));
 
                     // Look up XID from RID → XID mapping (added by the REQ)
                     let xid = self.rid_to_xid.get(&rid).ok_or_else(|| {
-                        eprintln!("[RelaySwitch.handle_master_frame] Unknown RID for request continuation: {}", rid);
                         RelaySwitchError::UnknownRequest(rid.clone())
                     })?.clone();
-
-                    eprintln!("[RelaySwitch.handle_master_frame] Looked up XID={} for request continuation", xid);
 
                     let key = (xid.clone(), rid.clone());
 
@@ -1121,7 +1091,6 @@ impl RelaySwitch {
 
                     // Forward to destination master (keep XID)
                     let dest_idx = entry.destination_master_idx;
-                    eprintln!("[RelaySwitch.handle_master_frame] Forwarding request continuation to master {} (with XID={})", dest_idx, xid);
 
                     self.write_to_master_idx(dest_idx, &mut frame)?;
                     return Ok(None);
@@ -1130,18 +1099,11 @@ impl RelaySwitch {
 
             FrameType::RelayNotify => {
                 // Capability update from host — update our cap table
-                eprintln!("[RelaySwitch] Received RelayNotify from master {}", source_idx);
-
                 let caps_payload = frame.relay_notify_manifest()
                     .ok_or_else(|| RelaySwitchError::Protocol("RelayNotify has no payload".to_string()))?;
 
-                eprintln!("[RelaySwitch] RelayNotify payload: {} bytes", caps_payload.len());
                 let new_caps = parse_caps_from_relay_notify(caps_payload)?;
 
-                eprintln!("[RelaySwitch] Parsed {} caps:", new_caps.len());
-                for (idx, cap) in new_caps.iter().enumerate() {
-                    eprintln!("[RelaySwitch]   cap[{}]: {}", idx, cap);
-                }
                 // Update master's caps and limits
                 if let Some(master) = self.masters.get_mut(source_idx) {
                     master.caps = new_caps;
@@ -1155,7 +1117,6 @@ impl RelaySwitch {
                 self.rebuild_cap_table();
                 self.rebuild_capabilities();
                 self.rebuild_limits();
-                eprintln!("[RelaySwitch] Cap table now has {} entries", self.cap_table.len());
 
                 // Pass through to engine (for visibility)
                 Ok(Some(frame))
@@ -1173,8 +1134,6 @@ impl RelaySwitch {
         if !self.masters[master_idx].healthy {
             return Ok(()); // Already handled
         }
-
-        eprintln!("Master {} died", master_idx);
 
         // Mark unhealthy
         self.masters[master_idx].healthy = false;
@@ -1205,8 +1164,6 @@ impl RelaySwitch {
                     if let Some(tx) = self.external_response_channels.get(&key) {
                         let _ = tx.send(err_frame);
                         self.external_response_channels.remove(&key);
-                    } else {
-                        eprintln!("Request {} failed: master died (no response channel)", rid);
                     }
                 }
                 Some(master_idx) => {
