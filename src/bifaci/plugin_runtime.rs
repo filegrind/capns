@@ -1662,16 +1662,17 @@ impl PluginRuntime {
     /// and used for CLI argument parsing (CLI mode).
     /// **Plugins MUST provide a manifest - there is no fallback.**
     ///
-    /// Auto-registers standard handlers (identity, discard) and ensures
-    /// CAP_IDENTITY is present in the manifest.
+    /// Auto-registers standard handlers (identity, discard).
+    /// **PANICS** if manifest is missing CAP_IDENTITY - plugins must declare it explicitly.
     pub fn new(manifest: &[u8]) -> Self {
         // Try to parse the manifest for CLI mode support
         let parsed_manifest = serde_json::from_slice::<CapManifest>(manifest).ok();
 
-        // Ensure identity in manifest, re-serialize if needed
+        // Validate manifest if parseable
         let (manifest_data, parsed_manifest) = match parsed_manifest {
             Some(m) => {
-                let m = m.ensure_identity();
+                // FAIL HARD if manifest doesn't have CAP_IDENTITY
+                m.validate().expect("Manifest validation failed - plugin MUST declare CAP_IDENTITY");
                 let data = serde_json::to_vec(&m).unwrap_or_else(|_| manifest.to_vec());
                 (data, Some(m))
             }
@@ -1691,10 +1692,12 @@ impl PluginRuntime {
     /// Create a new plugin runtime with a pre-built CapManifest.
     /// This is the preferred method as it ensures the manifest is valid.
     ///
-    /// Auto-registers standard handlers (identity, discard) and ensures
-    /// CAP_IDENTITY is present in the manifest.
+    /// Auto-registers standard handlers (identity, discard).
+    /// **PANICS** if manifest is missing CAP_IDENTITY - plugins must declare it explicitly.
     pub fn with_manifest(manifest: CapManifest) -> Self {
-        let manifest = manifest.ensure_identity();
+        // FAIL HARD if manifest doesn't have CAP_IDENTITY
+        manifest.validate().expect("Manifest validation failed - plugin MUST declare CAP_IDENTITY");
+
         let manifest_data = serde_json::to_vec(&manifest).unwrap_or_default();
         let mut rt = Self {
             handlers: HashMap::new(),
@@ -3038,7 +3041,13 @@ mod tests {
     }
 
     /// Helper function to create a CapManifest for tests
-    fn create_test_manifest(name: &str, version: &str, description: &str, caps: Vec<Cap>) -> CapManifest {
+    fn create_test_manifest(name: &str, version: &str, description: &str, mut caps: Vec<Cap>) -> CapManifest {
+        // Always append CAP_IDENTITY at the end - plugins must declare it
+        // (Appending instead of prepending to avoid breaking tests that reference caps[0])
+        let identity_urn = crate::CapUrn::from_string("cap:").unwrap();
+        let identity_cap = Cap::new(identity_urn, "Identity".to_string(), "identity".to_string());
+        caps.push(identity_cap);
+
         CapManifest::new(
             name.to_string(),
             version.to_string(),
@@ -3047,15 +3056,15 @@ mod tests {
         )
     }
 
-    /// Test manifest JSON with a single cap for basic tests.
+    /// Test manifest JSON with identity and a test cap for basic tests.
     /// Note: cap URN uses "cap:op=test" which lacks in/out tags, so CapManifest deserialization
     /// may fail because Cap requires in/out specs. For tests that only need raw manifest bytes
     /// (CBOR mode handshake), this is fine. For tests that need parsed CapManifest, use
     /// VALID_MANIFEST instead.
-    const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
+    const TEST_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
 
     /// Valid manifest with proper in/out specs for tests that need parsed CapManifest
-    const VALID_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}]}"#;
+    const VALID_MANIFEST: &str = r#"{"name":"TestPlugin","version":"1.0.0","description":"Test plugin","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}]}"#;
 
     // TEST248: Test register_op and find_handler by exact cap URN
     #[test]
@@ -3237,7 +3246,7 @@ mod tests {
     #[test]
     fn test256_with_manifest_json() {
         // TEST_MANIFEST has "cap:op=test" — missing in/out defaults to media: (wildcard).
-        // ensure_identity() adds identity since cap:op=test is NOT identity.
+        // Manifest must declare CAP_IDENTITY explicitly or it will fail validation.
         let runtime_basic = PluginRuntime::with_manifest_json(TEST_MANIFEST);
         assert!(!runtime_basic.manifest_data.is_empty());
         assert!(runtime_basic.manifest.is_some(), "cap:op=test is valid (defaults to media: for in/out)");

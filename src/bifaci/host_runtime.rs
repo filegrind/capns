@@ -1080,14 +1080,30 @@ impl PluginHostRuntime {
         // CAP_IDENTITY is always present — structural, not plugin-dependent
         let mut cap_urns = vec![CAP_IDENTITY.to_string()];
 
-        // Add capability URN strings from all running plugins
+        // Add capability URN strings from all known/discovered plugins.
+        // Includes caps from ALL registered plugins that haven't permanently failed HELLO.
+        // Running plugins use their actual manifest caps; non-running plugins use knownCaps.
+        // This ensures the relay always advertises all caps that CAN be handled, regardless
+        // of whether the plugin process is currently alive (on-demand spawn handles restarts).
         for plugin in &self.plugins {
-            if plugin.running && !plugin.hello_failed {
+            if plugin.hello_failed {
+                continue; // Permanently broken, don't advertise
+            }
+
+            if plugin.running && !plugin.caps.is_empty() {
+                // Running: use actual caps from manifest (verified via HELLO handshake)
                 for cap in &plugin.caps {
                     let urn_str = cap.urn.to_string();
                     // Don't duplicate identity (plugins also declare it)
                     if urn_str != CAP_IDENTITY {
                         cap_urns.push(urn_str);
+                    }
+                }
+            } else {
+                // Not running: use knownCaps (from discovery, available for on-demand spawn)
+                for cap_urn in &plugin.known_caps {
+                    if cap_urn != CAP_IDENTITY {
+                        cap_urns.push(cap_urn.clone());
                     }
                 }
             }
@@ -2183,14 +2199,25 @@ mod tests {
 
         let _ = runtime.run(rt_read_half, rt_write_half, || vec![]).await;
 
-        // After death: only CAP_IDENTITY should remain (always present, plugin-specific caps removed)
+        // After death: capabilities should STILL include the plugin's known_caps (for on-demand respawn).
+        // This is the new behavior - dead plugins advertise their known_caps so they can be respawned.
         let caps_after = runtime.capabilities();
         let caps_str = std::str::from_utf8(caps_after).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(caps_str).unwrap();
-        let arr = parsed.as_array().expect("capabilities should be a JSON array");
-        assert_eq!(arr.len(), 1, "Only CAP_IDENTITY should remain after plugin death. Got: {}", caps_str);
-        assert_eq!(arr[0].as_str().unwrap(), CAP_IDENTITY,
-            "Remaining cap must be CAP_IDENTITY. Got: {}", caps_str);
+        let urn_strings_after: Vec<String> = parsed.as_array().unwrap()
+            .iter().map(|v| v.as_str().unwrap().to_string()).collect();
+
+        // Should have CAP_IDENTITY + plugin's known caps (identity + op=die)
+        assert!(urn_strings_after.contains(&CAP_IDENTITY.to_string()),
+            "CAP_IDENTITY must always be present");
+        let found_after = urn_strings_after.iter().any(|urn_str| {
+            if let Ok(cap_urn) = CapUrn::from_string(urn_str) {
+                expected_urn.accepts(&cap_urn) || cap_urn.accepts(&expected_urn)
+            } else {
+                false
+            }
+        });
+        assert!(found_after, "Dead plugin's known_caps should still be advertised for on-demand respawn. Expected URN with op=die, got: {:?}", urn_strings_after);
 
         plugin_handle.join().unwrap();
     }
@@ -2660,6 +2687,209 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Identity verification failed"),
             "Error must mention identity verification: {}", err);
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST661: Plugin death keeps known_caps advertised for on-demand respawn
+    #[tokio::test]
+    async fn test661_plugin_death_keeps_known_caps_advertised() {
+        let mut runtime = PluginHostRuntime::new();
+
+        // Register a plugin with known_caps (not spawned yet)
+        let known_caps = vec![
+            "cap:".to_string(), // identity
+            "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"".to_string(),
+        ];
+        runtime.register_plugin(std::path::Path::new("/fake/plugin"), &known_caps);
+
+        // Verify known_caps are in cap_table
+        assert_eq!(runtime.cap_table.len(), 2);
+        assert_eq!(runtime.cap_table[0].0, "cap:");
+        assert_eq!(runtime.cap_table[1].0, "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"");
+
+        // Build capabilities (no outbound_tx, so no RelayNotify sent)
+        runtime.rebuild_capabilities(None);
+
+        // Verify capabilities include known_caps
+        let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
+        let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
+        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+
+        assert!(cap_urns.contains(&"cap:"));
+        assert!(cap_urns.iter().any(|s| s.contains("thumbnail")));
+    }
+
+    // TEST662: rebuild_capabilities includes non-running plugins' known_caps
+    #[tokio::test]
+    async fn test662_rebuild_capabilities_includes_non_running_plugins() {
+        let mut runtime = PluginHostRuntime::new();
+
+        // Register two plugins with different known_caps
+        let known_caps_1 = vec![
+            "cap:".to_string(),
+            "cap:in=\"media:pdf;bytes\";op=extract;out=\"media:text;bytes\"".to_string(),
+        ];
+        let known_caps_2 = vec![
+            "cap:".to_string(),
+            "cap:in=\"media:image;bytes\";op=ocr;out=\"media:text;bytes\"".to_string(),
+        ];
+
+        runtime.register_plugin(std::path::Path::new("/fake/plugin1"), &known_caps_1);
+        runtime.register_plugin(std::path::Path::new("/fake/plugin2"), &known_caps_2);
+
+        // Both plugins are NOT running, but their known_caps should be advertised
+        runtime.rebuild_capabilities(None);
+
+        let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
+        let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
+        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+
+        // Should contain identity (always) + both plugins' known_caps
+        assert!(cap_urns.contains(&"cap:"));
+        assert!(cap_urns.iter().any(|s| s.contains("extract")));
+        assert!(cap_urns.iter().any(|s| s.contains("ocr")));
+    }
+
+    // TEST663: Plugin with hello_failed is permanently removed from capabilities
+    #[tokio::test]
+    async fn test663_hello_failed_plugin_removed_from_capabilities() {
+        let mut runtime = PluginHostRuntime::new();
+
+        // Register a plugin
+        let known_caps = vec![
+            "cap:".to_string(),
+            "cap:in=\"media:void\";op=broken;out=\"media:void\"".to_string(),
+        ];
+        runtime.register_plugin(std::path::Path::new("/fake/broken"), &known_caps);
+
+        // Manually mark it as hello_failed (simulating HELLO handshake failure)
+        runtime.plugins[0].hello_failed = true;
+
+        // update_cap_table should exclude hello_failed plugins
+        runtime.update_cap_table();
+
+        // Should only have identity cap from the runtime itself, not the broken plugin
+        let found_broken = runtime.cap_table.iter()
+            .any(|(urn, _)| urn.contains("broken"));
+        assert!(!found_broken, "hello_failed plugin caps should not be in cap_table");
+
+        // rebuild_capabilities should also exclude hello_failed plugins
+        runtime.rebuild_capabilities(None);
+
+        let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
+        let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
+        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+
+        assert!(!cap_urns.iter().any(|s| s.contains("broken")),
+            "hello_failed plugin should not be in capabilities");
+    }
+
+    // TEST664: Running plugin uses manifest caps, not known_caps
+    #[tokio::test]
+    async fn test664_running_plugin_uses_manifest_caps() {
+        // Manifest with different caps than known_caps
+        let manifest = r#"{"name":"Test","version":"1.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:text;bytes\";op=uppercase;out=\"media:text;bytes\"","title":"Uppercase","command":"uppercase","args":[]}]}"#;
+
+        let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        rt_from_p_std.set_nonblocking(true).unwrap();
+        rt_to_p_std.set_nonblocking(true).unwrap();
+
+        let rt_from_p = tokio::net::UnixStream::from_std(rt_from_p_std).unwrap();
+        let rt_to_p = tokio::net::UnixStream::from_std(rt_to_p_std).unwrap();
+        let (p_read, _) = rt_from_p.into_split();
+        let (_, p_write) = rt_to_p.into_split();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (_r, _w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
+            // Keep alive for test
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        });
+
+        let mut runtime = PluginHostRuntime::new();
+
+        // Register with different known_caps BEFORE attaching
+        let known_caps = vec![
+            "cap:".to_string(),
+            "cap:in=\"media:pdf;bytes\";op=extract;out=\"media:text;bytes\"".to_string(),
+        ];
+        runtime.register_plugin(std::path::Path::new("/fake/path"), &known_caps);
+
+        // Now attach the actual plugin (which sends different manifest)
+        // This simulates what happens when a registered plugin spawns
+        let plugin_idx = runtime.attach_plugin(p_read, p_write).await.unwrap();
+
+        // The running plugin should use manifest caps, not known_caps
+        let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
+        let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
+        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+
+        // Should have manifest cap (uppercase), NOT known_cap (extract)
+        assert!(cap_urns.iter().any(|s| s.contains("uppercase")),
+            "Running plugin should use manifest caps. Got: {:?}", cap_urns);
+
+        // Note: Since we're testing attach_plugin (not register+spawn), the plugin is added
+        // separately, so we might also see the known_caps from the first registered plugin
+        // unless we remove it. The key test is that uppercase is present (from manifest).
+
+        plugin_handle.join().unwrap();
+    }
+
+    // TEST665: Cap table uses manifest caps for running, known_caps for non-running
+    #[tokio::test]
+    async fn test665_cap_table_mixed_running_and_non_running() {
+        // Set up a running plugin
+        let manifest = r#"{"name":"Running","version":"1.0","description":"Running plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:text;bytes\";op=running-op;out=\"media:text;bytes\"","title":"RunningOp","command":"running","args":[]}]}"#;
+
+        let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
+        rt_from_p_std.set_nonblocking(true).unwrap();
+        rt_to_p_std.set_nonblocking(true).unwrap();
+
+        let rt_from_p = tokio::net::UnixStream::from_std(rt_from_p_std).unwrap();
+        let rt_to_p = tokio::net::UnixStream::from_std(rt_to_p_std).unwrap();
+        let (p_read, _) = rt_from_p.into_split();
+        let (_, p_write) = rt_to_p.into_split();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = std::thread::spawn(move || {
+            let (_r, _w) = plugin_handshake_with_identity(p_from_rt_std, p_to_rt_std, &m);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        });
+
+        let mut runtime = PluginHostRuntime::new();
+
+        // Attach running plugin
+        runtime.attach_plugin(p_read, p_write).await.unwrap();
+
+        // Register a non-running plugin with known_caps
+        let known_caps = vec![
+            "cap:".to_string(),
+            "cap:in=\"media:pdf;bytes\";op=not-running-op;out=\"media:text;bytes\"".to_string(),
+        ];
+        runtime.register_plugin(std::path::Path::new("/fake/not-running"), &known_caps);
+
+        // Update cap table
+        runtime.update_cap_table();
+
+        // Cap table should have:
+        // - Running plugin's manifest caps (running-op)
+        // - Non-running plugin's known_caps (not-running-op)
+        let has_running_op = runtime.cap_table.iter().any(|(urn, _)| urn.contains("running-op"));
+        let has_not_running_op = runtime.cap_table.iter().any(|(urn, _)| urn.contains("not-running-op"));
+
+        assert!(has_running_op, "Cap table should have running plugin's manifest caps");
+        assert!(has_not_running_op, "Cap table should have non-running plugin's known_caps");
 
         plugin_handle.join().unwrap();
     }

@@ -73,22 +73,6 @@ impl CapManifest {
         }
         Ok(())
     }
-
-    /// Ensure CAP_IDENTITY is present in this manifest. Adds it if missing.
-    pub fn ensure_identity(mut self) -> Self {
-        let identity_urn = CapUrn::from_string(CAP_IDENTITY)
-            .expect("BUG: CAP_IDENTITY constant is invalid");
-        let has_identity = self.caps.iter().any(|cap| identity_urn.conforms_to(&cap.urn));
-        if !has_identity {
-            let cap = Cap::new(
-                identity_urn,
-                "Identity".to_string(),
-                "identity".to_string(),
-            );
-            self.caps.push(cap);
-        }
-        self
-    }
 }
 
 /// Trait for components to provide metadata about themselves
@@ -335,28 +319,5 @@ mod tests {
         assert!(result.is_err(), "Manifest without CAP_IDENTITY must fail validation");
         assert!(result.unwrap_err().contains("CAP_IDENTITY"),
             "Error message must mention CAP_IDENTITY");
-    }
-
-    // TEST477: ensure_identity() adds identity cap if missing, is idempotent if present
-    #[test]
-    fn test477_ensure_identity_adds_if_missing() {
-        let specific_urn = CapUrn::from_string(&test_urn("op=convert")).unwrap();
-        let cap = Cap::new(specific_urn, "Convert".to_string(), "convert".to_string());
-        let manifest = CapManifest::new(
-            "TestPlugin".to_string(),
-            "1.0.0".to_string(),
-            "Test".to_string(),
-            vec![cap],
-        );
-        assert_eq!(manifest.caps.len(), 1);
-        assert!(manifest.validate().is_err(), "Before ensure_identity, must be invalid");
-
-        let manifest = manifest.ensure_identity();
-        assert_eq!(manifest.caps.len(), 2, "ensure_identity must add one cap");
-        assert!(manifest.validate().is_ok(), "After ensure_identity, must be valid");
-
-        // Idempotent — calling again must not add a duplicate
-        let manifest = manifest.ensure_identity();
-        assert_eq!(manifest.caps.len(), 2, "ensure_identity must be idempotent");
     }
 }
