@@ -17,9 +17,9 @@ use capns::{
     ArgSource, Cap, CapArg, CapManifest, CapUrn, PluginRuntime,
     OutputStream, Request, WET_KEY_REQUEST,
     Op, OpMetadata, DryContext, WetContext, OpResult, OpError, async_trait,
+    find_stream_str, require_stream,
 };
 use serde_json::json;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 // =============================================================================
@@ -159,11 +159,12 @@ fn build_manifest() -> CapManifest {
         ],
         "Path to the first input text file (node2)".to_string(),
     ));
+    // No stdin source — stdin is claimed by the first arg (RULE3).
+    // In CBOR mode, the file path passes through as-is (no file-reading).
     edge5.add_arg(CapArg::with_description(
         "media:file-path;node3;textable;form=scalar",
         true,
         vec![
-            ArgSource::Stdin { stdin: "media:node3;textable".to_string() },
             ArgSource::CliFlag { cli_flag: "--second-input".to_string() },
         ],
         "Path to the second input text file (node3)".to_string(),
@@ -267,19 +268,11 @@ fn build_manifest() -> CapManifest {
 // Helper: collect all input streams by media_urn
 // =============================================================================
 
-fn collect_args(req: &Request) -> std::result::Result<HashMap<String, Vec<u8>>, OpError> {
-    let input = req.take_input()
-        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-    let mut args: HashMap<String, Vec<u8>> = HashMap::new();
-    for stream_result in input {
-        let stream = stream_result
-            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-        let media_urn = stream.media_urn().to_string();
-        let bytes = stream.collect_bytes()
-            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-        args.insert(media_urn, bytes);
-    }
-    Ok(args)
+fn collect_args(req: &Request) -> std::result::Result<Vec<(String, Vec<u8>)>, OpError> {
+    req.take_input()
+        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?
+        .collect_streams()
+        .map_err(|e| OpError::ExecutionFailed(e.to_string()))
 }
 
 fn get_req(wet: &mut WetContext) -> std::result::Result<Arc<Request>, OpError> {
@@ -303,12 +296,11 @@ struct Edge1Op;
 impl Op<()> for Edge1Op {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input = args.get("media:node1;textable")
-            .ok_or_else(|| OpError::ExecutionFailed("node1 input required".to_string()))?;
-        let prefix = args.get("media:edge1arg1;textable;form=scalar")
-            .map(|b| String::from_utf8_lossy(b).to_string())
+        let input = require_stream(&streams, "media:node1;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let prefix = find_stream_str(&streams, "media:edge1arg1;textable;form=scalar")
             .unwrap_or_else(|| "[PREPEND]".to_string());
 
         let result = format!("{}{}", prefix, String::from_utf8_lossy(input));
@@ -324,12 +316,11 @@ struct Edge2Op;
 impl Op<()> for Edge2Op {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input = args.get("media:node2;textable")
-            .ok_or_else(|| OpError::ExecutionFailed("node2 input required".to_string()))?;
-        let suffix = args.get("media:edge2arg1;textable;form=scalar")
-            .map(|b| String::from_utf8_lossy(b).to_string())
+        let input = require_stream(&streams, "media:node2;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let suffix = find_stream_str(&streams, "media:edge2arg1;textable;form=scalar")
             .unwrap_or_else(|| "[APPEND]".to_string());
 
         let result = format!("{}{}", String::from_utf8_lossy(input), suffix);
@@ -345,15 +336,14 @@ struct Edge3Op;
 impl Op<()> for Edge3Op {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input_list = args.get("media:node1;textable;form=list")
-            .ok_or_else(|| OpError::ExecutionFailed("node1 list required".to_string()))?;
-        let transform = args.get("media:edge3arg1;textable;form=scalar")
-            .map(|b| String::from_utf8_lossy(b).to_string())
+        let input_list = require_stream(&streams, "media:node1;textable;form=list")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let transform = find_stream_str(&streams, "media:edge3arg1;textable;form=scalar")
             .unwrap_or_else(|| "[TRANSFORMED]".to_string());
 
-        let cbor_value: ciborium::Value = ciborium::from_reader(&input_list[..])
+        let cbor_value: ciborium::Value = ciborium::from_reader(input_list)
             .map_err(|e| OpError::ExecutionFailed(format!("Failed to parse CBOR: {}", e)))?;
         let items = match cbor_value {
             ciborium::Value::Array(arr) => arr,
@@ -379,15 +369,14 @@ struct Edge4Op;
 impl Op<()> for Edge4Op {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input_list = args.get("media:node4;textable;form=list")
-            .ok_or_else(|| OpError::ExecutionFailed("node4 list required".to_string()))?;
-        let separator = args.get("media:edge4arg1;textable;form=scalar")
-            .map(|b| String::from_utf8_lossy(b).to_string())
+        let input_list = require_stream(&streams, "media:node4;textable;form=list")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let separator = find_stream_str(&streams, "media:edge4arg1;textable;form=scalar")
             .unwrap_or_else(|| " ".to_string());
 
-        let cbor_value: ciborium::Value = ciborium::from_reader(&input_list[..])
+        let cbor_value: ciborium::Value = ciborium::from_reader(input_list)
             .map_err(|e| OpError::ExecutionFailed(format!("Failed to parse CBOR: {}", e)))?;
         let items = match cbor_value {
             ciborium::Value::Array(arr) => arr,
@@ -412,17 +401,20 @@ struct Edge5Op;
 impl Op<()> for Edge5Op {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input1 = args.get("media:node2;textable")
-            .ok_or_else(|| OpError::ExecutionFailed("node2 input required".to_string()))?;
-        let input2 = args.get("media:node3;textable")
-            .ok_or_else(|| OpError::ExecutionFailed("node3 input required".to_string()))?;
-        let separator = args.get("media:edge5arg3;textable;form=scalar")
-            .map(|b| String::from_utf8_lossy(b).to_string())
+        // First input: file-path arg with stdin source → PluginRuntime read file, relabeled
+        let input1 = require_stream(&streams, "media:node2;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        // Second input: file-path arg without stdin source → passed through as file path
+        let input2_path = require_stream(&streams, "media:file-path;node3;textable;form=scalar")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let input2 = std::fs::read(String::from_utf8_lossy(input2_path).as_ref())
+            .map_err(|e| OpError::ExecutionFailed(format!("Failed to read second input: {}", e)))?;
+        let separator = find_stream_str(&streams, "media:edge5arg3;textable;form=scalar")
             .unwrap_or_else(|| " ".to_string());
 
-        let result = format!("{}{}{}", String::from_utf8_lossy(input1), separator, String::from_utf8_lossy(input2));
+        let result = format!("{}{}{}", String::from_utf8_lossy(input1), separator, String::from_utf8_lossy(&input2));
         emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
     }
     fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge5Op").build() }
@@ -435,15 +427,14 @@ struct Edge6Op;
 impl Op<()> for Edge6Op {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input = args.get("media:node1;textable")
-            .ok_or_else(|| OpError::ExecutionFailed("node1 input required".to_string()))?;
-        let count = args.get("media:edge6arg1;textable;numeric;form=scalar")
-            .and_then(|b| String::from_utf8_lossy(b).parse::<usize>().ok())
+        let input = require_stream(&streams, "media:node1;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        let count = find_stream_str(&streams, "media:edge6arg1;textable;numeric;form=scalar")
+            .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(1);
-        let item_prefix = args.get("media:edge6arg2;textable;form=scalar")
-            .map(|b| String::from_utf8_lossy(b).to_string())
+        let item_prefix = find_stream_str(&streams, "media:edge6arg2;textable;form=scalar")
             .unwrap_or_default();
 
         let input_str = String::from_utf8_lossy(input);
@@ -464,10 +455,10 @@ struct LargeOp;
 impl Op<()> for LargeOp {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let size = args.get("media:payload-size;textable;numeric;form=scalar")
-            .and_then(|b| String::from_utf8_lossy(b).parse::<usize>().ok())
+        let size = find_stream_str(&streams, "media:payload-size;textable;numeric;form=scalar")
+            .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(1_048_576);
 
         let mut payload = Vec::with_capacity(size);
@@ -486,10 +477,10 @@ struct PeerOp;
 impl Op<()> for PeerOp {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
         let req = get_req(wet)?;
-        let args = collect_args(&req)?;
+        let streams = collect_args(&req)?;
 
-        let input = args.get("media:node1;textable")
-            .ok_or_else(|| OpError::ExecutionFailed("node1 input required".to_string()))?;
+        let input = require_stream(&streams, "media:node1;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
 
         // Call edge1 via PeerInvoker (node1 → node2)
         let edge1_urn = "cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\"";

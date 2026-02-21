@@ -1307,10 +1307,18 @@ impl FilePathContext {
         self.file_path_scalar.accepts(&arg_urn).unwrap_or(false)
     }
 
+    /// Given the media URN of an incoming file-path stream, find the matching
+    /// arg in the cap definition and return its stdin source URN.
+    /// Uses is_equivalent (not string comparison) to match the arg.
     fn resolve_stdin_urn(&self, file_path_media_urn: &str) -> Option<String> {
         let manifest = self.manifest.as_ref()?;
         let cap_def = manifest.caps.iter().find(|c| c.urn.to_string() == self.cap_urn)?;
-        let arg_def = cap_def.args.iter().find(|a| a.media_urn == file_path_media_urn)?;
+        let incoming = crate::MediaUrn::from_string(file_path_media_urn).ok()?;
+        let arg_def = cap_def.args.iter().find(|a| {
+            crate::MediaUrn::from_string(&a.media_urn)
+                .map(|arg_urn| arg_urn.is_equivalent(&incoming).unwrap_or(false))
+                .unwrap_or(false)
+        })?;
         arg_def.sources.iter().find_map(|s| {
             if let ArgSource::Stdin { stdin } = s {
                 Some(stdin.clone())
@@ -1435,39 +1443,52 @@ fn demux_multi_stream(
                             }
                         }
 
-                        let is_scalar = ctx.is_scalar(&media_urn);
-                        let resolved_urn = ctx.resolve_stdin_urn(&media_urn)
-                            .unwrap_or_else(|| media_urn.clone());
-
-                        if is_scalar {
-                            let path_str = String::from_utf8_lossy(&path_bytes);
-                            eprintln!("[Demux] Reading file: {}", path_str);
-                            match std::fs::read(path_str.as_ref()) {
-                                Ok(file_bytes) => {
-                                    let (chunk_tx, chunk_rx) = crossbeam_channel::bounded(64);
-                                    let _ = chunk_tx.send(Ok(ciborium::Value::Bytes(file_bytes)));
-                                    drop(chunk_tx); // Close channel
-                                    let input_stream = InputStream {
-                                        media_urn: resolved_urn,
-                                        rx: chunk_rx,
-                                    };
-                                    if streams_tx.send(Ok(input_stream)).is_err() {
+                        // If the arg has a stdin source, read the file and relabel.
+                        // If not, pass through the file path as a plain value (no file reading).
+                        if let Some(resolved_urn) = ctx.resolve_stdin_urn(&media_urn) {
+                            let is_scalar = ctx.is_scalar(&media_urn);
+                            if is_scalar {
+                                let path_str = String::from_utf8_lossy(&path_bytes);
+                                eprintln!("[Demux] Reading file: {}", path_str);
+                                match std::fs::read(path_str.as_ref()) {
+                                    Ok(file_bytes) => {
+                                        let (chunk_tx, chunk_rx) = crossbeam_channel::bounded(64);
+                                        let _ = chunk_tx.send(Ok(ciborium::Value::Bytes(file_bytes)));
+                                        drop(chunk_tx);
+                                        let input_stream = InputStream {
+                                            media_urn: resolved_urn,
+                                            rx: chunk_rx,
+                                        };
+                                        if streams_tx.send(Ok(input_stream)).is_err() {
+                                            break;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = streams_tx.send(Err(StreamError::Io(
+                                            format!("Failed to read file '{}': {}", path_str, e)
+                                        )));
                                         break;
                                     }
                                 }
-                                Err(e) => {
-                                    let _ = streams_tx.send(Err(StreamError::Io(
-                                        format!("Failed to read file '{}': {}", path_str, e)
-                                    )));
-                                    break;
-                                }
+                            } else {
+                                // form=list — not yet implemented in CBOR mode
+                                let _ = streams_tx.send(Err(StreamError::Protocol(
+                                    "File-path form=list conversion not yet implemented in CBOR mode".into()
+                                )));
+                                break;
                             }
                         } else {
-                            // form=list — not yet implemented in CBOR mode
-                            let _ = streams_tx.send(Err(StreamError::Protocol(
-                                "File-path form=list conversion not yet implemented in CBOR mode".into()
-                            )));
-                            break;
+                            // No stdin source — pass through the path bytes as-is
+                            let (chunk_tx, chunk_rx) = crossbeam_channel::bounded(64);
+                            let _ = chunk_tx.send(Ok(ciborium::Value::Bytes(path_bytes)));
+                            drop(chunk_tx);
+                            let input_stream = InputStream {
+                                media_urn: media_urn.clone(),
+                                rx: chunk_rx,
+                            };
+                            if streams_tx.send(Ok(input_stream)).is_err() {
+                                break;
+                            }
                         }
                     } else {
                         // Regular stream ended — close per-stream channel
