@@ -2196,4 +2196,159 @@ mod tests {
         st_b.join().unwrap();
         ht_b.join().unwrap();
     }
+
+    // TEST666: Preferred cap routing - routes to exact equivalent when multiple masters match
+    #[test]
+    fn test666_preferred_cap_routing() {
+        use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter};
+        use crate::bifaci::relay::RelaySlave;
+        use crate::cap::definition::Cap;
+
+        /// Handler that returns a marker string identifying itself
+        #[derive(Debug)]
+        struct MarkerHandler(&'static str);
+        impl FrameHandler for MarkerHandler {
+            fn handle_request(
+                &self,
+                _cap_urn: &str,
+                input: std::sync::mpsc::Receiver<Frame>,
+                output: ResponseWriter,
+                _rt: &tokio::runtime::Handle,
+            ) {
+                // Drain input
+                for frame in input.iter() {
+                    if frame.frame_type == FrameType::End { break; }
+                }
+                output.emit_response("media:bytes", self.0.as_bytes());
+            }
+        }
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        // Helper to wire up host + slave
+        fn wire_host(
+            rt: &tokio::runtime::Runtime,
+            host: InProcessPluginHost,
+        ) -> (UnixStream, UnixStream, std::thread::JoinHandle<()>, std::thread::JoinHandle<()>) {
+            let (slave_write, switch_read) = UnixStream::pair().unwrap();
+            let (switch_write, slave_read) = UnixStream::pair().unwrap();
+            let (host_write, slave_local_read) = UnixStream::pair().unwrap();
+            let (slave_local_write, host_read) = UnixStream::pair().unwrap();
+
+            let handle = rt.handle().clone();
+            let host_thread = std::thread::spawn(move || {
+                host.run(host_read, host_write, handle).unwrap();
+            });
+
+            let slave = RelaySlave::new(slave_local_read, slave_local_write);
+            let slave_thread = std::thread::spawn(move || {
+                let sr = FrameReader::new(BufReader::new(slave_read));
+                let sw = FrameWriter::new(BufWriter::new(slave_write));
+                slave.run(sr, sw, None).unwrap();
+            });
+
+            (switch_read, switch_write, host_thread, slave_thread)
+        }
+
+        // Master 1: Generic handler (accepts any input/output)
+        let cap_generic = "cap:in=media:;out=media:";
+        let host_generic = InProcessPluginHost::new(vec![(
+            "generic".to_string(),
+            vec![Cap {
+                urn: crate::CapUrn::from_string(cap_generic).unwrap(),
+                title: "generic".to_string(),
+                cap_description: None,
+                metadata: std::collections::HashMap::new(),
+                command: String::new(),
+                args: Vec::new(),
+                output: None,
+                media_specs: Vec::new(),
+                metadata_json: None,
+                registered_by: None,
+            }],
+            std::sync::Arc::new(MarkerHandler("GENERIC")) as std::sync::Arc<dyn FrameHandler>,
+        )]);
+
+        // Master 2: Specific handler (exact match for specific cap)
+        let cap_specific = "cap:in=\"media:void\";op=test;out=\"media:void\"";
+        let host_specific = InProcessPluginHost::new(vec![(
+            "specific".to_string(),
+            vec![Cap {
+                urn: crate::CapUrn::from_string(cap_specific).unwrap(),
+                title: "specific".to_string(),
+                cap_description: None,
+                metadata: std::collections::HashMap::new(),
+                command: String::new(),
+                args: Vec::new(),
+                output: None,
+                media_specs: Vec::new(),
+                metadata_json: None,
+                registered_by: None,
+            }],
+            std::sync::Arc::new(MarkerHandler("SPECIFIC")) as std::sync::Arc<dyn FrameHandler>,
+        )]);
+
+        let (sr_generic, sw_generic, ht_generic, st_generic) = wire_host(&rt, host_generic);
+        let (sr_specific, sw_specific, ht_specific, st_specific) = wire_host(&rt, host_specific);
+
+        let mut switch = RelaySwitch::new(vec![(sr_generic, sw_generic), (sr_specific, sw_specific)]).unwrap();
+        assert_eq!(switch.masters.len(), 2);
+
+        // Test 1: Without preferred_cap, routes to generic (first match, lower specificity)
+        let req_cap = "cap:in=\"media:void\";op=test;out=\"media:void\"";
+        let mut req1 = Frame::req(MessageId::Uint(1), req_cap, None);
+        req1.payload = Some(Vec::new());
+
+        switch.send_to_master(req1.clone(), None).unwrap();
+        switch.send_to_master(Frame::end(MessageId::Uint(1)), None).unwrap();
+
+        let mut response_data1 = Vec::new();
+        for _ in 0..10 {
+            match switch.read_from_masters() {
+                Ok(Some(frame)) => {
+                    match frame.frame_type {
+                        FrameType::Chunk => response_data1.extend_from_slice(frame.payload.as_ref().unwrap()),
+                        FrameType::End => break,
+                        FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
+                        _ => {}
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => panic!("read error: {}", e),
+            }
+        }
+
+        // Test 2: With preferred_cap = cap_specific, routes to specific (exact match)
+        let mut req2 = Frame::req(MessageId::Uint(2), req_cap, None);
+        req2.payload = Some(Vec::new());
+
+        switch.send_to_master(req2.clone(), Some(cap_specific)).unwrap();
+        switch.send_to_master(Frame::end(MessageId::Uint(2)), None).unwrap();
+
+        let mut response_data2 = Vec::new();
+        for _ in 0..10 {
+            match switch.read_from_masters() {
+                Ok(Some(frame)) => {
+                    match frame.frame_type {
+                        FrameType::Chunk => response_data2.extend_from_slice(frame.payload.as_ref().unwrap()),
+                        FrameType::End => break,
+                        FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
+                        _ => {}
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => panic!("read error: {}", e),
+            }
+        }
+
+        // Verify routing: without preference routes to generic, with preference routes to specific
+        assert_eq!(response_data1, b"GENERIC", "Without preferred_cap, should route to generic handler (first match)");
+        assert_eq!(response_data2, b"SPECIFIC", "With preferred_cap, should route to specific handler (exact match)");
+
+        drop(switch);
+        st_generic.join().unwrap();
+        ht_generic.join().unwrap();
+        st_specific.join().unwrap();
+        ht_specific.join().unwrap();
+    }
 }
