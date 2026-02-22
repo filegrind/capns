@@ -519,7 +519,7 @@ impl ExecutionContext {
                 while offset < arg.value.len() {
                     let end = (offset + max_chunk).min(arg.value.len());
                     let payload = arg.value[offset..end].to_vec();
-                    let checksum = crc32fast::hash(&payload) as u64;
+                    let checksum = Frame::compute_checksum(&payload);
                     let chunk = Frame::chunk(request_id.clone(), stream_id.clone(), seq, payload, seq, checksum);
                     writer.write(&chunk).await
                         .map_err(|e| ExecutionError::HostError(format!("Failed to send CHUNK: {:?}", e)))?;

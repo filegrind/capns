@@ -29,6 +29,15 @@ use std::sync::Arc;
 fn build_manifest() -> CapManifest {
     let mut caps = Vec::new();
 
+    // IDENTITY: Required for every plugin manifest
+    let identity_urn = CapUrn::from_string("cap:")
+        .expect("Valid identity URN");
+    caps.push(Cap::new(
+        identity_urn,
+        "Identity".to_string(),
+        "identity".to_string(),
+    ));
+
     // TEST-EDGE1: Transform node1 to node2 by prepending text
     let edge1_urn = CapUrn::from_string("cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\"")
         .expect("Valid edge1 URN");
