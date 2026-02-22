@@ -223,7 +223,7 @@ impl RelaySwitch {
                     "master {}: identity verification send failed: {}", master_idx, e
                 )))?;
 
-                let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:bytes".to_string());
+                let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string());
                 ss.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut ss);
                 socket_writer.write(&ss).map_err(|e| RelaySwitchError::Protocol(format!(
@@ -536,7 +536,7 @@ impl RelaySwitch {
                 "new master {}: identity send failed: {}", master_idx, e
             )))?;
 
-            let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string());
             ss.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut ss);
             socket_writer.write(&ss).map_err(|e| RelaySwitchError::Protocol(format!(
@@ -1330,7 +1330,7 @@ mod tests {
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string());
         writer.write(&ss).unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -1776,7 +1776,7 @@ mod tests {
         let (slave_read1, engine_write1) = UnixStream::pair().unwrap();
 
         // Master 0: generic thumbnail handler (like internal ThumbnailProvider)
-        let generic_cap = "cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let generic_cap = "cap:in=media:;op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         std::thread::spawn(move || {
             slave_notify_with_identity(slave_read0, slave_write0,
                 &serde_json::json!(["cap:in=media:;out=media:", generic_cap]),
@@ -1784,7 +1784,7 @@ mod tests {
         });
 
         // Master 1: specific thumbnail handler (like pdfcartridge)
-        let specific_cap = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let specific_cap = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         std::thread::spawn(move || {
             slave_notify_with_identity(slave_read1, slave_write1,
                 &serde_json::json!(["cap:in=media:;out=media:", specific_cap]),
@@ -1797,7 +1797,7 @@ mod tests {
         ]).unwrap();
 
         // Specific request for PDF thumbnail
-        let request = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
 
         // Without preference: routes to master 1 (specific, closest-specificity)
         assert_eq!(switch.find_master_for_cap(request, None), Some(1));
@@ -1817,7 +1817,7 @@ mod tests {
         let (slave_read0, engine_write0) = UnixStream::pair().unwrap();
 
         // Master 0: only has a specific cap
-        let registered = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let registered = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         std::thread::spawn(move || {
             slave_notify_with_identity(slave_read0, slave_write0,
                 &serde_json::json!(["cap:in=media:;out=media:", registered]),
@@ -1826,10 +1826,10 @@ mod tests {
 
         let switch = RelaySwitch::new(vec![(engine_read0, engine_write0)]).unwrap();
 
-        let request = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
 
         // Preference for an unrelated cap — no equivalent match, falls back to closest-specificity
-        let unrelated = "cap:in=\"media:txt;textable\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let unrelated = "cap:in=\"media:txt;textable\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         assert_eq!(switch.find_master_for_cap(request, Some(unrelated)), Some(0));
     }
 
@@ -1841,7 +1841,7 @@ mod tests {
         let (slave_read0, engine_write0) = UnixStream::pair().unwrap();
 
         // Master 0: only generic handler
-        let generic_cap = "cap:in=media:bytes;op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let generic_cap = "cap:in=media:;op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         std::thread::spawn(move || {
             slave_notify_with_identity(slave_read0, slave_write0,
                 &serde_json::json!(["cap:in=media:;out=media:", generic_cap]),
@@ -1852,7 +1852,7 @@ mod tests {
 
         // Specific PDF request — without preference, generic handler can't match
         // because request pattern requires pdf tag which generic doesn't have
-        let request = "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\"";
+        let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         assert_eq!(switch.find_master_for_cap(request, None), None);
 
         // With preference for generic — now is_comparable finds it
@@ -1933,7 +1933,7 @@ mod tests {
                 match accumulate_input(&input) {
                     Ok(args) => {
                         let data: Vec<u8> = args.iter().flat_map(|a| a.value.clone()).collect();
-                        output.emit_response("media:text;bytes", &data);
+                        output.emit_response("media:text", &data);
                     }
                     Err(e) => output.emit_error("ACCUMULATE_ERROR", &e),
                 }
@@ -1941,7 +1941,7 @@ mod tests {
         }
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let cap_urn_str = "cap:in=\"media:text;bytes\";op=echo;out=\"media:text;bytes\"";
+        let cap_urn_str = "cap:in=\"media:text\";op=echo;out=\"media:text\"";
         let cap = Cap {
             urn: crate::CapUrn::from_string(cap_urn_str).unwrap(),
             title: "echo".to_string(),
@@ -1992,7 +1992,7 @@ mod tests {
         let frames = CapArgumentValue::build_request_frames(
             &rid,
             cap_urn_str,
-            &[CapArgumentValue::new("media:text;bytes", b"hello streaming world".to_vec())],
+            &[CapArgumentValue::new("media:text", b"hello streaming world".to_vec())],
             max_chunk,
         );
 
@@ -2069,7 +2069,7 @@ mod tests {
                 for frame in input.iter() {
                     if frame.frame_type == FrameType::End { break; }
                 }
-                output.emit_response("media:bytes", self.0.as_bytes());
+                output.emit_response("media:", self.0.as_bytes());
             }
         }
 
@@ -2219,7 +2219,7 @@ mod tests {
                 for frame in input.iter() {
                     if frame.frame_type == FrameType::End { break; }
                 }
-                output.emit_response("media:bytes", self.0.as_bytes());
+                output.emit_response("media:", self.0.as_bytes());
             }
         }
 
@@ -2250,13 +2250,13 @@ mod tests {
             (switch_read, switch_write, host_thread, slave_thread)
         }
 
-        // Master 1: Generic handler (accepts any input/output)
-        let cap_generic = "cap:in=media:;out=media:";
-        let host_generic = InProcessPluginHost::new(vec![(
-            "generic".to_string(),
+        // Master 1: Exact-match handler (matches request exactly — closest specificity)
+        let cap_exact = "cap:in=\"media:void\";op=test;out=\"media:void\"";
+        let host_exact = InProcessPluginHost::new(vec![(
+            "exact".to_string(),
             vec![Cap {
-                urn: crate::CapUrn::from_string(cap_generic).unwrap(),
-                title: "generic".to_string(),
+                urn: crate::CapUrn::from_string(cap_exact).unwrap(),
+                title: "exact".to_string(),
                 cap_description: None,
                 metadata: std::collections::HashMap::new(),
                 command: String::new(),
@@ -2266,16 +2266,16 @@ mod tests {
                 metadata_json: None,
                 registered_by: None,
             }],
-            std::sync::Arc::new(MarkerHandler("GENERIC")) as std::sync::Arc<dyn FrameHandler>,
+            std::sync::Arc::new(MarkerHandler("EXACT")) as std::sync::Arc<dyn FrameHandler>,
         )]);
 
-        // Master 2: Specific handler (exact match for specific cap)
-        let cap_specific = "cap:in=\"media:void\";op=test;out=\"media:void\"";
-        let host_specific = InProcessPluginHost::new(vec![(
-            "specific".to_string(),
+        // Master 2: More-specific handler (has extra tag — also matches, but further from request)
+        let cap_extra = "cap:in=\"media:void\";op=test;ext=pdf;out=\"media:void\"";
+        let host_extra = InProcessPluginHost::new(vec![(
+            "extra".to_string(),
             vec![Cap {
-                urn: crate::CapUrn::from_string(cap_specific).unwrap(),
-                title: "specific".to_string(),
+                urn: crate::CapUrn::from_string(cap_extra).unwrap(),
+                title: "extra".to_string(),
                 cap_description: None,
                 metadata: std::collections::HashMap::new(),
                 command: String::new(),
@@ -2285,16 +2285,16 @@ mod tests {
                 metadata_json: None,
                 registered_by: None,
             }],
-            std::sync::Arc::new(MarkerHandler("SPECIFIC")) as std::sync::Arc<dyn FrameHandler>,
+            std::sync::Arc::new(MarkerHandler("EXTRA")) as std::sync::Arc<dyn FrameHandler>,
         )]);
 
-        let (sr_generic, sw_generic, ht_generic, st_generic) = wire_host(&rt, host_generic);
-        let (sr_specific, sw_specific, ht_specific, st_specific) = wire_host(&rt, host_specific);
+        let (sr_exact, sw_exact, ht_exact, st_exact) = wire_host(&rt, host_exact);
+        let (sr_extra, sw_extra, ht_extra, st_extra) = wire_host(&rt, host_extra);
 
-        let mut switch = RelaySwitch::new(vec![(sr_generic, sw_generic), (sr_specific, sw_specific)]).unwrap();
+        let mut switch = RelaySwitch::new(vec![(sr_exact, sw_exact), (sr_extra, sw_extra)]).unwrap();
         assert_eq!(switch.masters.len(), 2);
 
-        // Test 1: Without preferred_cap, routes to generic (first match, lower specificity)
+        // Test 1: Without preferred_cap, routes to exact match (closest specificity)
         let req_cap = "cap:in=\"media:void\";op=test;out=\"media:void\"";
         let req1 = Frame::req(MessageId::Uint(1), req_cap, Vec::new(), "application/octet-stream");
 
@@ -2306,7 +2306,14 @@ mod tests {
             match switch.read_from_masters() {
                 Ok(Some(frame)) => {
                     match frame.frame_type {
-                        FrameType::Chunk => response_data1.extend_from_slice(frame.payload.as_ref().unwrap()),
+                        FrameType::Chunk => {
+                            // Chunk payload is CBOR-encoded bytes — decode it
+                            let payload = frame.payload.as_ref().unwrap();
+                            let val: ciborium::Value = ciborium::from_reader(payload.as_slice()).unwrap();
+                            if let ciborium::Value::Bytes(b) = val {
+                                response_data1.extend_from_slice(&b);
+                            }
+                        }
                         FrameType::End => break,
                         FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
                         _ => {}
@@ -2317,10 +2324,10 @@ mod tests {
             }
         }
 
-        // Test 2: With preferred_cap = cap_specific, routes to specific (exact match)
+        // Test 2: With preferred_cap = cap_extra, routes to extra handler (preferred override)
         let req2 = Frame::req(MessageId::Uint(2), req_cap, Vec::new(), "application/octet-stream");
 
-        switch.send_to_master(req2.clone(), Some(cap_specific)).unwrap();
+        switch.send_to_master(req2.clone(), Some(cap_extra)).unwrap();
         switch.send_to_master(Frame::end(MessageId::Uint(2), None), None).unwrap();
 
         let mut response_data2 = Vec::new();
@@ -2328,7 +2335,13 @@ mod tests {
             match switch.read_from_masters() {
                 Ok(Some(frame)) => {
                     match frame.frame_type {
-                        FrameType::Chunk => response_data2.extend_from_slice(frame.payload.as_ref().unwrap()),
+                        FrameType::Chunk => {
+                            let payload = frame.payload.as_ref().unwrap();
+                            let val: ciborium::Value = ciborium::from_reader(payload.as_slice()).unwrap();
+                            if let ciborium::Value::Bytes(b) = val {
+                                response_data2.extend_from_slice(&b);
+                            }
+                        }
                         FrameType::End => break,
                         FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
                         _ => {}
@@ -2339,14 +2352,14 @@ mod tests {
             }
         }
 
-        // Verify routing: without preference routes to generic, with preference routes to specific
-        assert_eq!(response_data1, b"GENERIC", "Without preferred_cap, should route to generic handler (first match)");
-        assert_eq!(response_data2, b"SPECIFIC", "With preferred_cap, should route to specific handler (exact match)");
+        // Verify routing: without preference routes to exact match (closest), with preference routes to extra (override)
+        assert_eq!(response_data1, b"EXACT", "Without preferred_cap, should route to exact-match handler (closest specificity)");
+        assert_eq!(response_data2, b"EXTRA", "With preferred_cap, should route to extra handler (preferred override)");
 
         drop(switch);
-        st_generic.join().unwrap();
-        ht_generic.join().unwrap();
-        st_specific.join().unwrap();
-        ht_specific.join().unwrap();
+        st_exact.join().unwrap();
+        ht_exact.join().unwrap();
+        st_extra.join().unwrap();
+        ht_extra.join().unwrap();
     }
 }

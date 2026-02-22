@@ -518,14 +518,16 @@ impl ExecutionContext {
                 let mut seq = 0u64;
                 while offset < arg.value.len() {
                     let end = (offset + max_chunk).min(arg.value.len());
-                    let chunk = Frame::chunk(request_id.clone(), stream_id.clone(), seq, arg.value[offset..end].to_vec());
+                    let payload = arg.value[offset..end].to_vec();
+                    let checksum = crc32fast::hash(&payload) as u64;
+                    let chunk = Frame::chunk(request_id.clone(), stream_id.clone(), seq, payload, seq, checksum);
                     writer.write(&chunk).await
                         .map_err(|e| ExecutionError::HostError(format!("Failed to send CHUNK: {:?}", e)))?;
                     offset = end;
                     seq += 1;
                 }
 
-                let end_stream = Frame::stream_end(request_id.clone(), stream_id);
+                let end_stream = Frame::stream_end(request_id.clone(), stream_id, seq);
                 writer.write(&end_stream).await
                     .map_err(|e| ExecutionError::HostError(format!("Failed to send STREAM_END: {:?}", e)))?;
             }

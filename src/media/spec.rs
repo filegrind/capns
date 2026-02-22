@@ -403,8 +403,8 @@ impl ResolvedMediaSpec {
             .expect("ResolvedMediaSpec has invalid media_urn - this indicates a bug in resolution")
     }
 
-    /// Check if this represents binary data.
-    /// Returns true if the "bytes" marker tag is present in the source media URN.
+    /// Check if this represents binary (non-text) data.
+    /// Returns true if the "textable" marker tag is NOT present in the source media URN.
     pub fn is_binary(&self) -> bool {
         self.parse_media_urn().is_binary()
     }
@@ -649,11 +649,26 @@ mod tests {
         assert_eq!(resolved.media_type, "application/json");
     }
 
-    // TEST090: Test resolving binary media URN from registry returns octet-stream and is_binary true
+    // TEST090: Test resolving binary media URN returns octet-stream and is_binary true
     #[tokio::test]
     async fn test090_resolve_from_registry_binary() {
         let registry = test_registry().await;
-        let resolved = resolve_media_urn("media:bytes", None, &registry).await.unwrap();
+        // media: (wildcard binary) is provided via local media_specs since the registry
+        // stores specs under specific URNs, not the wildcard
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:".to_string(),
+                media_type: "application/octet-stream".to_string(),
+                title: "Binary".to_string(),
+                profile_uri: None,
+                schema: None,
+                description: None,
+                validation: None,
+                metadata: None,
+                extensions: Vec::new(),
+            },
+        ]);
+        let resolved = resolve_media_urn("media:", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.media_type, "application/octet-stream");
         assert!(resolved.is_binary());
     }
@@ -838,11 +853,11 @@ mod tests {
     // ResolvedMediaSpec tests
     // -------------------------------------------------------------------------
 
-    // TEST099: Test ResolvedMediaSpec is_binary returns true for bytes media URN
+    // TEST099: Test ResolvedMediaSpec is_binary returns true when textable tag is absent
     #[test]
     fn test099_resolved_is_binary() {
         let resolved = ResolvedMediaSpec {
-            media_urn: "media:bytes".to_string(),
+            media_urn: "media:".to_string(),
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
             schema: None,
@@ -1037,7 +1052,7 @@ mod tests {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
-                urn: "media:custom-pdf;bytes".to_string(),
+                urn: "media:custom-pdf".to_string(),
                 media_type: "application/pdf".to_string(),
                 title: "PDF Document".to_string(),
                 profile_uri: Some("https://capns.org/schema/pdf".to_string()),
@@ -1049,7 +1064,7 @@ mod tests {
             }
         ]);
 
-        let resolved = resolve_media_urn("media:custom-pdf;bytes", Some(&media_specs), &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:custom-pdf", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.extensions, vec!["pdf".to_string()]);
     }
 
@@ -1116,7 +1131,7 @@ mod tests {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
-                urn: "media:image;jpeg;bytes".to_string(),
+                urn: "media:image;jpeg".to_string(),
                 media_type: "image/jpeg".to_string(),
                 title: "JPEG Image".to_string(),
                 profile_uri: Some("https://capns.org/schema/jpeg".to_string()),
@@ -1128,7 +1143,7 @@ mod tests {
             }
         ]);
 
-        let resolved = resolve_media_urn("media:image;jpeg;bytes", Some(&media_specs), &registry).await.unwrap();
+        let resolved = resolve_media_urn("media:image;jpeg", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.extensions, vec!["jpg".to_string(), "jpeg".to_string()]);
         assert_eq!(resolved.extensions.len(), 2);
     }

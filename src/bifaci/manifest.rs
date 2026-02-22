@@ -143,9 +143,9 @@ mod tests {
 
         // Add stdin via args architecture
         let stdin_arg = CapArg::new(
-            "media:pdf;bytes",
+            "media:pdf",
             true,
-            vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+            vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
         );
         cap.add_arg(stdin_arg);
 
@@ -161,7 +161,7 @@ mod tests {
         assert!(json.contains("\"name\":\"TestComponent\""));
         assert!(json.contains("\"version\":\"0.1.0\""));
         assert!(json.contains("\"author\":\"Test Author\""));
-        assert!(json.contains("\"stdin\":\"media:pdf;bytes\""));
+        assert!(json.contains("\"stdin\":\"media:pdf\""));
 
         // Test deserialization
         let deserialized: CapManifest = serde_json::from_str(&json).unwrap();

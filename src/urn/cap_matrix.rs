@@ -141,7 +141,7 @@ impl CapGraph {
     ///
     /// Uses MediaUrn::conforms_to() matching: returns edges where the provided spec
     /// conforms to the edge's from_spec requirement. This allows a specific media URN
-    /// like "media:pdf;bytes" to match caps that accept "media:pdf".
+    /// like "media:pdf" to match caps that accept "media:pdf".
     pub fn get_outgoing(&self, spec: &str) -> Vec<&CapGraphEdge> {
         let provided_urn = match MediaUrn::from_string(spec) {
             Ok(urn) => urn,
@@ -935,7 +935,7 @@ impl CapBlock {
 mod tests {
     use super::*;
     use crate::CapOutput;
-    use crate::standard::media::{MEDIA_STRING, MEDIA_OBJECT, MEDIA_BINARY};
+    use crate::standard::media::{MEDIA_STRING, MEDIA_OBJECT};
     use crate::media::registry::MediaUrnRegistry;
     use std::pin::Pin;
     use std::future::Future;
@@ -1358,7 +1358,7 @@ mod tests {
 
         // Create a cap that converts binary to str
         // Use full media URN strings for proper matching
-        let media_binary = "media:bytes";
+        let media_binary = "media:binary";
         let cap = Cap {
             urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract_text;out="{}""#, media_binary, MEDIA_STRING)).unwrap(),
             title: "Text Extractor".to_string(),
@@ -1389,7 +1389,7 @@ mod tests {
 
         // binary -> str - use full constants for proper matching
         let cap1 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract_text;out="{}""#, MEDIA_BINARY, MEDIA_STRING)).unwrap(),
+            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract_text;out="{}""#, "media:binary", MEDIA_STRING)).unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1403,7 +1403,7 @@ mod tests {
 
         // binary -> obj (JSON)
         let cap2 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=parse_json;out="{}""#, MEDIA_BINARY, MEDIA_OBJECT)).unwrap(),
+            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=parse_json;out="{}""#, "media:binary", MEDIA_OBJECT)).unwrap(),
             title: "JSON Parser".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1419,7 +1419,7 @@ mod tests {
         graph.add_cap(&cap2, "registry2");
 
         // Check outgoing from binary - use full constant
-        let outgoing = graph.get_outgoing(MEDIA_BINARY);
+        let outgoing = graph.get_outgoing("media:binary");
         assert_eq!(outgoing.len(), 2);
 
         // Check incoming to str
@@ -1438,7 +1438,7 @@ mod tests {
 
         // binary -> str - use full constants
         let cap1 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract;out="{}""#, MEDIA_BINARY, MEDIA_STRING)).unwrap(),
+            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract;out="{}""#, "media:binary", MEDIA_STRING)).unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             metadata: HashMap::new(),
@@ -1468,20 +1468,20 @@ mod tests {
         graph.add_cap(&cap2, "registry");
 
         // Direct conversions
-        assert!(graph.can_convert(MEDIA_BINARY, MEDIA_STRING));
+        assert!(graph.can_convert("media:binary", MEDIA_STRING));
         assert!(graph.can_convert(MEDIA_STRING, MEDIA_OBJECT));
 
         // Indirect conversion (through intermediate)
-        assert!(graph.can_convert(MEDIA_BINARY, MEDIA_OBJECT));
+        assert!(graph.can_convert("media:binary", MEDIA_OBJECT));
 
         // Same spec
-        assert!(graph.can_convert(MEDIA_BINARY, MEDIA_BINARY));
+        assert!(graph.can_convert("media:binary", "media:binary"));
 
         // No path
-        assert!(!graph.can_convert(MEDIA_OBJECT, MEDIA_BINARY));
+        assert!(!graph.can_convert(MEDIA_OBJECT, "media:binary"));
 
         // Unknown spec
-        assert!(!graph.can_convert(MEDIA_BINARY, "unknown:spec.v1"));
+        assert!(!graph.can_convert("media:binary", "unknown:spec.v1"));
     }
 
     // TEST130: Test CapGraph finds shortest path for spec conversion chain

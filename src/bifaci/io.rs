@@ -914,7 +914,7 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     writer.write(&req).await?;
 
     // Send request body: STREAM_START → CHUNK → STREAM_END → END
-    let mut stream_start = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:bytes".to_string());
+    let mut stream_start = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string());
     stream_start.routing_id = Some(xid.clone());
     seq.assign(&mut stream_start);
     writer.write(&stream_start).await?;
@@ -1593,7 +1593,7 @@ mod tests {
     fn test389_stream_start_roundtrip() {
         let id = MessageId::new_uuid();
         let stream_id = "stream-abc-123".to_string();
-        let media_urn = "media:bytes".to_string();
+        let media_urn = "media:".to_string();
 
         let frame = Frame::stream_start(id.clone(), stream_id.clone(), media_urn.clone());
         let encoded = encode_frame(&frame).unwrap();
@@ -1602,7 +1602,7 @@ mod tests {
         assert_eq!(decoded.frame_type, FrameType::StreamStart);
         assert_eq!(decoded.id, id);
         assert_eq!(decoded.stream_id.as_deref(), Some("stream-abc-123"));
-        assert_eq!(decoded.media_urn.as_deref(), Some("media:bytes"));
+        assert_eq!(decoded.media_urn.as_deref(), Some("media:"));
     }
 
     // TEST390: StreamEnd encode/decode roundtrip preserves stream_id, no media_urn
@@ -1814,7 +1814,7 @@ mod tests {
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string());
         writer.write(&ss).unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);

@@ -36,8 +36,8 @@ pub const MEDIA_NUMBER: &str = "media:textable;numeric;form=scalar";
 pub const MEDIA_BOOLEAN: &str = "media:bool;textable;form=scalar";
 /// Media URN for JSON object type - textable (via JSON.stringify), form=map (key-value structure)
 pub const MEDIA_OBJECT: &str = "media:form=map;textable";
-/// Media URN for binary data - binary (raw bytes)
-pub const MEDIA_BINARY: &str = "media:bytes";
+/// Media URN for binary data - the most general media type (no constraints)
+pub const MEDIA_BINARY: &str = "media:";
 
 // Array types - URNs must match base.toml definitions
 /// Media URN for string array type - textable, list (no primary type prefix)
@@ -52,30 +52,30 @@ pub const MEDIA_BOOLEAN_ARRAY: &str = "media:bool;textable;form=list";
 pub const MEDIA_OBJECT_ARRAY: &str = "media:form=list;textable";
 
 // Semantic media types for specialized content
-/// Media URN for PNG image data - matches CATALOG: media:image;png;bytes
-pub const MEDIA_PNG: &str = "media:image;png;bytes";
+/// Media URN for PNG image data
+pub const MEDIA_PNG: &str = "media:image;png";
 /// Media URN for audio data (wav, mp3, flac, etc.)
-pub const MEDIA_AUDIO: &str = "media:wav;audio;bytes;";
+pub const MEDIA_AUDIO: &str = "media:wav;audio";
 /// Media URN for video data (mp4, webm, mov, etc.)
-pub const MEDIA_VIDEO: &str = "media:video;bytes";
+pub const MEDIA_VIDEO: &str = "media:video";
 
 // Semantic AI input types - distinguished by their purpose/context
 /// Media URN for audio input containing speech for transcription (Whisper)
-pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;bytes;speech";
+pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;speech";
 /// Media URN for thumbnail image output
-pub const MEDIA_IMAGE_THUMBNAIL: &str = "media:image;png;bytes;thumbnail";
+pub const MEDIA_IMAGE_THUMBNAIL: &str = "media:image;png;thumbnail";
 
 // Collection types for folder hierarchies
 /// Media URN for a collection (folder with nested structure as form=map)
-pub const MEDIA_COLLECTION: &str = "media:collection;form=map";
+pub const MEDIA_COLLECTION: &str = "media:collection;textable;form=map";
 /// Media URN for a flat collection (folder contents as form=list)
-pub const MEDIA_COLLECTION_LIST: &str = "media:collection;form=list";
+pub const MEDIA_COLLECTION_LIST: &str = "media:collection;textable;form=list";
 
 // Document types (PRIMARY naming - type IS the format)
 /// Media URN for PDF documents
-pub const MEDIA_PDF: &str = "media:pdf;bytes";
+pub const MEDIA_PDF: &str = "media:pdf";
 /// Media URN for EPUB documents
-pub const MEDIA_EPUB: &str = "media:epub;bytes";
+pub const MEDIA_EPUB: &str = "media:epub";
 
 // Text format types (PRIMARY naming - type IS the format)
 /// Media URN for Markdown text
@@ -125,12 +125,12 @@ pub fn text_media_urn_for_ext(ext: &str) -> String {
 
 /// Helper to build image media URN with extension
 pub fn image_media_urn_for_ext(ext: &str) -> String {
-    format!("media:image;ext={};bytes", ext)
+    format!("media:image;ext={}", ext)
 }
 
 /// Helper to build audio media URN with extension
 pub fn audio_media_urn_for_ext(ext: &str) -> String {
-    format!("media:audio;ext={};bytes", ext)
+    format!("media:audio;ext={}", ext)
 }
 
 // CAPNS output types - all form=map structures (JSON objects)
@@ -162,8 +162,6 @@ pub const MEDIA_DISBOUND_PAGE: &str = "media:disbound-page;textable;form=list";
 pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;form=map";
 /// Media URN for transcription output - textable, form=map
 pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:transcription;textable;form=map";
-/// Media URN for vision inference output - textable, form=map
-pub const MEDIA_VISION_INFERENCE_OUTPUT: &str = "media:vision-inference-output;textable;form=map";
 /// Media URN for decision output (bit choice) - matches CATALOG: media:decision;bool;textable;form=scalar
 pub const MEDIA_DECISION: &str = "media:decision;bool;textable;form=scalar";
 /// Media URN for decision array output (bit choices) - matches CATALOG: media:decision;bool;textable;form=list
@@ -287,10 +285,12 @@ impl MediaUrn {
     // Behavior helpers (triggered by tag presence)
     // =========================================================================
 
-    /// Check if this represents binary data.
-    /// Returns true if the "bytes" marker tag is present.
+    /// Check if this represents binary (non-text) data.
+    /// Returns true if the "textable" marker tag is NOT present.
+    /// All data is binary at the byte level; textable is the subset
+    /// that is natively representable as human-readable unicode text.
     pub fn is_binary(&self) -> bool {
-        self.get_tag("bytes").is_some()
+        self.get_tag("textable").is_none()
     }
 
     /// Check if this represents a map/object structure (form=map).
@@ -491,17 +491,21 @@ mod tests {
         }
     }
 
-    // TEST061: Test is_binary returns true only when bytes marker tag is present
+    // TEST061: Test is_binary returns true when textable tag is absent (binary = not textable)
     #[test]
     fn test061_is_binary() {
-        // is_binary returns true only if "bytes" marker tag is present
-        assert!(MediaUrn::from_string("media:bytes").unwrap().is_binary());
-        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:png;bytes"
-        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:pdf;bytes"
-        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:bytes"
-        // Without binary tag, is_binary is false
+        // Binary types: no textable tag
+        assert!(MediaUrn::from_string(MEDIA_BINARY).unwrap().is_binary()); // "media:"
+        assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_binary()); // "media:image;png"
+        assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_binary()); // "media:pdf"
+        assert!(MediaUrn::from_string("media:video").unwrap().is_binary());
+        assert!(MediaUrn::from_string("media:epub").unwrap().is_binary());
+        // Textable types: is_binary is false
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_binary());
-        assert!(!MediaUrn::from_string("media:object;textable;form=map").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:textable;form=map").unwrap().is_binary());
+        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_binary());
+        assert!(!MediaUrn::from_string(MEDIA_JSON).unwrap().is_binary());
+        assert!(!MediaUrn::from_string(MEDIA_MD).unwrap().is_binary());
     }
 
     // TEST062: Test is_map returns true when form=map tag is present indicating key-value structure
@@ -574,8 +578,8 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:integer;textable;numeric;form=scalar"
         assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:form=map;textable"
         // Without textable tag, is_text is false
-        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:bytes"
-        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:png;bytes"
+        assert!(!MediaUrn::from_string(MEDIA_BINARY).unwrap().is_text()); // "media:"
+        assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:png"
     }
 
     // TEST068: Test is_void returns true when void flag or type=void tag is present
@@ -649,8 +653,8 @@ mod tests {
     #[test]
     fn test074_media_urn_matching() {
         // PDF listing conforms to PDF requirement (PRIMARY type naming)
-        // A more specific URN (media:pdf;bytes) conforms to a less specific requirement (media:pdf)
-        let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf;bytes"
+        // A more specific URN (media:pdf) conforms to a less specific requirement (media:pdf)
+        let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf"
         let pdf_requirement = MediaUrn::from_string("media:pdf").unwrap();
         assert!(pdf_listing.conforms_to(&pdf_requirement).expect("MediaUrn prefix mismatch impossible"));
 
@@ -781,7 +785,7 @@ mod debug_tests {
     fn test546_is_image() {
         assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_image());
         assert!(MediaUrn::from_string(MEDIA_IMAGE_THUMBNAIL).unwrap().is_image());
-        assert!(MediaUrn::from_string("media:image;jpg;bytes").unwrap().is_image());
+        assert!(MediaUrn::from_string("media:image;jpg").unwrap().is_image());
         // Non-image types
         assert!(!MediaUrn::from_string(MEDIA_PDF).unwrap().is_image());
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_image());
@@ -794,7 +798,7 @@ mod debug_tests {
     fn test547_is_audio() {
         assert!(MediaUrn::from_string(MEDIA_AUDIO).unwrap().is_audio());
         assert!(MediaUrn::from_string(MEDIA_AUDIO_SPEECH).unwrap().is_audio());
-        assert!(MediaUrn::from_string("media:audio;mp3;bytes").unwrap().is_audio());
+        assert!(MediaUrn::from_string("media:audio;mp3").unwrap().is_audio());
         // Non-audio types
         assert!(!MediaUrn::from_string(MEDIA_VIDEO).unwrap().is_audio());
         assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_audio());
@@ -805,7 +809,7 @@ mod debug_tests {
     #[test]
     fn test548_is_video() {
         assert!(MediaUrn::from_string(MEDIA_VIDEO).unwrap().is_video());
-        assert!(MediaUrn::from_string("media:video;mp4;bytes").unwrap().is_video());
+        assert!(MediaUrn::from_string("media:video;mp4").unwrap().is_video());
         // Non-video types
         assert!(!MediaUrn::from_string(MEDIA_AUDIO).unwrap().is_video());
         assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_video());
@@ -902,7 +906,7 @@ mod debug_tests {
         let jpg_urn = image_media_urn_for_ext("jpg");
         let parsed = MediaUrn::from_string(&jpg_urn).unwrap();
         assert!(parsed.is_image(), "image helper must set image tag");
-        assert!(parsed.is_binary(), "image helper must set bytes tag");
+        assert!(parsed.is_binary(), "image URN must be binary (no textable tag)");
         assert_eq!(parsed.extension(), Some("jpg"));
     }
 
@@ -912,7 +916,7 @@ mod debug_tests {
         let mp3_urn = audio_media_urn_for_ext("mp3");
         let parsed = MediaUrn::from_string(&mp3_urn).unwrap();
         assert!(parsed.is_audio(), "audio helper must set audio tag");
-        assert!(parsed.is_binary(), "audio helper must set bytes tag");
+        assert!(parsed.is_binary(), "audio URN must be binary (no textable tag)");
         assert_eq!(parsed.extension(), Some("mp3"));
     }
 
@@ -945,11 +949,11 @@ mod debug_tests {
         assert!(!json_urn.is_binary());
         assert!(!json_urn.is_list());
 
-        // MEDIA_VOID is void, NOT anything else
+        // MEDIA_VOID is void, NOT text/numeric — but IS binary (no textable tag)
         let void = MediaUrn::from_string(MEDIA_VOID).unwrap();
         assert!(void.is_void());
         assert!(!void.is_text());
-        assert!(!void.is_binary());
+        assert!(void.is_binary(), "void has no textable tag, so is_binary is true");
         assert!(!void.is_numeric());
     }
 }

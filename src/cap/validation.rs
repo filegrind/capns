@@ -1271,7 +1271,7 @@ mod tests {
     fn test580_rule3_different_stdin_urns() {
         let cap = make_test_cap_with_args(vec![
             CapArg::new(MEDIA_STRING, true, vec![ArgSource::Stdin { stdin: "media:txt;textable".to_string() }]),
-            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Stdin { stdin: "media:bytes".to_string() }]),
+            CapArg::new(MEDIA_INTEGER, true, vec![ArgSource::Stdin { stdin: "media:".to_string() }]),
         ]);
         let result = validate_cap_args(&cap);
         assert!(result.is_err());

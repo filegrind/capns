@@ -1146,7 +1146,7 @@ fn extract_effective_payload(
 
     // Validate: At least ONE argument must match in_spec (fail hard if none)
     // UNLESS in_spec is "media:void" (no input required)
-    // After file-path conversion, arg media_urn may be the stdin target (e.g., "media:bytes")
+    // After file-path conversion, arg media_urn may be the stdin target (e.g., "media:")
     // rather than the original in_spec (e.g., "media:file-path;..."), so we also accept
     // any stdin source target as a valid match.
     let is_void_input = expected_input == "media:void";
@@ -2924,7 +2924,7 @@ mod tests {
             ));
 
             registry.add_cap(create_test_cap(
-                r#"cap:in="media:bytes";op=process;out="media:void""#,
+                r#"cap:in="media:";op=process;out="media:void""#,
                 "Process",
                 "process",
                 vec![],
@@ -2952,7 +2952,7 @@ mod tests {
             ));
 
             registry.add_cap(create_test_cap(
-                r#"cap:in="media:pdf;bytes";op=process;out="*""#,
+                r#"cap:in="media:pdf";op=process;out="*""#,
                 "Process PDF",
                 "process",
                 vec![],
@@ -3086,7 +3086,7 @@ mod tests {
         });
 
         let factory = runtime.find_handler("cap:op=raw").unwrap();
-        let input = test_input_package(&[("media:bytes", b"echo this")]);
+        let input = test_input_package(&[("media:", b"echo this")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).unwrap();
         assert_eq!(&*received.lock().unwrap(), b"echo this", "raw handler must echo payload");
@@ -3129,7 +3129,7 @@ mod tests {
         });
 
         let factory = runtime.find_handler("cap:op=test").unwrap();
-        let input = test_input_package(&[("media:bytes", b"{\"key\":\"hello\"}")]);
+        let input = test_input_package(&[("media:", b"{\"key\":\"hello\"}")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).unwrap();
         assert_eq!(&*received.lock().unwrap(), b"hello");
@@ -3160,7 +3160,7 @@ mod tests {
         runtime.register_op("cap:op=test", || Box::new(JsonParseOp));
 
         let factory = runtime.find_handler("cap:op=test").unwrap();
-        let input = test_input_package(&[("media:bytes", b"not json {{{{")]);
+        let input = test_input_package(&[("media:", b"not json {{{{")]);
         let (output, _out_rx) = test_output_stream();
         let result = invoke_op(&factory, input, output);
         assert!(result.is_err(), "Invalid JSON must produce error");
@@ -3211,7 +3211,7 @@ mod tests {
         let factory_clone = Arc::clone(&factory);
 
         let handle = std::thread::spawn(move || {
-            let input = test_input_package(&[("media:bytes", b"{}")]);
+            let input = test_input_package(&[("media:", b"{}")]);
             let (output, _out_rx) = test_output_stream();
             invoke_op(&factory_clone, input, output).unwrap();
         });
@@ -3454,17 +3454,17 @@ mod tests {
         runtime.register_op("cap:op=gamma", || Box::new(EchoTagOp { tag: b"g".to_vec() }));
 
         let f_alpha = runtime.find_handler("cap:op=alpha").unwrap();
-        let input = test_input_package(&[("media:bytes", b"")]);
+        let input = test_input_package(&[("media:", b"")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&f_alpha, input, output).unwrap();
 
         let f_beta = runtime.find_handler("cap:op=beta").unwrap();
-        let input = test_input_package(&[("media:bytes", b"")]);
+        let input = test_input_package(&[("media:", b"")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&f_beta, input, output).unwrap();
 
         let f_gamma = runtime.find_handler("cap:op=gamma").unwrap();
-        let input = test_input_package(&[("media:bytes", b"")]);
+        let input = test_input_package(&[("media:", b"")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&f_gamma, input, output).unwrap();
     }
@@ -3508,7 +3508,7 @@ mod tests {
         }
 
         let factory = runtime.find_handler("cap:op=test").unwrap();
-        let input = test_input_package(&[("media:bytes", b"")]);
+        let input = test_input_package(&[("media:", b"")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).unwrap();
         assert_eq!(&*result2.lock().unwrap(), b"second", "later registration must replace earlier");
@@ -3595,7 +3595,7 @@ mod tests {
         let binary_data: Vec<u8> = (0u8..=255).collect();
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf;bytes".to_string())),
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf".to_string())),
                 (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(binary_data.clone())),
             ]),
         ]);
@@ -3603,7 +3603,7 @@ mod tests {
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:pdf;bytes";op=process;out="*""#).unwrap();
+        let cap = registry.get(r#"cap:in="media:pdf";op=process;out="*""#).unwrap();
         let result = extract_effective_payload(
             &payload,
             Some("application/cbor"),
@@ -3645,14 +3645,14 @@ mod tests {
         std::fs::write(&test_file, b"PDF binary content 336").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process PDF",
             "process",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -3666,7 +3666,7 @@ mod tests {
         let received_clone = Arc::clone(&received_payload);
 
         runtime.register_op(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             move || {
                 Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
             },
@@ -3689,7 +3689,7 @@ mod tests {
         let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
         // Simulate CLI mode: parse CBOR args → send as streams → InputPackage
-        let input = test_input_package(&[("media:bytes", &payload)]);
+        let input = test_input_package(&[("media:", &payload)]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).unwrap();
 
@@ -3740,14 +3740,14 @@ mod tests {
         std::fs::write(&test_file, b"PDF via flag 338").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
                     ArgSource::CliFlag { cli_flag: "--file".to_string() },
                 ],
             )],
@@ -3776,14 +3776,14 @@ mod tests {
         std::fs::write(&file2, b"content2").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Batch",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -3811,14 +3811,14 @@ mod tests {
     #[test]
     fn test340_file_not_found_clear_error() {
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -3857,14 +3857,14 @@ mod tests {
 
         // Stdin source comes BEFORE position source
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },  // First
+                    ArgSource::Stdin { stdin: "media:".to_string() },  // First
                     ArgSource::Position { position: 0 },                     // Second
                 ],
             )],
@@ -3894,14 +3894,14 @@ mod tests {
         std::fs::write(&test_file, b"binary data 342").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -3954,14 +3954,14 @@ mod tests {
     #[test]
     fn test344_file_path_array_invalid_json_fails() {
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -3998,14 +3998,14 @@ mod tests {
         let missing_path = temp_dir.join("test345_missing.txt");
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4046,14 +4046,14 @@ mod tests {
         std::fs::write(&test_file, &large_data).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4079,14 +4079,14 @@ mod tests {
         std::fs::write(&test_file, b"").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4112,7 +4112,7 @@ mod tests {
 
         // Position source BEFORE stdin source
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
@@ -4120,7 +4120,7 @@ mod tests {
                 true,
                 vec![
                     ArgSource::Position { position: 0 },                     // First
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },  // Second
+                    ArgSource::Stdin { stdin: "media:".to_string() },  // Second
                 ],
             )],
         );
@@ -4148,7 +4148,7 @@ mod tests {
         std::fs::write(&test_file, b"content 349").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
@@ -4157,7 +4157,7 @@ mod tests {
                 vec![
                     ArgSource::CliFlag { cli_flag: "--file".to_string() },  // First (not provided)
                     ArgSource::Position { position: 0 },                     // Second (provided)
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },  // Third (not used)
+                    ArgSource::Stdin { stdin: "media:".to_string() },  // Third (not used)
                 ],
             )],
         );
@@ -4188,14 +4188,14 @@ mod tests {
         std::fs::write(&test_file, test_content).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:result;textable\"",
             "Process PDF",
             "process",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4209,7 +4209,7 @@ mod tests {
         let received_clone = Arc::clone(&received_payload);
 
         runtime.register_op(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:result;textable\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:result;textable\"",
             move || {
                 Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
             },
@@ -4230,7 +4230,7 @@ mod tests {
 
         let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
-        let input = test_input_package(&[("media:bytes", &payload)]);
+        let input = test_input_package(&[("media:", &payload)]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).unwrap();
 
@@ -4245,14 +4245,14 @@ mod tests {
     #[test]
     fn test351_file_path_array_empty_array() {
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 false,  // Not required
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                 ],
             )],
         );
@@ -4317,14 +4317,14 @@ mod tests {
         std::fs::set_permissions(&test_file, perms).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4429,14 +4429,14 @@ mod tests {
         let temp_dir = std::env::temp_dir();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4479,14 +4479,14 @@ mod tests {
         std::fs::write(&file1, b"content1").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4522,14 +4522,14 @@ mod tests {
         std::fs::write(&file2, b"json").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4610,14 +4610,14 @@ mod tests {
         unix_fs::symlink(&real_file, &link_file).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4648,14 +4648,14 @@ mod tests {
         std::fs::write(&test_file, &binary_data).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=test;out=\"media:void\"",
+            "cap:in=\"media:\";op=test;out=\"media:void\"",
             "Test",
             "test",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4676,14 +4676,14 @@ mod tests {
     #[test]
     fn test359_invalid_glob_pattern_fails() {
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4723,14 +4723,14 @@ mod tests {
         std::fs::write(&test_file, pdf_content).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![CapArg::new(
                 "media:file-path;textable;form=scalar",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4762,7 +4762,7 @@ mod tests {
         };
 
         // Extract value from argument matching in_spec
-        let in_spec = MediaUrn::from_string("media:pdf;bytes").unwrap();
+        let in_spec = MediaUrn::from_string("media:pdf").unwrap();
         let mut found_value = None;
         for arg in result_array {
             if let ciborium::Value::Map(map) = arg {
@@ -4809,14 +4809,14 @@ mod tests {
         std::fs::write(&test_file, pdf_content).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![CapArg::new(
                 MEDIA_FILE_PATH,
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4856,13 +4856,13 @@ mod tests {
 
         // Create cap that accepts stdin
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![CapArg::new(
-                "media:pdf;bytes",
+                "media:pdf",
                 true,
-                vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+                vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
             )],
         );
 
@@ -4903,7 +4903,7 @@ mod tests {
                         }
                     }
 
-                    assert_eq!(media_urn, Some("media:pdf;bytes".to_string()), "Media URN matches cap in_spec");
+                    assert_eq!(media_urn, Some("media:pdf".to_string()), "Media URN matches cap in_spec");
                     assert_eq!(value, Some(pdf_content), "Binary content preserved exactly");
                 } else {
                     panic!("Expected Map in CBOR array");
@@ -4923,13 +4923,13 @@ mod tests {
         let received_clone = Arc::clone(&received);
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![CapArg::new(
-                "media:pdf;bytes",
+                "media:pdf",
                 true,
-                vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+                vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
             )],
         );
 
@@ -4943,7 +4943,7 @@ mod tests {
         let mut payload_bytes = Vec::new();
         let cbor_args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf;bytes".to_string())),
+                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf".to_string())),
                 (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(pdf_content.clone())),
             ]),
         ]);
@@ -4952,7 +4952,7 @@ mod tests {
         let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
         // Send payload as InputPackage
-        let input = test_input_package(&[("media:bytes", &payload_bytes)]);
+        let input = test_input_package(&[("media:", &payload_bytes)]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).unwrap();
 
@@ -4968,13 +4968,13 @@ mod tests {
         std::fs::write(&test_file, pdf_content).unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:pdf;bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![CapArg::new(
                 MEDIA_FILE_PATH,
                 true,
-                vec![ArgSource::Stdin { stdin: "media:pdf;bytes".to_string() }],
+                vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
             )],
         );
 
@@ -5023,7 +5023,7 @@ mod tests {
                         }
                     }
                 }
-                assert_eq!(media_urn, Some(&"media:pdf;bytes".to_string()), "URN converted to expected input");
+                assert_eq!(media_urn, Some(&"media:pdf".to_string()), "URN converted to expected input");
                 assert_eq!(value, Some(&pdf_content.to_vec()), "File auto-converted to bytes");
             }
         }
@@ -5046,14 +5046,14 @@ mod tests {
         std::fs::write(&file3, b"content3").unwrap();
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=batch;out=\"media:void\"",
+            "cap:in=\"media:\";op=batch;out=\"media:void\"",
             "Test",
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;form=list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:bytes".to_string() },
+                    ArgSource::Stdin { stdin: "media:".to_string() },
                 ],
             )],
         );
@@ -5114,7 +5114,7 @@ mod tests {
                 _ => panic!("Expected text"),
             })
             .unwrap();
-        assert_eq!(media_urn, "media:bytes", "media_urn should be converted to stdin source");
+        assert_eq!(media_urn, "media:", "media_urn should be converted to stdin source");
 
         std::fs::remove_dir_all(temp_dir).ok();
     }
@@ -5125,7 +5125,7 @@ mod tests {
         use std::io::Cursor;
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![],
@@ -5168,7 +5168,7 @@ mod tests {
         use std::io::Cursor;
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![],
@@ -5209,7 +5209,7 @@ mod tests {
         use std::io::Cursor;
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![],
@@ -5252,7 +5252,7 @@ mod tests {
         }
 
         let cap = create_test_cap(
-            "cap:in=\"media:bytes\";op=process;out=\"media:void\"",
+            "cap:in=\"media:\";op=process;out=\"media:void\"",
             "Process",
             "process",
             vec![],
@@ -5375,7 +5375,7 @@ mod tests {
             Ok(Value::Bytes(b" ".to_vec())),
             Ok(Value::Bytes(b"world".to_vec())),
         ];
-        let stream = create_test_input_stream("media:bytes", chunks);
+        let stream = create_test_input_stream("media:", chunks);
 
         let result = stream.collect_bytes().expect("collect must succeed");
         assert_eq!(result, b"hello world");
@@ -5627,7 +5627,7 @@ mod tests {
         let mut stream = OutputStream::new(
             Arc::new(sender),
             "stream-1".to_string(),
-            "media:bytes".to_string(),
+            "media:".to_string(),
             MessageId::new_uuid(),
             None,
             max_chunk,

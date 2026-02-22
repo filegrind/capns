@@ -257,7 +257,7 @@ impl FrameHandler for IdentityHandler {
         output.send(Frame::stream_start(
             MessageId::Uint(0),
             stream_id.clone(),
-            "media:bytes".to_string(),
+            "media:".to_string(),
         ));
 
         let checksum = Frame::compute_checksum(&data);
@@ -562,7 +562,7 @@ mod tests {
             match accumulate_input(&input) {
                 Ok(args) => {
                     let data: Vec<u8> = args.iter().flat_map(|a| a.value.clone()).collect();
-                    output.emit_response("media:bytes", &data);
+                    output.emit_response("media:", &data);
                 }
                 Err(e) => {
                     output.emit_error("ACCUMULATE_ERROR", &e);
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn test654_routes_req_to_handler() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let cap_urn = "cap:in=\"media:text;bytes\";op=echo;out=\"media:text;bytes\"";
+        let cap_urn = "cap:in=\"media:text\";op=echo;out=\"media:text\"";
         let cap = make_test_cap(cap_urn);
         let handlers = vec![(
             "echo".to_string(),
@@ -645,7 +645,7 @@ mod tests {
         let ss = Frame::stream_start(
             rid.clone(),
             "arg0".to_string(),
-            "media:text;bytes".to_string(),
+            "media:text".to_string(),
         );
         writer.write(&ss).unwrap();
 
@@ -711,7 +711,7 @@ mod tests {
         let ss = Frame::stream_start(
             rid.clone(),
             "identity-verify".to_string(),
-            "media:bytes".to_string(),
+            "media:".to_string(),
         );
         writer.write(&ss).unwrap();
 
@@ -772,7 +772,7 @@ mod tests {
         let rid = MessageId::new_uuid();
         let mut req = Frame::req(
             rid.clone(),
-            "cap:in=\"media:pdf;bytes\";op=unknown;out=\"media:text;bytes\"",
+            "cap:in=\"media:pdf\";op=unknown;out=\"media:text\"",
             vec![],
             "application/cbor",
         );
@@ -793,7 +793,7 @@ mod tests {
     // TEST657: InProcessPluginHost manifest includes identity cap and handler caps
     #[test]
     fn test657_manifest_includes_all_caps() {
-        let cap_urn = "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
+        let cap_urn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"";
         let cap = make_test_cap(cap_urn);
         let host = InProcessPluginHost::new(vec![(
             "thumb".to_string(),
@@ -912,9 +912,9 @@ mod tests {
     #[test]
     fn test660_closest_specificity_routing() {
         let specific_urn =
-            "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
+            "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"";
         let generic_urn =
-            "cap:in=\"media:image;bytes\";op=thumbnail;out=\"media:image;png;bytes\"";
+            "cap:in=\"media:image\";op=thumbnail;out=\"media:image;png\"";
 
         let specific_cap = make_test_cap(specific_urn);
         let generic_cap = make_test_cap(generic_urn);
@@ -937,7 +937,7 @@ mod tests {
                         break;
                     }
                 }
-                output.emit_response("media:text;bytes", self.0.as_bytes());
+                output.emit_response("media:text", self.0.as_bytes());
             }
         }
 
@@ -960,7 +960,7 @@ mod tests {
         // Request for pdf thumbnail should match specific (pdf, specificity 3) over generic (image, specificity 2)
         let result = InProcessPluginHost::find_handler_for_cap(
             &cap_table,
-            "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"",
+            "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"",
         );
         assert_eq!(result, Some(1)); // specific handler
     }

@@ -147,7 +147,7 @@ mod tests {
             }
         }
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string());
         writer.write(&ss).unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -190,7 +190,7 @@ mod tests {
 
             let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut start);
             writer.write(&start).unwrap();
             let checksum = Frame::compute_checksum(&arg_data);
@@ -223,7 +223,7 @@ mod tests {
             req_frame.routing_id = Some(xid.clone());
             seq.assign(&mut req_frame);
             w.write(&req_frame).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -377,7 +377,7 @@ mod tests {
 
             let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut start);
             writer.write(&start).unwrap();
             let checksum = Frame::compute_checksum(&received);
@@ -409,7 +409,7 @@ mod tests {
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -478,7 +478,7 @@ mod tests {
 
             let sid = "resp".to_string();
             let mut seq = SeqAssigner::new();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut start);
             writer.write(&start).unwrap();
             for idx in 0u64..5 {
@@ -571,7 +571,7 @@ mod tests {
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let mut seq = SeqAssigner::new();
             let sid = "a".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut start);
             writer.write(&start).unwrap();
             let payload = b"from-alpha".to_vec();
@@ -597,7 +597,7 @@ mod tests {
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let mut seq = SeqAssigner::new();
             let sid = "b".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut start);
             writer.write(&start).unwrap();
             let payload = b"from-beta".to_vec();
@@ -880,7 +880,7 @@ mod tests {
 
             let sid = "response".to_string();
             let mut seq = SeqAssigner::new();
-            let mut start = Frame::stream_start(request_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut start = Frame::stream_start(request_id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut start);
             writer.write(&start).unwrap();
             for (idx, data) in [b"chunk1", b"chunk2", b"chunk3"].iter().enumerate() {
@@ -1180,7 +1180,7 @@ mod tests {
             // Send response
             let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss);
             writer.write(&ss).unwrap();
             let payload = b"verified-and-working".to_vec();
@@ -1221,7 +1221,7 @@ mod tests {
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
 
-            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
             ss.routing_id = Some(xid.clone());
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
@@ -1291,7 +1291,7 @@ mod tests {
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let mut seq = SeqAssigner::new();
             let sid = "a".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss); writer.write(&ss).unwrap();
             let payload = b"from-alpha".to_vec();
             let checksum = Frame::compute_checksum(&payload);
@@ -1311,7 +1311,7 @@ mod tests {
             loop { let f = reader.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let mut seq = SeqAssigner::new();
             let sid = "b".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss); writer.write(&ss).unwrap();
             let payload = b"from-beta".to_vec();
             let checksum = Frame::compute_checksum(&payload);
@@ -1348,7 +1348,7 @@ mod tests {
             let sid = uuid::Uuid::new_v4().to_string();
             let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
             req.routing_id = Some(xid.clone()); seq.assign(&mut req); w.write(&req).await.unwrap();
-            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
             ss.routing_id = Some(xid.clone()); seq.assign(&mut ss); w.write(&ss).await.unwrap();
             let payload_a = b"alpha-data".to_vec();
             let checksum = Frame::compute_checksum(&payload_a);
@@ -1377,7 +1377,7 @@ mod tests {
             let sid2 = uuid::Uuid::new_v4().to_string();
             let mut req2 = Frame::req(req_id2.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
             req2.routing_id = Some(xid2.clone()); seq.assign(&mut req2); w.write(&req2).await.unwrap();
-            let mut ss2 = Frame::stream_start(req_id2.clone(), sid2.clone(), "media:bytes".to_string());
+            let mut ss2 = Frame::stream_start(req_id2.clone(), sid2.clone(), "media:".to_string());
             ss2.routing_id = Some(xid2.clone()); seq.assign(&mut ss2); w.write(&ss2).await.unwrap();
             let payload_b = b"beta-data".to_vec();
             let checksum2 = Frame::compute_checksum(&payload_b);

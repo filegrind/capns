@@ -216,7 +216,7 @@ fn build_manifest() -> CapManifest {
     caps.push(edge6);
 
     // TEST-LARGE: Generate large payloads to test auto-chunking
-    let large_urn = CapUrn::from_string("cap:in=\"media:void\";op=test_large;out=\"media:bytes\"")
+    let large_urn = CapUrn::from_string("cap:in=\"media:void\";op=test_large;out=\"media:\"")
         .expect("Valid large URN");
     let mut large = Cap::with_description(
         large_urn,
@@ -539,7 +539,7 @@ fn main() -> Result<()> {
         "cap:in=\"media:node1;textable\";op=test_edge6;out=\"media:node4;textable;form=list\"",
     );
     runtime.register_op_type::<LargeOp>(
-        "cap:in=\"media:void\";op=test_large;out=\"media:bytes\"",
+        "cap:in=\"media:void\";op=test_large;out=\"media:\"",
     );
     runtime.register_op_type::<PeerOp>(
         "cap:in=\"media:node1;textable\";op=test_peer;out=\"media:node5;textable\"",

@@ -1279,7 +1279,7 @@ mod tests {
     fn test365_stream_start_frame() {
         let req_id = MessageId::new_uuid();
         let stream_id = "stream-abc-123".to_string();
-        let media_urn = "media:bytes".to_string();
+        let media_urn = "media:".to_string();
 
         let frame = Frame::stream_start(req_id.clone(), stream_id.clone(), media_urn.clone());
 
@@ -1311,7 +1311,7 @@ mod tests {
     #[test]
     fn test367_stream_start_with_empty_stream_id() {
         let req_id = MessageId::new_uuid();
-        let frame = Frame::stream_start(req_id.clone(), String::new(), "media:bytes".to_string());
+        let frame = Frame::stream_start(req_id.clone(), String::new(), "media:".to_string());
 
         assert_eq!(frame.frame_type, FrameType::StreamStart);
         assert_eq!(frame.stream_id, Some(String::new()));

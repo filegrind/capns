@@ -626,12 +626,12 @@ mod json_parse_tests {
     #[test]
     fn test138_parse_registry_json_with_stdin() {
         // JSON with stdin args - means cap accepts stdin of specified media type
-        let json = r#"{"urn":"cap:in=\"media:pdf;bytes\";op=extract_metadata;out=\"media:file-metadata;textable;form=map\"","command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:pdf;bytes","required":true,"sources":[{"stdin":"media:pdf;bytes"}]}]}"#;
+        let json = r#"{"urn":"cap:in=\"media:pdf\";op=extract_metadata;out=\"media:file-metadata;textable;form=map\"","command":"extract-metadata","title":"Extract Metadata","args":[{"media_urn":"media:pdf","required":true,"sources":[{"stdin":"media:pdf"}]}]}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Extract Metadata");
         assert!(cap.accepts_stdin());
-        assert_eq!(cap.get_stdin_media_urn(), Some("media:pdf;bytes"));
+        assert_eq!(cap.get_stdin_media_urn(), Some("media:pdf"));
     }
 }
 

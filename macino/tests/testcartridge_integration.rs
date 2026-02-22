@@ -52,7 +52,7 @@ impl TestcartridgeRegistry {
         add_cap(r#"cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable""#);
         add_cap(r#"cap:in="media:node3;textable";op=test_edge3;out="media:node4;textable;form=list""#);
         add_cap(r#"cap:in="media:node4;textable;form=list";op=test_edge4;out="media:node5;textable""#);
-        add_cap(r#"cap:in="media:void";op=test_large;out="media:bytes""#);
+        add_cap(r#"cap:in="media:void";op=test_large;out="media:""#);
         add_cap(r#"cap:in="media:node1;textable";op=test_peer;out="media:node3;textable""#);
 
         // Add identity cap for cycle testing
@@ -272,7 +272,7 @@ async fn test005_execute_large_payload() {
 
     let dot = r#"
         digraph G {
-            input -> output [label="cap:in=\"media:void\";op=test_large;out=\"media:bytes\""];
+            input -> output [label="cap:in=\"media:void\";op=test_large;out=\"media:\""];
         }
     "#;
 

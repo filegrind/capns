@@ -77,7 +77,7 @@ impl CapUrn {
     /// - `in=*` or `out=*` → replaced with `media:`
     /// - `cap:` → `cap:in=media:;out=media:`
     /// - `cap:in` → `cap:in=media:;out=media:`
-    /// - `cap:in=media:bytes;out` → `cap:in=media:bytes;out=media:`
+    /// - `cap:in=media:;out` → `cap:in=media:;out=media:`
     ///
     /// Trailing semicolons are optional and ignored
     /// Tags are automatically sorted alphabetically for canonical form
@@ -1170,7 +1170,7 @@ mod tests {
 
         // Different direction specs: neither accepts the other
         let cap5 = CapUrn::from_string(&format!(
-            "cap:in=media:bytes;out=\"{}\";op=generate",
+            "cap:in=\"media:pdf\";out=\"{}\";op=generate",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1199,13 +1199,13 @@ mod tests {
     fn test026_merge_and_subset() {
         let cap1 = CapUrn::from_string(&test_urn("op=generate")).unwrap();
         let cap2 = CapUrn::from_string(&format!(
-            "cap:in=media:bytes;out=media:integer;ext=pdf;output=binary"
+            "cap:in=media:;out=media:integer;ext=pdf;output=binary"
         ))
         .unwrap();
 
         let merged = cap1.merge(&cap2);
         // Merged takes in/out from cap2
-        assert_eq!(merged.in_spec(), "media:bytes");
+        assert_eq!(merged.in_spec(), "media:");
         assert_eq!(merged.out_spec(), "media:integer");
         // Has tags from both
         assert_eq!(merged.get_tag("op"), Some(&"generate".to_string()));
@@ -1213,7 +1213,7 @@ mod tests {
 
         let subset = merged.subset(&["type", "ext"]);
         // subset keeps in/out from merged
-        assert_eq!(subset.in_spec(), "media:bytes");
+        assert_eq!(subset.in_spec(), "media:");
         assert_eq!(subset.get_tag("ext"), Some(&"pdf".to_string()));
         assert_eq!(subset.get_tag("type"), None);
     }
@@ -1529,7 +1529,7 @@ mod tests {
     #[test]
     fn test050_matching_semantics_test10_direction_mismatch() {
         // Test 10: Direction mismatch prevents matching
-        // media:string has tags {textable:*, form:scalar}, media:bytes has tags {bytes:*}
+        // media:string has tags {textable:*, form:scalar}, media: has no tags (wildcard)
         // Neither can provide input for the other (completely different marker tags)
         let cap = CapUrn::from_string(&format!(
             "cap:in=media:string;op=generate;out=\"{}\"",
@@ -1537,7 +1537,7 @@ mod tests {
         ))
         .unwrap();
         let request = CapUrn::from_string(&format!(
-            "cap:in=media:bytes;op=generate;out=\"{}\"",
+            "cap:in=media:;op=generate;out=\"{}\"",
             MEDIA_OBJECT
         ))
         .unwrap();
@@ -1550,34 +1550,34 @@ mod tests {
     // TEST051: Semantic direction matching - generic provider matches specific request
     #[test]
     fn test051_direction_semantic_matching() {
-        // A cap accepting media:bytes (generic) should match a request with media:pdf;bytes (specific)
-        // because media:pdf;bytes has all marker tags that media:bytes requires (bytes=*)
+        // A cap accepting media: (generic wildcard) should match a request with media:pdf (specific)
+        // because media:pdf has the media: wildcard pattern (accepts everything)
         let generic_cap = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         let pdf_request = CapUrn::from_string(
-            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         assert!(generic_cap.accepts(&pdf_request),
-            "Generic bytes provider must match specific pdf;bytes request");
+            "Generic wildcard provider must match specific pdf request");
 
-        // Generic cap also matches epub;bytes (any bytes subtype)
+        // Generic cap also matches epub (any media subtype)
         let epub_request = CapUrn::from_string(
-            "cap:in=\"media:epub;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:epub\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         assert!(generic_cap.accepts(&epub_request),
-            "Generic bytes provider must match epub;bytes request");
+            "Generic wildcard provider must match epub request");
 
         // Reverse: specific cap does NOT match generic request
         // A pdf-only handler cannot accept arbitrary bytes
         let pdf_cap = CapUrn::from_string(
-            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         let generic_request = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         assert!(!pdf_cap.accepts(&generic_request),
-            "Specific pdf;bytes cap must NOT match generic bytes request");
+            "Specific pdf cap must NOT match generic wildcard request");
 
         // Incompatible types: pdf cap does NOT match epub request
         assert!(!pdf_cap.accepts(&epub_request),
@@ -1585,53 +1585,53 @@ mod tests {
 
         // Output direction: cap producing more specific output matches less specific request
         let specific_out_cap = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         let generic_out_request = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;bytes\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image\""
         ).unwrap();
         assert!(specific_out_cap.accepts(&generic_out_request),
-            "Cap producing image;png;bytes;thumbnail must satisfy request for image;bytes");
+            "Cap producing image;png;thumbnail must satisfy request for image");
 
         // Reverse output: generic output cap does NOT match specific output request
         let generic_out_cap = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;bytes\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image\""
         ).unwrap();
         let specific_out_request = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         assert!(!generic_out_cap.accepts(&specific_out_request),
-            "Cap producing generic image;bytes must NOT satisfy request requiring image;png;bytes;thumbnail");
+            "Cap producing generic image must NOT satisfy request requiring image;png;thumbnail");
     }
 
     // TEST052: Semantic direction specificity - more media URN tags = higher specificity
     #[test]
     fn test052_direction_semantic_specificity() {
-        // media:bytes has 1 tag, media:pdf;bytes has 2 tags
-        // media:image;png;bytes;thumbnail has 4 tags
+        // media: has 0 tags (wildcard), media:pdf has 1 tag
+        // media:image;png;thumbnail has 3 tags
         let generic_cap = CapUrn::from_string(
-            "cap:in=\"media:bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         let specific_cap = CapUrn::from_string(
-            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
 
-        // generic: bytes(1) + image;png;bytes;thumbnail(4) + op(1) = 6
-        assert_eq!(generic_cap.specificity(), 6);
-        // specific: pdf;bytes(2) + image;png;bytes;thumbnail(4) + op(1) = 7
-        assert_eq!(specific_cap.specificity(), 7);
+        // generic: wildcard(0) + image;png;thumbnail(3) + op(1) = 4
+        assert_eq!(generic_cap.specificity(), 4);
+        // specific: pdf(1) + image;png;thumbnail(3) + op(1) = 5
+        assert_eq!(specific_cap.specificity(), 5);
 
         assert!(specific_cap.specificity() > generic_cap.specificity(),
-            "pdf;bytes cap must be more specific than bytes cap");
+            "pdf cap must be more specific than wildcard cap");
 
         // CapMatcher should prefer the more specific cap when both match
         let pdf_request = CapUrn::from_string(
-            "cap:in=\"media:pdf;bytes\";op=generate_thumbnail;out=\"media:image;png;bytes;thumbnail\""
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\""
         ).unwrap();
         let caps = vec![generic_cap.clone(), specific_cap.clone()];
         let best = CapMatcher::find_best_match(&caps, &pdf_request).unwrap();
-        assert_eq!(best.in_spec(), "media:pdf;bytes",
-            "CapMatcher must prefer the more specific pdf;bytes provider");
+        assert_eq!(best.in_spec(), "media:pdf",
+            "CapMatcher must prefer the more specific pdf provider");
     }
 }
 
@@ -1676,11 +1676,11 @@ fn test643_wildcard_005_explicit_asterisk_becomes_media() {
     assert_eq!(cap.out_spec(), "media:");
 }
 
-// TEST644: cap:in=media:bytes;out=* has specific in, wildcard out
+// TEST644: cap:in=media:;out=* has specific in, wildcard out
 #[test]
 fn test644_wildcard_006_specific_in_wildcard_out() {
-    let cap = CapUrn::from_string("cap:in=media:bytes;out=*").expect("Specific in with wildcard out");
-    assert_eq!(cap.in_spec(), "media:bytes");
+    let cap = CapUrn::from_string("cap:in=media:;out=*").expect("Specific in with wildcard out");
+    assert_eq!(cap.in_spec(), "media:");
     assert_eq!(cap.out_spec(), "media:");
 }
 
@@ -1701,10 +1701,10 @@ fn test646_wildcard_008_invalid_in_spec_fails() {
     assert!(matches!(err, CapUrnError::InvalidInSpec(_)));
 }
 
-// TEST647: cap:in=media:bytes;out=bar fails (invalid media URN)
+// TEST647: cap:in=media:;out=bar fails (invalid media URN)
 #[test]
 fn test647_wildcard_009_invalid_out_spec_fails() {
-    let result = CapUrn::from_string("cap:in=media:bytes;out=bar");
+    let result = CapUrn::from_string("cap:in=media:;out=bar");
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(matches!(err, CapUrnError::InvalidOutSpec(_)));
@@ -1714,7 +1714,7 @@ fn test647_wildcard_009_invalid_out_spec_fails() {
 #[test]
 fn test648_wildcard_010_wildcard_accepts_specific() {
     let wildcard = CapUrn::from_string("cap:").unwrap();
-    let specific = CapUrn::from_string("cap:in=media:bytes;out=media:text").unwrap();
+    let specific = CapUrn::from_string("cap:in=media:;out=media:text").unwrap();
     
     assert!(wildcard.accepts(&specific), "Wildcard should accept specific cap");
     assert!(specific.conforms_to(&wildcard), "Specific should conform to wildcard");
@@ -1724,7 +1724,7 @@ fn test648_wildcard_010_wildcard_accepts_specific() {
 #[test]
 fn test649_wildcard_011_specificity_scoring() {
     let wildcard = CapUrn::from_string("cap:").unwrap();
-    let specific = CapUrn::from_string("cap:in=media:bytes;out=media:text").unwrap();
+    let specific = CapUrn::from_string("cap:in=media:;out=media:text").unwrap();
     
     assert_eq!(wildcard.specificity(), 0, "Wildcard should have 0 specificity");
     assert!(specific.specificity() > 0, "Specific cap should have non-zero specificity");
@@ -1855,8 +1855,8 @@ mod tier_tests {
             r#"cap:in="media:void";op=test;out="media:void""#
         ).unwrap();
 
-        let changed_in = cap.clone().with_in_spec("media:bytes".to_string());
-        assert_eq!(changed_in.in_spec(), "media:bytes");
+        let changed_in = cap.clone().with_in_spec("media:".to_string());
+        assert_eq!(changed_in.in_spec(), "media:");
         assert_eq!(changed_in.out_spec(), MEDIA_VOID);
         assert_eq!(changed_in.get_tag("op"), Some(&"test".to_string()));
 
@@ -1866,9 +1866,9 @@ mod tier_tests {
 
         // Chain both
         let changed_both = cap
-            .with_in_spec("media:pdf;bytes".to_string())
+            .with_in_spec("media:pdf".to_string())
             .with_out_spec("media:txt;textable".to_string());
-        assert_eq!(changed_both.in_spec(), "media:pdf;bytes");
+        assert_eq!(changed_both.in_spec(), "media:pdf");
         assert_eq!(changed_both.out_spec(), "media:txt;textable");
     }
 
@@ -1876,7 +1876,7 @@ mod tier_tests {
     #[test]
     fn test561_in_out_media_urn() {
         let cap = CapUrn::from_string(
-            r#"cap:in="media:pdf;bytes";op=extract;out="media:txt;textable""#
+            r#"cap:in="media:pdf";op=extract;out="media:txt;textable""#
         ).unwrap();
 
         let in_urn = cap.in_media_urn().expect("in_spec should parse as MediaUrn");
@@ -1979,10 +1979,10 @@ mod tier_tests {
             r#"cap:in="media:void";op=test;out="media:void""#
         ).unwrap();
         // Attempting to set in/out via with_tag is silently ignored
-        let same = cap.clone().with_tag("in".to_string(), "media:bytes".to_string()).unwrap();
+        let same = cap.clone().with_tag("in".to_string(), "media:".to_string()).unwrap();
         assert_eq!(same.in_spec(), MEDIA_VOID, "with_tag must not change in_spec");
 
-        let same2 = cap.clone().with_tag("out".to_string(), "media:bytes".to_string()).unwrap();
+        let same2 = cap.clone().with_tag("out".to_string(), "media:".to_string()).unwrap();
         assert_eq!(same2.out_spec(), MEDIA_VOID, "with_tag must not change out_spec");
     }
 

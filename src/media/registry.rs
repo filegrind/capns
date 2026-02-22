@@ -13,7 +13,7 @@
 //! ## Usage
 //! ```ignore
 //! let registry = MediaUrnRegistry::new().await?;
-//! let spec = registry.get_media_spec("media:pdf;bytes").await?;
+//! let spec = registry.get_media_spec("media:pdf").await?;
 //! println!("Title: {:?}", spec.title);
 //! ```
 
@@ -419,7 +419,7 @@ impl MediaUrnRegistry {
     /// # Example
     /// ```ignore
     /// let urns = registry.media_urns_for_extension("pdf")?;
-    /// // May return ["media:pdf;bytes", "media:pdf;bytes;form=list"]
+    /// // May return ["media:pdf", "media:pdf;form=list"]
     /// ```
     pub fn media_urns_for_extension(&self, extension: &str) -> Result<Vec<String>, MediaRegistryError> {
         let ext_lower = extension.to_lowercase();
@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn test616_stored_media_spec_to_def() {
         let spec = StoredMediaSpec {
-            urn: "media:pdf;bytes".to_string(),
+            urn: "media:pdf".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF Document".to_string(),
             profile_uri: Some("https://capns.org/schema/pdf".to_string()),
@@ -702,7 +702,7 @@ mod tests {
         };
 
         let def = spec.to_media_spec_def();
-        assert_eq!(def.urn, "media:pdf;bytes");
+        assert_eq!(def.urn, "media:pdf");
         assert_eq!(def.media_type, "application/pdf");
         assert_eq!(def.title, "PDF Document".to_string());
         assert_eq!(def.description, Some("PDF document data".to_string()));
@@ -742,7 +742,7 @@ mod tests {
 
         // Add a spec with extensions
         let spec = StoredMediaSpec {
-            urn: "media:pdf;bytes".to_string(),
+            urn: "media:pdf".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF Document".to_string(),
             profile_uri: None,
@@ -756,7 +756,7 @@ mod tests {
         // Manually insert into cache and update index
         {
             let mut cached = registry.cached_specs.lock().unwrap();
-            cached.insert("media:bytes;pdf".to_string(), spec.clone());
+            cached.insert("media:pdf".to_string(), spec.clone());
         }
         registry.update_extension_index(&spec);
 
@@ -775,7 +775,7 @@ mod tests {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
 
         // Add two specs with different extensions
-        for (urn, ext) in &[("media:pdf;bytes", "pdf"), ("media:epub;bytes", "epub")] {
+        for (urn, ext) in &[("media:pdf", "pdf"), ("media:epub", "epub")] {
             let spec = StoredMediaSpec {
                 urn: urn.to_string(),
                 media_type: "application/octet-stream".to_string(),

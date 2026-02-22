@@ -1320,7 +1320,7 @@ mod tests {
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:bytes".to_string());
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string());
         writer.write(&ss).unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -1670,7 +1670,7 @@ mod tests {
             assert_eq!(frame.cap.as_deref(), Some("cap:in=\"media:void\";op=convert;out=\"media:void\""), "Plugin A should receive convert REQ");
             // Send END response
             let stream_id = "s1".to_string();
-            let mut ss = Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:".to_string());
             seq.assign(&mut ss);
             w.write(&ss).unwrap();
             let payload = b"converted".to_vec();
@@ -1733,7 +1733,7 @@ mod tests {
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -1898,7 +1898,7 @@ mod tests {
             seq.assign(&mut log);
             w.write(&log).unwrap();
             let sid = "rs".to_string();
-            let mut ss = Frame::stream_start(req_id_for_plugin.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req_id_for_plugin.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss);
             w.write(&ss).unwrap();
             let payload = b"result".to_vec();
@@ -1949,7 +1949,7 @@ mod tests {
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id_send.clone(), sid.clone(), "media:bytes".to_string());
+            let mut stream_start = Frame::stream_start(req_id_send.clone(), sid.clone(), "media:".to_string());
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2042,7 +2042,7 @@ mod tests {
 
             // Send response
             let sid = "rs".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss);
             w.write(&ss).unwrap();
             let payload = b"ok".to_vec();
@@ -2093,7 +2093,7 @@ mod tests {
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2341,7 +2341,7 @@ mod tests {
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
             loop { let f = r.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "a".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss);
             w.write(&ss).unwrap();
             let payload = b"from-A".to_vec();
@@ -2367,7 +2367,7 @@ mod tests {
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
             loop { let f = r.read().unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "b".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:bytes".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
             seq.assign(&mut ss);
             w.write(&ss).unwrap();
             let payload = b"from-B".to_vec();
@@ -2507,7 +2507,7 @@ mod tests {
                 let data = format!("response-{}", i).into_bytes();
                 let checksum = Frame::compute_checksum(&data);
                 let sid = format!("s{}", i);
-                let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:bytes".to_string());
+                let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
                 seq.assign(&mut ss);
                 w.write(&ss).unwrap();
                 let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, data, 0, checksum);
@@ -2699,14 +2699,14 @@ mod tests {
         // Register a plugin with known_caps (not spawned yet)
         let known_caps = vec![
             "cap:".to_string(), // identity
-            "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"".to_string(),
+            "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"".to_string(),
         ];
         runtime.register_plugin(std::path::Path::new("/fake/plugin"), &known_caps);
 
         // Verify known_caps are in cap_table
         assert_eq!(runtime.cap_table.len(), 2);
         assert_eq!(runtime.cap_table[0].0, "cap:");
-        assert_eq!(runtime.cap_table[1].0, "cap:in=\"media:pdf;bytes\";op=thumbnail;out=\"media:image;png;bytes\"");
+        assert_eq!(runtime.cap_table[1].0, "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"");
 
         // Build capabilities (no outbound_tx, so no RelayNotify sent)
         runtime.rebuild_capabilities(None);
@@ -2730,11 +2730,11 @@ mod tests {
         // Register two plugins with different known_caps
         let known_caps_1 = vec![
             "cap:".to_string(),
-            "cap:in=\"media:pdf;bytes\";op=extract;out=\"media:text;bytes\"".to_string(),
+            "cap:in=\"media:pdf\";op=extract;out=\"media:text\"".to_string(),
         ];
         let known_caps_2 = vec![
             "cap:".to_string(),
-            "cap:in=\"media:image;bytes\";op=ocr;out=\"media:text;bytes\"".to_string(),
+            "cap:in=\"media:image\";op=ocr;out=\"media:text\"".to_string(),
         ];
 
         runtime.register_plugin(std::path::Path::new("/fake/plugin1"), &known_caps_1);
@@ -2795,7 +2795,7 @@ mod tests {
     #[tokio::test]
     async fn test664_running_plugin_uses_manifest_caps() {
         // Manifest with different caps than known_caps
-        let manifest = r#"{"name":"Test","version":"1.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:text;bytes\";op=uppercase;out=\"media:text;bytes\"","title":"Uppercase","command":"uppercase","args":[]}]}"#;
+        let manifest = r#"{"name":"Test","version":"1.0","description":"Test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:text\";op=uppercase;out=\"media:text\"","title":"Uppercase","command":"uppercase","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2819,7 +2819,7 @@ mod tests {
         // Register with different known_caps BEFORE attaching
         let known_caps = vec![
             "cap:".to_string(),
-            "cap:in=\"media:pdf;bytes\";op=extract;out=\"media:text;bytes\"".to_string(),
+            "cap:in=\"media:pdf\";op=extract;out=\"media:text\"".to_string(),
         ];
         runtime.register_plugin(std::path::Path::new("/fake/path"), &known_caps);
 
@@ -2849,7 +2849,7 @@ mod tests {
     #[tokio::test]
     async fn test665_cap_table_mixed_running_and_non_running() {
         // Set up a running plugin
-        let manifest = r#"{"name":"Running","version":"1.0","description":"Running plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:text;bytes\";op=running-op;out=\"media:text;bytes\"","title":"RunningOp","command":"running","args":[]}]}"#;
+        let manifest = r#"{"name":"Running","version":"1.0","description":"Running plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:text\";op=running-op;out=\"media:text\"","title":"RunningOp","command":"running","args":[]}]}"#;
 
         let (p_to_rt_std, rt_from_p_std) = std::os::unix::net::UnixStream::pair().unwrap();
         let (rt_to_p_std, p_from_rt_std) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -2875,7 +2875,7 @@ mod tests {
         // Register a non-running plugin with known_caps
         let known_caps = vec![
             "cap:".to_string(),
-            "cap:in=\"media:pdf;bytes\";op=not-running-op;out=\"media:text;bytes\"".to_string(),
+            "cap:in=\"media:pdf\";op=not-running-op;out=\"media:text\"".to_string(),
         ];
         runtime.register_plugin(std::path::Path::new("/fake/not-running"), &known_caps);
 

@@ -147,7 +147,7 @@ pub fn embeddings_generation_urn() -> CapUrn {
 }
 
 /// Build URN for image embeddings-generation capability
-/// Input: media:image;png;bytes
+/// Input: media:image;png
 /// Output: media:embedding-vector;textable;form=map
 pub fn image_embeddings_generation_urn() -> CapUrn {
     CapUrnBuilder::new()
@@ -735,7 +735,7 @@ mod tests {
         use crate::urn::cap_urn::CapUrn;
 
         let discard = CapUrn::from_string(CAP_DISCARD).expect("CAP_DISCARD must parse");
-        let specific = CapUrn::from_string("cap:in=\"media:pdf;bytes\";op=shred;out=\"media:void\"")
+        let specific = CapUrn::from_string("cap:in=\"media:pdf\";op=shred;out=\"media:void\"")
             .expect("specific cap must parse");
 
         // discard (pattern) accepts specific (instance)? No — discard has no op tag,
@@ -747,7 +747,7 @@ mod tests {
             "CAP_DISCARD must accept a more specific cap with void output");
 
         // But a cap with non-void output must NOT conform to discard
-        let non_void = CapUrn::from_string("cap:in=\"media:pdf;bytes\";op=convert;out=\"media:string\"")
+        let non_void = CapUrn::from_string("cap:in=\"media:pdf\";op=convert;out=\"media:string\"")
             .expect("non-void cap must parse");
         assert!(!discard.accepts(&non_void),
             "CAP_DISCARD must NOT accept a cap with non-void output");
