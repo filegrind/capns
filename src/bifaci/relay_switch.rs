@@ -2296,11 +2296,10 @@ mod tests {
 
         // Test 1: Without preferred_cap, routes to generic (first match, lower specificity)
         let req_cap = "cap:in=\"media:void\";op=test;out=\"media:void\"";
-        let mut req1 = Frame::req(MessageId::Uint(1), req_cap, None);
-        req1.payload = Some(Vec::new());
+        let req1 = Frame::req(MessageId::Uint(1), req_cap, Vec::new(), "application/octet-stream");
 
         switch.send_to_master(req1.clone(), None).unwrap();
-        switch.send_to_master(Frame::end(MessageId::Uint(1)), None).unwrap();
+        switch.send_to_master(Frame::end(MessageId::Uint(1), None), None).unwrap();
 
         let mut response_data1 = Vec::new();
         for _ in 0..10 {
@@ -2319,11 +2318,10 @@ mod tests {
         }
 
         // Test 2: With preferred_cap = cap_specific, routes to specific (exact match)
-        let mut req2 = Frame::req(MessageId::Uint(2), req_cap, None);
-        req2.payload = Some(Vec::new());
+        let req2 = Frame::req(MessageId::Uint(2), req_cap, Vec::new(), "application/octet-stream");
 
         switch.send_to_master(req2.clone(), Some(cap_specific)).unwrap();
-        switch.send_to_master(Frame::end(MessageId::Uint(2)), None).unwrap();
+        switch.send_to_master(Frame::end(MessageId::Uint(2), None), None).unwrap();
 
         let mut response_data2 = Vec::new();
         for _ in 0..10 {

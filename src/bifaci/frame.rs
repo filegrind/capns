@@ -2556,4 +2556,31 @@ mod tests {
         assert!(notify.id.to_uuid_string().is_none());
         assert!(state.id.to_uuid_string().is_none());
     }
+
+    // TEST667: verify_chunk_checksum detects corrupted payload
+    #[test]
+    fn test667_verify_chunk_checksum_detects_corruption() {
+        let id = MessageId::new_uuid();
+        let stream_id = "stream-test".to_string();
+        let payload = b"original payload data".to_vec();
+        let checksum = Frame::compute_checksum(&payload);
+
+        // Create valid chunk frame
+        let mut frame = Frame::chunk(id, stream_id, 0, payload.clone(), 0, checksum);
+
+        // Valid frame should pass verification
+        let expected = Frame::compute_checksum(frame.payload.as_ref().unwrap());
+        assert_eq!(frame.checksum, Some(expected), "Valid frame should pass verification");
+
+        // Corrupt the payload (simulate transmission error)
+        frame.payload = Some(b"corrupted payload!!".to_vec());
+
+        // Corrupted frame should fail verification
+        let expected = Frame::compute_checksum(frame.payload.as_ref().unwrap());
+        assert_ne!(frame.checksum, Some(expected), "Corrupted frame should have mismatched checksum");
+
+        // Missing checksum should fail
+        frame.checksum = None;
+        assert!(frame.checksum.is_none(), "Frame without checksum should fail verification");
+    }
 }
