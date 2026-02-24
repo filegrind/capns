@@ -1,0 +1,106 @@
+//! Planner — planning, discovery, and execution for cap chains
+//!
+//! This module provides:
+//! - **Cardinality analysis** from media URNs
+//! - **Argument binding** and resolution for cap execution
+//! - **Execution plan** structures (DAG of caps)
+//! - **Plan builder** — path finding and plan construction
+//! - **Plan executor** — generic execution engine with pluggable cap backends
+//!
+//! Both macina (desktop app) and macino (CLI harness) use this same code.
+
+use thiserror::Error;
+
+pub mod cardinality;
+pub mod argument_binding;
+pub mod collection_input;
+pub mod plan;
+pub mod plan_builder;
+pub mod executor;
+
+// Re-exports
+pub use cardinality::{
+    CardinalityChainAnalysis, CardinalityCompatibility, CardinalityPattern,
+    CapCardinalityInfo, InputCardinality,
+};
+pub use argument_binding::{
+    ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,
+    CapChainInput, CapFileMetadata, CapInputFile, ResolvedArgument, SourceEntityType,
+};
+pub use collection_input::{CapInputCollection, CollectionFile};
+pub use plan::{
+    CapChainExecutionResult, CapEdge, CapExecutionPlan, CapNode,
+    EdgeType, ExecutionNodeType, MergeStrategy,
+    NodeExecutionResult, NodeId,
+};
+pub use plan_builder::{
+    CapPlanBuilder, ReachableTargetInfo, CapChainStepInfo, CapChainPathInfo,
+    ArgumentResolution, ArgumentInfo, StepArgumentRequirements, PathArgumentRequirements,
+};
+pub use executor::PlanExecutor;
+
+// =============================================================================
+// Error Type
+// =============================================================================
+
+#[derive(Debug, Error)]
+pub enum PlannerError {
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+    #[error("Internal error: {0}")]
+    Internal(String),
+    #[error("Not found: {0}")]
+    NotFound(String),
+    #[error("Registry error: {0}")]
+    RegistryError(String),
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
+}
+
+pub type PlannerResult<T> = Result<T, PlannerError>;
+
+// =============================================================================
+// CapExecutor Trait
+// =============================================================================
+
+/// Abstracts cap invocation so different backends can be plugged in.
+///
+/// - **macina** implements via `CapService.execute_cap()` through the relay
+/// - **macino** implements by spawning plugin binaries
+#[async_trait::async_trait]
+pub trait CapExecutor: Send + Sync {
+    /// Execute a cap and return the raw output bytes.
+    async fn execute_cap(
+        &self,
+        cap_urn: &str,
+        arguments: &[crate::CapArgumentValue],
+        preferred_cap: Option<&str>,
+    ) -> PlannerResult<Vec<u8>>;
+
+    /// Check if a cap is available (has a provider).
+    async fn has_cap(&self, cap_urn: &str) -> bool;
+
+    /// Get the cap definition from the registry.
+    async fn get_cap(&self, cap_urn: &str) -> PlannerResult<crate::Cap>;
+}
+
+// =============================================================================
+// CapSettingsProvider Trait
+// =============================================================================
+
+/// Provides overridden default values for cap arguments.
+///
+/// The planner resolves arg defaults from cap definitions first,
+/// then checks the settings provider for overrides.
+///
+/// - **macina** implements via DB adapter (`cap_setting_repo.find_by_cap_urn()`)
+/// - **macino** implements via NDJSON file reader
+#[async_trait::async_trait]
+pub trait CapSettingsProvider: Send + Sync {
+    /// Get overridden default values for a cap's arguments.
+    /// Keys are media URNs (argument identifiers), values are JSON values.
+    async fn get_settings(
+        &self,
+        cap_urn: &str,
+    ) -> PlannerResult<std::collections::HashMap<String, serde_json::Value>>;
+}

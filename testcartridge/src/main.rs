@@ -224,6 +224,86 @@ fn build_manifest() -> CapManifest {
     edge6.add_arg(item_prefix_arg);
     caps.push(edge6);
 
+    // TEST-EDGE7: Transform node3 to node6 by uppercasing text
+    let edge7_urn = CapUrn::from_string("cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\"")
+        .expect("Valid edge7 URN");
+    let mut edge7 = Cap::with_description(
+        edge7_urn,
+        "Test Edge 7 (Uppercase Transform)".to_string(),
+        "test-edge7".to_string(),
+        "Transform node3 to node6 by uppercasing all text".to_string(),
+    );
+    edge7.add_arg(CapArg::with_description(
+        "media:file-path;textable;form=scalar",
+        true,
+        vec![
+            ArgSource::Stdin { stdin: "media:node3;textable".to_string() },
+            ArgSource::Position { position: 0 },
+        ],
+        "Path to the input text file".to_string(),
+    ));
+    caps.push(edge7);
+
+    // TEST-EDGE8: Transform node6 to node7 by reversing text
+    let edge8_urn = CapUrn::from_string("cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\"")
+        .expect("Valid edge8 URN");
+    let mut edge8 = Cap::with_description(
+        edge8_urn,
+        "Test Edge 8 (Reverse Transform)".to_string(),
+        "test-edge8".to_string(),
+        "Transform node6 to node7 by reversing the string".to_string(),
+    );
+    edge8.add_arg(CapArg::with_description(
+        "media:file-path;textable;form=scalar",
+        true,
+        vec![
+            ArgSource::Stdin { stdin: "media:node6;textable".to_string() },
+            ArgSource::Position { position: 0 },
+        ],
+        "Path to the input text file".to_string(),
+    ));
+    caps.push(edge8);
+
+    // TEST-EDGE9: Transform node7 to node8 by wrapping in markers
+    let edge9_urn = CapUrn::from_string("cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\"")
+        .expect("Valid edge9 URN");
+    let mut edge9 = Cap::with_description(
+        edge9_urn,
+        "Test Edge 9 (Wrap Transform)".to_string(),
+        "test-edge9".to_string(),
+        "Transform node7 to node8 by wrapping in << >> markers".to_string(),
+    );
+    edge9.add_arg(CapArg::with_description(
+        "media:file-path;textable;form=scalar",
+        true,
+        vec![
+            ArgSource::Stdin { stdin: "media:node7;textable".to_string() },
+            ArgSource::Position { position: 0 },
+        ],
+        "Path to the input text file".to_string(),
+    ));
+    caps.push(edge9);
+
+    // TEST-EDGE10: Transform node8 to node1 by unwrapping markers and lowercasing
+    let edge10_urn = CapUrn::from_string("cap:in=\"media:node8;textable\";op=test_edge10;out=\"media:node1;textable\"")
+        .expect("Valid edge10 URN");
+    let mut edge10 = Cap::with_description(
+        edge10_urn,
+        "Test Edge 10 (Unwrap+Lowercase Transform)".to_string(),
+        "test-edge10".to_string(),
+        "Transform node8 to node1 by extracting content between << >> markers and lowercasing".to_string(),
+    );
+    edge10.add_arg(CapArg::with_description(
+        "media:file-path;textable;form=scalar",
+        true,
+        vec![
+            ArgSource::Stdin { stdin: "media:node8;textable".to_string() },
+            ArgSource::Position { position: 0 },
+        ],
+        "Path to the input text file".to_string(),
+    ));
+    caps.push(edge10);
+
     // TEST-LARGE: Generate large payloads to test auto-chunking
     let large_urn = CapUrn::from_string("cap:in=\"media:void\";op=test_large;out=\"media:\"")
         .expect("Valid large URN");
@@ -458,6 +538,86 @@ impl Op<()> for Edge6Op {
 }
 
 #[derive(Default)]
+struct Edge7Op;
+
+#[async_trait]
+impl Op<()> for Edge7Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let streams = collect_args(&req)?;
+
+        let input = require_stream(&streams, "media:node3;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+
+        let result = String::from_utf8_lossy(input).to_uppercase();
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge7Op").build() }
+}
+
+#[derive(Default)]
+struct Edge8Op;
+
+#[async_trait]
+impl Op<()> for Edge8Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let streams = collect_args(&req)?;
+
+        let input = require_stream(&streams, "media:node6;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+
+        let result: String = String::from_utf8_lossy(input).chars().rev().collect();
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge8Op").build() }
+}
+
+#[derive(Default)]
+struct Edge9Op;
+
+#[async_trait]
+impl Op<()> for Edge9Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let streams = collect_args(&req)?;
+
+        let input = require_stream(&streams, "media:node7;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+
+        let result = format!("<<{}>>", String::from_utf8_lossy(input));
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge9Op").build() }
+}
+
+#[derive(Default)]
+struct Edge10Op;
+
+#[async_trait]
+impl Op<()> for Edge10Op {
+    async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
+        let req = get_req(wet)?;
+        let streams = collect_args(&req)?;
+
+        let input = require_stream(&streams, "media:node8;textable")
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+
+        let input_str = String::from_utf8_lossy(input);
+        // Extract content between << and >> markers, fail hard if missing
+        let start = input_str.find("<<").ok_or_else(|| {
+            OpError::ExecutionFailed(format!("Missing << marker in: {}", input_str))
+        })? + 2;
+        let end = input_str.rfind(">>").ok_or_else(|| {
+            OpError::ExecutionFailed(format!("Missing >> marker in: {}", input_str))
+        })?;
+        let result = input_str[start..end].to_lowercase();
+        emit(req.output(), &ciborium::Value::Bytes(result.into_bytes()))
+    }
+    fn metadata(&self) -> OpMetadata { OpMetadata::builder("Edge10Op").build() }
+}
+
+#[derive(Default)]
 struct LargeOp;
 
 #[async_trait]
@@ -546,6 +706,18 @@ fn main() -> Result<()> {
     );
     runtime.register_op_type::<Edge6Op>(
         "cap:in=\"media:node1;textable\";op=test_edge6;out=\"media:node4;textable;form=list\"",
+    );
+    runtime.register_op_type::<Edge7Op>(
+        "cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\"",
+    );
+    runtime.register_op_type::<Edge8Op>(
+        "cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\"",
+    );
+    runtime.register_op_type::<Edge9Op>(
+        "cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\"",
+    );
+    runtime.register_op_type::<Edge10Op>(
+        "cap:in=\"media:node8;textable\";op=test_edge10;out=\"media:node1;textable\"",
     );
     runtime.register_op_type::<LargeOp>(
         "cap:in=\"media:void\";op=test_large;out=\"media:\"",

@@ -33,6 +33,7 @@ pub mod cap;
 pub mod media;
 pub mod bifaci;
 pub mod standard;
+pub mod planner;
 
 // URN types
 pub use urn::cap_urn::*;
@@ -94,3 +95,24 @@ pub use bifaci::host_runtime::AsyncHostError;
 pub use bifaci::relay::{RelaySlave, RelayMaster, AsyncRelayMaster};
 pub use bifaci::relay_switch::{RelaySwitch, RelaySwitchError};
 pub use bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter, accumulate_input};
+
+// Planner — planning, discovery, and execution for cap chains
+pub use planner::{
+    PlannerError, PlannerResult, CapExecutor, CapSettingsProvider,
+    // Cardinality
+    InputCardinality, CapCardinalityInfo, CardinalityChainAnalysis,
+    CardinalityCompatibility, CardinalityPattern,
+    // Argument binding
+    ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,
+    CapChainInput, CapFileMetadata, CapInputFile, ResolvedArgument, SourceEntityType,
+    // Collection input
+    CapInputCollection, CollectionFile,
+    // Execution plan
+    CapExecutionPlan, CapNode, CapEdge, EdgeType, ExecutionNodeType, MergeStrategy,
+    NodeExecutionResult, CapChainExecutionResult, NodeId,
+    // Plan builder
+    CapPlanBuilder, ReachableTargetInfo, CapChainStepInfo, CapChainPathInfo,
+    ArgumentResolution, ArgumentInfo, StepArgumentRequirements, PathArgumentRequirements,
+    // Executor
+    PlanExecutor,
+};

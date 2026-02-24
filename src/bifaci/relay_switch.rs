@@ -394,30 +394,30 @@ impl RelaySwitch {
     /// * `content_type` - The content type of the payload (e.g., "application/cbor", "application/json")
     ///
     /// # Returns
-    /// A receiver that streams response frames. The caller should read from this receiver
-    /// until it receives an END or ERR frame.
+    /// A tuple of (request_id, receiver). The request_id can be used with
+    /// `send_to_master()` to send streaming continuation frames (STREAM_START,
+    /// CHUNK, STREAM_END, END) for this request. The receiver streams response
+    /// frames — read from it until END or ERR.
     ///
     /// # Example
     /// ```ignore
-    /// let receiver = switch.execute_cap(
+    /// let (request_id, rx) = switch.execute_cap(
     ///     "cap:in=\"media:void\";op=test;out=\"media:void\"",
     ///     vec![],
     ///     "application/cbor"
     /// )?;
     ///
-    /// // Read responses until END
-    /// while let Ok(frame) = receiver.recv() {
-    ///     match frame.frame_type {
-    ///         FrameType::End => {
-    ///             println!("Got final response: {:?}", frame.payload);
-    ///             break;
-    ///         }
-    ///         FrameType::Err => {
-    ///             eprintln!("Got error: {:?}", frame.payload);
-    ///             break;
-    ///         }
-    ///         _ => {
-    ///             // Handle streaming frames
+    /// // Send streaming input via send_to_master() using request_id
+    /// // ...
+    ///
+    /// // Pump read_from_masters() and check rx for responses until END
+    /// loop {
+    ///     switch.read_from_masters_timeout(Duration::from_millis(100))?;
+    ///     while let Ok(frame) = rx.try_recv() {
+    ///         match frame.frame_type {
+    ///             FrameType::End => break,
+    ///             FrameType::Err => panic!("error"),
+    ///             _ => { /* handle streaming frames */ }
     ///         }
     ///     }
     /// }
@@ -427,7 +427,7 @@ impl RelaySwitch {
         cap_urn: &str,
         payload: Vec<u8>,
         content_type: &str,
-    ) -> Result<mpsc::Receiver<Frame>, RelaySwitchError> {
+    ) -> Result<(MessageId, mpsc::Receiver<Frame>), RelaySwitchError> {
         // Generate unique request ID
         self.xid_counter += 1;
         let rid = MessageId::Uint(self.xid_counter);
@@ -477,7 +477,7 @@ impl RelaySwitch {
         // Forward to destination
         self.write_to_master_idx(dest_idx, &mut frame_with_xid)?;
 
-        Ok(rx)
+        Ok((rid, rx))
     }
 
     /// Dynamically add a new master connection to the switch.

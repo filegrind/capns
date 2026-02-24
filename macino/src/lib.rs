@@ -19,7 +19,7 @@
 //! let graph = parse_dot_to_cap_dag(dot, &registry).await?;
 //! ```
 
-use capns::{Cap, CapUrn};
+use capns::{Cap, CapUrn, MediaUrn};
 use dot_parser::ast::Graph as AstGraph;
 use dot_parser::canonical::Graph as CanonicalGraph;
 use std::collections::HashMap;
@@ -154,6 +154,26 @@ impl CapRegistryTrait for capns::CapRegistry {
 // Parsing Logic
 // =============================================================================
 
+/// Check if two media URN strings are compatible via bidirectional accepts.
+///
+/// Returns true if either URN accepts the other, meaning they represent
+/// related media types where one may be more specific than the other.
+/// For example, `media:image;png` and `media:image;png;bytes` are compatible
+/// because the less-specific one accepts the more-specific one.
+fn media_urns_compatible(a: &str, b: &str) -> Result<bool, ParseOrchestrationError> {
+    let a_urn = MediaUrn::from_string(a)
+        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
+    let b_urn = MediaUrn::from_string(b)
+        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
+    let fwd = a_urn
+        .accepts(&b_urn)
+        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
+    let rev = b_urn
+        .accepts(&a_urn)
+        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
+    Ok(fwd || rev)
+}
+
 /// Parse a DOT digraph and produce a validated orchestration graph
 ///
 /// # Arguments
@@ -230,9 +250,9 @@ pub async fn parse_dot_to_cap_dag(
         let cap_out_media = parsed_cap_urn.out_spec().to_string();
 
         // Step 5: Derive node media URNs from incident caps
-        // Check 'from' node
+        // Check 'from' node — use semantic accepts() matching instead of string equality
         if let Some(existing) = node_media.get(&from) {
-            if existing != &cap_in_media {
+            if !media_urns_compatible(existing, &cap_in_media)? {
                 return Err(ParseOrchestrationError::NodeMediaConflict {
                     node: from.clone(),
                     existing: existing.clone(),
@@ -243,9 +263,9 @@ pub async fn parse_dot_to_cap_dag(
             node_media.insert(from.clone(), cap_in_media.clone());
         }
 
-        // Check 'to' node
+        // Check 'to' node — use semantic accepts() matching instead of string equality
         if let Some(existing) = node_media.get(&to) {
-            if existing != &cap_out_media {
+            if !media_urns_compatible(existing, &cap_out_media)? {
                 return Err(ParseOrchestrationError::NodeMediaConflict {
                     node: to.clone(),
                     existing: existing.clone(),
@@ -285,9 +305,9 @@ pub async fn parse_dot_to_cap_dag(
             };
             let media_attr = media_attr.replace("\\\"", "\"");
 
-            // Validate media attribute if present
+            // Validate media attribute if present — use semantic accepts() matching
             if let Some(existing) = node_media.get(&node_id) {
-                if existing != &media_attr {
+                if !media_urns_compatible(existing, &media_attr)? {
                     return Err(ParseOrchestrationError::NodeMediaAttrConflict {
                         node: node_id.clone(),
                         existing: existing.clone(),
@@ -613,6 +633,98 @@ mod tests {
             result,
             Err(ParseOrchestrationError::NodeMediaAttrConflict { .. })
         ));
+    }
+
+    // TEST009: Accept compatible but not identical media URNs at shared node
+    // This is the key test for the semantic matching fix: when cap A outputs
+    // media:image;png and cap B inputs media:image;png;bytes, the intermediate
+    // node should NOT conflict because the less-specific URN accepts the more-specific one.
+    #[tokio::test]
+    async fn test009_accept_compatible_media_urns() {
+        let mut registry = MockRegistry::new();
+        registry.add_cap(
+            r#"cap:in="media:pdf";op=thumbnail;out="media:image;png""#,
+            "media:pdf",
+            "media:image;png",
+        );
+        registry.add_cap(
+            r#"cap:in="media:image;png;bytes";op=embed_image;out="media:embedding-vector;textable;form=map""#,
+            "media:image;png;bytes",
+            "media:embedding-vector;textable;form=map",
+        );
+
+        let dot = r#"
+            digraph G {
+                A -> B [label="cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""];
+                B -> C [label="cap:in=\"media:image;png;bytes\";op=embed_image;out=\"media:embedding-vector;textable;form=map\""];
+            }
+        "#;
+
+        let result = parse_dot_to_cap_dag(dot, &registry).await;
+        assert!(
+            result.is_ok(),
+            "Compatible media URNs (subset/superset) should not cause NodeMediaConflict: {:?}",
+            result.err()
+        );
+
+        let graph = result.unwrap();
+        assert_eq!(graph.nodes.len(), 3);
+        assert_eq!(graph.edges.len(), 2);
+    }
+
+    // TEST010: Reject truly incompatible media URNs at shared node
+    // media:pdf;bytes and media:audio;wav have no overlap — neither accepts the other.
+    #[tokio::test]
+    async fn test010_reject_incompatible_media_urns() {
+        let mut registry = MockRegistry::new();
+        registry.add_cap(
+            r#"cap:in="media:void";op=produce_pdf;out="media:pdf;bytes""#,
+            "media:void",
+            "media:pdf;bytes",
+        );
+        registry.add_cap(
+            r#"cap:in="media:audio;wav";op=transcribe;out="media:txt;textable""#,
+            "media:audio;wav",
+            "media:txt;textable",
+        );
+
+        let dot = r#"
+            digraph G {
+                A -> B [label="cap:in=\"media:void\";op=produce_pdf;out=\"media:pdf;bytes\""];
+                B -> C [label="cap:in=\"media:audio;wav\";op=transcribe;out=\"media:txt;textable\""];
+            }
+        "#;
+
+        let result = parse_dot_to_cap_dag(dot, &registry).await;
+        assert!(
+            matches!(result, Err(ParseOrchestrationError::NodeMediaConflict { .. })),
+            "Incompatible media URNs (pdf vs audio) must cause NodeMediaConflict"
+        );
+    }
+
+    // TEST011: Accept compatible media node attribute (subset/superset)
+    #[tokio::test]
+    async fn test011_accept_compatible_media_attribute() {
+        let mut registry = MockRegistry::new();
+        registry.add_cap(
+            r#"cap:in="media:image;png;bytes";op=process;out="media:txt;textable""#,
+            "media:image;png;bytes",
+            "media:txt;textable",
+        );
+
+        let dot = r#"
+            digraph G {
+                A [media="media:image;png"];
+                A -> B [label="cap:in=\"media:image;png;bytes\";op=process;out=\"media:txt;textable\""];
+            }
+        "#;
+
+        let result = parse_dot_to_cap_dag(dot, &registry).await;
+        assert!(
+            result.is_ok(),
+            "Compatible media attribute (superset of cap input) should be accepted: {:?}",
+            result.err()
+        );
     }
 }
 

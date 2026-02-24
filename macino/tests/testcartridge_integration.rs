@@ -52,6 +52,10 @@ impl TestcartridgeRegistry {
         add_cap(r#"cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable""#);
         add_cap(r#"cap:in="media:node3;textable";op=test_edge3;out="media:node4;textable;form=list""#);
         add_cap(r#"cap:in="media:node4;textable;form=list";op=test_edge4;out="media:node5;textable""#);
+        add_cap(r#"cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable""#);
+        add_cap(r#"cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable""#);
+        add_cap(r#"cap:in="media:node7;textable";op=test_edge9;out="media:node8;textable""#);
+        add_cap(r#"cap:in="media:node8;textable";op=test_edge10;out="media:node1;textable""#);
         add_cap(r#"cap:in="media:void";op=test_large;out="media:""#);
         add_cap(r#"cap:in="media:node1;textable";op=test_peer;out="media:node3;textable""#);
 
@@ -431,7 +435,169 @@ async fn test010_cap_not_found() {
 }
 
 // =============================================================================
-// Phase 2: Peer Invoke Testing (TEST403)
+// Phase 2: Long Chain Tests (4-6 caps)
+// =============================================================================
+
+// TEST011: 4-cap chain: edge1 → edge2 → edge7 → edge8
+// node1 → node2 → node3 → node6 → node7
+// "hello" → "[PREPEND]hello" → "[PREPEND]hello[APPEND]" → "[PREPEND]HELLO[APPEND]" → "]DNEPPA[OLLEH]DNEPERP["
+#[tokio::test]
+async fn test011_four_cap_chain() {
+    let registry = TestcartridgeRegistry::new();
+    let (_temp, plugin_dir, dev_binaries) = setup_test_env();
+
+    let dot = r#"
+        digraph G {
+            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
+            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
+            C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
+            D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
+        }
+    "#;
+
+    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+
+    let mut initial_inputs = HashMap::new();
+    initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        initial_inputs,
+        dev_binaries,
+    ).await.expect("Execution failed");
+
+    let final_output = outputs.get("E").expect("No final output");
+
+    match final_output {
+        NodeData::Bytes(b) => {
+            let output_str = String::from_utf8(b.clone()).expect("Invalid UTF-8");
+            // edge1: [PREPEND]hello
+            // edge2: [PREPEND]hello[APPEND]
+            // edge7 (uppercase): [PREPEND]HELLO[APPEND]
+            // edge8 (reverse): ]DNEPPA[OLLEH]DNEPERP[
+            assert_eq!(output_str, "]DNEPPA[OLLEH]DNEPERP[");
+        }
+        _ => panic!("Expected Bytes output"),
+    }
+}
+
+// TEST012: 5-cap chain: edge1 → edge2 → edge7 → edge8 → edge9
+// node1 → node2 → node3 → node6 → node7 → node8
+// adds <<...>> wrapping around the reversed string
+#[tokio::test]
+async fn test012_five_cap_chain() {
+    let registry = TestcartridgeRegistry::new();
+    let (_temp, plugin_dir, dev_binaries) = setup_test_env();
+
+    let dot = r#"
+        digraph G {
+            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
+            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
+            C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
+            D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
+            E -> F [label="cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\""];
+        }
+    "#;
+
+    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+
+    let mut initial_inputs = HashMap::new();
+    initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        initial_inputs,
+        dev_binaries,
+    ).await.expect("Execution failed");
+
+    let final_output = outputs.get("F").expect("No final output");
+
+    match final_output {
+        NodeData::Bytes(b) => {
+            let output_str = String::from_utf8(b.clone()).expect("Invalid UTF-8");
+            // Previous 4 caps: ]DNEPPA[OLLEH]DNEPERP[
+            // edge9 (wrap): <<]DNEPPA[OLLEH]DNEPERP[>>
+            assert_eq!(output_str, "<<]DNEPPA[OLLEH]DNEPERP[>>");
+        }
+        _ => panic!("Expected Bytes output"),
+    }
+}
+
+// TEST013: 6-cap chain: edge1 → edge2 → edge7 → edge8 → edge9 → edge10
+// Full cycle: node1 → node2 → node3 → node6 → node7 → node8 → node1
+// Completes the round trip: unwrap markers + lowercase
+#[tokio::test]
+async fn test013_six_cap_chain() {
+    let registry = TestcartridgeRegistry::new();
+    let (_temp, plugin_dir, dev_binaries) = setup_test_env();
+
+    let dot = r#"
+        digraph G {
+            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
+            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
+            C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
+            D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
+            E -> F [label="cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\""];
+            F -> G [label="cap:in=\"media:node8;textable\";op=test_edge10;out=\"media:node1;textable\""];
+        }
+    "#;
+
+    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+
+    let mut initial_inputs = HashMap::new();
+    initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        initial_inputs,
+        dev_binaries,
+    ).await.expect("Execution failed");
+
+    let final_output = outputs.get("G").expect("No final output");
+
+    match final_output {
+        NodeData::Bytes(b) => {
+            let output_str = String::from_utf8(b.clone()).expect("Invalid UTF-8");
+            // Previous 5 caps: <<]DNEPPA[OLLEH]DNEPERP[>>
+            // edge10 (unwrap+lowercase): ]dneppa[olleh]dneperp[
+            assert_eq!(output_str, "]dneppa[olleh]dneperp[");
+        }
+        _ => panic!("Expected Bytes output"),
+    }
+
+    // Also verify all intermediate nodes have data
+    assert!(outputs.contains_key("B"), "Missing node B (after edge1)");
+    assert!(outputs.contains_key("C"), "Missing node C (after edge2)");
+    assert!(outputs.contains_key("D"), "Missing node D (after edge7)");
+    assert!(outputs.contains_key("E"), "Missing node E (after edge8)");
+    assert!(outputs.contains_key("F"), "Missing node F (after edge9)");
+
+    // Verify intermediate values
+    if let NodeData::Bytes(b) = outputs.get("B").unwrap() {
+        assert_eq!(String::from_utf8(b.clone()).unwrap(), "[PREPEND]hello");
+    }
+    if let NodeData::Bytes(b) = outputs.get("C").unwrap() {
+        assert_eq!(String::from_utf8(b.clone()).unwrap(), "[PREPEND]hello[APPEND]");
+    }
+    if let NodeData::Bytes(b) = outputs.get("D").unwrap() {
+        assert_eq!(String::from_utf8(b.clone()).unwrap(), "[PREPEND]HELLO[APPEND]");
+    }
+    if let NodeData::Bytes(b) = outputs.get("E").unwrap() {
+        assert_eq!(String::from_utf8(b.clone()).unwrap(), "]DNEPPA[OLLEH]DNEPERP[");
+    }
+    if let NodeData::Bytes(b) = outputs.get("F").unwrap() {
+        assert_eq!(String::from_utf8(b.clone()).unwrap(), "<<]DNEPPA[OLLEH]DNEPERP[>>");
+    }
+}
+
+// =============================================================================
+// Phase 3: Peer Invoke Testing (TEST403)
 // =============================================================================
 
 // TEST403: Test peer invoke round-trip (testcartridge calls itself)
