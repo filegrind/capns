@@ -578,9 +578,20 @@ impl PluginHostRuntime {
                     }
                 };
 
-                // Route by (XID, RID) for incoming engine requests.
-                // If not found, check outgoing_rids[RID] for peer response routing.
-                let plugin_idx = if let Some(&idx) = self.incoming_rxids.get(&(xid.clone(), frame.id.clone())) {
+                // Route by checking BOTH maps. For self-loop peer requests (where
+                // source and destination are behind the same relay connection), the
+                // same (XID, RID) appears in BOTH incoming_rxids and outgoing_rids:
+                //   incoming_rxids[(XID, RID)] = handler plugin (receives request body)
+                //   outgoing_rids[RID] = requester plugin (receives peer response)
+                //
+                // Phase tracking: incoming_rxids entry is removed when the request
+                // body END is delivered to the handler. After that, frames from
+                // relay with the same (XID, RID) are peer responses and fall through
+                // to outgoing_rids. This is safe because:
+                //   1. Frames on a single socket are ordered — END is always last
+                //   2. For non-peer requests, no further relay frames arrive after END
+                let key = (xid.clone(), frame.id.clone());
+                let plugin_idx = if let Some(&idx) = self.incoming_rxids.get(&key) {
                     idx
                 } else if let Some(&idx) = self.outgoing_rids.get(&frame.id) {
                     idx
@@ -600,21 +611,22 @@ impl PluginHostRuntime {
                         "PLUGIN_DIED",
                         "Plugin exited while processing request",
                     );
-                    err.routing_id = frame.routing_id.clone(); // Copy XID from incoming request
+                    err.routing_id = frame.routing_id.clone();
                     err.seq = next_seq;
                     let _ = outbound_tx.send(err);
 
-                    // Cleanup from both lists (only one will match)
                     self.outgoing_rids.remove(&frame.id);
-                    self.incoming_rxids.remove(&(xid.clone(), frame.id.clone()));
+                    self.incoming_rxids.remove(&key);
                     return Ok(());
                 }
 
-                // NOTE: Do NOT cleanup incoming_rxids here!
-                // Frames arrive asynchronously out of order - END can arrive before StreamStart/Chunk.
-                // We can't know when "all frames for (XID, RID) have arrived" without full stream tracking.
-                // Accept the leak: entries cleaned up on plugin death.
-                // This is bounded by concurrent requests and is acceptable.
+                // When the request body END (or ERR) is delivered to the handler,
+                // remove incoming_rxids entry. Subsequent frames from relay with
+                // the same (XID, RID) are peer responses and will route via
+                // outgoing_rids to the REQUESTER instead of the HANDLER.
+                if is_terminal {
+                    self.incoming_rxids.remove(&key);
+                }
 
                 Ok(())
             }

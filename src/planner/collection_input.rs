@@ -45,37 +45,10 @@ pub struct CollectionFile {
     /// Optional human-readable title
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// Security bookmark for sandboxed access (base64 encoded in JSON)
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "serde_bytes_option")]
+    /// Security bookmark for sandboxed access.
+    /// Runtime-only — never serialized (macOS sandbox bookmark, opaque binary).
+    #[serde(skip)]
     pub security_bookmark: Option<Vec<u8>>,
-}
-
-mod serde_bytes_option {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-
-    pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match bytes {
-            Some(b) => serializer.serialize_str(&STANDARD.encode(b)),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s: Option<String> = Option::deserialize(deserializer)?;
-        match s {
-            Some(s) => STANDARD.decode(&s)
-                .map(Some)
-                .map_err(serde::de::Error::custom),
-            None => Ok(None),
-        }
-    }
 }
 
 impl CapInputCollection {

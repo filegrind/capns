@@ -43,6 +43,15 @@ fn pdf_extract_metadata() -> CapUrn {
         .expect("pdf extract_metadata URN")
 }
 
+fn pdf_disbind() -> CapUrn {
+    CapUrnBuilder::new()
+        .tag("op", "disbind")
+        .in_spec("media:pdf")
+        .out_spec("media:disbound-page;textable;form=list")
+        .build()
+        .expect("pdf disbind URN")
+}
+
 fn pdf_extract_outline() -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "extract_outline")
@@ -156,6 +165,24 @@ fn model_status() -> CapUrn {
         .out_spec("media:model-status;textable;form=map")
         .build()
         .expect("model-status URN")
+}
+
+fn model_contents() -> CapUrn {
+    CapUrnBuilder::new()
+        .tag("op", "model-contents")
+        .in_spec("media:model-spec;textable;form=scalar")
+        .out_spec("media:model-contents;textable;form=map")
+        .build()
+        .expect("model-contents URN")
+}
+
+fn model_path() -> CapUrn {
+    CapUrnBuilder::new()
+        .tag("op", "model-path")
+        .in_spec("media:model-spec;textable;form=scalar")
+        .out_spec("media:model-path;textable;form=map")
+        .build()
+        .expect("model-path URN")
 }
 
 fn model_download() -> CapUrn {
@@ -512,10 +539,10 @@ fn dot_graph(name: &str, edges: &[String]) -> String {
 // ML Model Specs (matching candlecartridge defaults)
 // =============================================================================
 
-const MODEL_BERT: &str = "hf:sentence-transformers/all-MiniLM-L6-v2";
-const MODEL_CLIP: &str = "hf:openai/clip-vit-base-patch32";
-const MODEL_BLIP: &str = "hf:Salesforce/blip-image-captioning-large";
-const MODEL_WHISPER: &str = "hf:openai/whisper-base";
+const MODEL_BERT: &str = "hf:sentence-transformers/all-MiniLM-L6-v2?include=*.json,*.safetensors";
+const MODEL_CLIP: &str = "hf:openai/clip-vit-base-patch32?include=*.json,*.safetensors";
+const MODEL_BLIP: &str = "hf:Salesforce/blip-image-captioning-large?include=*.json,*.safetensors";
+const MODEL_WHISPER: &str = "hf:openai/whisper-base?include=*.json,*.safetensors";
 
 // =============================================================================
 // Model Pre-Download
@@ -1293,5 +1320,455 @@ async fn test023_audio_transcription() {
     assert!(
         outputs.contains_key("transcription"),
         "Transcription output node must exist"
+    );
+}
+
+// =============================================================================
+// Scenario 11: PDF Complete Analysis (4 caps, all pdfcartridge ops)
+// pdfcartridge: extract_metadata + extract_outline + generate_thumbnail + disbind
+// =============================================================================
+
+// TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
+#[tokio::test]
+async fn test024_pdf_complete_analysis() {
+    let dev_binaries = match require_binaries(&["pdfcartridge"]) {
+        Some(b) => b,
+        None => return,
+    };
+
+    let mut registry = CartridgeRegistry::new();
+    let metadata_urn = pdf_extract_metadata();
+    let outline_urn = pdf_extract_outline();
+    let thumbnail_urn = pdf_generate_thumbnail();
+    let disbind_urn = pdf_disbind();
+    registry.register(metadata_urn.clone());
+    registry.register(outline_urn.clone());
+    registry.register(thumbnail_urn.clone());
+    registry.register(disbind_urn.clone());
+
+    let dot = dot_graph(
+        "pdf_complete_analysis",
+        &[
+            dot_edge("pdf_input", "metadata", &metadata_urn),
+            dot_edge("pdf_input", "outline", &outline_urn),
+            dot_edge("pdf_input", "thumbnail", &thumbnail_urn),
+            dot_edge("pdf_input", "pages", &disbind_urn),
+        ],
+    );
+    eprintln!("[TEST024] DOT:\n{}", dot);
+
+    let graph = parse_dot_to_cap_dag(&dot, &registry)
+        .await
+        .expect("Parse failed");
+    assert_eq!(graph.edges.len(), 4, "4 edges expected");
+    assert_eq!(graph.nodes.len(), 5, "1 input + 4 outputs");
+
+    let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
+    let mut inputs = HashMap::new();
+    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        inputs,
+        dev_bins,
+    )
+    .await
+    .expect("Execution failed");
+
+    // All 4 output nodes must exist
+    for node in &["metadata", "outline", "thumbnail", "pages"] {
+        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+    }
+
+    // Metadata is JSON with page info
+    let meta = extract_text(&outputs, "metadata");
+    eprintln!("[TEST024] metadata: {}", &meta[..meta.len().min(200)]);
+    assert!(!meta.is_empty());
+
+    // Outline is valid (may be minimal for blank PDF)
+    let outline = extract_text(&outputs, "outline");
+    eprintln!("[TEST024] outline: {}", &outline[..outline.len().min(200)]);
+    assert!(!outline.is_empty());
+
+    // Thumbnail is PNG
+    let thumb = extract_bytes(&outputs, "thumbnail");
+    assert!(
+        thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        "Thumbnail must be valid PNG"
+    );
+
+    // Disbind produces page content (may be empty text for blank PDF, but should exist)
+    let pages = extract_text(&outputs, "pages");
+    eprintln!("[TEST024] pages: {}", &pages[..pages.len().min(200)]);
+    assert!(!pages.is_empty(), "Disbind output must not be empty");
+}
+
+// =============================================================================
+// Scenario 12: Model Full Inspection (4 caps, all non-download modelcartridge ops)
+// modelcartridge: availability + status + contents + path
+// =============================================================================
+
+// TEST025: All 4 modelcartridge inspection ops on a single model spec
+#[tokio::test]
+async fn test025_model_full_inspection() {
+    let dev_binaries = match require_binaries(&["modelcartridge"]) {
+        Some(b) => b,
+        None => return,
+    };
+
+    let mut registry = CartridgeRegistry::new();
+    let avail_urn = model_availability();
+    let status_urn = model_status();
+    let contents_urn = model_contents();
+    let path_urn = model_path();
+    registry.register(avail_urn.clone());
+    registry.register(status_urn.clone());
+    registry.register(contents_urn.clone());
+    registry.register(path_urn.clone());
+
+    let dot = dot_graph(
+        "model_full_inspection",
+        &[
+            dot_edge("model_spec", "availability", &avail_urn),
+            dot_edge("model_spec", "status", &status_urn),
+            dot_edge("model_spec", "contents", &contents_urn),
+            dot_edge("model_spec", "path", &path_urn),
+        ],
+    );
+    eprintln!("[TEST025] DOT:\n{}", dot);
+
+    let graph = parse_dot_to_cap_dag(&dot, &registry)
+        .await
+        .expect("Parse failed");
+    assert_eq!(graph.edges.len(), 4);
+    assert_eq!(graph.nodes.len(), 5);
+
+    let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
+    let mut inputs = HashMap::new();
+    inputs.insert(
+        "model_spec".to_string(),
+        NodeData::Text(MODEL_BERT.to_string()),
+    );
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        inputs,
+        dev_bins,
+    )
+    .await
+    .expect("Execution failed");
+
+    for node in &["availability", "status", "contents", "path"] {
+        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+    }
+
+    // Availability should indicate local presence
+    let avail = extract_text(&outputs, "availability");
+    eprintln!("[TEST025] availability: {}", &avail[..avail.len().min(200)]);
+    assert!(!avail.is_empty());
+
+    // Status should have state field
+    let status = extract_text(&outputs, "status");
+    eprintln!("[TEST025] status: {}", &status[..status.len().min(200)]);
+    assert!(!status.is_empty());
+
+    // Contents should list model files
+    let contents = extract_text(&outputs, "contents");
+    eprintln!("[TEST025] contents: {}", &contents[..contents.len().min(300)]);
+    assert!(!contents.is_empty());
+
+    // Path should contain filesystem path
+    let path = extract_text(&outputs, "path");
+    eprintln!("[TEST025] path: {}", &path[..path.len().min(200)]);
+    assert!(!path.is_empty());
+}
+
+// =============================================================================
+// Scenario 13: Two-Format Full Analysis (7 caps, pdf ×4 + md ×3)
+// pdfcartridge: metadata + outline + thumbnail + disbind
+// txtcartridge: metadata + outline + thumbnail (no disbind — markdown has no pages)
+// =============================================================================
+
+// TEST026: 7-cap parallel analysis — all pdf ops + all md ops on two documents
+#[tokio::test]
+async fn test026_two_format_full_analysis() {
+    let dev_binaries = match require_binaries(&["pdfcartridge", "txtcartridge"]) {
+        Some(b) => b,
+        None => return,
+    };
+
+    let mut registry = CartridgeRegistry::new();
+    let pdf_meta = pdf_extract_metadata();
+    let pdf_outline = pdf_extract_outline();
+    let pdf_thumb = pdf_generate_thumbnail();
+    let pdf_disb = pdf_disbind();
+    let md_meta = md_extract_metadata();
+    let md_outline = md_extract_outline();
+    let md_thumb = md_generate_thumbnail();
+    registry.register(pdf_meta.clone());
+    registry.register(pdf_outline.clone());
+    registry.register(pdf_thumb.clone());
+    registry.register(pdf_disb.clone());
+    registry.register(md_meta.clone());
+    registry.register(md_outline.clone());
+    registry.register(md_thumb.clone());
+
+    let dot = dot_graph(
+        "two_format_full_analysis",
+        &[
+            dot_edge("pdf_input", "pdf_metadata", &pdf_meta),
+            dot_edge("pdf_input", "pdf_outline", &pdf_outline),
+            dot_edge("pdf_input", "pdf_thumbnail", &pdf_thumb),
+            dot_edge("pdf_input", "pdf_pages", &pdf_disb),
+            dot_edge("md_input", "md_metadata", &md_meta),
+            dot_edge("md_input", "md_outline", &md_outline),
+            dot_edge("md_input", "md_thumbnail", &md_thumb),
+        ],
+    );
+    eprintln!("[TEST026] DOT:\n{}", dot);
+
+    let graph = parse_dot_to_cap_dag(&dot, &registry)
+        .await
+        .expect("Parse failed");
+    assert_eq!(graph.edges.len(), 7, "7 edges expected");
+    assert_eq!(graph.nodes.len(), 9, "2 inputs + 7 outputs");
+
+    let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
+    let mut inputs = HashMap::new();
+    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "md_input".to_string(),
+        NodeData::Bytes(generate_test_markdown()),
+    );
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        inputs,
+        dev_bins,
+    )
+    .await
+    .expect("Execution failed");
+
+    // All 7 output nodes must exist
+    let expected_nodes = [
+        "pdf_metadata", "pdf_outline", "pdf_thumbnail", "pdf_pages",
+        "md_metadata", "md_outline", "md_thumbnail",
+    ];
+    for node in &expected_nodes {
+        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+    }
+
+    // Both thumbnails must be PNG
+    for node in &["pdf_thumbnail", "md_thumbnail"] {
+        let thumb = extract_bytes(&outputs, node);
+        assert!(
+            thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+            "{} must be valid PNG",
+            node
+        );
+    }
+
+    // All text outputs must be non-empty
+    for node in &expected_nodes {
+        if !node.contains("thumbnail") {
+            let text = extract_text(&outputs, node);
+            assert!(!text.is_empty(), "{} must not be empty", node);
+        }
+    }
+
+    eprintln!(
+        "[TEST026] All 7 outputs verified: {} nodes with data",
+        outputs.len()
+    );
+}
+
+// =============================================================================
+// Scenario 14: Model + PDF Combined Pipeline (5 caps, 2 sources)
+// modelcartridge ×2 + pdfcartridge ×3: model inspection + PDF analysis
+// =============================================================================
+
+// TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis
+#[tokio::test]
+async fn test027_model_plus_pdf_combined() {
+    let dev_binaries = match require_binaries(&["modelcartridge", "pdfcartridge"]) {
+        Some(b) => b,
+        None => return,
+    };
+
+    let mut registry = CartridgeRegistry::new();
+    let avail_urn = model_availability();
+    let status_urn = model_status();
+    let pdf_meta = pdf_extract_metadata();
+    let pdf_outline = pdf_extract_outline();
+    let pdf_thumb = pdf_generate_thumbnail();
+    registry.register(avail_urn.clone());
+    registry.register(status_urn.clone());
+    registry.register(pdf_meta.clone());
+    registry.register(pdf_outline.clone());
+    registry.register(pdf_thumb.clone());
+
+    let dot = dot_graph(
+        "model_plus_pdf",
+        &[
+            dot_edge("model_spec", "availability", &avail_urn),
+            dot_edge("model_spec", "status", &status_urn),
+            dot_edge("pdf_input", "metadata", &pdf_meta),
+            dot_edge("pdf_input", "outline", &pdf_outline),
+            dot_edge("pdf_input", "thumbnail", &pdf_thumb),
+        ],
+    );
+    eprintln!("[TEST027] DOT:\n{}", dot);
+
+    let graph = parse_dot_to_cap_dag(&dot, &registry)
+        .await
+        .expect("Parse failed");
+    assert_eq!(graph.edges.len(), 5);
+    assert_eq!(graph.nodes.len(), 7); // 2 inputs + 5 outputs
+
+    let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
+    let mut inputs = HashMap::new();
+    inputs.insert(
+        "model_spec".to_string(),
+        NodeData::Text(MODEL_BERT.to_string()),
+    );
+    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        inputs,
+        dev_bins,
+    )
+    .await
+    .expect("Execution failed");
+
+    for node in &["availability", "status", "metadata", "outline", "thumbnail"] {
+        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+    }
+
+    // Model outputs
+    let avail = extract_text(&outputs, "availability");
+    eprintln!("[TEST027] availability: {}", &avail[..avail.len().min(200)]);
+    assert!(!avail.is_empty());
+
+    let status = extract_text(&outputs, "status");
+    eprintln!("[TEST027] status: {}", &status[..status.len().min(200)]);
+    assert!(!status.is_empty());
+
+    // PDF outputs
+    let thumb = extract_bytes(&outputs, "thumbnail");
+    assert!(
+        thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        "Thumbnail must be valid PNG"
+    );
+
+    assert!(!extract_text(&outputs, "metadata").is_empty());
+    assert!(!extract_text(&outputs, "outline").is_empty());
+
+    eprintln!("[TEST027] 5-cap cross-domain pipeline complete");
+}
+
+// =============================================================================
+// Scenario 15: Three-Cartridge 6-Cap Pipeline (model + pdf + txt)
+// modelcartridge ×2 + pdfcartridge ×2 + txtcartridge ×2: 3 sources, 6 caps
+// =============================================================================
+
+// TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
+#[tokio::test]
+async fn test028_three_cartridge_pipeline() {
+    let dev_binaries = match require_binaries(&["modelcartridge", "pdfcartridge", "txtcartridge"]) {
+        Some(b) => b,
+        None => return,
+    };
+
+    let mut registry = CartridgeRegistry::new();
+    let avail_urn = model_availability();
+    let status_urn = model_status();
+    let pdf_meta = pdf_extract_metadata();
+    let pdf_thumb = pdf_generate_thumbnail();
+    let md_meta = md_extract_metadata();
+    let md_thumb = md_generate_thumbnail();
+    registry.register(avail_urn.clone());
+    registry.register(status_urn.clone());
+    registry.register(pdf_meta.clone());
+    registry.register(pdf_thumb.clone());
+    registry.register(md_meta.clone());
+    registry.register(md_thumb.clone());
+
+    let dot = dot_graph(
+        "three_cartridge_pipeline",
+        &[
+            dot_edge("model_spec", "availability", &avail_urn),
+            dot_edge("model_spec", "status", &status_urn),
+            dot_edge("pdf_input", "pdf_metadata", &pdf_meta),
+            dot_edge("pdf_input", "pdf_thumbnail", &pdf_thumb),
+            dot_edge("md_input", "md_metadata", &md_meta),
+            dot_edge("md_input", "md_thumbnail", &md_thumb),
+        ],
+    );
+    eprintln!("[TEST028] DOT:\n{}", dot);
+
+    let graph = parse_dot_to_cap_dag(&dot, &registry)
+        .await
+        .expect("Parse failed");
+    assert_eq!(graph.edges.len(), 6);
+    assert_eq!(graph.nodes.len(), 9); // 3 inputs + 6 outputs
+
+    let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
+    let mut inputs = HashMap::new();
+    inputs.insert(
+        "model_spec".to_string(),
+        NodeData::Text(MODEL_BERT.to_string()),
+    );
+    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "md_input".to_string(),
+        NodeData::Bytes(generate_test_markdown()),
+    );
+
+    let outputs = execute_dag(
+        &graph,
+        plugin_dir,
+        "https://filegrind.com/api/plugins".to_string(),
+        inputs,
+        dev_bins,
+    )
+    .await
+    .expect("Execution failed");
+
+    let expected = [
+        "availability", "status",
+        "pdf_metadata", "pdf_thumbnail",
+        "md_metadata", "md_thumbnail",
+    ];
+    for node in &expected {
+        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+    }
+
+    // Both thumbnails are PNG
+    for node in &["pdf_thumbnail", "md_thumbnail"] {
+        let thumb = extract_bytes(&outputs, node);
+        assert!(
+            thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+            "{} must be valid PNG",
+            node
+        );
+    }
+
+    // All text outputs non-empty
+    for node in &["availability", "status", "pdf_metadata", "md_metadata"] {
+        assert!(!extract_text(&outputs, node).is_empty(), "{} must not be empty", node);
+    }
+
+    eprintln!(
+        "[TEST028] 6-cap three-cartridge pipeline complete: {} outputs",
+        outputs.len()
     );
 }
