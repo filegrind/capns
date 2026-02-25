@@ -119,7 +119,7 @@ fn candle_image_embeddings() -> CapUrn {
         .tag("op", "generate_image_embeddings")
         .solo_tag("ml-model")
         .solo_tag("candle")
-        .in_spec("media:image;png")
+        .in_spec("media:image;png")  // no bytes tag — retired
         .out_spec("media:embedding-vector;textable;form=map")
         .build()
         .expect("candle image embeddings URN")
@@ -130,7 +130,7 @@ fn candle_caption() -> CapUrn {
         .tag("op", "generate_caption")
         .solo_tag("ml-model")
         .solo_tag("candle")
-        .in_spec("media:image;png;bytes")
+        .in_spec("media:image;png")  // no bytes tag — retired
         .out_spec("media:image-caption;textable;form=map")
         .build()
         .expect("candle caption URN")
@@ -141,7 +141,7 @@ fn candle_transcribe() -> CapUrn {
         .tag("op", "transcribe")
         .solo_tag("ml-model")
         .solo_tag("candle")
-        .in_spec("media:audio;wav;bytes;speech")
+        .in_spec("media:audio;wav;speech")  // no bytes tag — retired
         .out_spec("media:transcription;textable;form=map")
         .build()
         .expect("candle transcribe URN")
@@ -540,7 +540,7 @@ fn dot_graph(name: &str, edges: &[String]) -> String {
 // =============================================================================
 
 const MODEL_BERT: &str = "hf:sentence-transformers/all-MiniLM-L6-v2?include=*.json,*.safetensors";
-const MODEL_CLIP: &str = "hf:openai/clip-vit-base-patch32?include=*.json,*.safetensors";
+const MODEL_CLIP: &str = "hf:openai/clip-vit-base-patch32?include=*.json,*.safetensors,pytorch_model.bin";
 const MODEL_BLIP: &str = "hf:Salesforce/blip-image-captioning-large?include=*.json,*.safetensors";
 const MODEL_WHISPER: &str = "hf:openai/whisper-base?include=*.json,*.safetensors";
 
