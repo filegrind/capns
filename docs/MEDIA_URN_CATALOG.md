@@ -68,7 +68,7 @@ Array variants of primitive types.
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
 | `media:generated-text;textable;form=map` | `MEDIA_LLM_INFERENCE_OUTPUT` | LLM text generation result |
-| `media:vision-inference-output;textable;form=map` | - | Vision model analysis result |
+| `media:image-description;textable;form=map` | - | Vision model analysis result |
 | `media:form=list;real;continuous;signed;numeric;textable;embedding` | - | Embedding generation result |
 | `media:json;textable;form=map` | `MEDIA_STRUCTURED_QUERY_OUTPUT` | Structured query result |
 | `media:textable;form=list` | `MEDIA_QUESTIONS_ARRAY` | Array of generated questions |
@@ -88,7 +88,7 @@ Array variants of primitive types.
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
 | `media:transcription;textable;form=map` | - | Audio transcription result |
-| `media:image-caption;textable;form=map` | - | Image caption result |
+| `media:image-description;textable;form=scalar` | - | Vision model inference result |
 
 ### Image Processing Outputs
 

@@ -158,8 +158,8 @@ pub const MEDIA_FILE_METADATA: &str = "media:file-metadata;textable;form=map";
 pub const MEDIA_DOCUMENT_OUTLINE: &str = "media:document-outline;textable;form=map";
 /// Media URN for disbound page - textable, form=list (array of page objects)
 pub const MEDIA_DISBOUND_PAGE: &str = "media:disbound-page;textable;form=list";
-/// Media URN for caption output - textable, form=map
-pub const MEDIA_CAPTION_OUTPUT: &str = "media:image-caption;textable;form=map";
+/// Media URN for vision inference output - textable output from vision models
+pub const MEDIA_IMAGE_DESCRIPTION: &str = "media:image-description;textable;form=scalar";
 /// Media URN for transcription output - textable, form=map
 pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:transcription;textable;form=map";
 /// Media URN for decision output (bit choice) - matches CATALOG: media:decision;bool;textable;form=scalar
