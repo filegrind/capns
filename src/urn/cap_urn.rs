@@ -1547,9 +1547,9 @@ mod tests {
         );
     }
 
-    // TEST051: Semantic direction matching - generic provider matches specific request
+    // TEST890: Semantic direction matching - generic provider matches specific request
     #[test]
-    fn test051_direction_semantic_matching() {
+    fn test890_direction_semantic_matching() {
         // A cap accepting media: (generic wildcard) should match a request with media:pdf (specific)
         // because media:pdf has the media: wildcard pattern (accepts everything)
         let generic_cap = CapUrn::from_string(
@@ -1604,9 +1604,9 @@ mod tests {
             "Cap producing generic image must NOT satisfy request requiring image;png;thumbnail");
     }
 
-    // TEST052: Semantic direction specificity - more media URN tags = higher specificity
+    // TEST891: Semantic direction specificity - more media URN tags = higher specificity
     #[test]
-    fn test052_direction_semantic_specificity() {
+    fn test891_direction_semantic_specificity() {
         // media: has 0 tags (wildcard), media:pdf has 1 tag
         // media:image;png;thumbnail has 3 tags
         let generic_cap = CapUrn::from_string(

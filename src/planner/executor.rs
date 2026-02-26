@@ -530,8 +530,10 @@ mod tests {
     use super::*;
     use crate::planner::plan::{CapExecutionPlan, EdgeType};
 
+    // TEST804: Tests basic JSON path extraction with dot notation for nested objects
+    // Verifies that simple paths like "data.message" correctly extract values from nested JSON structures
     #[test]
-    fn test_extract_json_path_simple() {
+    fn test804_extract_json_path_simple() {
         let json = json!({
             "data": {
                 "message": "hello world"
@@ -542,8 +544,10 @@ mod tests {
         assert_eq!(result.unwrap(), json!("hello world"));
     }
 
+    // TEST805: Tests JSON path extraction with array indexing syntax
+    // Verifies that bracket notation like "items[0].name" correctly accesses array elements and their nested fields
     #[test]
-    fn test_extract_json_path_with_array() {
+    fn test805_extract_json_path_with_array() {
         let json = json!({
             "items": [
                 {"name": "first"},
@@ -555,8 +559,10 @@ mod tests {
         assert_eq!(result.unwrap(), json!("first"));
     }
 
+    // TEST806: Tests error handling when JSON path references non-existent fields
+    // Verifies that accessing missing fields returns an appropriate error message
     #[test]
-    fn test_extract_json_path_missing_field() {
+    fn test806_extract_json_path_missing_field() {
         let json = json!({"data": {}});
         let result = extract_json_path(&json, "data.nonexistent");
         assert!(result.is_err());
@@ -564,55 +570,69 @@ mod tests {
         assert!(error.contains("Field 'nonexistent' not found"));
     }
 
+    // TEST807: Tests EdgeType::Direct passes JSON values through unchanged
+    // Verifies that Direct edge type acts as a transparent passthrough without transformation
     #[test]
-    fn test_apply_edge_type_direct() {
+    fn test807_apply_edge_type_direct() {
         let value = json!({"test": "value"});
         let result = apply_edge_type(&value, &EdgeType::Direct);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), value);
     }
 
+    // TEST808: Tests EdgeType::JsonField extracts specific top-level fields from JSON objects
+    // Verifies that JsonField edge type correctly isolates a single named field from the source output
     #[test]
-    fn test_apply_edge_type_json_field() {
+    fn test808_apply_edge_type_json_field() {
         let value = json!({"test": "value", "other": "data"});
         let result = apply_edge_type(&value, &EdgeType::JsonField { field: "test".to_string() });
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!("value"));
     }
 
+    // TEST809: Tests EdgeType::JsonField error handling for missing fields
+    // Verifies that attempting to extract a non-existent field returns an error
     #[test]
-    fn test_apply_edge_type_json_field_missing() {
+    fn test809_apply_edge_type_json_field_missing() {
         let value = json!({"test": "value"});
         let result = apply_edge_type(&value, &EdgeType::JsonField { field: "missing".to_string() });
         assert!(result.is_err());
     }
 
+    // TEST810: Tests EdgeType::JsonPath extracts values using nested path expressions
+    // Verifies that JsonPath edge type correctly navigates through multiple levels like "data.nested.value"
     #[test]
-    fn test_apply_edge_type_json_path() {
+    fn test810_apply_edge_type_json_path() {
         let value = json!({"data": {"nested": {"value": 42}}});
         let result = apply_edge_type(&value, &EdgeType::JsonPath { path: "data.nested.value".to_string() });
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!(42));
     }
 
+    // TEST811: Tests EdgeType::Iteration preserves array values for iterative processing
+    // Verifies that Iteration edge type passes through arrays unchanged to enable ForEach patterns
     #[test]
-    fn test_apply_edge_type_iteration() {
+    fn test811_apply_edge_type_iteration() {
         let value = json!([1, 2, 3]);
         let result = apply_edge_type(&value, &EdgeType::Iteration);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), value);
     }
 
+    // TEST812: Tests EdgeType::Collection preserves collected values without transformation
+    // Verifies that Collection edge type maintains structure for aggregation patterns
     #[test]
-    fn test_apply_edge_type_collection() {
+    fn test812_apply_edge_type_collection() {
         let value = json!({"collected": [1, 2, 3]});
         let result = apply_edge_type(&value, &EdgeType::Collection);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), value);
     }
 
+    // TEST813: Tests JSON path extraction through deeply nested object hierarchies (4+ levels)
+    // Verifies that paths can traverse multiple nested levels like "level1.level2.level3.level4.value"
     #[test]
-    fn test_extract_json_path_deeply_nested() {
+    fn test813_extract_json_path_deeply_nested() {
         let json = json!({
             "level1": {
                 "level2": {
@@ -629,8 +649,10 @@ mod tests {
         assert_eq!(result.unwrap(), json!("deep"));
     }
 
+    // TEST814: Tests error handling when array index exceeds available elements
+    // Verifies that out-of-bounds array access returns a descriptive error message
     #[test]
-    fn test_extract_json_path_array_out_of_bounds() {
+    fn test814_extract_json_path_array_out_of_bounds() {
         let json = json!({
             "items": [{"name": "first"}]
         });
@@ -640,16 +662,20 @@ mod tests {
         assert!(error.contains("out of bounds"));
     }
 
+    // TEST815: Tests JSON path extraction with single-level paths (no nesting)
+    // Verifies that simple field names without dots correctly extract top-level values
     #[test]
-    fn test_extract_json_path_single_segment() {
+    fn test815_extract_json_path_single_segment() {
         let json = json!({"value": 123});
         let result = extract_json_path(&json, "value");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!(123));
     }
 
+    // TEST816: Tests JSON path extraction preserves special characters in string values
+    // Verifies that quotes, backslashes, and other special characters are correctly maintained
     #[test]
-    fn test_extract_json_path_with_special_characters() {
+    fn test816_extract_json_path_with_special_characters() {
         let json = json!({
             "data": {
                 "message": "hello \"world\" with 'quotes' and \\ backslashes"
@@ -660,24 +686,30 @@ mod tests {
         assert_eq!(result.unwrap(), json!("hello \"world\" with 'quotes' and \\ backslashes"));
     }
 
+    // TEST817: Tests JSON path extraction correctly handles explicit null values
+    // Verifies that null is returned as serde_json::Value::Null rather than an error
     #[test]
-    fn test_extract_json_path_with_null_value() {
+    fn test817_extract_json_path_with_null_value() {
         let json = json!({"data": {"nullable": null}});
         let result = extract_json_path(&json, "data.nullable");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), serde_json::Value::Null);
     }
 
+    // TEST818: Tests JSON path extraction correctly returns empty arrays
+    // Verifies that zero-length arrays are extracted as valid empty array values
     #[test]
-    fn test_extract_json_path_with_empty_array() {
+    fn test818_extract_json_path_with_empty_array() {
         let json = json!({"data": {"items": []}});
         let result = extract_json_path(&json, "data.items");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!([]));
     }
 
+    // TEST819: Tests JSON path extraction handles various numeric types correctly
+    // Verifies extraction of integers, floats, negative numbers, and zero
     #[test]
-    fn test_extract_json_path_with_numeric_types() {
+    fn test819_extract_json_path_with_numeric_types() {
         let json = json!({
             "integers": 42,
             "floats": 3.14159,
@@ -690,8 +722,10 @@ mod tests {
         assert_eq!(extract_json_path(&json, "zero").unwrap(), json!(0));
     }
 
+    // TEST820: Tests JSON path extraction correctly handles boolean values
+    // Verifies that true and false are extracted as proper boolean JSON values
     #[test]
-    fn test_extract_json_path_with_boolean() {
+    fn test820_extract_json_path_with_boolean() {
         let json = json!({
             "flags": {
                 "enabled": true,
@@ -702,8 +736,10 @@ mod tests {
         assert_eq!(extract_json_path(&json, "flags.disabled").unwrap(), json!(false));
     }
 
+    // TEST821: Tests JSON path extraction with multi-dimensional arrays (matrix access)
+    // Verifies that nested array structures like "matrix[1]" correctly extract inner arrays
     #[test]
-    fn test_extract_json_path_with_nested_arrays() {
+    fn test821_extract_json_path_with_nested_arrays() {
         let json = json!({
             "matrix": [
                 [1, 2, 3],
@@ -715,8 +751,10 @@ mod tests {
         assert_eq!(result.unwrap(), json!([4, 5, 6]));
     }
 
+    // TEST822: Tests error handling for non-numeric array indices
+    // Verifies that invalid indices like "items[abc]" return a descriptive parse error
     #[test]
-    fn test_extract_json_path_invalid_array_index() {
+    fn test822_extract_json_path_invalid_array_index() {
         let json = json!({"items": [1, 2, 3]});
         let result = extract_json_path(&json, "items[abc]");
         assert!(result.is_err());

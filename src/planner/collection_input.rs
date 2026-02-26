@@ -152,8 +152,10 @@ impl CollectionFile {
 mod tests {
     use super::*;
 
+    // TEST716: Tests CapInputCollection empty collection has zero files and folders
+    // Verifies is_empty() returns true and counts are zero for new collection
     #[test]
-    fn test_empty_collection() {
+    fn test716_empty_collection() {
         let collection = CapInputCollection::new(
             "folder-123".to_string(),
             "Test Folder".to_string(),
@@ -163,8 +165,10 @@ mod tests {
         assert_eq!(collection.total_folder_count(), 0);
     }
 
+    // TEST717: Tests CapInputCollection correctly counts files in flat collection
+    // Verifies total_file_count() returns 2 for collection with 2 files, no folders
     #[test]
-    fn test_collection_with_files() {
+    fn test717_collection_with_files() {
         let mut collection = CapInputCollection::new(
             "folder-123".to_string(),
             "Test Folder".to_string(),
@@ -185,8 +189,10 @@ mod tests {
         assert_eq!(collection.total_folder_count(), 0);
     }
 
+    // TEST718: Tests CapInputCollection correctly counts files and folders in nested structure
+    // Verifies total_file_count() includes subfolder files and total_folder_count() counts subfolders
     #[test]
-    fn test_nested_collection() {
+    fn test718_nested_collection() {
         let mut root = CapInputCollection::new(
             "folder-root".to_string(),
             "Root".to_string(),
@@ -218,8 +224,10 @@ mod tests {
         assert_eq!(root.total_folder_count(), 1);
     }
 
+    // TEST719: Tests CapInputCollection flatten_to_files recursively collects all files
+    // Verifies flatten() extracts files from root and all subfolders into flat list
     #[test]
-    fn test_flatten_to_files() {
+    fn test719_flatten_to_files() {
         let mut root = CapInputCollection::new(
             "folder-root".to_string(),
             "Root".to_string(),
@@ -248,8 +256,10 @@ mod tests {
         assert_eq!(flattened[1].file_path, "/path/sub/file2.pdf");
     }
 
+    // TEST720: Tests CapInputCollection serializes to JSON and deserializes correctly
+    // Verifies JSON round-trip preserves folder_id, folder_name, files and file metadata
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test720_serialization_roundtrip() {
         let mut collection = CapInputCollection::new(
             "folder-123".to_string(),
             "Test Folder".to_string(),

@@ -1326,8 +1326,10 @@ mod tests {
         Ok(edge_count)
     }
 
+    // TEST750: Tests duplicate detection passes for caps with unique URN combinations
+    // Verifies that check_for_duplicate_caps() correctly accepts caps with different op/in/out combinations
     #[test]
-    fn test_no_duplicates_with_unique_caps() {
+    fn test750_no_duplicates_with_unique_caps() {
         let caps = vec![
             make_test_cap("extract_metadata", "media:pdf", "media:file-metadata;textable;form=map", "Extract Metadata"),
             make_test_cap("extract_outline", "media:pdf", "media:document-outline;textable;form=map", "Extract Outline"),
@@ -1339,8 +1341,10 @@ mod tests {
         assert_eq!(result.unwrap(), 3, "Should have 3 edges");
     }
 
+    // TEST751: Tests duplicate detection identifies caps with identical URNs
+    // Verifies that check_for_duplicate_caps() returns an error when multiple caps share the same cap_urn
     #[test]
-    fn test_detects_duplicate_cap_urns() {
+    fn test751_detects_duplicate_cap_urns() {
         let caps = vec![
             make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;form=list", "Disbind PDF"),
             make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;form=list", "Disbind PDF Again"),
@@ -1354,8 +1358,10 @@ mod tests {
         assert!(err_msg.contains("media:pdf"), "Error should contain the input spec: {}", err_msg);
     }
 
+    // TEST752: Tests caps with different operations but same input/output types are not duplicates
+    // Verifies that only the complete URN (including op) is used for duplicate detection
     #[test]
-    fn test_different_ops_same_types_not_duplicates() {
+    fn test752_different_ops_same_types_not_duplicates() {
         let caps = vec![
             make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;form=list", "Disbind"),
             make_test_cap("grind", "media:pdf", "media:disbound-pages;textable;form=list", "Grind"),
@@ -1366,8 +1372,10 @@ mod tests {
         assert_eq!(result.unwrap(), 2, "Should have 2 edges");
     }
 
+    // TEST753: Tests caps with same operation but different input types are not duplicates
+    // Verifies that input type differences distinguish caps with the same operation name
     #[test]
-    fn test_same_op_different_input_types_not_duplicates() {
+    fn test753_same_op_different_input_types_not_duplicates() {
         let caps = vec![
             make_test_cap("extract_metadata", "media:pdf", "media:file-metadata;textable;form=map", "Extract PDF Metadata"),
             make_test_cap("extract_metadata", "media:txt;textable", "media:file-metadata;textable;form=map", "Extract TXT Metadata"),
@@ -1403,8 +1411,10 @@ mod tests {
         )
     }
 
+    // TEST754: Tests first cap's input argument is automatically resolved from input file
+    // Verifies that determine_resolution_with_io_check() returns FromInputFile for the first cap in a chain
     #[test]
-    fn test_input_arg_first_cap_auto_resolved_from_input() {
+    fn test754_input_arg_first_cap_auto_resolved_from_input() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1412,8 +1422,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::FromInputFile);
     }
 
+    // TEST755: Tests subsequent caps' input arguments are automatically resolved from previous output
+    // Verifies that determine_resolution_with_io_check() returns FromPreviousOutput for caps after the first
     #[test]
-    fn test_input_arg_subsequent_cap_auto_resolved_from_previous() {
+    fn test755_input_arg_subsequent_cap_auto_resolved_from_previous() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1425,8 +1437,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
+    // TEST756: Tests output arguments are automatically resolved from previous cap's output
+    // Verifies that arguments matching the output spec are always resolved as FromPreviousOutput
     #[test]
-    fn test_output_arg_auto_resolved() {
+    fn test756_output_arg_auto_resolved() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1434,8 +1448,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
+    // TEST757: Tests MEDIA_FILE_PATH argument type resolves to input file for first cap
+    // Verifies that generic file-path arguments are bound to input file in the first cap
     #[test]
-    fn test_file_path_type_fallback_first_cap() {
+    fn test757_file_path_type_fallback_first_cap() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1443,8 +1459,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::FromInputFile);
     }
 
+    // TEST758: Tests MEDIA_FILE_PATH argument type resolves to previous output for subsequent caps
+    // Verifies that generic file-path arguments are bound to previous cap's output after the first cap
     #[test]
-    fn test_file_path_type_fallback_subsequent_cap() {
+    fn test758_file_path_type_fallback_subsequent_cap() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1452,8 +1470,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
+    // TEST759: Tests MEDIA_FILE_PATH_ARRAY argument type resolution for first and subsequent caps
+    // Verifies that file-path array arguments follow the same resolution pattern as single file paths
     #[test]
-    fn test_file_path_array_fallback() {
+    fn test759_file_path_array_fallback() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1464,8 +1484,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
+    // TEST760: Tests required non-IO arguments with default values are marked as HasDefault
+    // Verifies that arguments like integers with defaults don't require user input
     #[test]
-    fn test_non_io_arg_with_default_has_default() {
+    fn test760_non_io_arg_with_default_has_default() {
         let builder = create_test_plan_builder();
         let default = Some(serde_json::json!(200));
         let in_spec = "media:pdf";
@@ -1474,8 +1496,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::HasDefault);
     }
 
+    // TEST761: Tests required non-IO arguments without defaults require user input
+    // Verifies that arguments like strings without defaults are marked as RequiresUserInput
     #[test]
-    fn test_non_io_arg_without_default_requires_user_input() {
+    fn test761_non_io_arg_without_default_requires_user_input() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1483,8 +1507,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::RequiresUserInput);
     }
 
+    // TEST762: Tests optional non-IO arguments with default values are marked as HasDefault
+    // Verifies that optional arguments with defaults behave the same as required ones with defaults
     #[test]
-    fn test_optional_non_io_arg_with_default_has_default() {
+    fn test762_optional_non_io_arg_with_default_has_default() {
         let builder = create_test_plan_builder();
         let default = Some(serde_json::json!(300));
         let in_spec = "media:pdf";
@@ -1493,8 +1519,10 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::HasDefault);
     }
 
+    // TEST763: Tests optional non-IO arguments without defaults still require user input
+    // Verifies that optional arguments without defaults must be explicitly provided or skipped
     #[test]
-    fn test_optional_non_io_arg_without_default_requires_user_input() {
+    fn test763_optional_non_io_arg_without_default_requires_user_input() {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
@@ -1502,21 +1530,27 @@ mod tests {
         assert_eq!(resolution, ArgumentResolution::RequiresUserInput);
     }
 
+    // TEST764: Tests validation_to_json() returns None for None input
+    // Verifies that missing validation metadata is converted to JSON None
     #[test]
-    fn test_validation_to_json_none() {
+    fn test764_validation_to_json_none() {
         let json = CapPlanBuilder::validation_to_json(None);
         assert!(json.is_none(), "None validation should return None");
     }
 
+    // TEST765: Tests validation_to_json() returns None for empty validation constraints
+    // Verifies that default MediaValidation with no constraints produces JSON None
     #[test]
-    fn test_validation_to_json_empty() {
+    fn test765_validation_to_json_empty() {
         let validation = MediaValidation::default();
         let json = CapPlanBuilder::validation_to_json(Some(&validation));
         assert!(json.is_none(), "Empty validation should return None");
     }
 
+    // TEST766: Tests validation_to_json() converts MediaValidation with constraints to JSON
+    // Verifies that min/max validation rules are correctly serialized as JSON fields
     #[test]
-    fn test_validation_to_json_with_constraints() {
+    fn test766_validation_to_json_with_constraints() {
         let validation = MediaValidation {
             min: Some(50.0),
             max: Some(2000.0),
@@ -1532,8 +1566,10 @@ mod tests {
         assert_eq!(json["max"], 2000.0);
     }
 
+    // TEST767: Tests ArgumentInfo struct serialization to JSON
+    // Verifies that argument metadata including resolution status and validation is correctly serialized
     #[test]
-    fn test_argument_info_serialization() {
+    fn test767_argument_info_serialization() {
         let arg_info = ArgumentInfo {
             name: "width".to_string(),
             media_urn: "media:integer".to_string(),
@@ -1550,8 +1586,10 @@ mod tests {
         assert!(json.contains("\"default_value\":200"));
     }
 
+    // TEST768: Tests PathArgumentRequirements structure for single-step execution paths
+    // Verifies that argument requirements are correctly organized by step with resolution information
     #[test]
-    fn test_path_argument_requirements_structure() {
+    fn test768_path_argument_requirements_structure() {
         let requirements = PathArgumentRequirements {
             source_spec: "media:pdf".to_string(),
             target_spec: "media:png".to_string(),
@@ -1584,8 +1622,10 @@ mod tests {
         assert_eq!(requirements.steps[0].arguments[0].resolution, ArgumentResolution::FromInputFile);
     }
 
+    // TEST769: Tests PathArgumentRequirements tracking of required user-input slots
+    // Verifies that arguments requiring user input are collected in slots and can_execute_without_input is false
     #[test]
-    fn test_path_with_required_slot() {
+    fn test769_path_with_required_slot() {
         let requirements = PathArgumentRequirements {
             source_spec: "media:text".to_string(),
             target_spec: "media:translated".to_string(),
@@ -1655,8 +1695,10 @@ mod tests {
         create_test_plan_builder().with_available_caps(available)
     }
 
+    // TEST770: Tests is_cap_available() correctly applies availability filter when set
+    // Verifies that only caps in the available_caps set are considered available
     #[test]
-    fn test_is_cap_available_with_filter() {
+    fn test770_is_cap_available_with_filter() {
         let mut available = HashSet::new();
         available.insert("cap:in=\"media:a\";op=transform;out=\"media:b\"".to_string());
 
@@ -1666,16 +1708,20 @@ mod tests {
         assert!(!builder.is_cap_available("cap:in=\"media:b\";op=convert;out=\"media:c\""));
     }
 
+    // TEST771: Tests is_cap_available() treats all caps as available when no filter is set
+    // Verifies that without an availability filter, any cap URN is considered available
     #[test]
-    fn test_is_cap_available_without_filter() {
+    fn test771_is_cap_available_without_filter() {
         let builder = create_test_plan_builder();
 
         assert!(builder.is_cap_available("cap:in=\"media:a\";op=transform;out=\"media:b\""));
         assert!(builder.is_cap_available("cap:in=\"media:x\";op=anything;out=\"media:y\""));
     }
 
+    // TEST772: Tests find_all_paths() excludes unavailable caps from pathfinding
+    // Verifies that only paths using available caps are returned when filter is set
     #[tokio::test]
-    async fn test_find_all_paths_filters_by_availability() {
+    async fn test772_find_all_paths_filters_by_availability() {
         let registry = CapRegistry::new_for_test();
         let cap1 = make_test_cap("step1", "media:a", "media:b", "A to B");
         let cap2 = make_test_cap("step2", "media:b", "media:c", "B to C");
@@ -1698,8 +1744,10 @@ mod tests {
         assert_eq!(paths[0].steps[1].title, "B to C");
     }
 
+    // TEST773: Tests find_all_paths() returns empty result when all caps are filtered out
+    // Verifies that pathfinding returns no paths when the availability filter excludes all relevant caps
     #[tokio::test]
-    async fn test_find_all_paths_returns_empty_when_no_available_caps() {
+    async fn test773_find_all_paths_returns_empty_when_no_available_caps() {
         let registry = CapRegistry::new_for_test();
         let cap1 = make_test_cap("step1", "media:a", "media:b", "A to B");
 
@@ -1715,8 +1763,10 @@ mod tests {
         assert!(paths.is_empty(), "Should find no paths when no caps are available");
     }
 
+    // TEST774: Tests get_reachable_targets() only considers available caps for reachability
+    // Verifies that target specs are only reachable via caps in the availability filter
     #[tokio::test]
-    async fn test_get_reachable_targets_filters_by_availability() {
+    async fn test774_get_reachable_targets_filters_by_availability() {
         let registry = CapRegistry::new_for_test();
         let cap1 = make_test_cap("step1", "media:a", "media:b", "A to B");
         let cap2 = make_test_cap("step2", "media:b", "media:c", "B to C");
@@ -1739,8 +1789,10 @@ mod tests {
         assert!(!targets.contains(&"media:c".to_string()), "C should NOT be reachable (cap2 not available)");
     }
 
+    // TEST775: Tests find_path() selects from available caps when multiple paths exist
+    // Verifies that find_path() respects availability filter and prefers available direct paths
     #[tokio::test]
-    async fn test_find_path_filters_by_availability() {
+    async fn test775_find_path_filters_by_availability() {
         let registry = CapRegistry::new_for_test();
         let cap1 = make_test_cap("step1", "media:a", "media:b", "A to B");
         let cap2 = make_test_cap("step2", "media:b", "media:c", "B to C");
@@ -1760,8 +1812,10 @@ mod tests {
         assert!(path[0].contains("op=direct"), "Should use the direct cap: {}", path[0]);
     }
 
+    // TEST776: Tests find_path() returns error when required caps are filtered out by availability
+    // Verifies that "No path found" error is returned when filter blocks the only viable path
     #[tokio::test]
-    async fn test_find_path_returns_error_when_path_unavailable() {
+    async fn test776_find_path_returns_error_when_path_unavailable() {
         let registry = CapRegistry::new_for_test();
         let cap1 = make_test_cap("step1", "media:a", "media:b", "A to B");
         let cap2 = make_test_cap("step2", "media:b", "media:c", "B to C");
@@ -1785,8 +1839,10 @@ mod tests {
     // TYPE MISMATCH TESTS
     // ==========================================================================
 
+    // TEST777: Tests type checking prevents using PDF-specific cap with PNG input
+    // Verifies that media type compatibility is enforced during pathfinding (PNG cannot use PDF cap)
     #[tokio::test]
-    async fn test_type_mismatch_pdf_cap_does_not_match_png_input() {
+    async fn test777_type_mismatch_pdf_cap_does_not_match_png_input() {
         let registry = CapRegistry::new_for_test();
         let pdf_to_text = make_test_cap("pdf2text", "media:pdf", "media:textable", "PDF to Text");
 
@@ -1803,8 +1859,10 @@ mod tests {
         assert!(result.is_err(), "Should NOT find path from PNG to text via PDF cap");
     }
 
+    // TEST778: Tests type checking prevents using PNG-specific cap with PDF input
+    // Verifies that media type compatibility is enforced during pathfinding (PDF cannot use PNG cap)
     #[tokio::test]
-    async fn test_type_mismatch_png_cap_does_not_match_pdf_input() {
+    async fn test778_type_mismatch_png_cap_does_not_match_pdf_input() {
         let registry = CapRegistry::new_for_test();
         let png_to_thumb = make_test_cap("png2thumb", "media:png", "media:thumbnail", "PNG to Thumbnail");
 
@@ -1821,8 +1879,10 @@ mod tests {
         assert!(result.is_err(), "Should NOT find path from PDF to thumbnail via PNG cap");
     }
 
+    // TEST779: Tests get_reachable_targets() only returns targets reachable via type-compatible caps
+    // Verifies that PNG and PDF inputs reach different targets based on cap input type requirements
     #[tokio::test]
-    async fn test_get_reachable_targets_respects_type_matching() {
+    async fn test779_get_reachable_targets_respects_type_matching() {
         let registry = CapRegistry::new_for_test();
         let pdf_to_text = make_test_cap("pdf2text", "media:pdf", "media:textable", "PDF to Text");
         let png_to_thumb = make_test_cap("png2thumb", "media:png", "media:thumbnail", "PNG to Thumbnail");
@@ -1847,8 +1907,10 @@ mod tests {
         assert!(!pdf_targets.contains(&"media:thumbnail".to_string()), "PDF should NOT reach thumbnail (type mismatch)");
     }
 
+    // TEST780: Tests get_reachable_targets_with_metadata() respects type compatibility constraints
+    // Verifies that reachable target metadata only includes type-compatible transformations
     #[tokio::test]
-    async fn test_reachable_targets_with_metadata_respects_type_matching() {
+    async fn test780_reachable_targets_with_metadata_respects_type_matching() {
         let registry = CapRegistry::new_for_test();
         let pdf_to_text = make_test_cap("pdf2text", "media:pdf", "media:textable", "PDF to Text");
         let png_to_thumb = make_test_cap("png2thumb", "media:png", "media:thumbnail", "PNG to Thumbnail");
@@ -1871,8 +1933,10 @@ mod tests {
         assert_eq!(pdf_targets[0].media_spec, "media:textable", "PDF target should be text");
     }
 
+    // TEST781: Tests find_all_paths() enforces type compatibility across multi-step chains
+    // Verifies that paths are only found when all intermediate types are compatible
     #[tokio::test]
-    async fn test_find_all_paths_respects_type_chain() {
+    async fn test781_find_all_paths_respects_type_chain() {
         let registry = CapRegistry::new_for_test();
         let resize_png = make_test_cap("resize", "media:png", "media:resized-png", "Resize PNG");
         let to_thumb = make_test_cap("thumb", "media:resized-png", "media:thumbnail", "To Thumbnail");
@@ -1898,8 +1962,10 @@ mod tests {
     // PATH COHERENCE SCORING
     // ==========================================================================
 
+    // TEST782: Tests coherence scoring gives 0 deviations for direct single-step paths
+    // Verifies that paths going directly from source to target without detours have perfect coherence
     #[test]
-    fn test_coherence_score_zero_for_direct_path() {
+    fn test782_coherence_score_zero_for_direct_path() {
         let path = CapChainPathInfo {
             steps: vec![CapChainStepInfo {
                 cap_urn: "cap:in=\"media:txt;textable\";op=convert;out=\"media:md;textable\"".to_string(),
@@ -1922,8 +1988,10 @@ mod tests {
         assert_eq!(steps, 1, "Path should have 1 step");
     }
 
+    // TEST783: Tests coherence scoring penalizes paths through semantically unrelated intermediates
+    // Verifies that going from textable→thumbnail→textable incurs deviation penalty (thumbnail unrelated)
     #[test]
-    fn test_coherence_score_penalizes_unrelated_intermediate() {
+    fn test783_coherence_score_penalizes_unrelated_intermediate() {
         let path = CapChainPathInfo {
             steps: vec![
                 CapChainStepInfo {
@@ -1955,8 +2023,10 @@ mod tests {
         assert_eq!(steps, 2);
     }
 
+    // TEST784: Tests coherence scoring does not penalize paths through semantically related intermediates
+    // Verifies that going through a supertype (txt→textable→md) maintains coherence with 0 deviations
     #[test]
-    fn test_coherence_score_related_intermediate_not_penalized() {
+    fn test784_coherence_score_related_intermediate_not_penalized() {
         let path = CapChainPathInfo {
             steps: vec![
                 CapChainStepInfo {
@@ -1987,8 +2057,10 @@ mod tests {
         assert_eq!(deviation, 0, "Path through related supertype (textable) should have 0 deviations");
     }
 
+    // TEST785: Tests find_all_paths() filters out deviating paths when coherent alternatives exist
+    // Verifies that semantically wandering paths are excluded if direct coherent paths are available
     #[tokio::test]
-    async fn test_find_all_paths_filters_deviating_when_coherent_exists() {
+    async fn test785_find_all_paths_filters_deviating_when_coherent_exists() {
         let registry = CapRegistry::new_for_test();
 
         let direct = make_test_cap("txt2rst", "media:txt;textable", "media:rst;textable", "Direct TXT to RST");
@@ -2011,8 +2083,10 @@ mod tests {
         assert_eq!(paths[0].steps.len(), 1, "Remaining path should be the direct 1-step path");
     }
 
+    // TEST786: Tests find_all_paths() keeps all paths when no coherent path exists
+    // Verifies that all deviating paths are returned if they're the only viable options
     #[tokio::test]
-    async fn test_find_all_paths_keeps_all_when_all_deviate() {
+    async fn test786_find_all_paths_keeps_all_when_all_deviate() {
         let registry = CapRegistry::new_for_test();
 
         let txt_to_thumb = make_test_cap("txt2thumb", "media:txt;textable", "media:thumbnail", "TXT to Thumb");
@@ -2041,8 +2115,10 @@ mod tests {
         assert_eq!(paths[0].steps.len(), 2, "First path should be the shorter 2-step one");
     }
 
+    // TEST787: Tests find_all_paths() sorts coherent paths by length, preferring shorter ones
+    // Verifies that among multiple coherent paths, the shortest is ranked first
     #[tokio::test]
-    async fn test_find_all_paths_coherent_sorting_prefers_shorter() {
+    async fn test787_find_all_paths_coherent_sorting_prefers_shorter() {
         let registry = CapRegistry::new_for_test();
 
         let direct = make_test_cap("txt2md", "media:txt;textable", "media:md;textable", "Direct");

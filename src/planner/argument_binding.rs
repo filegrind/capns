@@ -505,8 +505,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // TEST788: Tests CapInputFile constructor creates file with correct path and media URN
+    // Verifies new() initializes file_path, media_urn and leaves metadata/source_id as None
     #[test]
-    fn test_cap_input_file_new() {
+    fn test788_cap_input_file_new() {
         let file = CapInputFile::new("/path/to/file.pdf".to_string(), "media:pdf".to_string());
         assert_eq!(file.file_path, "/path/to/file.pdf");
         assert_eq!(file.media_urn, "media:pdf");
@@ -514,21 +516,27 @@ mod tests {
         assert!(file.source_id.is_none());
     }
 
+    // TEST789: Tests CapInputFile from_listing sets source metadata correctly
+    // Verifies from_listing() populates source_id and source_type as Listing
     #[test]
-    fn test_cap_input_file_from_listing() {
+    fn test789_cap_input_file_from_listing() {
         let file = CapInputFile::from_listing("listing-123", "/path/to/file.pdf", "media:pdf");
         assert_eq!(file.source_id, Some("listing-123".to_string()));
         assert_eq!(file.source_type, Some(SourceEntityType::Listing));
     }
 
+    // TEST790: Tests CapInputFile extracts filename from full path correctly
+    // Verifies filename() returns just the basename without directory path
     #[test]
-    fn test_cap_input_file_filename() {
+    fn test790_cap_input_file_filename() {
         let file = CapInputFile::new("/path/to/document.pdf".to_string(), "media:pdf".to_string());
         assert_eq!(file.filename(), Some("document.pdf"));
     }
 
+    // TEST791: Tests ArgumentBinding literal_string creates Literal variant with string value
+    // Verifies literal_string() wraps string in JSON Value::String
     #[test]
-    fn test_argument_binding_literal_string() {
+    fn test791_argument_binding_literal_string() {
         let binding = ArgumentBinding::literal_string("test");
         if let ArgumentBinding::Literal { value } = binding {
             assert_eq!(value, serde_json::Value::String("test".to_string()));
@@ -537,16 +545,20 @@ mod tests {
         }
     }
 
+    // TEST792: Tests ArgumentBinding requires_input distinguishes Slots from Literals
+    // Verifies Slot returns true (needs user input) while Literal returns false
     #[test]
-    fn test_argument_binding_requires_input() {
+    fn test792_argument_binding_requires_input() {
         let slot = ArgumentBinding::Slot { name: "width".to_string(), schema: None };
         assert!(slot.requires_input());
         let literal = ArgumentBinding::Literal { value: json!(100) };
         assert!(!literal.requires_input());
     }
 
+    // TEST793: Tests ArgumentBinding PreviousOutput serializes/deserializes correctly
+    // Verifies JSON round-trip preserves node_id and output_field values
     #[test]
-    fn test_argument_binding_serialization() {
+    fn test793_argument_binding_serialization() {
         let binding = ArgumentBinding::PreviousOutput {
             node_id: "node_0".to_string(),
             output_field: Some("result_path".to_string()),
@@ -563,16 +575,20 @@ mod tests {
         }
     }
 
+    // TEST794: Tests ArgumentBindings add_file_path adds InputFilePath binding
+    // Verifies add_file_path() creates binding map entry with InputFilePath variant
     #[test]
-    fn test_argument_bindings_add_file_path() {
+    fn test794_argument_bindings_add_file_path() {
         let mut bindings = ArgumentBindings::new();
         bindings.add_file_path("input");
         assert!(bindings.bindings.contains_key("input"));
         assert!(matches!(bindings.bindings.get("input"), Some(ArgumentBinding::InputFilePath)));
     }
 
+    // TEST795: Tests ArgumentBindings identifies unresolved Slot bindings
+    // Verifies has_unresolved_slots() and get_unresolved_slots() detect Slots needing values
     #[test]
-    fn test_argument_bindings_unresolved_slots() {
+    fn test795_argument_bindings_unresolved_slots() {
         let mut bindings = ArgumentBindings::new();
         bindings.add("width".to_string(), ArgumentBinding::Slot { name: "width".to_string(), schema: None });
         bindings.add("height".to_string(), ArgumentBinding::Literal { value: json!(100) });
@@ -580,8 +596,10 @@ mod tests {
         assert_eq!(bindings.get_unresolved_slots(), vec!["width"]);
     }
 
+    // TEST796: Tests resolve_binding resolves InputFilePath to current file path
+    // Verifies InputFilePath binding resolves to file path bytes with InputFile source
     #[test]
-    fn test_resolve_input_file_path() {
+    fn test796_resolve_input_file_path() {
         let files = vec![CapInputFile::new("/path/to/file.pdf".to_string(), "media:pdf".to_string())];
         let prev_outputs = HashMap::new();
         let context = ArgumentResolutionContext {
@@ -598,8 +616,10 @@ mod tests {
         assert_eq!(result.source, ArgumentSource::InputFile);
     }
 
+    // TEST797: Tests resolve_binding resolves Literal to JSON-encoded bytes
+    // Verifies Literal binding serializes value to bytes with Literal source
     #[test]
-    fn test_resolve_literal() {
+    fn test797_resolve_literal() {
         let files = vec![];
         let prev_outputs = HashMap::new();
         let context = ArgumentResolutionContext {
@@ -616,8 +636,10 @@ mod tests {
         assert_eq!(result.source, ArgumentSource::Literal);
     }
 
+    // TEST798: Tests resolve_binding extracts value from previous node output
+    // Verifies PreviousOutput binding fetches field from earlier execution results
     #[test]
-    fn test_resolve_previous_output() {
+    fn test798_resolve_previous_output() {
         let files = vec![];
         let mut prev_outputs = HashMap::new();
         prev_outputs.insert("node_0".to_string(), json!({"result_path": "/output/result.png"}));
@@ -638,8 +660,10 @@ mod tests {
         assert_eq!(result.source, ArgumentSource::PreviousOutput);
     }
 
+    // TEST799: Tests CapChainInput single constructor creates valid Single cardinality input
+    // Verifies single() wraps one file with Single cardinality and validates correctly
     #[test]
-    fn test_cap_chain_input_single() {
+    fn test799_cap_chain_input_single() {
         let file = CapInputFile::new("/path/to/file.pdf".to_string(), "media:pdf".to_string());
         let input = CapChainInput::single(file);
         assert_eq!(input.files.len(), 1);
@@ -647,8 +671,10 @@ mod tests {
         assert!(input.is_valid());
     }
 
+    // TEST800: Tests CapChainInput sequence constructor creates valid Sequence cardinality input
+    // Verifies sequence() wraps multiple files with Sequence cardinality
     #[test]
-    fn test_cap_chain_input_vector() {
+    fn test800_cap_chain_input_vector() {
         let files = vec![
             CapInputFile::new("/path/1.pdf".to_string(), "media:pdf".to_string()),
             CapInputFile::new("/path/2.pdf".to_string(), "media:pdf".to_string()),
@@ -659,8 +685,10 @@ mod tests {
         assert!(input.is_valid());
     }
 
+    // TEST801: Tests CapInputFile deserializes from JSON with source metadata fields
+    // Verifies JSON with source_id and source_type deserializes to CapInputFile correctly
     #[test]
-    fn test_cap_input_file_deserialization_from_dry_context() {
+    fn test801_cap_input_file_deserialization_from_dry_context() {
         let json_str = r#"[
             {
                 "file_path": "/Users/bahram/ws/prj/filegrind/pdfcartridge/test_files/aws_in_action.pdf",
@@ -676,8 +704,10 @@ mod tests {
         assert_eq!(files[0].source_type, Some(SourceEntityType::Listing));
     }
 
+    // TEST802: Tests CapInputFile deserializes from compact JSON via serde_json::Value
+    // Verifies deserialization through Value intermediate works correctly
     #[test]
-    fn test_cap_input_file_deserialization_via_value() {
+    fn test802_cap_input_file_deserialization_via_value() {
         let json_str = r#"[{"file_path": "/path/to/file.pdf","media_urn": "media:pdf","source_id": "abc123","source_type": "listing"}]"#;
         let value: serde_json::Value = serde_json::from_str(json_str).expect("Parse to Value");
         let result: std::result::Result<Vec<CapInputFile>, _> = serde_json::from_value(value);
@@ -779,8 +809,10 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // TEST803: Tests CapChainInput validation detects mismatched Single cardinality with multiple files
+    // Verifies is_valid() returns false when Single cardinality has more than one file
     #[test]
-    fn test_cap_chain_input_invalid_single() {
+    fn test803_cap_chain_input_invalid_single() {
         let files = vec![
             CapInputFile::new("/path/1.pdf".to_string(), "media:pdf".to_string()),
             CapInputFile::new("/path/2.pdf".to_string(), "media:pdf".to_string()),

@@ -1911,9 +1911,9 @@ mod tests {
             "error must mention identity verification: {}", err);
     }
 
-    // TEST488: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessPluginHost roundtrip
+    // TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessPluginHost roundtrip
     #[test]
-    fn test488_send_to_master_build_request_frames_roundtrip() {
+    fn test905_send_to_master_build_request_frames_roundtrip() {
         use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter, accumulate_input};
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::caller::CapArgumentValue;

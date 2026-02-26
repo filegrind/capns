@@ -13,9 +13,9 @@ fn testcartridge_bin() -> String {
     format!("{}/target/release/testcartridge", manifest_dir)
 }
 
-// TEST400: File-path conversion with test-edge1 (scalar file input)
+// TEST700: File-path conversion with test-edge1 (scalar file input)
 #[test]
-fn test400_filepath_conversion_scalar() {
+fn test700_filepath_conversion_scalar() {
     // Create test file with known content
     let temp = TempDir::new().unwrap();
     let test_file = temp.path().join("input.txt");
@@ -41,9 +41,9 @@ fn test400_filepath_conversion_scalar() {
     assert!(!result.contains(test_file.to_str().unwrap()));
 }
 
-// TEST401: File-path array with glob expansion (test-edge3)
+// TEST701: File-path array with glob expansion (test-edge3)
 #[test]
-fn test401_filepath_array_glob() {
+fn test701_filepath_array_glob() {
     let temp = TempDir::new().unwrap();
     fs::write(temp.path().join("file1.txt"), "CONTENT1").unwrap();
     fs::write(temp.path().join("file2.txt"), "CONTENT2").unwrap();
@@ -67,9 +67,9 @@ fn test401_filepath_array_glob() {
     assert!(result.contains("CONTENT2"));
 }
 
-// TEST402: Large payload auto-chunking (1MB response)
+// TEST702: Large payload auto-chunking (1MB response)
 #[test]
-fn test402_large_payload_1mb() {
+fn test702_large_payload_1mb() {
     let output = Command::new(testcartridge_bin())
         .args(&["test-large", "--size", "1048576"])
         .output()
@@ -86,21 +86,21 @@ fn test402_large_payload_1mb() {
     }
 }
 
-// TEST403: Plugin chain via PeerInvoker
+// TEST703: Plugin chain via PeerInvoker
 // This test is run via macino's integration test suite using --dev-bins
 // Macino spawns testcartridge and routes peer invoke requests through its router
 // The test-peer cap in testcartridge invokes test-edge1 and test-edge2 via PeerInvoker
 // See macino/tests/ for the actual integration test
 #[test]
 #[ignore] // Run via macino integration tests, not standalone
-fn test403_peer_invoke_chain() {
+fn test703_peer_invoke_chain() {
     // Tested via: macino test --dev-bins ./target/release/testcartridge
     // Expected: test-peer invokes test-edge1 → test-edge2 chain successfully
 }
 
-// TEST404: Multi-argument cap (test-edge5)
+// TEST704: Multi-argument cap (test-edge5)
 #[test]
-fn test404_multi_argument() {
+fn test704_multi_argument() {
     let temp = TempDir::new().unwrap();
     let file1 = temp.path().join("arg1.txt");
     let file2 = temp.path().join("arg2.txt");
@@ -127,9 +127,9 @@ fn test404_multi_argument() {
     assert_eq!(result.trim(), "ARG1+ARG2");
 }
 
-// TEST405: Piped stdin input (no file-path conversion)
+// TEST705: Piped stdin input (no file-path conversion)
 #[test]
-fn test405_piped_stdin() {
+fn test705_piped_stdin() {
     let mut child = Command::new(testcartridge_bin())
         .args(&["test-edge1", "--prefix", ">>>"])
         .stdin(std::process::Stdio::piped())
@@ -150,9 +150,9 @@ fn test405_piped_stdin() {
     assert_eq!(result.trim(), ">>>PIPED DATA");
 }
 
-// TEST406: Empty file handling
+// TEST706: Empty file handling
 #[test]
-fn test406_empty_file() {
+fn test706_empty_file() {
     let temp = TempDir::new().unwrap();
     let test_file = temp.path().join("empty.txt");
     fs::write(&test_file, "").unwrap();
@@ -172,9 +172,9 @@ fn test406_empty_file() {
     assert_eq!(result.trim(), "EMPTY:");
 }
 
-// TEST407: UTF-8 file handling (textable constraint)
+// TEST707: UTF-8 file handling (textable constraint)
 #[test]
-fn test407_utf8_file() {
+fn test707_utf8_file() {
     let temp = TempDir::new().unwrap();
     let test_file = temp.path().join("utf8.txt");
     let utf8_data = "Hello 世界 🌍"; // Mix of ASCII, CJK, emoji
@@ -195,9 +195,9 @@ fn test407_utf8_file() {
     assert_eq!(result.trim(), format!(">>>{}", utf8_data));
 }
 
-// TEST408: Missing file error handling
+// TEST708: Missing file error handling
 #[test]
-fn test408_missing_file() {
+fn test708_missing_file() {
     let output = Command::new(testcartridge_bin())
         .args(&[
             "test-edge1",

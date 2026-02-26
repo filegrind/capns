@@ -1068,9 +1068,9 @@ mod tests {
         assert_eq!(resolved.extensions, vec!["pdf".to_string()]);
     }
 
-    // TEST108: Test extensions serializes/deserializes correctly in MediaSpecDef
+    // TEST892: Test extensions serializes/deserializes correctly in MediaSpecDef
     #[test]
-    fn test108_extensions_serialization() {
+    fn test892_extensions_serialization() {
         let def = MediaSpecDef {
             urn: "media:json-data".to_string(),
             media_type: "application/json".to_string(),
@@ -1090,9 +1090,9 @@ mod tests {
         assert_eq!(parsed.extensions, vec!["json".to_string()]);
     }
 
-    // TEST109: Test extensions can coexist with metadata and validation
+    // TEST893: Test extensions can coexist with metadata and validation
     #[tokio::test]
-    async fn test109_extensions_with_metadata_and_validation() {
+    async fn test893_extensions_with_metadata_and_validation() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {
@@ -1125,9 +1125,9 @@ mod tests {
         assert_eq!(resolved.extensions, vec!["json".to_string()]);
     }
 
-    // TEST110: Test multiple extensions in a media spec
+    // TEST894: Test multiple extensions in a media spec
     #[tokio::test]
-    async fn test110_multiple_extensions() {
+    async fn test894_multiple_extensions() {
         let registry = test_registry().await;
         let media_specs = create_media_specs(vec![
             MediaSpecDef {

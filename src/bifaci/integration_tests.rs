@@ -160,9 +160,9 @@ mod tests {
         (reader, writer)
     }
 
-    // TEST426: Full path: engine REQ → runtime → plugin → response back through relay
+    // TEST896: Full path: engine REQ → runtime → plugin → response back through relay
     #[tokio::test]
-    async fn test426_full_path_engine_req_to_plugin_response() {
+    async fn test896_full_path_engine_req_to_plugin_response() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"EchoPlugin","version":"1.0","description":"Echo test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Test","command":"test","args":[]}]}"#;
@@ -269,9 +269,9 @@ mod tests {
         plugin_handle.join().unwrap();
     }
 
-    // TEST427: Plugin ERR frame flows back to engine through relay
+    // TEST897: Plugin ERR frame flows back to engine through relay
     #[tokio::test]
-    async fn test427_plugin_error_flows_to_engine() {
+    async fn test897_plugin_error_flows_to_engine() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"ErrPlugin","version":"1.0","description":"Error test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=fail;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -341,9 +341,9 @@ mod tests {
         plugin_handle.join().unwrap();
     }
 
-    // TEST428: Binary data integrity through full relay path (256 byte values)
+    // TEST898: Binary data integrity through full relay path (256 byte values)
     #[tokio::test]
-    async fn test428_binary_integrity_through_relay() {
+    async fn test898_binary_integrity_through_relay() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"BinPlugin","version":"1.0","description":"Binary test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=binary;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -455,9 +455,9 @@ mod tests {
         plugin_handle.join().unwrap();
     }
 
-    // TEST429: Streaming chunks flow through relay without accumulation
+    // TEST899: Streaming chunks flow through relay without accumulation
     #[tokio::test]
-    async fn test429_streaming_chunks_through_relay() {
+    async fn test899_streaming_chunks_through_relay() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"StreamPlugin","version":"1.0","description":"Streaming test plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=stream;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -551,9 +551,9 @@ mod tests {
     // Real system requires RelaySwitch to assign XIDs to peer requests.
     // Peer invoke functionality is tested in bidirectional_interop tests with full relay stack.
 
-    // TEST431: Two plugins routed independently by cap_urn
+    // TEST900: Two plugins routed independently by cap_urn
     #[tokio::test]
-    async fn test431_two_plugins_routed_independently() {
+    async fn test900_two_plugins_routed_independently() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest_a = r#"{"name":"PluginA","version":"1.0","description":"Plugin A","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=alpha;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -684,9 +684,9 @@ mod tests {
         plugin_b.join().unwrap();
     }
 
-    // TEST432: REQ for unknown cap returns ERR frame (not fatal)
+    // TEST901: REQ for unknown cap returns ERR frame (not fatal)
     #[tokio::test]
-    async fn test432_req_for_unknown_cap_returns_err_frame() {
+    async fn test901_req_for_unknown_cap_returns_err_frame() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"OnePlugin","version":"1.0","description":"Known cap plugin","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=known;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
@@ -1155,7 +1155,7 @@ mod tests {
     // This verifies that attach_plugin completes identity verification end-to-end
     // and the plugin is ready to handle subsequent requests.
     #[tokio::test]
-    async fn test489_full_path_identity_verification() {
+    async fn test906_full_path_identity_verification() {
         use crate::bifaci::host_runtime::PluginHostRuntime;
 
         let manifest = r#"{"name":"IdentityE2E","version":"1.0","description":"Identity test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;

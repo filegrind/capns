@@ -1397,17 +1397,17 @@ mod tests {
         assert_ne!(checksum1, 0, "checksum should not be zero for non-empty data");
     }
 
-    // TEST437: Verify FNV-1a checksum handles empty data
+    // TEST902: Verify FNV-1a checksum handles empty data
     #[test]
-    fn test437_compute_checksum_empty() {
+    fn test902_compute_checksum_empty() {
         let empty = b"";
         let checksum = Frame::compute_checksum(empty);
         assert_eq!(checksum, 0xcbf29ce484222325, "empty data produces FNV offset basis");
     }
 
-    // TEST438: Verify CHUNK frame can store chunk_index and checksum fields
+    // TEST903: Verify CHUNK frame can store chunk_index and checksum fields
     #[test]
-    fn test438_chunk_with_chunk_index_and_checksum() {
+    fn test903_chunk_with_chunk_index_and_checksum() {
         let id = MessageId::Uuid([1; 16]);
         let stream_id = "test-stream".to_string();
         let payload = b"chunk data".to_vec();
@@ -1423,9 +1423,9 @@ mod tests {
         assert_eq!(frame.checksum, Some(checksum), "checksum should be set");
     }
 
-    // TEST439: Verify STREAM_END frame can store chunk_count field
+    // TEST904: Verify STREAM_END frame can store chunk_count field
     #[test]
-    fn test439_stream_end_with_chunk_count() {
+    fn test904_stream_end_with_chunk_count() {
         let id = MessageId::Uuid([1; 16]);
         let stream_id = "test-stream".to_string();
 
@@ -1952,9 +1952,9 @@ mod tests {
                 "error must mention missing checksum: {}", err);
     }
 
-    // TEST497: CBOR decode REJECTS STREAM_END frame missing chunk_count field
+    // TEST907: CBOR decode REJECTS STREAM_END frame missing chunk_count field
     #[test]
-    fn test497_cbor_rejects_stream_end_without_chunk_count() {
+    fn test907_cbor_rejects_stream_end_without_chunk_count() {
         use crate::bifaci::io::{encode_frame, decode_frame};
 
         let req_id = MessageId::new_uuid();

@@ -615,8 +615,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // TEST721: Tests creation of a simple execution plan with a single capability
+    // Verifies that single_cap() generates a valid plan with input_slot, cap node, and output node
     #[test]
-    fn test_single_cap_plan() {
+    fn test721_single_cap_plan() {
         let plan = CapExecutionPlan::single_cap(
             "cap:test",
             "media:pdf",
@@ -629,8 +631,10 @@ mod tests {
         assert!(plan.validate().is_ok());
     }
 
+    // TEST722: Tests creation of a linear chain of capabilities connected in sequence
+    // Verifies that linear_chain() correctly links multiple caps with proper edges and topological order
     #[test]
-    fn test_linear_chain_plan() {
+    fn test722_linear_chain_plan() {
         let plan = CapExecutionPlan::linear_chain(
             &["cap:a", "cap:b", "cap:c"],
             "media:pdf",
@@ -645,15 +649,19 @@ mod tests {
         assert_eq!(order.len(), 5);
     }
 
+    // TEST723: Tests creation and validation of an empty execution plan with no nodes
+    // Verifies that plans without capabilities are valid and handle zero nodes correctly
     #[test]
-    fn test_empty_plan() {
+    fn test723_empty_plan() {
         let plan = CapExecutionPlan::new("empty");
         assert_eq!(plan.nodes.len(), 0);
         assert!(plan.validate().is_ok());
     }
 
+    // TEST724: Tests storing and retrieving metadata attached to an execution plan
+    // Verifies that arbitrary JSON metadata can be associated with a plan for context preservation
     #[test]
-    fn test_plan_with_metadata() {
+    fn test724_plan_with_metadata() {
         let mut plan = CapExecutionPlan::new("test");
         let mut metadata = HashMap::new();
         metadata.insert("source".to_string(), json!("pdf"));
@@ -667,8 +675,10 @@ mod tests {
         );
     }
 
+    // TEST725: Tests plan validation detects edges pointing to non-existent nodes
+    // Verifies that validate() returns an error when an edge references a missing to_node
     #[test]
-    fn test_validate_invalid_edge() {
+    fn test725_validate_invalid_edge() {
         let mut plan = CapExecutionPlan::new("invalid");
         plan.nodes.insert(
             "node_0".to_string(),
@@ -682,8 +692,10 @@ mod tests {
         assert!(error.contains("Edge to_node 'nonexistent' not found"));
     }
 
+    // TEST726: Tests topological sort correctly orders a diamond-shaped DAG (A→B,C→D)
+    // Verifies that nodes with multiple paths respect dependency constraints (A first, D last)
     #[test]
-    fn test_topological_order_diamond() {
+    fn test726_topological_order_diamond() {
         // Diamond: A -> B, A -> C, B -> D, C -> D
         let mut plan = CapExecutionPlan::new("diamond");
 
@@ -706,8 +718,10 @@ mod tests {
         assert_eq!(order[3].id, "D");
     }
 
+    // TEST727: Tests topological sort detects and rejects cyclic dependencies (A→B→C→A)
+    // Verifies that circular references produce a "Cycle detected" error
     #[test]
-    fn test_topological_order_detects_cycle() {
+    fn test727_topological_order_detects_cycle() {
         // Cycle: A -> B -> C -> A
         let mut plan = CapExecutionPlan::new("cyclic");
 
@@ -725,8 +739,10 @@ mod tests {
         assert!(error.contains("Cycle detected"));
     }
 
+    // TEST728: Tests CapNode helper methods for identifying node types (cap, fan-out, fan-in)
+    // Verifies is_cap(), is_fan_out(), is_fan_in(), and cap_urn() correctly classify node types
     #[test]
-    fn test_cap_node_helpers() {
+    fn test728_cap_node_helpers() {
         let cap_node = CapNode::cap("test", "cap:test");
         assert!(cap_node.is_cap());
         assert!(!cap_node.is_fan_out());
@@ -745,8 +761,10 @@ mod tests {
         assert!(collect_node.is_fan_in());
     }
 
+    // TEST729: Tests creation and classification of different edge types (Direct, Iteration, Collection, JsonField)
+    // Verifies that edge constructors produce correct EdgeType variants
     #[test]
-    fn test_edge_types() {
+    fn test729_edge_types() {
         let direct = CapEdge::direct("a", "b");
         assert!(matches!(direct.edge_type, EdgeType::Direct));
 
@@ -760,8 +778,10 @@ mod tests {
         assert!(matches!(json_field.edge_type, EdgeType::JsonField { field } if field == "data"));
     }
 
+    // TEST730: Tests CapChainExecutionResult structure for successful execution outcomes
+    // Verifies that success status, outputs, and primary_output() accessor work correctly
     #[test]
-    fn test_execution_result() {
+    fn test730_execution_result() {
         let mut outputs = HashMap::new();
         outputs.insert("output".to_string(), json!({"result": "success"}));
 
@@ -777,8 +797,10 @@ mod tests {
         assert!(result.primary_output().is_some());
     }
 
+    // TEST731: Tests plan validation detects edges originating from non-existent nodes
+    // Verifies that validate() returns an error when an edge references a missing from_node
     #[test]
-    fn test_validate_invalid_from_node() {
+    fn test731_validate_invalid_from_node() {
         let mut plan = CapExecutionPlan::new("invalid");
         plan.nodes.insert(
             "node_0".to_string(),
@@ -792,8 +814,10 @@ mod tests {
         assert!(error.contains("Edge from_node 'nonexistent' not found"));
     }
 
+    // TEST732: Tests plan validation detects invalid entry node references
+    // Verifies that validate() returns an error when entry_nodes contains a non-existent node ID
     #[test]
-    fn test_validate_invalid_entry_node() {
+    fn test732_validate_invalid_entry_node() {
         let mut plan = CapExecutionPlan::new("invalid_entry");
         plan.nodes.insert(
             "cap_0".to_string(),
@@ -808,8 +832,10 @@ mod tests {
         assert!(error.contains("Entry node 'nonexistent_entry' not found"));
     }
 
+    // TEST733: Tests plan validation detects invalid output node references
+    // Verifies that validate() returns an error when output_nodes contains a non-existent node ID
     #[test]
-    fn test_validate_invalid_output_node() {
+    fn test733_validate_invalid_output_node() {
         let mut plan = CapExecutionPlan::new("invalid_output");
         plan.nodes.insert(
             "cap_0".to_string(),
@@ -824,8 +850,10 @@ mod tests {
         assert!(error.contains("Output node 'nonexistent_output' not found"));
     }
 
+    // TEST734: Tests topological sort detects self-referencing cycles (A→A)
+    // Verifies that self-loops are recognized as cycles and produce an error
     #[test]
-    fn test_topological_order_self_loop() {
+    fn test734_topological_order_self_loop() {
         // Self-loop: A -> A
         let mut plan = CapExecutionPlan::new("self_loop");
 
@@ -838,8 +866,10 @@ mod tests {
         assert!(error.contains("Cycle detected"));
     }
 
+    // TEST735: Tests topological sort handles graphs with multiple independent starting nodes
+    // Verifies that parallel entry points (A→C, B→C) both precede their merge point in ordering
     #[test]
-    fn test_topological_order_multiple_entry_points() {
+    fn test735_topological_order_multiple_entry_points() {
         // Multiple entry points: A -> C, B -> C, C -> D
         let mut plan = CapExecutionPlan::new("multi_entry");
 
@@ -866,8 +896,10 @@ mod tests {
         assert!(c_pos < d_pos);
     }
 
+    // TEST736: Tests topological sort on a complex multi-path DAG with 6 nodes
+    // Verifies that all dependency constraints are satisfied in a graph with multiple converging paths
     #[test]
-    fn test_topological_order_complex_dag() {
+    fn test736_topological_order_complex_dag() {
         // Complex DAG:
         //   A --> B --> D
         //   |     |     |
@@ -910,8 +942,10 @@ mod tests {
         assert!(pos("E") < pos("F"));
     }
 
+    // TEST737: Tests linear_chain() with exactly one capability
+    // Verifies that a single-element chain produces a valid plan with input_slot, cap, and output
     #[test]
-    fn test_linear_chain_single_cap() {
+    fn test737_linear_chain_single_cap() {
         let plan = CapExecutionPlan::linear_chain(
             &["cap:only"],
             "media:pdf",
@@ -923,8 +957,10 @@ mod tests {
         assert!(plan.validate().is_ok());
     }
 
+    // TEST738: Tests linear_chain() with empty capability list
+    // Verifies that an empty chain produces a plan with zero nodes and edges
     #[test]
-    fn test_linear_chain_empty() {
+    fn test738_linear_chain_empty() {
         let plan = CapExecutionPlan::linear_chain(
             &[],
             "media:pdf",
@@ -935,8 +971,10 @@ mod tests {
         assert_eq!(plan.edges.len(), 0);
     }
 
+    // TEST739: Tests NodeExecutionResult structure for successful node execution
+    // Verifies that success status, outputs (binary and text), and error fields work correctly
     #[test]
-    fn test_node_execution_result_success() {
+    fn test739_node_execution_result_success() {
         let result = NodeExecutionResult {
             node_id: "node_0".to_string(),
             success: true,
@@ -951,8 +989,10 @@ mod tests {
         assert_eq!(result.error, None);
     }
 
+    // TEST740: Tests NodeExecutionResult structure for failed node execution
+    // Verifies that failure status, error message, and absence of outputs are correctly represented
     #[test]
-    fn test_node_execution_result_failure() {
+    fn test740_node_execution_result_failure() {
         let result = NodeExecutionResult {
             node_id: "node_0".to_string(),
             success: false,
@@ -967,8 +1007,10 @@ mod tests {
         assert_eq!(result.error, Some("Cap execution failed".to_string()));
     }
 
+    // TEST741: Tests CapChainExecutionResult structure for failed chain execution
+    // Verifies that failure status, error message, and absence of outputs are correctly represented
     #[test]
-    fn test_execution_result_failure() {
+    fn test741_execution_result_failure() {
         let result = CapChainExecutionResult {
             success: false,
             node_results: HashMap::new(),
@@ -982,8 +1024,10 @@ mod tests {
         assert!(result.primary_output().is_none());
     }
 
+    // TEST742: Tests EdgeType enum serialization and deserialization to/from JSON
+    // Verifies that edge types like Direct and JsonField correctly round-trip through serde_json
     #[test]
-    fn test_edge_type_serialization() {
+    fn test742_edge_type_serialization() {
         let direct = EdgeType::Direct;
         let json = serde_json::to_string(&direct).unwrap();
         assert_eq!(json, "\"direct\"");
@@ -997,8 +1041,10 @@ mod tests {
         assert!(json.contains("data"));
     }
 
+    // TEST743: Tests ExecutionNodeType enum serialization and deserialization to/from JSON
+    // Verifies that node types like Cap and ForEach correctly serialize with their fields
     #[test]
-    fn test_execution_node_type_serialization() {
+    fn test743_execution_node_type_serialization() {
         let cap_node = ExecutionNodeType::Cap {
             cap_urn: "cap:test".to_string(),
             arg_bindings: ArgumentBindings::new(),
@@ -1017,8 +1063,10 @@ mod tests {
         assert!(json.contains("for_each"));
     }
 
+    // TEST744: Tests CapExecutionPlan serialization and deserialization to/from JSON
+    // Verifies that complete plans with nodes and edges correctly round-trip through JSON
     #[test]
-    fn test_plan_serialization() {
+    fn test744_plan_serialization() {
         let plan = CapExecutionPlan::single_cap(
             "cap:test",
             "media:pdf",
@@ -1036,8 +1084,10 @@ mod tests {
         assert_eq!(deserialized.edges.len(), plan.edges.len());
     }
 
+    // TEST745: Tests MergeStrategy enum serialization to JSON
+    // Verifies that merge strategies like Concat and ZipWith serialize to correct string values
     #[test]
-    fn test_merge_strategy_serialization() {
+    fn test745_merge_strategy_serialization() {
         let concat = MergeStrategy::Concat;
         let json = serde_json::to_string(&concat).unwrap();
         assert_eq!(json, "\"concat\"");
@@ -1047,8 +1097,10 @@ mod tests {
         assert_eq!(json, "\"zip_with\"");
     }
 
+    // TEST746: Tests creation of Output node type that references a source node
+    // Verifies that CapNode::output() correctly constructs an Output node with name and source
     #[test]
-    fn test_cap_node_output() {
+    fn test746_cap_node_output() {
         let output = CapNode::output("out", "result", "source");
         match &output.node_type {
             ExecutionNodeType::Output { output_name, source_node } => {
@@ -1059,8 +1111,10 @@ mod tests {
         }
     }
 
+    // TEST747: Tests creation and validation of Merge node that combines multiple inputs
+    // Verifies that Merge nodes with multiple input nodes and a strategy can be added to plans
     #[test]
-    fn test_cap_node_merge() {
+    fn test747_cap_node_merge() {
         let mut plan = CapExecutionPlan::new("merge_test");
 
         // Create merge node manually
@@ -1082,8 +1136,10 @@ mod tests {
         assert!(plan.validate().is_ok());
     }
 
+    // TEST748: Tests creation of Split node that distributes input to multiple outputs
+    // Verifies that Split nodes correctly specify an input node and output count
     #[test]
-    fn test_cap_node_split() {
+    fn test748_cap_node_split() {
         let split_node = CapNode {
             id: "split".to_string(),
             node_type: ExecutionNodeType::Split {
@@ -1102,8 +1158,10 @@ mod tests {
         }
     }
 
+    // TEST749: Tests get_node() method for looking up nodes by ID in a plan
+    // Verifies that existing nodes are found and non-existent nodes return None
     #[test]
-    fn test_get_node() {
+    fn test749_get_node() {
         let plan = CapExecutionPlan::single_cap(
             "cap:test",
             "media:pdf",
