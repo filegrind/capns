@@ -1,11 +1,20 @@
 //! Planner — planning, discovery, and execution for cap chains
 //!
 //! This module provides:
-//! - **Cardinality analysis** from media URNs
+//! - **Shape analysis** from media URNs (cardinality + structure)
 //! - **Argument binding** and resolution for cap execution
 //! - **Execution plan** structures (DAG of caps)
 //! - **Plan builder** — path finding and plan construction
 //! - **Plan executor** — generic execution engine with pluggable cap backends
+//!
+//! ## Shape Dimensions
+//!
+//! Media shapes have two orthogonal dimensions:
+//!
+//! 1. **Cardinality** - scalar (Single) vs list (Sequence)
+//!    - Detected from `list` marker tag
+//! 2. **Structure** - opaque vs record
+//!    - Detected from `record` marker tag
 //!
 //! Both macina (desktop app) and macino (CLI harness) use this same code.
 
@@ -18,10 +27,16 @@ pub mod plan;
 pub mod plan_builder;
 pub mod executor;
 
-// Re-exports
+// Re-exports - Shape types (cardinality + structure)
 pub use cardinality::{
-    CardinalityChainAnalysis, CardinalityCompatibility, CardinalityPattern,
-    CapCardinalityInfo, InputCardinality,
+    // Cardinality dimension
+    InputCardinality, CardinalityCompatibility, CardinalityPattern,
+    // Structure dimension
+    InputStructure, StructureCompatibility,
+    // Combined shape
+    MediaShape, ShapeCompatibility,
+    // Per-cap shape info and chain analysis
+    CapShapeInfo, ShapeChainAnalysis,
 };
 pub use argument_binding::{
     ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,

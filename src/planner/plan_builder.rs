@@ -15,7 +15,7 @@ use serde_json::json;
 use crate::{Cap, CapRegistry, MediaUrn, MediaUrnRegistry, MediaValidation};
 use super::argument_binding::{ArgumentBinding, ArgumentBindings, CapInputFile};
 use super::cardinality::{
-    CapCardinalityInfo, CardinalityChainAnalysis, InputCardinality,
+    CapShapeInfo, ShapeChainAnalysis, InputCardinality, MediaShape,
 };
 use super::plan::{
     CapEdge, CapExecutionPlan, CapNode,
@@ -24,12 +24,12 @@ use super::PlannerError;
 
 type PlannerResult<T> = Result<T, PlannerError>;
 
-/// Information about a cap in a chain, including cardinality and file-path argument info.
-/// This struct combines cardinality analysis with argument binding information.
+/// Information about a cap in a chain, including shape and file-path argument info.
+/// This struct combines shape analysis (cardinality + structure) with argument binding information.
 #[derive(Debug, Clone)]
 struct CapChainInfo {
-    /// Cardinality information for the cap
-    cardinality: CapCardinalityInfo,
+    /// Shape information for the cap (cardinality + structure)
+    shape: CapShapeInfo,
     /// Name of the file-path argument (found by media URN type, not by name convention)
     file_path_arg_name: Option<String>,
     /// True if the file-path arg has a stdin source matching the cap's in_spec.
@@ -268,12 +268,19 @@ impl CapPlanBuilder {
 
         let cap_chain_infos = self.get_cap_chain_info(&cap_urns).await?;
 
-        let cap_cardinalities: Vec<CapCardinalityInfo> = cap_chain_infos
+        let cap_shapes: Vec<CapShapeInfo> = cap_chain_infos
             .iter()
-            .map(|info| info.cardinality.clone())
+            .map(|info| info.shape.clone())
             .collect();
 
-        let analysis = CardinalityChainAnalysis::analyze(cap_cardinalities);
+        let analysis = ShapeChainAnalysis::analyze(cap_shapes);
+
+        // Check for shape errors (structure mismatches)
+        if !analysis.is_valid {
+            return Err(PlannerError::InvalidInput(
+                analysis.error.unwrap_or_else(|| "Shape analysis failed".to_string())
+            ));
+        }
 
         self.build_plan_from_analysis(
             source_media,
@@ -284,7 +291,7 @@ impl CapPlanBuilder {
         )
     }
 
-    /// Get cardinality and file-path argument info for a chain of caps.
+    /// Get shape and file-path argument info for a chain of caps.
     async fn get_cap_chain_info(&self, cap_urns: &[String]) -> PlannerResult<Vec<CapChainInfo>> {
         let caps = self.cap_registry.get_cached_caps().await
             .map_err(|e| PlannerError::RegistryError(format!("Failed to get caps: {}", e)))?;
@@ -300,15 +307,16 @@ impl CapPlanBuilder {
                 let file_path_arg_name = Self::find_file_path_arg(cap);
                 let file_path_is_stdin_chainable = Self::is_file_path_stdin_chainable(cap);
                 infos.push(CapChainInfo {
-                    cardinality: CapCardinalityInfo::from_cap_specs(urn, in_spec, out_spec),
+                    shape: CapShapeInfo::from_cap_specs(urn, in_spec, out_spec),
                     file_path_arg_name,
                     file_path_is_stdin_chainable,
                 });
             } else {
+                // Cap not found - use default scalar opaque shape
                 infos.push(CapChainInfo {
-                    cardinality: CapCardinalityInfo {
-                        input: InputCardinality::Single,
-                        output: InputCardinality::Single,
+                    shape: CapShapeInfo {
+                        input: MediaShape::scalar_opaque(),
+                        output: MediaShape::scalar_opaque(),
                         cap_urn: urn.clone(),
                     },
                     file_path_arg_name: None,
@@ -320,13 +328,13 @@ impl CapPlanBuilder {
         Ok(infos)
     }
 
-    /// Build plan from cardinality analysis.
+    /// Build plan from shape analysis.
     fn build_plan_from_analysis(
         &self,
         source_media: &str,
         target_media: &str,
         cap_chain_infos: &[CapChainInfo],
-        analysis: &CardinalityChainAnalysis,
+        analysis: &ShapeChainAnalysis,
         input_files: Vec<CapInputFile>,
     ) -> PlannerResult<CapExecutionPlan> {
         let mut plan = CapExecutionPlan::new(&format!(
@@ -390,7 +398,7 @@ impl CapPlanBuilder {
 
         for (i, info) in cap_chain_infos.iter().enumerate() {
             let node_id = format!("cap_{}", i);
-            let cap_urn = &info.cardinality.cap_urn;
+            let cap_urn = &info.shape.cap_urn;
 
             let mut bindings = ArgumentBindings::new();
 
@@ -426,13 +434,13 @@ impl CapPlanBuilder {
         plan: &mut CapExecutionPlan,
         entry_node: &str,
         cap_chain_infos: &[CapChainInfo],
-        analysis: &CardinalityChainAnalysis,
+        analysis: &ShapeChainAnalysis,
     ) -> PlannerResult<()> {
         let mut prev_node_id = entry_node.to_string();
         let mut node_counter = 0;
 
         for (i, info) in cap_chain_infos.iter().enumerate() {
-            let cap_urn = &info.cardinality.cap_urn;
+            let cap_urn = &info.shape.cap_urn;
             let needs_fan_out = analysis.fan_out_points.contains(&i);
 
             if needs_fan_out {
@@ -499,23 +507,23 @@ impl CapPlanBuilder {
     }
 
     /// Analyze what transformations would be needed for a path
-    pub async fn analyze_path_cardinality(
+    pub async fn analyze_path_shape(
         &self,
         source_media: &str,
         target_media: &str,
-    ) -> PlannerResult<CardinalityChainAnalysis> {
+    ) -> PlannerResult<ShapeChainAnalysis> {
         let cap_urns = self.find_path(source_media, target_media).await?;
 
         if cap_urns.is_empty() {
-            return Ok(CardinalityChainAnalysis::analyze(vec![]));
+            return Ok(ShapeChainAnalysis::analyze(vec![]));
         }
 
         let cap_chain_infos = self.get_cap_chain_info(&cap_urns).await?;
-        let cardinalities: Vec<CapCardinalityInfo> = cap_chain_infos
+        let shapes: Vec<CapShapeInfo> = cap_chain_infos
             .iter()
-            .map(|info| info.cardinality.clone())
+            .map(|info| info.shape.clone())
             .collect();
-        Ok(CardinalityChainAnalysis::analyze(cardinalities))
+        Ok(ShapeChainAnalysis::analyze(shapes))
     }
 
     /// Build a plan from a pre-defined path.

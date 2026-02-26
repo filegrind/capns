@@ -99,9 +99,10 @@ pub use bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWri
 // Planner — planning, discovery, and execution for cap chains
 pub use planner::{
     PlannerError, PlannerResult, CapExecutor, CapSettingsProvider,
-    // Cardinality
-    InputCardinality, CapCardinalityInfo, CardinalityChainAnalysis,
-    CardinalityCompatibility, CardinalityPattern,
+    // Shape (cardinality + structure)
+    InputCardinality, InputStructure, MediaShape,
+    CardinalityCompatibility, CardinalityPattern, StructureCompatibility, ShapeCompatibility,
+    CapShapeInfo, ShapeChainAnalysis,
     // Argument binding
     ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,
     CapChainInput, CapFileMetadata, CapInputFile, ResolvedArgument, SourceEntityType,
