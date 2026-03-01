@@ -1,6 +1,6 @@
 # Cardinality and Structure Design Document
 
-This document defines the two orthogonal dimensions for describing media data shapes using marker tags in capns.
+This document defines the two orthogonal dimensions for describing media data shapes using marker tags in capdag.
 
 ## The Two Dimensions
 

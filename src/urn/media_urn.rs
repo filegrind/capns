@@ -139,7 +139,7 @@ pub fn audio_media_urn_for_ext(ext: &str) -> String {
     format!("media:audio;ext={}", ext)
 }
 
-// CAPNS output types - record marker for structured JSON objects, list marker for arrays
+// CAPDAG output types - record marker for structured JSON objects, list marker for arrays
 /// Media URN for model dimension output - scalar by default (no list marker)
 pub const MEDIA_MODEL_DIM: &str = "media:integer;model-dim;numeric;textable";
 /// Media URN for model download output - has record marker

@@ -12,7 +12,7 @@ media:<type>[;subtype=<subtype>][;v=<version>][;<coercion-tag>]...
 
 ## Core Primitive Types
 
-These are the fundamental data types with defined constants in `capns::media_urn`.
+These are the fundamental data types with defined constants in `capdag::media_urn`.
 
 | Media URN | Constant | Description |
 |-----------|----------|-------------|
@@ -186,7 +186,7 @@ urn.is_binary()  // true for binary, image/*
 
 When adding a new media URN type:
 
-1. Add constant to `capns/src/media_urn.rs` if frequently used
+1. Add constant to `capdag/src/media_urn.rs` if frequently used
 2. Update `media_urn_to_extension()` in chip storage if it needs file extension mapping
 3. Update Swift `String+MediaUrn.swift` helpers if needed for UI
 4. Document in this catalog

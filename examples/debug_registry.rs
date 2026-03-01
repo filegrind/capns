@@ -1,13 +1,13 @@
 use reqwest;
 use serde_json;
-use capns::Cap;
+use capdag::Cap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Debug registry response parsing...");
     
     let cap_urn = "cap:op=bitlogic;language=en;constrained";
-    let url = format!("https://capns.org/{}", cap_urn);
+    let url = format!("https://capdag.com/{}", cap_urn);
     
     println!("Fetching from: {}", url);
     

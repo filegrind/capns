@@ -1,10 +1,10 @@
-# CapNs Architecture
+# CapDAG Architecture
 
-This document describes the capability lookup and execution architecture in CapNs.
+This document describes the capability lookup and execution architecture in CapDAG.
 
 ## Overview
 
-CapNs provides a unified system for discovering and executing capabilities across multiple providers. The architecture consists of three main components:
+CapDAG provides a unified system for discovering and executing capabilities across multiple providers. The architecture consists of three main components:
 
 1. **CapSet** - Trait for capability execution
 2. **CapMatrix** - Registry for capability providers within a single domain
@@ -262,5 +262,5 @@ match cap_block.can("cap:op=generate_thumbnail;ext=pdf") {
 ## See Also
 
 - [RULES.md](RULES.md) - Cap URN format specification and matching semantics
-- [README-REGISTRY.md](README-REGISTRY.md) - capns.org registry integration
+- [README-REGISTRY.md](README-REGISTRY.md) - capdag.com registry integration
 - [MEDIA_SPEC_SYSTEM.md](MEDIA_SPEC_SYSTEM.md) - Media type specifications

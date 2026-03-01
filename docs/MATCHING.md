@@ -6,7 +6,7 @@ Cap matching extends Tagged URN matching with direction specifier awareness. For
 
 - **Base Specification:** [Tagged URN RULES.md](https://github.com/machinefabric/tagged-urn-rs/blob/main/docs/RULES.md) (Matching Semantics section)
 - **Cap-Specific Rules:** [Cap URN RULES.md](./RULES.md)
-- **Reference Implementation:** `capns/src/cap_urn.rs`
+- **Reference Implementation:** `capdag/src/cap_urn.rs`
 
 ## Per-Tag Value Semantics
 

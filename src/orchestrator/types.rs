@@ -129,7 +129,7 @@ pub trait CapRegistryTrait: Send + Sync {
     async fn lookup(&self, urn: &str) -> Result<Cap, ParseOrchestrationError>;
 }
 
-/// Implementation for capns::CapRegistry
+/// Implementation for capdag::CapRegistry
 #[async_trait::async_trait]
 impl CapRegistryTrait for crate::CapRegistry {
     async fn lookup(&self, urn: &str) -> Result<Cap, ParseOrchestrationError> {

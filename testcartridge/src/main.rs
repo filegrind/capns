@@ -13,7 +13,7 @@
 //! 2. **CLI Mode** (any CLI args): Command-line invocation with args parsed from manifest
 
 use anyhow::Result;
-use capns::{
+use capdag::{
     ArgSource, Cap, CapArg, CapManifest, CapUrn, PluginRuntime,
     OutputStream, Request, WET_KEY_REQUEST,
     Op, OpMetadata, DryContext, WetContext, OpResult, OpError, async_trait,

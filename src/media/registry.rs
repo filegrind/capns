@@ -1,7 +1,7 @@
 //! Media URN Registry - Remote lookup and caching for media specs
 //!
 //! This module provides the `MediaUrnRegistry` which handles:
-//! - Remote lookup of media specs via `https://capns.org/media:xxx`
+//! - Remote lookup of media specs via `https://capdag.com/media:xxx`
 //! - Two-level caching (in-memory HashMap + disk with TTL)
 //! - Bundled standard media specs at compile time
 //!
@@ -119,8 +119,8 @@ impl MediaUrnRegistry {
     /// Create a new MediaUrnRegistry with standard media specs bundled
     ///
     /// Uses configuration from environment variables or defaults:
-    /// - `CAPNS_REGISTRY_URL`: Base URL for the registry (default: https://capns.org)
-    /// - `CAPNS_SCHEMA_BASE_URL`: Base URL for schemas (default: {registry_url}/schema)
+    /// - `CAPDAG_REGISTRY_URL`: Base URL for the registry (default: https://capdag.com)
+    /// - `CAPDAG_SCHEMA_BASE_URL`: Base URL for schemas (default: {registry_url}/schema)
     pub async fn new() -> Result<Self, MediaRegistryError> {
         Self::with_config(RegistryConfig::default()).await
     }
@@ -129,7 +129,7 @@ impl MediaUrnRegistry {
     ///
     /// # Example
     /// ```ignore
-    /// use capns::registry::RegistryConfig;
+    /// use capdag::registry::RegistryConfig;
     /// let config = RegistryConfig::new()
     ///     .with_registry_url("https://my-registry.example.com");
     /// let registry = MediaUrnRegistry::with_config(config).await?;
@@ -430,7 +430,7 @@ impl MediaUrnRegistry {
         index.get(&ext_lower).cloned().ok_or_else(|| {
             MediaRegistryError::ExtensionNotFound(format!(
                 "No media spec registered for extension '{}'. \
-                Ensure the media spec is defined in capns-dot-org/standard/media/ with an 'extension' field.",
+                Ensure the media spec is defined in capdag-dot-com/standard/media/ with an 'extension' field.",
                 extension
             ))
         })
@@ -450,7 +450,7 @@ impl MediaUrnRegistry {
         let mut cache_dir = dirs::cache_dir().ok_or_else(|| {
             MediaRegistryError::CacheError("Could not determine cache directory".to_string())
         })?;
-        cache_dir.push("capns");
+        cache_dir.push("capdag");
         cache_dir.push("media");
         Ok(cache_dir)
     }
@@ -693,7 +693,7 @@ mod tests {
             urn: "media:pdf".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF Document".to_string(),
-            profile_uri: Some("https://capns.org/schema/pdf".to_string()),
+            profile_uri: Some("https://capdag.com/schema/pdf".to_string()),
             schema: None,
             description: Some("PDF document data".to_string()),
             validation: None,

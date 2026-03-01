@@ -43,5 +43,5 @@ authors = ["https://github.com/machinefabric"]
 description = "Core cap URN and definition system for MACINA plugins"
 edition = "2021"
 license = "MIT"
-name = "capns"
+name = "capdag"
 version = "{{ project.version }}"

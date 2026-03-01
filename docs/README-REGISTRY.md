@@ -1,13 +1,13 @@
 # Capns Registry Integration
 
-This document describes the registry integration features that have been added to all capns implementations.
+This document describes the registry integration features that have been added to all capdag implementations.
 
 ## Overview
 
-The capns registry (https://capns.org) provides canonical definitions for cap URNs. The registry integration features include:
+The capdag registry (https://capdag.com) provides canonical definitions for cap URNs. The registry integration features include:
 
 - **Local-first caching**: Check local cache before hitting the registry
-- **Automatic fallback**: Query capns.org if not cached locally 
+- **Automatic fallback**: Query capdag.com if not cached locally 
 - **Persistent caching**: Cache definitions to avoid repeated network calls
 - **Validation**: Reject caps without canonical definitions
 - **Media validation**: Validate cap calls against registry schemas
@@ -17,7 +17,7 @@ The capns registry (https://capns.org) provides canonical definitions for cap UR
 ### Rust
 
 ```rust
-use capns::{CapRegistry, RegistryValidator};
+use capdag::{CapRegistry, RegistryValidator};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,12 +56,12 @@ import (
     "fmt"
     "log"
     
-    capns "github.com/machfab/capns-go"
+    capdag "github.com/machfab/capdag-go"
 )
 
 func main() {
     // Simple: Get a ready-to-use cap
-    registry, err := capns.NewCapRegistry()
+    registry, err := capdag.NewCapRegistry()
     if err != nil {
         log.Fatal(err)
     }
@@ -88,7 +88,7 @@ func main() {
     }
     
     // Using validator for additional validation
-    validator, err := capns.NewRegistryValidator()
+    validator, err := capdag.NewRegistryValidator()
     if err != nil {
         log.Fatal(err)
     }
@@ -105,7 +105,7 @@ func main() {
 ### Objective-C
 
 ```objc
-#import <CapNs/CapNs.h>
+#import <CapDAG/CapDAG.h>
 
 int main() {
     // Simple: Get a ready-to-use cap

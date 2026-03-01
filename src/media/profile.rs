@@ -27,7 +27,7 @@ const CACHE_DURATION_HOURS: u64 = 24 * 7; // Cache for 1 week
 mod embedded_schemas {
     pub const STR_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/str",
+        "$id": "https://capdag.com/schema/str",
         "title": "String",
         "description": "A JSON string value",
         "type": "string"
@@ -35,7 +35,7 @@ mod embedded_schemas {
 
     pub const INT_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/int",
+        "$id": "https://capdag.com/schema/int",
         "title": "Integer",
         "description": "A JSON integer value",
         "type": "integer"
@@ -43,7 +43,7 @@ mod embedded_schemas {
 
     pub const NUM_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/num",
+        "$id": "https://capdag.com/schema/num",
         "title": "Number",
         "description": "A JSON number value (integer or floating point)",
         "type": "number"
@@ -51,7 +51,7 @@ mod embedded_schemas {
 
     pub const BOOL_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/bool",
+        "$id": "https://capdag.com/schema/bool",
         "title": "Boolean",
         "description": "A JSON boolean value (true or false)",
         "type": "boolean"
@@ -59,7 +59,7 @@ mod embedded_schemas {
 
     pub const OBJ_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/obj",
+        "$id": "https://capdag.com/schema/obj",
         "title": "Object",
         "description": "A JSON object value",
         "type": "object"
@@ -67,7 +67,7 @@ mod embedded_schemas {
 
     pub const STR_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/str-array",
+        "$id": "https://capdag.com/schema/str-array",
         "title": "String Array",
         "description": "A JSON array of string values",
         "type": "array",
@@ -76,7 +76,7 @@ mod embedded_schemas {
 
     pub const NUM_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/num-array",
+        "$id": "https://capdag.com/schema/num-array",
         "title": "Number Array",
         "description": "A JSON array of number values",
         "type": "array",
@@ -85,7 +85,7 @@ mod embedded_schemas {
 
     pub const BOOL_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/bool-array",
+        "$id": "https://capdag.com/schema/bool-array",
         "title": "Boolean Array",
         "description": "A JSON array of boolean values",
         "type": "array",
@@ -94,7 +94,7 @@ mod embedded_schemas {
 
     pub const OBJ_ARRAY_SCHEMA: &str = r#"{
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://capns.org/schema/obj-array",
+        "$id": "https://capdag.com/schema/obj-array",
         "title": "Object Array",
         "description": "A JSON array of object values",
         "type": "array",
@@ -251,7 +251,7 @@ impl ProfileSchemaRegistry {
             .ok_or_else(|| ProfileSchemaError::CacheError(
                 "Could not determine cache directory".to_string()
             ))?;
-        Ok(cache_dir.join("capns").join("profile_schemas"))
+        Ok(cache_dir.join("capdag").join("profile_schemas"))
     }
 
     fn cache_key(&self, profile_url: &str) -> String {
@@ -661,7 +661,7 @@ mod tests {
         }
 
         // Non-embedded profiles
-        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://capns.org/schema/custom"));
+        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://capdag.com/schema/custom"));
         assert!(!ProfileSchemaRegistry::is_embedded_profile(""));
         assert!(!ProfileSchemaRegistry::is_embedded_profile("https://example.com/schema/str"));
     }

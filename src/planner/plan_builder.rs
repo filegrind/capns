@@ -1401,7 +1401,7 @@ mod tests {
     fn create_test_plan_builder() -> CapPlanBuilder {
         let cap_registry = CapRegistry::new_for_test();
         let media_registry = MediaUrnRegistry::new_for_test(
-            std::env::temp_dir().join(format!("capns_test_{}", uuid::Uuid::new_v4()))
+            std::env::temp_dir().join(format!("capdag_test_{}", uuid::Uuid::new_v4()))
         ).expect("Failed to create test media registry");
         CapPlanBuilder::new(
             Arc::new(cap_registry),
@@ -1411,7 +1411,7 @@ mod tests {
 
     fn create_test_plan_builder_with_registry(cap_registry: CapRegistry) -> CapPlanBuilder {
         let media_registry = MediaUrnRegistry::new_for_test(
-            std::env::temp_dir().join(format!("capns_test_{}", uuid::Uuid::new_v4()))
+            std::env::temp_dir().join(format!("capdag_test_{}", uuid::Uuid::new_v4()))
         ).expect("Failed to create test media registry");
         CapPlanBuilder::new(
             Arc::new(cap_registry),

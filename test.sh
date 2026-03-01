@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# run_all_tests.sh - Run all tests in capns and subprojects
+# run_all_tests.sh - Run all tests in capdag and subprojects
 # Usage: ./run_all_tests.sh [--release]
 
 set -e  # Exit on first failure
@@ -104,15 +104,15 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║          CAPNS Full Test Suite Runner                 ║${NC}"
+echo -e "${BLUE}║          CAPDAG Full Test Suite Runner                 ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
 
-# 1. capns library tests
-run_tests "$SCRIPT_DIR" "capns (library)" "lib"
+# 1. capdag library tests
+run_tests "$SCRIPT_DIR" "capdag (library)" "lib"
 
-# 2. capns integration tests (if any)
+# 2. capdag integration tests (if any)
 if [ -d "$SCRIPT_DIR/tests" ] && [ "$(ls -A $SCRIPT_DIR/tests/*.rs 2>/dev/null)" ]; then
-    run_tests "$SCRIPT_DIR" "capns (integration tests)" "integration"
+    run_tests "$SCRIPT_DIR" "capdag (integration tests)" "integration"
 fi
 
 # 3. testcartridge

@@ -1123,7 +1123,7 @@ mod tests {
             urn: MEDIA_INTEGER.to_string(),
             media_type: "text/plain".to_string(),
             title: "Integer".to_string(),
-            profile_uri: Some("https://capns.org/schema/integer".to_string()),
+            profile_uri: Some("https://capdag.com/schema/integer".to_string()),
             schema: Some(json!({"type": "integer"})),
             description: Some("Integer value".to_string()),
             validation: None,

@@ -5,7 +5,7 @@
 //! ## Media URNs
 //!
 //! Use media URN constants (e.g., `MEDIA_STRING`) in `media_urn` fields of arguments and outputs.
-//! These are well-known types defined in the media registry (capns-dot-org/standard/media/).
+//! These are well-known types defined in the media registry (capdag-dot-com/standard/media/).
 //!
 //! ## Resolution
 //!
@@ -18,8 +18,8 @@
 //! ## Example
 //!
 //! ```rust
-//! use capns::{CapArg, ArgSource, CapOutput};
-//! use capns::standard::media::{MEDIA_STRING, MEDIA_OBJECT};
+//! use capdag::{CapArg, ArgSource, CapOutput};
+//! use capdag::standard::media::{MEDIA_STRING, MEDIA_OBJECT};
 //!
 //! let arg = CapArg::new(MEDIA_STRING, true, vec![ArgSource::CliFlag { cli_flag: "--input".to_string() }]);
 //! let output = CapOutput::new(MEDIA_OBJECT, "JSON output");
@@ -67,11 +67,11 @@ mod tests {
         assert!(MEDIA_BINARY.starts_with("media:"));
     }
 
-    // TEST629: Verify profile URL constants all start with capns.org schema prefix
+    // TEST629: Verify profile URL constants all start with capdag.com schema prefix
     #[test]
     fn test629_profile_constants_format() {
         // Verify profile URLs have expected format
-        assert!(PROFILE_STR.starts_with("https://capns.org/schema/"));
-        assert!(PROFILE_OBJ.starts_with("https://capns.org/schema/"));
+        assert!(PROFILE_STR.starts_with("https://capdag.com/schema/"));
+        assert!(PROFILE_OBJ.starts_with("https://capdag.com/schema/"));
     }
 }

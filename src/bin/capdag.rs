@@ -1,9 +1,9 @@
-//! capns: DOT-based DAG executor for Cap pipelines
+//! capdag: DOT-based DAG executor for Cap pipelines
 //!
 //! A unified CLI for executing and validating DOT graph pipelines.
 
-use capns::orchestrator::{parse_dot_to_cap_dag, execute_dag, NodeData};
-use capns::CapRegistry;
+use capdag::orchestrator::{parse_dot_to_cap_dag, execute_dag, NodeData};
+use capdag::CapRegistry;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -274,7 +274,7 @@ async fn main() {
     // TODO: Support multiple input nodes with explicit mapping
     let input_node = &input_nodes[0];
 
-    println!("=== capns: DOT Graph Execution ===\n");
+    println!("=== capdag: DOT Graph Execution ===\n");
     println!("DOT file: {}", dot_file);
     println!("Input node: {}", input_node);
     println!("Input files: {}", all_files.len());
@@ -310,7 +310,7 @@ async fn main() {
 
     // Set up plugin directory
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let plugin_dir = home.join(".capns").join("plugins");
+    let plugin_dir = home.join(".capdag").join("plugins");
 
     // Registry URL
     let registry_url = "https://machinefabric.com/api/plugins".to_string();

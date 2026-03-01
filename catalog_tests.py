@@ -68,7 +68,7 @@ def extract_test_info(file_path: Path) -> List[TestInfo]:
             # Join description lines with space
             description = ' '.join(description_lines)
 
-            # Get relative path from capns root
+            # Get relative path from capdag root
             relative_path = file_path.relative_to(file_path.parents[0].parent.parent)
 
             test_info = TestInfo(
@@ -108,7 +108,7 @@ def generate_markdown_table(tests: List[TestInfo], output_file: str):
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("# Capns Test Catalog\n\n")
         f.write(f"**Total Tests:** {len(tests_sorted)}\n\n")
-        f.write("This catalog lists all numbered tests in the capns codebase.\n\n")
+        f.write("This catalog lists all numbered tests in the capdag codebase.\n\n")
 
         # Table header
         f.write("| Test # | Function Name | Description | Location |\n")
@@ -128,16 +128,16 @@ def generate_markdown_table(tests: List[TestInfo], output_file: str):
             f.write(f"| test{test.number} | `{short_name}` | {description} | {location} |\n")
 
         f.write("\n---\n\n")
-        f.write(f"*Generated from capns source tree*\n")
+        f.write(f"*Generated from capdag source tree*\n")
         f.write(f"*Total numbered tests: {len(tests_sorted)}*\n")
 
 
 def main():
     """Main entry point"""
-    # Determine the capns root directory (where this script is located)
+    # Determine the capdag root directory (where this script is located)
     script_dir = Path(__file__).parent
 
-    print("Scanning for tests in capns codebase...")
+    print("Scanning for tests in capdag codebase...")
 
     # Scan src/ directory
     src_dir = script_dir / 'src'

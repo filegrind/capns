@@ -12,7 +12,7 @@
 //!
 //! ## MediaSpec Format
 //! Canonical form: `<media-type>; profile=<url>`
-//! Example: `text/plain; profile=https://capns.org/schema/str`
+//! Example: `text/plain; profile=https://capdag.com/schema/str`
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -21,20 +21,20 @@ use std::fmt;
 // PROFILE URLS (canonical /schema/ path)
 // =============================================================================
 
-/// Base URL for capns schemas (default, use `get_schema_base()` for configurable version)
-pub const SCHEMA_BASE: &str = "https://capns.org/schema";
+/// Base URL for capdag schemas (default, use `get_schema_base()` for configurable version)
+pub const SCHEMA_BASE: &str = "https://capdag.com/schema";
 
 /// Get the schema base URL from environment variables or default
 ///
 /// Checks in order:
-/// 1. `CAPNS_SCHEMA_BASE_URL` environment variable
-/// 2. `CAPNS_REGISTRY_URL` environment variable + "/schema"
-/// 3. Default: "https://capns.org/schema"
+/// 1. `CAPDAG_SCHEMA_BASE_URL` environment variable
+/// 2. `CAPDAG_REGISTRY_URL` environment variable + "/schema"
+/// 3. Default: "https://capdag.com/schema"
 pub fn get_schema_base() -> String {
-    if let Ok(schema_url) = std::env::var("CAPNS_SCHEMA_BASE_URL") {
+    if let Ok(schema_url) = std::env::var("CAPDAG_SCHEMA_BASE_URL") {
         return schema_url;
     }
-    if let Ok(registry_url) = std::env::var("CAPNS_REGISTRY_URL") {
+    if let Ok(registry_url) = std::env::var("CAPDAG_REGISTRY_URL") {
         return format!("{}/schema", registry_url);
     }
     SCHEMA_BASE.to_string()
@@ -51,93 +51,93 @@ pub fn get_profile_url(profile_name: &str) -> String {
 }
 
 /// Profile URL for string type
-pub const PROFILE_STR: &str = "https://capns.org/schema/str";
+pub const PROFILE_STR: &str = "https://capdag.com/schema/str";
 /// Profile URL for integer type
-pub const PROFILE_INT: &str = "https://capns.org/schema/int";
+pub const PROFILE_INT: &str = "https://capdag.com/schema/int";
 /// Profile URL for number type
-pub const PROFILE_NUM: &str = "https://capns.org/schema/num";
+pub const PROFILE_NUM: &str = "https://capdag.com/schema/num";
 /// Profile URL for boolean type
-pub const PROFILE_BOOL: &str = "https://capns.org/schema/bool";
+pub const PROFILE_BOOL: &str = "https://capdag.com/schema/bool";
 /// Profile URL for JSON object type
-pub const PROFILE_OBJ: &str = "https://capns.org/schema/obj";
+pub const PROFILE_OBJ: &str = "https://capdag.com/schema/obj";
 /// Profile URL for string array type
-pub const PROFILE_STR_ARRAY: &str = "https://capns.org/schema/str-array";
+pub const PROFILE_STR_ARRAY: &str = "https://capdag.com/schema/str-array";
 /// Profile URL for integer array type
-pub const PROFILE_INT_ARRAY: &str = "https://capns.org/schema/int-array";
+pub const PROFILE_INT_ARRAY: &str = "https://capdag.com/schema/int-array";
 /// Profile URL for number array type
-pub const PROFILE_NUM_ARRAY: &str = "https://capns.org/schema/num-array";
+pub const PROFILE_NUM_ARRAY: &str = "https://capdag.com/schema/num-array";
 /// Profile URL for boolean array type
-pub const PROFILE_BOOL_ARRAY: &str = "https://capns.org/schema/bool-array";
+pub const PROFILE_BOOL_ARRAY: &str = "https://capdag.com/schema/bool-array";
 /// Profile URL for object array type
-pub const PROFILE_OBJ_ARRAY: &str = "https://capns.org/schema/obj-array";
+pub const PROFILE_OBJ_ARRAY: &str = "https://capdag.com/schema/obj-array";
 /// Profile URL for void (no input)
-pub const PROFILE_VOID: &str = "https://capns.org/schema/void";
+pub const PROFILE_VOID: &str = "https://capdag.com/schema/void";
 
 // =============================================================================
 // SEMANTIC CONTENT TYPE PROFILE URLS
 // =============================================================================
 
 /// Profile URL for image data (png, jpg, gif, etc.)
-pub const PROFILE_IMAGE: &str = "https://capns.org/schema/image";
+pub const PROFILE_IMAGE: &str = "https://capdag.com/schema/image";
 /// Profile URL for audio data (wav, mp3, flac, etc.)
-pub const PROFILE_AUDIO: &str = "https://capns.org/schema/audio";
+pub const PROFILE_AUDIO: &str = "https://capdag.com/schema/audio";
 /// Profile URL for video data (mp4, webm, mov, etc.)
-pub const PROFILE_VIDEO: &str = "https://capns.org/schema/video";
+pub const PROFILE_VIDEO: &str = "https://capdag.com/schema/video";
 /// Profile URL for generic text
-pub const PROFILE_TEXT: &str = "https://capns.org/schema/text";
+pub const PROFILE_TEXT: &str = "https://capdag.com/schema/text";
 
 // =============================================================================
 // DOCUMENT TYPE PROFILE URLS (PRIMARY naming)
 // =============================================================================
 
 /// Profile URL for PDF documents
-pub const PROFILE_PDF: &str = "https://capns.org/schema/pdf";
+pub const PROFILE_PDF: &str = "https://capdag.com/schema/pdf";
 /// Profile URL for EPUB documents
-pub const PROFILE_EPUB: &str = "https://capns.org/schema/epub";
+pub const PROFILE_EPUB: &str = "https://capdag.com/schema/epub";
 
 // =============================================================================
 // TEXT FORMAT TYPE PROFILE URLS (PRIMARY naming)
 // =============================================================================
 
 /// Profile URL for Markdown text
-pub const PROFILE_MD: &str = "https://capns.org/schema/md";
+pub const PROFILE_MD: &str = "https://capdag.com/schema/md";
 /// Profile URL for plain text
-pub const PROFILE_TXT: &str = "https://capns.org/schema/txt";
+pub const PROFILE_TXT: &str = "https://capdag.com/schema/txt";
 /// Profile URL for reStructuredText
-pub const PROFILE_RST: &str = "https://capns.org/schema/rst";
+pub const PROFILE_RST: &str = "https://capdag.com/schema/rst";
 /// Profile URL for log files
-pub const PROFILE_LOG: &str = "https://capns.org/schema/log";
+pub const PROFILE_LOG: &str = "https://capdag.com/schema/log";
 /// Profile URL for HTML documents
-pub const PROFILE_HTML: &str = "https://capns.org/schema/html";
+pub const PROFILE_HTML: &str = "https://capdag.com/schema/html";
 /// Profile URL for XML documents
-pub const PROFILE_XML: &str = "https://capns.org/schema/xml";
+pub const PROFILE_XML: &str = "https://capdag.com/schema/xml";
 /// Profile URL for JSON data
-pub const PROFILE_JSON: &str = "https://capns.org/schema/json";
+pub const PROFILE_JSON: &str = "https://capdag.com/schema/json";
 /// Profile URL for YAML data
-pub const PROFILE_YAML: &str = "https://capns.org/schema/yaml";
+pub const PROFILE_YAML: &str = "https://capdag.com/schema/yaml";
 
 // =============================================================================
-// CAPNS OUTPUT PROFILE URLS
+// CAPDAG OUTPUT PROFILE URLS
 // =============================================================================
 
 /// Profile URL for model download output
-pub const PROFILE_CAPNS_DOWNLOAD_OUTPUT: &str = "https://capns.org/schema/download-output";
+pub const PROFILE_CAPDAG_DOWNLOAD_OUTPUT: &str = "https://capdag.com/schema/download-output";
 /// Profile URL for model load output
-pub const PROFILE_CAPNS_LOAD_OUTPUT: &str = "https://capns.org/schema/load-output";
+pub const PROFILE_CAPDAG_LOAD_OUTPUT: &str = "https://capdag.com/schema/load-output";
 /// Profile URL for model unload output
-pub const PROFILE_CAPNS_UNLOAD_OUTPUT: &str = "https://capns.org/schema/unload-output";
+pub const PROFILE_CAPDAG_UNLOAD_OUTPUT: &str = "https://capdag.com/schema/unload-output";
 /// Profile URL for model list output
-pub const PROFILE_CAPNS_LIST_OUTPUT: &str = "https://capns.org/schema/model-list";
+pub const PROFILE_CAPDAG_LIST_OUTPUT: &str = "https://capdag.com/schema/model-list";
 /// Profile URL for model status output
-pub const PROFILE_CAPNS_STATUS_OUTPUT: &str = "https://capns.org/schema/status-output";
+pub const PROFILE_CAPDAG_STATUS_OUTPUT: &str = "https://capdag.com/schema/status-output";
 /// Profile URL for model contents output
-pub const PROFILE_CAPNS_CONTENTS_OUTPUT: &str = "https://capns.org/schema/contents-output";
+pub const PROFILE_CAPDAG_CONTENTS_OUTPUT: &str = "https://capdag.com/schema/contents-output";
 /// Profile URL for embeddings generate output
-pub const PROFILE_CAPNS_GENERATE_OUTPUT: &str = "https://capns.org/schema/embeddings";
+pub const PROFILE_CAPDAG_GENERATE_OUTPUT: &str = "https://capdag.com/schema/embeddings";
 /// Profile URL for structured query output
-pub const PROFILE_CAPNS_STRUCTURED_QUERY_OUTPUT: &str = "https://capns.org/schema/structured-query-output";
+pub const PROFILE_CAPDAG_STRUCTURED_QUERY_OUTPUT: &str = "https://capdag.com/schema/structured-query-output";
 /// Profile URL for questions array
-pub const PROFILE_CAPNS_QUESTIONS_ARRAY: &str = "https://capns.org/schema/questions-array";
+pub const PROFILE_CAPDAG_QUESTIONS_ARRAY: &str = "https://capdag.com/schema/questions-array";
 
 // =============================================================================
 // MEDIA VALIDATION (for media spec definitions)
@@ -238,7 +238,7 @@ impl MediaValidation {
 ///
 /// ## String Form (compact)
 /// ```json
-/// "media:string": "text/plain; profile=https://capns.org/schema/str"
+/// "media:string": "text/plain; profile=https://capdag.com/schema/str"
 /// ```
 ///
 /// Media spec definition for inline media_specs in cap definitions
@@ -543,7 +543,7 @@ pub async fn resolve_media_urn(
             // Log and continue to error
             eprintln!(
                 "[WARN] Media URN '{}' not found in registry: {} - \
-                ensure it's defined in capns-dot-org/standard/media/",
+                ensure it's defined in capdag-dot-com/standard/media/",
                 media_urn, e
             );
         }
@@ -1056,7 +1056,7 @@ mod tests {
                 urn: "media:custom-pdf".to_string(),
                 media_type: "application/pdf".to_string(),
                 title: "PDF Document".to_string(),
-                profile_uri: Some("https://capns.org/schema/pdf".to_string()),
+                profile_uri: Some("https://capdag.com/schema/pdf".to_string()),
                 schema: None,
                 description: Some("A PDF document".to_string()),
                 validation: None,
@@ -1135,7 +1135,7 @@ mod tests {
                 urn: "media:image;jpeg".to_string(),
                 media_type: "image/jpeg".to_string(),
                 title: "JPEG Image".to_string(),
-                profile_uri: Some("https://capns.org/schema/jpeg".to_string()),
+                profile_uri: Some("https://capdag.com/schema/jpeg".to_string()),
                 schema: None,
                 description: Some("JPEG image data".to_string()),
                 validation: None,

@@ -4,7 +4,7 @@ A capability URN and definition system for plugin architectures, built on [Tagge
 
 ## Overview
 
-CapNs provides a formal system for defining, matching, and managing capabilities across distributed plugin systems. It extends Tagged URNs with:
+CapDAG provides a formal system for defining, matching, and managing capabilities across distributed plugin systems. It extends Tagged URNs with:
 
 - **Required direction specifiers** (`in`/`out`) for input/output media types
 - **Media URN validation** for type-safe capability contracts
@@ -64,10 +64,10 @@ pub struct Cap {
 
 ## Language Implementations
 
-### Rust (`capns`)
+### Rust (`capdag`)
 
 ```rust
-use capns::{CapUrn, Cap, CapUrnBuilder};
+use capdag::{CapUrn, Cap, CapUrnBuilder};
 
 // Create cap URN
 let cap = CapUrn::from_string(
@@ -83,24 +83,24 @@ let cap = CapUrnBuilder::new()
     .build()?;
 ```
 
-### Go (`capns-go`)
+### Go (`capdag-go`)
 
 ```go
-import "github.com/machfab/capns-go"
+import "github.com/machfab/capdag-go"
 
 // Create cap URN
-cap, err := capns.NewCapUrnFromString(
+cap, err := capdag.NewCapUrnFromString(
     `cap:in="media:binary";op=extract;out="media:object"`)
 
 // Build with builder pattern
-cap, err = capns.NewCapUrnBuilder().
+cap, err = capdag.NewCapUrnBuilder().
     InSpec("media:binary").
     OutSpec("media:object").
     Tag("op", "extract").
     Build()
 ```
 
-### Objective-C (`capns-objc`)
+### Objective-C (`capdag-objc`)
 
 ```objc
 #import "CSCapUrn.h"
@@ -200,9 +200,9 @@ let (provider, cap) = cube.find_best_match(&request)?;
 ## Cross-Language Compatibility
 
 This Rust implementation is the reference. Identical implementations exist for:
-- [Go implementation](https://github.com/machinefabric/capns-go)
-- [JavaScript implementation](https://github.com/machinefabric/capns-js)
-- [Objective-C implementation](https://github.com/machinefabric/capns-objc)
+- [Go implementation](https://github.com/machinefabric/capdag-go)
+- [JavaScript implementation](https://github.com/machinefabric/capdag-js)
+- [Objective-C implementation](https://github.com/machinefabric/capdag-objc)
 
 All implementations pass the same test cases and follow identical rules.
 

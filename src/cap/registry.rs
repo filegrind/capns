@@ -9,18 +9,18 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const DEFAULT_REGISTRY_BASE_URL: &str = "https://capns.org";
+const DEFAULT_REGISTRY_BASE_URL: &str = "https://capdag.com";
 const CACHE_DURATION_HOURS: u64 = 24;
 
-/// Configuration for the CAPNS registry
+/// Configuration for the CAPDAG registry
 ///
 /// Supports configuration via:
 /// 1. Builder methods (highest priority)
-/// 2. Environment variables (CAPNS_REGISTRY_URL, CAPNS_SCHEMA_BASE_URL)
-/// 3. Default values (https://capns.org)
+/// 2. Environment variables (CAPDAG_REGISTRY_URL, CAPDAG_SCHEMA_BASE_URL)
+/// 3. Default values (https://capdag.com)
 #[derive(Debug, Clone)]
 pub struct RegistryConfig {
-    /// Base URL for the registry API (e.g., "https://capns.org")
+    /// Base URL for the registry API (e.g., "https://capdag.com")
     pub registry_base_url: String,
     /// Base URL for schema profiles (defaults to {registry_base_url}/schema)
     pub schema_base_url: String,
@@ -28,9 +28,9 @@ pub struct RegistryConfig {
 
 impl Default for RegistryConfig {
     fn default() -> Self {
-        let registry_base = env::var("CAPNS_REGISTRY_URL")
+        let registry_base = env::var("CAPDAG_REGISTRY_URL")
             .unwrap_or_else(|_| DEFAULT_REGISTRY_BASE_URL.to_string());
-        let schema_base = env::var("CAPNS_SCHEMA_BASE_URL")
+        let schema_base = env::var("CAPDAG_SCHEMA_BASE_URL")
             .unwrap_or_else(|_| format!("{}/schema", registry_base));
         Self {
             registry_base_url: registry_base,
@@ -112,8 +112,8 @@ impl CapRegistry {
     /// Create a new CapRegistry with standard capabilities bundled
     ///
     /// Uses configuration from environment variables or defaults:
-    /// - `CAPNS_REGISTRY_URL`: Base URL for the registry (default: https://capns.org)
-    /// - `CAPNS_SCHEMA_BASE_URL`: Base URL for schemas (default: {registry_url}/schema)
+    /// - `CAPDAG_REGISTRY_URL`: Base URL for the registry (default: https://capdag.com)
+    /// - `CAPDAG_SCHEMA_BASE_URL`: Base URL for schemas (default: {registry_url}/schema)
     pub async fn new() -> Result<Self, RegistryError> {
         Self::with_config(RegistryConfig::default()).await
     }
@@ -325,7 +325,7 @@ impl CapRegistry {
         let mut cache_dir = dirs::cache_dir().ok_or_else(|| {
             RegistryError::CacheError("Could not determine cache directory".to_string())
         })?;
-        cache_dir.push("capns");
+        cache_dir.push("capdag");
         Ok(cache_dir)
     }
 
@@ -509,7 +509,7 @@ impl CapRegistry {
         use std::path::PathBuf;
         Self {
             client: reqwest::Client::new(),
-            cache_dir: PathBuf::from("/tmp/capns-test-cache"),
+            cache_dir: PathBuf::from("/tmp/capdag-test-cache"),
             cached_caps: Arc::new(Mutex::new(HashMap::new())),
             config: RegistryConfig::default(),
         }
@@ -520,7 +520,7 @@ impl CapRegistry {
         use std::path::PathBuf;
         Self {
             client: reqwest::Client::new(),
-            cache_dir: PathBuf::from("/tmp/capns-test-cache"),
+            cache_dir: PathBuf::from("/tmp/capdag-test-cache"),
             cached_caps: Arc::new(Mutex::new(HashMap::new())),
             config,
         }
@@ -614,7 +614,7 @@ mod json_parse_tests {
     fn test137_parse_registry_json() {
         // JSON without stdin args - means cap doesn't accept stdin
         // media_specs is now an array of media spec objects with urn field
-        let json = r#"{"urn":"cap:in=\"media:listing-id\";op=use_grinder;out=\"media:task-id\"","command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":[{"urn":"media:listing-id","media_type":"text/plain","title":"Listing ID","profile_uri":"https://machinefabric.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"MachineFabric listing UUID"}},{"urn":"media:task-id","media_type":"application/json","title":"Task ID","profile_uri":"https://capns.org/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}],"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
+        let json = r#"{"urn":"cap:in=\"media:listing-id\";op=use_grinder;out=\"media:task-id\"","command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":[{"urn":"media:listing-id","media_type":"text/plain","title":"Listing ID","profile_uri":"https://machinefabric.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"MachineFabric listing UUID"}},{"urn":"media:task-id","media_type":"application/json","title":"Task ID","profile_uri":"https://capdag.com/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}],"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Create Grinder Tool Task");
@@ -712,14 +712,14 @@ mod url_encoding_tests {
 mod config_tests {
     use super::*;
 
-    // TEST143: Test default config uses capns.org or environment variable values
+    // TEST143: Test default config uses capdag.com or environment variable values
     #[test]
     fn test143_default_config() {
         let config = RegistryConfig::default();
-        // Default should use capns.org (unless env var is set)
-        assert!(config.registry_base_url.contains("capns.org") ||
-                env::var("CAPNS_REGISTRY_URL").is_ok(),
-                "Default registry URL should be capns.org or from env var");
+        // Default should use capdag.com (unless env var is set)
+        assert!(config.registry_base_url.contains("capdag.com") ||
+                env::var("CAPDAG_REGISTRY_URL").is_ok(),
+                "Default registry URL should be capdag.com or from env var");
         assert!(config.schema_base_url.contains("/schema"),
                 "Schema URL should contain /schema");
     }

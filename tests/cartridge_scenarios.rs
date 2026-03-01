@@ -1,4 +1,4 @@
-//! Real-world multi-cartridge chain tests for capns orchestrator
+//! Real-world multi-cartridge chain tests for capdag orchestrator
 //!
 //! Unlike the testcartridge integration tests (which use synthetic test caps),
 //! these tests exercise real cartridges (pdfcartridge, txtcartridge, modelcartridge,
@@ -8,8 +8,8 @@
 //! - Cartridge binaries will be auto-built if missing or outdated
 //! - ML-dependent tests require pre-downloaded models
 
-use capns::{Cap, CapUrn, CapUrnBuilder};
-use capns::orchestrator::{
+use capdag::{Cap, CapUrn, CapUrnBuilder};
+use capdag::orchestrator::{
     execute_dag, NodeData,
     parse_dot_to_cap_dag, CapRegistryTrait, ParseOrchestrationError,
 };
@@ -458,8 +458,8 @@ fn gpu_feature_for_platform() -> Option<&'static str> {
     } else if cfg!(target_os = "linux") || cfg!(target_os = "windows") {
         // On Linux/Windows, try CUDA if available
         // For now, we don't auto-detect CUDA, so return None
-        // Users can set CAPNS_GPU_FEATURE=cuda to enable
-        std::env::var("CAPNS_GPU_FEATURE").ok().and_then(|v| {
+        // Users can set CAPDAG_GPU_FEATURE=cuda to enable
+        std::env::var("CAPDAG_GPU_FEATURE").ok().and_then(|v| {
             if v == "cuda" { Some("cuda") } else { None }
         }).or(None)
     } else {

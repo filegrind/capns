@@ -1,6 +1,6 @@
 # Media Spec System
 
-This document describes the media specification system used in capns for defining input and output types in capability definitions.
+This document describes the media specification system used in capdag for defining input and output types in capability definitions.
 
 ## Overview
 
@@ -16,16 +16,16 @@ These spec IDs are implicitly available and do not need to be declared in `media
 
 | Spec ID | Media Type | Profile URI | Description |
 |---------|------------|-------------|-------------|
-| `media:string` | `text/plain` | `https://capns.org/schema/str` | String value |
-| `media:integer` | `text/plain` | `https://capns.org/schema/int` | Integer value |
-| `media:number` | `text/plain` | `https://capns.org/schema/num` | Number value |
-| `media:boolean` | `text/plain` | `https://capns.org/schema/bool` | Boolean value |
-| `media:object` | `application/json` | `https://capns.org/schema/obj` | JSON object |
-| `media:string-array` | `application/json` | `https://capns.org/schema/str-array` | String array |
-| `media:integer-array` | `application/json` | `https://capns.org/schema/int-array` | Integer array |
-| `media:number-array` | `application/json` | `https://capns.org/schema/num-array` | Number array |
-| `media:boolean-array` | `application/json` | `https://capns.org/schema/bool-array` | Boolean array |
-| `media:object-array` | `application/json` | `https://capns.org/schema/obj-array` | Object array |
+| `media:string` | `text/plain` | `https://capdag.com/schema/str` | String value |
+| `media:integer` | `text/plain` | `https://capdag.com/schema/int` | Integer value |
+| `media:number` | `text/plain` | `https://capdag.com/schema/num` | Number value |
+| `media:boolean` | `text/plain` | `https://capdag.com/schema/bool` | Boolean value |
+| `media:object` | `application/json` | `https://capdag.com/schema/obj` | JSON object |
+| `media:string-array` | `application/json` | `https://capdag.com/schema/str-array` | String array |
+| `media:integer-array` | `application/json` | `https://capdag.com/schema/int-array` | Integer array |
+| `media:number-array` | `application/json` | `https://capdag.com/schema/num-array` | Number array |
+| `media:boolean-array` | `application/json` | `https://capdag.com/schema/bool-array` | Boolean array |
+| `media:object-array` | `application/json` | `https://capdag.com/schema/obj-array` | Object array |
 | `media:binary` | `application/octet-stream` | - | Binary data |
 
 ### Domain-Specific Spec IDs
@@ -40,7 +40,7 @@ Additional well-known spec IDs for specific domains:
 | `machfab:task-id.v1` | `text/plain` | `https://machinefabric.com/schema/task-id` | Task UUID |
 | `machfab:file-path-array.v1` | `application/json` | `https://machinefabric.com/schema/file-path-array` | Array of file paths |
 
-#### CapNS Output Types (`capns:`)
+#### CapNS Output Types (`capdag:`)
 
 | Spec ID | Media Type | Description |
 |---------|------------|-------------|
@@ -130,7 +130,7 @@ urn = 'cap:ext=pdf;in="media:binary";op=extract_metadata;out="media:extract-meta
 
 [media_specs."media:extract-metadata-output"]
 media_type = "application/json"
-profile_uri = "https://capns.org/schema/extract-metadata-output"
+profile_uri = "https://capdag.com/schema/extract-metadata-output"
 
 [media_specs."media:extract-metadata-output".schema]
 type = "object"
@@ -178,22 +178,22 @@ Validation always fails hard on:
 
 ## Implementation Files
 
-### Rust (capns)
+### Rust (capdag)
 - `src/media_spec.rs` - Spec ID constants, resolution, and built-ins
 - `src/validation.rs` - Input/output validation
 - `src/standard/caps.rs` - URN builder functions
 
-### Go (capns-go)
+### Go (capdag-go)
 - `media_spec.go` - Spec ID constants and resolution
 - `validation.go` - Input/output validation
 - `standard.go` - URN builder functions
 
-### Objective-C (capns-objc)
+### Objective-C (capdag-objc)
 - `CSMediaSpec.h/m` - Spec ID constants and resolution
 - `CSCapValidator.h/m` - Input/output validation
 
-### JavaScript (capns-js)
-- `capns.js` - Spec ID constants, resolution, and validation
+### JavaScript (capdag-js)
+- `capdag.js` - Spec ID constants, resolution, and validation
 
 ## Key Principles
 

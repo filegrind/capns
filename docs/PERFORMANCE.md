@@ -1,6 +1,6 @@
 # Capns Performance
 
-This document presents throughput measurements from the capns cross-language interoperability test suite.
+This document presents throughput measurements from the capdag cross-language interoperability test suite.
 
 ## Test Environment
 
@@ -130,7 +130,7 @@ This is consistent with typical Python I/O-bound performance. For throughput-cri
 
 ## Methodology
 
-Tests use the `capns-interop-tests` suite with:
+Tests use the `capdag-interop-tests` suite with:
 - `pytest` test framework
 - 5 MB payload per throughput test
 - Warm-up request before measurement

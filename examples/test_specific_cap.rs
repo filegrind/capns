@@ -1,4 +1,4 @@
-use capns::CapRegistry;
+use capdag::CapRegistry;
 use tokio;
 
 #[tokio::main]

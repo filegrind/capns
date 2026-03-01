@@ -2,7 +2,7 @@
 //!
 //! This module provides the standard capability definitions used across
 //! all MACINA providers, including their formal argument specifications.
-//! These definitions should match the TOML definitions in capns-dot-org/standard/
+//! These definitions should match the TOML definitions in capdag-dot-com/standard/
 
 use crate::{
     Cap, CapOutput, CapRegistry, CapUrn, CapUrnBuilder, MEDIA_DISBOUND_PAGE, MEDIA_DOCUMENT_OUTLINE, MEDIA_FILE_METADATA, RegistryError
@@ -21,7 +21,7 @@ use crate::urn::media_urn::{
     MEDIA_MODEL_REPO, MEDIA_JSON_SCHEMA,
     // Semantic output types
     MEDIA_IMAGE_THUMBNAIL,
-    // CAPNS output types
+    // CAPDAG output types
     MEDIA_MODEL_DIM, MEDIA_DOWNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
     MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
@@ -40,7 +40,7 @@ pub const CAP_IDENTITY: &str = "cap:";
 
 /// Discard capability — the terminal morphism. Standard, NOT mandatory.
 /// Accepts any media type as input and produces void output.
-/// The capns lib provides a default implementation; plugins may override.
+/// The capdag lib provides a default implementation; plugins may override.
 pub const CAP_DISCARD: &str = "cap:in=media:;out=media:void";
 
 /// Parse and return the canonical identity `CapUrn` from `CAP_IDENTITY`.

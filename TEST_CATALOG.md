@@ -2,7 +2,7 @@
 
 **Total Tests:** 762
 
-This catalog lists all numbered tests in the capns codebase.
+This catalog lists all numbered tests in the capdag codebase.
 
 | Test # | Function Name | Description | Location |
 |--------|---------------|-------------|----------|
@@ -133,7 +133,7 @@ This catalog lists all numbered tests in the capns codebase.
 | test140 | `test140_url_encodes_quoted_media_urns` | / Test that media URNs in cap URNs are properly URL-encoded TEST140: Test URL encodes media URNs with proper percent encoding for special characters | src/cap/registry.rs:662 |
 | test141 | `test141_exact_url_format` | / Test the URL format for a simple cap URN TEST141: Test exact URL format contains properly encoded media URN components | src/cap/registry.rs:682 |
 | test142 | `test142_normalize_handles_different_tag_orders` | / Test that normalization handles various input formats TEST142: Test normalize handles different tag orders producing same canonical form | src/cap/registry.rs:699 |
-| test143 | `test143_default_config` | TEST143: Test default config uses capns.org or environment variable values | src/cap/registry.rs:717 |
+| test143 | `test143_default_config` | TEST143: Test default config uses capdag.com or environment variable values | src/cap/registry.rs:717 |
 | test144 | `test144_custom_registry_url` | TEST144: Test custom registry URL updates both registry and schema base URLs | src/cap/registry.rs:729 |
 | test145 | `test145_custom_registry_and_schema_url` | TEST145: Test custom registry and schema URLs set independently | src/cap/registry.rs:738 |
 | test146 | `test146_schema_url_not_overwritten_when_explicit` | TEST146: Test schema URL not overwritten when set explicitly before registry URL | src/cap/registry.rs:748 |
@@ -559,7 +559,7 @@ This catalog lists all numbered tests in the capns codebase.
 | test626 | `test626_unknown_profile_skips_validation` | TEST626: Verify unknown profile URL skips validation and returns Ok | src/media/profile.rs:632 |
 | test627 | `test627_is_embedded_profile` | TEST627: Verify is_embedded_profile recognizes standard and rejects custom URLs | src/media/profile.rs:642 |
 | test628 | `test628_media_urn_constants_format` | TEST628: Verify media URN constants all start with "media:" prefix | src/standard/media.rs:62 |
-| test629 | `test629_profile_constants_format` | TEST629: Verify profile URL constants all start with capns.org schema prefix | src/standard/media.rs:72 |
+| test629 | `test629_profile_constants_format` | TEST629: Verify profile URL constants all start with capdag.com schema prefix | src/standard/media.rs:72 |
 | test630 | `test630_plugin_repo_creation` | TEST630: Verify PluginRepo creation starts with empty plugin list | src/bifaci/plugin_repo.rs:592 |
 | test631 | `test631_needs_sync_empty_cache` | TEST631: Verify needs_sync returns true with empty cache and non-empty URLs | src/bifaci/plugin_repo.rs:599 |
 | test632 | `test632_deserialize_cap_summary_with_null_description` | TEST632: Verify PluginCapSummary deserializes null description as empty string | src/bifaci/plugin_repo.rs:607 |
@@ -771,6 +771,6 @@ This catalog lists all numbered tests in the capns codebase.
 
 ---
 
-*Generated from capns source tree*
+*Generated from capdag source tree*
 *Total numbered tests: 762*
 

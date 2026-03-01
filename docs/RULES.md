@@ -1,6 +1,6 @@
 # Validation Rules
 
-This document specifies all validation rules enforced by capns implementations. All implementations (Rust, JavaScript, server-side) MUST enforce these rules identically. No fallbacks, no exceptions.
+This document specifies all validation rules enforced by capdag implementations. All implementations (Rust, JavaScript, server-side) MUST enforce these rules identically. No fallbacks, no exceptions.
 
 ## Overview
 
@@ -46,7 +46,7 @@ Invalid direction specifier values cause parsing to fail.
 
 ### URL Length Constraint
 
-The URL `https://capns.org/{cap_urn}` must be valid, imposing practical length limits (~2000 characters).
+The URL `https://capdag.com/{cap_urn}` must be valid, imposing practical length limits (~2000 characters).
 
 ---
 
@@ -325,7 +325,7 @@ All validation errors MUST cause immediate failure with a clear error message. N
 
 ### Consistent Behavior
 
-All implementations (Rust capns, JavaScript capns-js, server functions) MUST enforce identical rules with identical error messages.
+All implementations (Rust capdag, JavaScript capdag-js, server functions) MUST enforce identical rules with identical error messages.
 
 ### Order of Validation
 

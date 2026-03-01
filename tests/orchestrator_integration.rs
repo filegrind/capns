@@ -1,4 +1,4 @@
-//! Integration tests for capns orchestrator using testcartridge
+//! Integration tests for capdag orchestrator using testcartridge
 //!
 //! These tests verify the orchestrator's ability to:
 //! 1. Parse and validate DOT graphs with Cap URNs
@@ -9,8 +9,8 @@
 //! testcartridge provides simple, predictable test caps without heavy dependencies
 //! The testcartridge binary will be auto-built if missing or outdated
 
-use capns::orchestrator::{parse_dot_to_cap_dag, execute_dag, NodeData, CapRegistryTrait, ParseOrchestrationError};
-use capns::{Cap, CapUrn};
+use capdag::orchestrator::{parse_dot_to_cap_dag, execute_dag, NodeData, CapRegistryTrait, ParseOrchestrationError};
+use capdag::{Cap, CapUrn};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -102,7 +102,7 @@ fn testcartridge_dir() -> PathBuf {
     PathBuf::from(&manifest_dir)
         .parent()
         .expect("No parent dir")
-        .join("capns")
+        .join("capdag")
         .join("testcartridge")
 }
 
@@ -204,7 +204,7 @@ fn testcartridge_bin() -> PathBuf {
     let bin_path = PathBuf::from(&manifest_dir)
         .parent()
         .expect("No parent dir")
-        .join("capns")
+        .join("capdag")
         .join("testcartridge")
         .join("target")
         .join("release")
@@ -722,8 +722,8 @@ async fn test947_six_cap_chain() {
 #[tokio::test]
 #[ignore]
 async fn test403_peer_invoke_roundtrip() {
-    use capns::{PluginHost, CapArgumentValue};
-    use capns::local_plugin_router::LocalPluginRouter;
+    use capdag::{PluginHost, CapArgumentValue};
+    use capdag::local_plugin_router::LocalPluginRouter;
     use tokio::process::Command;
     use std::process::Stdio;
     use std::sync::Arc;
@@ -732,7 +732,7 @@ async fn test403_peer_invoke_roundtrip() {
 
     // Create LocalPluginRouter for routing peer invoke requests
     let router = Arc::new(LocalPluginRouter::new());
-    let router_arc: Arc<dyn capns::cap_router::CapRouter> = router.clone();
+    let router_arc: Arc<dyn capdag::cap_router::CapRouter> = router.clone();
 
     // Spawn testcartridge
     let mut child = Command::new(&testcartridge)
@@ -751,7 +751,7 @@ async fn test403_peer_invoke_roundtrip() {
 
     // Get manifest to discover all caps
     let manifest_bytes = host.plugin_manifest();
-    let manifest: capns::CapManifest = serde_json::from_slice(manifest_bytes)
+    let manifest: capdag::CapManifest = serde_json::from_slice(manifest_bytes)
         .expect("Failed to parse manifest");
 
     eprintln!("[TEST403] Discovered {} caps from testcartridge", manifest.caps.len());

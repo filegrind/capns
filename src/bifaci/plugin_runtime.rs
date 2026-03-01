@@ -20,7 +20,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use capns::PluginRuntime;
+//! use capdag::PluginRuntime;
 //!
 //! fn main() {
 //!     let manifest = build_manifest(); // Your manifest with caps
@@ -735,7 +735,7 @@ impl FrameSender for CliFrameSender {
 // OP-BASED HANDLER SYSTEM — handlers implement ops::Op<()>
 // =============================================================================
 
-/// Bundles capns I/O for WetContext. Op handlers extract this from WetContext
+/// Bundles capdag I/O for WetContext. Op handlers extract this from WetContext
 /// to access streaming input, output, and peer invocation.
 pub struct Request {
     input: Mutex<Option<InputPackage>>,

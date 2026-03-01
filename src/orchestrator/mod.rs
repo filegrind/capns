@@ -7,8 +7,8 @@
 //! # Example
 //!
 //! ```ignore
-//! use capns::orchestrator::{parse_dot_to_cap_dag, CapRegistryTrait};
-//! use capns::CapRegistry;
+//! use capdag::orchestrator::{parse_dot_to_cap_dag, CapRegistryTrait};
+//! use capdag::CapRegistry;
 //!
 //! let dot = r#"
 //!     digraph G {

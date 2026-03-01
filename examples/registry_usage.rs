@@ -1,4 +1,4 @@
-use capns::{CapRegistry, CapUrn, Cap, validate_cap_canonical};
+use capdag::{CapRegistry, CapUrn, Cap, validate_cap_canonical};
 use tokio;
 
 #[tokio::main]
