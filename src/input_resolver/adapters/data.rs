@@ -418,10 +418,11 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    // JSON Detection Tests
+    // JSON Detection Tests (TEST1030-TEST1044)
 
+    // TEST1030: Empty object
     #[test]
-    fn test_json_empty_object() {
+    fn test1030_json_empty_object() {
         let adapter = JsonAdapter;
         let path = PathBuf::from("data.json");
         let content = b"{}";
@@ -431,8 +432,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
     }
 
+    // TEST1031: Simple object
     #[test]
-    fn test_json_simple_object() {
+    fn test1031_json_simple_object() {
         let adapter = JsonAdapter;
         let path = PathBuf::from("data.json");
         let content = br#"{"a": 1}"#;
@@ -441,8 +443,9 @@ mod tests {
         assert_eq!(result.media_urn, "media:json;record;textable");
     }
 
+    // TEST1033: Empty array
     #[test]
-    fn test_json_empty_array() {
+    fn test1033_json_empty_array() {
         let adapter = JsonAdapter;
         let path = PathBuf::from("data.json");
         let content = b"[]";
@@ -452,8 +455,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListOpaque);
     }
 
+    // TEST1036: Array of objects
     #[test]
-    fn test_json_array_of_objects() {
+    fn test1036_json_array_of_objects() {
         let adapter = JsonAdapter;
         let path = PathBuf::from("data.json");
         let content = br#"[{"a": 1}]"#;
@@ -463,8 +467,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListRecord);
     }
 
+    // TEST1039: Number primitive
     #[test]
-    fn test_json_primitive() {
+    fn test1039_json_number_primitive() {
         let adapter = JsonAdapter;
         let path = PathBuf::from("data.json");
         let content = b"42";
@@ -474,10 +479,11 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ScalarOpaque);
     }
 
-    // NDJSON Detection Tests
+    // NDJSON Detection Tests (TEST1045-TEST1054)
 
+    // TEST1045: Objects only
     #[test]
-    fn test_ndjson_objects() {
+    fn test1045_ndjson_objects() {
         let adapter = NdjsonAdapter;
         let path = PathBuf::from("data.ndjson");
         let content = b"{\"a\":1}\n{\"b\":2}";
@@ -487,8 +493,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListRecord);
     }
 
+    // TEST1047: Primitives only
     #[test]
-    fn test_ndjson_primitives() {
+    fn test1047_ndjson_primitives() {
         let adapter = NdjsonAdapter;
         let path = PathBuf::from("data.ndjson");
         let content = b"1\n2\n3";
@@ -498,10 +505,11 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListOpaque);
     }
 
-    // CSV Detection Tests
+    // CSV Detection Tests (TEST1055-TEST1064)
 
+    // TEST1055: Multi-column with header
     #[test]
-    fn test_csv_multi_column() {
+    fn test1055_csv_multi_column() {
         let adapter = CsvAdapter;
         let path = PathBuf::from("data.csv");
         let content = b"a,b\n1,2";
@@ -511,8 +519,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListRecord);
     }
 
+    // TEST1056: Single column
     #[test]
-    fn test_csv_single_column() {
+    fn test1056_csv_single_column() {
         let adapter = CsvAdapter;
         let path = PathBuf::from("data.csv");
         let content = b"value\n1\n2";
@@ -522,10 +531,11 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListOpaque);
     }
 
-    // YAML Detection Tests
+    // YAML Detection Tests (TEST1065-TEST1074)
 
+    // TEST1065: Simple mapping
     #[test]
-    fn test_yaml_mapping() {
+    fn test1065_yaml_mapping() {
         let adapter = YamlAdapter;
         let path = PathBuf::from("config.yaml");
         let content = b"a: 1";
@@ -535,8 +545,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
     }
 
+    // TEST1067: Sequence of scalars
     #[test]
-    fn test_yaml_sequence_of_scalars() {
+    fn test1067_yaml_sequence_of_scalars() {
         let adapter = YamlAdapter;
         let path = PathBuf::from("list.yaml");
         let content = b"- a\n- b";
@@ -546,8 +557,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListOpaque);
     }
 
+    // TEST1068: Sequence of mappings
     #[test]
-    fn test_yaml_sequence_of_mappings() {
+    fn test1068_yaml_sequence_of_mappings() {
         let adapter = YamlAdapter;
         let path = PathBuf::from("list.yaml");
         let content = b"- a: 1\n- b: 2";
@@ -557,10 +569,9 @@ mod tests {
         assert_eq!(result.content_structure, ContentStructure::ListRecord);
     }
 
-    // TOML Test
-
+    // TEST1087: TOML always record
     #[test]
-    fn test_toml_always_record() {
+    fn test1087_toml_always_record() {
         let adapter = TomlAdapter;
         let path = PathBuf::from("config.toml");
         let content = b"[section]\nkey = \"value\"";

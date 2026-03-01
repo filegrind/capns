@@ -210,6 +210,9 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
+    // Internal tests for MediaAdapterRegistry helper functions
+    // These test internal implementation details and integration with MediaUrnRegistry
+
     fn create_test_registry() -> (Arc<MediaUrnRegistry>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
@@ -217,8 +220,9 @@ mod tests {
         (Arc::new(registry), temp_dir)
     }
 
+    // TEST1031 (registry integration): JSON detection via MediaAdapterRegistry
     #[test]
-    fn test_json_detection_end_to_end() {
+    fn test1031_json_detection_via_adapter_registry() {
         let (media_registry, _temp) = create_test_registry();
         let adapter_registry = MediaAdapterRegistry::new(media_registry.clone());
 
@@ -236,6 +240,7 @@ mod tests {
         assert!(result.media_urn.contains("record"));
     }
 
+    // Internal helper test: extract_base_urn
     #[test]
     fn test_extract_base_urn() {
         assert_eq!(extract_base_urn("media:json"), "media:json");

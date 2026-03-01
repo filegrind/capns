@@ -297,10 +297,11 @@ mod tests {
         assert!(!result.is_homogeneous());
     }
 
-    // Additional tests for resolve_paths
+    // Integration Tests - resolve_paths with content detection
 
+    // TEST1031 (integration): JSON object via resolve_paths
     #[test]
-    fn test_resolve_json_object() {
+    fn test1031_resolve_json_object() {
         let dir = create_test_dir();
         let path = create_file(&dir, "data.json", br#"{"key": "value"}"#);
 
@@ -313,8 +314,9 @@ mod tests {
         assert!(result.files[0].media_urn.contains("record"));
     }
 
+    // TEST1036 (integration): JSON array of objects via resolve_paths
     #[test]
-    fn test_resolve_json_array_of_objects() {
+    fn test1036_resolve_json_array_of_objects() {
         let dir = create_test_dir();
         let path = create_file(&dir, "data.json", br#"[{"a": 1}, {"b": 2}]"#);
 
@@ -328,8 +330,9 @@ mod tests {
         assert!(result.files[0].media_urn.contains("record"));
     }
 
+    // TEST1045 (integration): NDJSON via resolve_paths
     #[test]
-    fn test_resolve_ndjson() {
+    fn test1045_resolve_ndjson() {
         let dir = create_test_dir();
         let path = create_file(&dir, "data.ndjson", b"{\"a\":1}\n{\"b\":2}\n{\"c\":3}");
 
@@ -342,8 +345,9 @@ mod tests {
         assert!(result.files[0].media_urn.contains("ndjson"));
     }
 
+    // TEST1065 (integration): YAML mapping via resolve_paths
     #[test]
-    fn test_resolve_yaml_mapping() {
+    fn test1065_resolve_yaml_mapping() {
         let dir = create_test_dir();
         let path = create_file(&dir, "config.yaml", b"key: value\nother: data");
 
@@ -355,8 +359,9 @@ mod tests {
         );
     }
 
+    // TEST1067 (integration): YAML sequence via resolve_paths
     #[test]
-    fn test_resolve_yaml_sequence() {
+    fn test1067_resolve_yaml_sequence() {
         let dir = create_test_dir();
         let path = create_file(&dir, "list.yaml", b"- item1\n- item2\n- item3");
 
@@ -368,8 +373,9 @@ mod tests {
         );
     }
 
+    // TEST1020 (integration): OS files excluded in resolve_paths
     #[test]
-    fn test_os_files_excluded() {
+    fn test1020_os_files_excluded_integration() {
         let dir = create_test_dir();
         create_file(&dir, ".DS_Store", b"");
         create_file(&dir, "real.txt", b"content");
@@ -380,8 +386,9 @@ mod tests {
         assert!(result.files[0].path.to_str().unwrap().contains("real.txt"));
     }
 
+    // TEST1095/1096 (integration): Glob with detection
     #[test]
-    fn test_glob_with_detection() {
+    fn test1095_glob_with_detection() {
         let dir = create_test_dir();
         create_file(&dir, "a.json", br#"{"x": 1}"#);
         create_file(&dir, "b.json", br#"[1, 2, 3]"#);
