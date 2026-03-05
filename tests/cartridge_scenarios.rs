@@ -13,57 +13,12 @@ use capdag::orchestrator::{
     execute_dag, NodeData,
     parse_dot_to_cap_dag, CapRegistryTrait, ParseOrchestrationError,
 };
+use serial_test::serial;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::OnceLock;
 use tempfile::TempDir;
-
-// =============================================================================
-// Shared Binary Cache — builds all cartridges once per test session
-// =============================================================================
-
-/// All cartridge names that tests might need
-const ALL_CARTRIDGES: &[&str] = &[
-    "pdfcartridge",
-    "txtcartridge",
-    "modelcartridge",
-    "candlecartridge",
-    "ggufcartridge",
-    "testcartridge",
-];
-
-/// Cached binary paths, built once per test session
-static BINARY_CACHE: OnceLock<Result<HashMap<String, PathBuf>, String>> = OnceLock::new();
-
-/// Initialize the binary cache by building all cartridges upfront.
-/// Returns a map of cartridge name -> binary path.
-fn init_binary_cache() -> Result<HashMap<String, PathBuf>, String> {
-    eprintln!("[CartridgeTest] Building all cartridges upfront...");
-    let mut paths = HashMap::new();
-
-    for &name in ALL_CARTRIDGES {
-        match ensure_cartridge_binary(name) {
-            Ok(path) => {
-                eprintln!("[CartridgeTest] Built {}: {:?}", name, path);
-                paths.insert(name.to_string(), path);
-            }
-            Err(e) => {
-                // Return error immediately - fail fast on first build failure
-                return Err(format!("Failed to build {}: {}", name, e));
-            }
-        }
-    }
-
-    eprintln!("[CartridgeTest] All {} cartridges built successfully", paths.len());
-    Ok(paths)
-}
-
-/// Get the shared binary cache, initializing on first call.
-fn get_binary_cache() -> &'static Result<HashMap<String, PathBuf>, String> {
-    BINARY_CACHE.get_or_init(init_binary_cache)
-}
 
 // =============================================================================
 // Cap URN Builders — mirror the exact builder calls in each cartridge
@@ -649,25 +604,17 @@ fn ensure_cartridge_binary(name: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("{} binary not found after build", name))
 }
 
-/// Require specific cartridge binaries from the shared cache.
-/// All cartridges are built once on first call, then cached for the session.
+/// Require specific cartridge binaries. Builds them if missing or outdated.
 fn require_binaries(names: &[&str]) -> Vec<PathBuf> {
-    // Get or initialize the shared cache (builds ALL cartridges on first call)
-    let cache = match get_binary_cache() {
-        Ok(cache) => cache,
-        Err(e) => panic!("Cartridge build failed: {}", e),
-    };
-
-    // Look up requested binaries from cache
     let mut paths = Vec::new();
     for &name in names {
-        match cache.get(name) {
-            Some(path) => {
+        match ensure_cartridge_binary(name) {
+            Ok(path) => {
                 eprintln!("[CartridgeTest] Using {}: {:?}", name, path);
-                paths.push(path.clone());
+                paths.push(path);
             }
-            None => {
-                panic!("Cartridge {} not in cache (not in ALL_CARTRIDGES list?)", name);
+            Err(e) => {
+                panic!("Failed to build {}: {}", name, e);
             }
         }
     }
@@ -1552,6 +1499,7 @@ async fn test948_pdf_document_intelligence() {
 
 // TEST015: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding
 #[tokio::test]
+#[serial]
 async fn test949_pdf_thumbnail_to_image_embedding() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
@@ -1607,6 +1555,7 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
 
 // TEST016: Complete PDF intelligence pipeline with cross-cartridge image embedding
 #[tokio::test]
+#[serial]
 async fn test950_pdf_full_intelligence_pipeline() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
@@ -1813,6 +1762,7 @@ async fn test952_multi_format_document_processing() {
 
 // TEST019: Fan-out from model spec to availability check and embedding dimensions
 #[tokio::test]
+#[serial]
 async fn test953_model_plus_dimensions() {
     let dev_binaries = require_binaries(&["modelcartridge", "candlecartridge"]);
 
@@ -1921,6 +1871,7 @@ async fn test954_model_availability_plus_status() {
 
 // TEST021: Generate text embedding with BERT via candlecartridge
 #[tokio::test]
+#[serial]
 async fn test955_text_embedding() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
@@ -1976,6 +1927,7 @@ async fn test955_text_embedding() {
 
 // TEST022: Generate image description with BLIP via candlecartridge
 #[tokio::test]
+#[serial]
 async fn test956_candle_describe_image() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
@@ -2025,6 +1977,7 @@ async fn test956_candle_describe_image() {
 
 // TEST023: Transcribe audio with Whisper via candlecartridge
 #[tokio::test]
+#[serial]
 async fn test957_audio_transcription() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
@@ -2975,6 +2928,7 @@ async fn test967_model_list_models() {
 
 // TEST034: Query GGUF embedding model dimensions via ggufcartridge
 #[tokio::test]
+#[serial]
 async fn test968_gguf_embeddings_dimensions() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3027,6 +2981,7 @@ async fn test968_gguf_embeddings_dimensions() {
 
 // TEST035: Query GGUF model metadata via llm_model_info cap
 #[tokio::test]
+#[serial]
 async fn test969_gguf_llm_model_info() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3081,6 +3036,7 @@ async fn test969_gguf_llm_model_info() {
 
 // TEST036: Extract vocabulary tokens from a GGUF model via llm_vocab cap
 #[tokio::test]
+#[serial]
 async fn test970_gguf_llm_vocab() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3135,6 +3091,7 @@ async fn test970_gguf_llm_vocab() {
 
 // TEST037: Fan-out from one LLM request to both model_info and vocab outputs
 #[tokio::test]
+#[serial]
 async fn test971_gguf_model_info_plus_vocab() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3193,6 +3150,7 @@ async fn test971_gguf_model_info_plus_vocab() {
 
 // TEST038: Generate text with a small GGUF LLM via llm_inference cap
 #[tokio::test]
+#[serial]
 async fn test972_gguf_llm_inference() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3245,6 +3203,7 @@ async fn test972_gguf_llm_inference() {
 
 // TEST039: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap
 #[tokio::test]
+#[serial]
 async fn test973_gguf_llm_inference_constrained() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3300,6 +3259,7 @@ async fn test973_gguf_llm_inference_constrained() {
 
 // TEST040: Generate GGUF text embeddings with fan-in of text and model-spec inputs
 #[tokio::test]
+#[serial]
 async fn test974_gguf_generate_embeddings() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3360,6 +3320,7 @@ async fn test974_gguf_generate_embeddings() {
 
 // TEST041: Describe image with GGUF vision model via fan-in of image and model-spec
 #[tokio::test]
+#[serial]
 async fn test975_gguf_describe_image() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3414,6 +3375,7 @@ async fn test975_gguf_describe_image() {
 
 // TEST042: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis
 #[tokio::test]
+#[serial]
 async fn test976_pdf_thumbnail_to_gguf_vision() {
     let dev_binaries =
         require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
@@ -3476,6 +3438,7 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
 
 // TEST043: Fan-out from one LLM request to all 4 ggufcartridge LLM operations
 #[tokio::test]
+#[serial]
 async fn test977_gguf_all_llm_ops() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
@@ -3797,6 +3760,7 @@ async fn test982_model_download() {
 /// Flow: CHAIN (3 steps across 2 cartridges + ML inference)
 /// Tests: Sequential data transformation across multiple cartridges
 #[tokio::test]
+#[serial]
 async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
@@ -3851,6 +3815,7 @@ async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
 /// Flow: CHAIN + FAN-IN (thumbnail and model_spec both feed into description)
 /// Tests: Multiple inputs converging on single output node
 #[tokio::test]
+#[serial]
 async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
     let dev_binaries = require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
 
@@ -3903,6 +3868,7 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
 /// Flow: single cap
 /// Tests: candlecartridge transcribe cap
 #[tokio::test]
+#[serial]
 async fn test985_audio_transcribe_to_embed() {
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
@@ -3949,6 +3915,7 @@ async fn test985_audio_transcribe_to_embed() {
 /// Flow: FAN-OUT (3 outputs) + CHAIN (thumbnail → embedding)
 /// Tests: Single input fanning out with one branch continuing to ML
 #[tokio::test]
+#[serial]
 async fn test986_pdf_fanout_with_chain() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
@@ -4003,6 +3970,7 @@ async fn test986_pdf_fanout_with_chain() {
 /// Flow: PARALLEL CHAINS (2 independent chains running in parallel)
 /// Tests: Parallel processing of different input formats
 #[tokio::test]
+#[serial]
 async fn test987_multi_format_parallel_chains() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge", "candlecartridge", "modelcartridge"]);
 
@@ -4056,6 +4024,7 @@ async fn test987_multi_format_parallel_chains() {
 /// Flow: FAN-OUT from input + FAN-OUT from intermediate + CHAIN
 /// Tests: Complex graph with branching at multiple levels
 #[tokio::test]
+#[serial]
 async fn test988_deep_chain_with_parallel() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
@@ -4115,6 +4084,7 @@ async fn test988_deep_chain_with_parallel() {
 /// Flow: Two independent FAN-OUT paths (model management + PDF processing)
 /// Tests: 3 cartridges working in parallel on independent data
 #[tokio::test]
+#[serial]
 async fn test989_five_cartridge_chain() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "candlecartridge"]);
 
@@ -4171,6 +4141,7 @@ async fn test989_five_cartridge_chain() {
 /// Flow: 4 PARALLEL CHAINS (one for each text format)
 /// Tests: Maximum parallelism with 4 independent chains
 #[tokio::test]
+#[serial]
 async fn test990_all_text_formats_to_image_embeds() {
     let dev_binaries = require_binaries(&["txtcartridge", "candlecartridge", "modelcartridge"]);
 
