@@ -530,49 +530,99 @@ impl PluginManager {
 }
 
 // =============================================================================
-// Execution Context — RelaySwitch + PluginHostRuntime
+// Execution Context — RelaySwitch with dynamic master management
 // =============================================================================
 
-/// Execution context: one RelaySwitch, one PluginHostRuntime, all plugins registered.
-/// Frames flow through the relay — no per-plugin spawning, no JSON accumulation.
+/// Handle for cleanup of a master's associated resources.
+///
+/// When a master is added via `add_plugin_host`, we spawn threads and hold
+/// socket clones that need explicit shutdown. This struct tracks those resources.
+struct MasterCleanupHandle {
+    /// Socket clones for force-shutdown. Calling shutdown(Both) on these
+    /// forces all readers/writers on all clones to see errors immediately.
+    shutdown_sockets: Vec<UnixStream>,
+    /// Thread handles to join after shutdown.
+    thread_handles: Vec<std::thread::JoinHandle<()>>,
+}
+
+/// Execution context: one RelaySwitch with dynamically added masters.
+///
+/// Masters are added via:
+/// - `add_master()` - for externally managed socket pairs (caller handles cleanup)
+/// - `add_plugin_host()` - spawns PluginHostRuntime + RelaySlave (context handles cleanup)
+///
+/// All data flows as binary through `node_data`. No JSON wrapping.
 pub struct ExecutionContext {
     switch: RelaySwitch,
     /// Raw bytes at each DAG node. The base level is binary, not JSON.
     node_data: HashMap<String, Vec<u8>>,
-    /// Negotiated max chunk size from the relay handshake.
+    /// Negotiated max chunk size from the relay (updated after each master added).
     max_chunk: usize,
-    /// Socket handles for explicit shutdown. try_clone means dropping one clone
-    /// doesn't close the FD — all clones must be dropped. shutdown(Both) forces
-    /// all clones on that endpoint to see errors immediately.
-    switch_shutdown: UnixStream,
-    slave_int_shutdown: UnixStream,
-    /// JoinHandle for the RelaySlave thread.
-    slave_handle: Option<std::thread::JoinHandle<()>>,
+    /// Cleanup handles for masters added via add_plugin_host.
+    cleanup_handles: Vec<MasterCleanupHandle>,
 }
 
 impl ExecutionContext {
-    /// Create the execution infrastructure: spawn PluginHostRuntime, connect via
-    /// RelaySlave to RelaySwitch. All plugins are registered for on-demand spawning.
-    pub async fn new(
-        plugins: Vec<(PathBuf, Vec<String>)>,
-    ) -> Result<Self, ExecutionError> {
-        // Create socket pairs:
-        //   Connection 1: RelaySwitch ←→ RelaySlave
-        //   Connection 2: RelaySlave ←→ PluginHostRuntime
-        let (switch_sock, slave_ext_sock) =
-            UnixStream::pair().map_err(|e| ExecutionError::IoError(e))?;
-        let switch_shutdown = switch_sock
-            .try_clone()
-            .map_err(|e| ExecutionError::IoError(e))?;
-        let (slave_int_sock, host_sock) =
-            UnixStream::pair().map_err(|e| ExecutionError::IoError(e))?;
+    /// Create a new empty ExecutionContext.
+    ///
+    /// The RelaySwitch starts with no masters. Use `add_master()` or
+    /// `add_plugin_host()` to add masters before executing caps.
+    pub fn new() -> Result<Self, ExecutionError> {
+        let switch = RelaySwitch::new(vec![])
+            .map_err(|e| ExecutionError::HostError(format!("RelaySwitch init: {}", e)))?;
 
-        // Keep a clone for explicit shutdown — try_clone means dropping one clone
-        // doesn't close the FD. We need shutdown(Both) to force all readers/writers
-        // on all clones to see errors and exit.
-        let slave_int_shutdown = slave_int_sock
-            .try_clone()
-            .map_err(|e| ExecutionError::IoError(e))?;
+        Ok(Self {
+            switch,
+            node_data: HashMap::new(),
+            max_chunk: DEFAULT_MAX_CHUNK as usize,
+            cleanup_handles: Vec::new(),
+        })
+    }
+
+    /// Add a master connection from externally managed socket pairs.
+    ///
+    /// The caller is responsible for the lifecycle of the connected endpoint
+    /// (e.g., an InProcessPluginHost or external plugin connection).
+    ///
+    /// Returns the master index on success.
+    pub fn add_master(
+        &mut self,
+        read_sock: UnixStream,
+        write_sock: UnixStream,
+    ) -> Result<usize, ExecutionError> {
+        let idx = self.switch.add_master(read_sock, write_sock)
+            .map_err(|e| ExecutionError::HostError(format!("add_master: {}", e)))?;
+
+        self.update_max_chunk();
+        Ok(idx)
+    }
+
+    /// Add a PluginHostRuntime as a master, spawning all required infrastructure.
+    ///
+    /// This creates:
+    /// - PluginHostRuntime (async, in tokio task)
+    /// - RelaySlave (sync, in std::thread)
+    /// - Socket pairs connecting them to the switch
+    ///
+    /// The ExecutionContext manages cleanup of these resources.
+    ///
+    /// # Arguments
+    /// * `plugins` - Vec of (binary_path, cap_urns) to register with the host
+    pub async fn add_plugin_host(
+        &mut self,
+        plugins: Vec<(PathBuf, Vec<String>)>,
+    ) -> Result<usize, ExecutionError> {
+        // Create socket pairs:
+        //   switch_sock <-> slave_ext_sock (switch to slave)
+        //   slave_int_sock <-> host_sock (slave to host runtime)
+        let (switch_sock, slave_ext_sock) =
+            UnixStream::pair().map_err(ExecutionError::IoError)?;
+        let (slave_int_sock, host_sock) =
+            UnixStream::pair().map_err(ExecutionError::IoError)?;
+
+        // Keep clones for explicit shutdown
+        let switch_shutdown = switch_sock.try_clone().map_err(ExecutionError::IoError)?;
+        let slave_int_shutdown = slave_int_sock.try_clone().map_err(ExecutionError::IoError)?;
 
         // --- PluginHostRuntime (async, in tokio task) ---
         let mut host = PluginHostRuntime::new();
@@ -591,25 +641,19 @@ impl ExecutionContext {
         });
 
         // --- RelaySlave (sync, in blocking thread) ---
-        let slave_int_read = slave_int_sock
-            .try_clone()
-            .map_err(|e| ExecutionError::IoError(e))?;
+        let slave_int_read = slave_int_sock.try_clone().map_err(ExecutionError::IoError)?;
         let slave_int_write = slave_int_sock;
         let slave = RelaySlave::new(
             BufReader::new(slave_int_read),
             BufWriter::new(slave_int_write),
         );
 
-        // Initial caps: just CAP_IDENTITY so RelaySwitch can verify identity
-        // during handshake. PluginHostRuntime sends full caps via RelayNotify.
-        let initial_caps_json =
-            serde_json::to_vec(&[CAP_IDENTITY]).map_err(|e| {
-                ExecutionError::HostError(format!("Failed to serialize initial caps: {}", e))
-            })?;
+        // Initial caps: just CAP_IDENTITY for handshake verification.
+        // PluginHostRuntime sends full caps via RelayNotify.
+        let initial_caps_json = serde_json::to_vec(&[CAP_IDENTITY])
+            .map_err(|e| ExecutionError::HostError(format!("serialize caps: {}", e)))?;
 
-        let slave_ext_read = slave_ext_sock
-            .try_clone()
-            .map_err(|e| ExecutionError::IoError(e))?;
+        let slave_ext_read = slave_ext_sock.try_clone().map_err(ExecutionError::IoError)?;
         let slave_ext_write = slave_ext_sock;
 
         let slave_handle = std::thread::spawn(move || {
@@ -622,60 +666,95 @@ impl ExecutionContext {
             }
         });
 
-        // --- RelaySwitch (sync, blocks on handshake) ---
-        let switch_read = switch_sock
-            .try_clone()
-            .map_err(|e| ExecutionError::IoError(e))?;
+        // --- Add to switch (blocking handshake) ---
+        let switch_read = switch_sock.try_clone().map_err(ExecutionError::IoError)?;
         let switch_write = switch_sock;
 
-        let switch = tokio::task::spawn_blocking(move || {
-            RelaySwitch::new(vec![(switch_read, switch_write)])
-        })
-        .await
-        .map_err(|e| ExecutionError::HostError(format!("Join error: {}", e)))?
-        .map_err(|e| ExecutionError::HostError(format!("RelaySwitch init: {}", e)))?;
-
-        let max_chunk = switch.limits().max_chunk as usize;
-        let max_chunk = if max_chunk == 0 {
-            DEFAULT_MAX_CHUNK as usize
-        } else {
-            max_chunk
+        // add_master is sync and blocks on handshake, so run in spawn_blocking
+        let add_result = {
+            // We need to pass &mut self.switch but can't move self into the closure.
+            // Instead, we do the blocking add_master call directly here since we're
+            // already in an async context and add_master does blocking I/O.
+            tokio::task::block_in_place(|| {
+                self.switch.add_master(switch_read, switch_write)
+            })
         };
 
-        Ok(Self {
-            switch,
-            node_data: HashMap::new(),
-            max_chunk,
-            switch_shutdown,
-            slave_int_shutdown,
-            slave_handle: Some(slave_handle),
-        })
+        let master_idx = add_result
+            .map_err(|e| ExecutionError::HostError(format!("add_master: {}", e)))?;
+
+        // Store cleanup handles
+        self.cleanup_handles.push(MasterCleanupHandle {
+            shutdown_sockets: vec![switch_shutdown, slave_int_shutdown],
+            thread_handles: vec![slave_handle],
+        });
+
+        self.update_max_chunk();
+        Ok(master_idx)
     }
 
-    /// Set initial data for a source node.
+    /// Update max_chunk from current switch limits.
+    fn update_max_chunk(&mut self) {
+        let chunk = self.switch.limits().max_chunk as usize;
+        self.max_chunk = if chunk == 0 { DEFAULT_MAX_CHUNK as usize } else { chunk };
+    }
+
+    /// Get the current max chunk size.
+    pub fn max_chunk(&self) -> usize {
+        self.max_chunk
+    }
+
+    /// Get the aggregate capabilities of all connected masters.
+    pub fn capabilities(&self) -> &[u8] {
+        self.switch.capabilities()
+    }
+
+    /// Get the negotiated limits.
+    pub fn limits(&self) -> &Limits {
+        self.switch.limits()
+    }
+
+    /// Set data for a node.
     pub fn set_node_data(&mut self, node: String, data: Vec<u8>) {
         self.node_data.insert(node, data);
     }
 
-    /// Shut down the infrastructure: close sockets, join slave thread.
-    /// Must be called after execution to prevent hanging on cleanup.
+    /// Get data for a node.
+    pub fn get_node_data(&self, node: &str) -> Option<&Vec<u8>> {
+        self.node_data.get(node)
+    }
+
+    /// Get mutable reference to node_data map.
+    pub fn node_data_mut(&mut self) -> &mut HashMap<String, Vec<u8>> {
+        &mut self.node_data
+    }
+
+    /// Get the underlying RelaySwitch for direct frame operations.
+    pub fn switch(&mut self) -> &mut RelaySwitch {
+        &mut self.switch
+    }
+
+    /// Shut down the infrastructure and return accumulated node data.
+    ///
+    /// This:
+    /// 1. Drops the switch (releases frame writers and reader threads)
+    /// 2. Force-closes all managed sockets
+    /// 3. Joins all managed threads
+    ///
+    /// For masters added via `add_master()`, the caller is responsible for
+    /// shutting down their endpoints.
     pub fn shutdown(mut self) -> HashMap<String, Vec<u8>> {
         // 1. Drop the switch — releases its FrameWriters and reader_handles.
         drop(self.switch);
 
-        // 2. Shut down both socket endpoints. try_clone means dropping one
-        // clone doesn't close the FD — shutdown(Both) forces ALL clones
-        // (including those in reader threads) to see errors immediately.
-        let _ = self
-            .switch_shutdown
-            .shutdown(std::net::Shutdown::Both);
-        let _ = self
-            .slave_int_shutdown
-            .shutdown(std::net::Shutdown::Both);
-
-        // 3. Join the slave thread (exits quickly now that sockets are dead).
-        if let Some(handle) = self.slave_handle.take() {
-            let _ = handle.join();
+        // 2. Force-close all managed sockets and join threads.
+        for handle in self.cleanup_handles {
+            for sock in handle.shutdown_sockets {
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+            for thread in handle.thread_handles {
+                let _ = thread.join();
+            }
         }
 
         self.node_data
@@ -687,6 +766,10 @@ impl ExecutionContext {
     /// one input stream using its `from` node's data and its own `in_media` URN.
     /// The cap handler receives all streams and decides when/how to process them.
     ///
+    /// Additional arguments can be provided via `extra_args` - these are sent as
+    /// additional input streams with the specified media_urn. This is used for
+    /// slot values, cap settings, etc. that don't flow through edges.
+    ///
     /// Protocol:
     ///   REQ(cap_urn)
     ///   STREAM_START(stream_id_1, in_media_1) + CHUNK... + STREAM_END(stream_id_1)
@@ -694,21 +777,26 @@ impl ExecutionContext {
     ///   ...
     ///   END
     ///   → collect response chunks → decode CBOR → store at `to` node
-    pub fn execute_fanin(&mut self, edges: &[ResolvedEdge]) -> Result<(), ExecutionError> {
+    pub fn execute_fanin(
+        &mut self,
+        edges: &[ResolvedEdge],
+        extra_args: &[(String, Vec<u8>)],
+    ) -> Result<(), ExecutionError> {
         assert!(!edges.is_empty(), "execute_fanin requires at least one edge");
 
         let cap_urn = &edges[0].cap_urn;
         let to = &edges[0].to;
 
+        let total_streams = edges.len() + extra_args.len();
         eprintln!(
             "Executing cap: {} ({} input stream(s) -> {})",
             cap_urn,
-            edges.len(),
+            total_streams,
             to
         );
 
         // Collect all input data upfront — fail fast if any source is missing
-        let inputs: Vec<(Vec<u8>, String)> = edges
+        let mut inputs: Vec<(Vec<u8>, String)> = edges
             .iter()
             .map(|edge| {
                 let data = self
@@ -721,6 +809,11 @@ impl ExecutionContext {
                 Ok((data, edge.in_media.clone()))
             })
             .collect::<Result<Vec<_>, ExecutionError>>()?;
+
+        // Add extra arguments as additional input streams
+        for (media_urn, data) in extra_args {
+            inputs.push((data.clone(), media_urn.clone()));
+        }
 
         // Open ONE cap invocation for all inputs
         let (request_id, rx) = self
@@ -931,8 +1024,9 @@ pub async fn execute_dag(
         eprintln!("  {:?} -> {} caps", path, caps.len());
     }
 
-    // 2. Create execution context (RelaySwitch + PluginHostRuntime)
-    let mut ctx = ExecutionContext::new(plugins).await?;
+    // 2. Create execution context and add plugin host as master
+    let mut ctx = ExecutionContext::new()?;
+    ctx.add_plugin_host(plugins).await?;
 
     // 3. Resolve initial inputs to raw bytes and set on nodes
     for (node, data) in initial_inputs {
@@ -956,7 +1050,8 @@ pub async fn execute_dag(
     // RelaySwitch/read_from_masters are blocking operations
     tokio::task::spawn_blocking(move || {
         for idx in group_order {
-            ctx.execute_fanin(&groups[idx].edges)?;
+            // No extra arguments in CLI mode - all data flows through edges
+            ctx.execute_fanin(&groups[idx].edges, &[])?;
         }
 
         eprintln!("\nExecution complete!\n");

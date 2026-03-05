@@ -68,7 +68,8 @@ pub async fn plan_to_resolved_graph(
 
     // Second pass: convert edges that lead INTO Cap nodes into ResolvedEdges
     // In CapExecutionPlan, data flows: source_node --edge--> cap_node
-    // In ResolvedGraph, this becomes: source_node --cap_edge--> cap_output_node
+    // In ResolvedGraph, this becomes: source_node --cap_edge--> cap_node
+    // The cap's output is stored AT the cap node (cap_0, cap_1, etc.)
     for edge in &plan.edges {
         let to_node = plan.nodes.get(&edge.to_node).ok_or_else(|| {
             ParseOrchestrationError::CapNotFound {
@@ -82,13 +83,11 @@ pub async fn plan_to_resolved_graph(
             let in_media = cap.urn.in_spec().to_string();
             let out_media = cap.urn.out_spec().to_string();
 
-            // Find what comes after this cap node (the edge's "to" in ResolvedGraph)
-            // This is the node that receives this cap's output
-            let output_node_id = find_cap_output_target(plan, &edge.to_node)?;
-
+            // The cap's output is stored at the cap node itself
+            // This allows the next edge (cap_0 → cap_1) to find data at cap_0
             resolved_edges.push(ResolvedEdge {
                 from: edge.from_node.clone(),
-                to: output_node_id,
+                to: edge.to_node.clone(),  // Store output at the cap node
                 cap_urn: cap_urn.clone(),
                 cap: cap.clone(),
                 in_media,
@@ -102,26 +101,6 @@ pub async fn plan_to_resolved_graph(
         edges: resolved_edges,
         graph_name: Some(plan.name.clone()),
     })
-}
-
-/// Find where a cap node's output goes.
-///
-/// Given a cap node ID, find the node that receives its output.
-/// This follows the outgoing edge from the cap node.
-fn find_cap_output_target(
-    plan: &CapExecutionPlan,
-    cap_node_id: &str,
-) -> Result<String, ParseOrchestrationError> {
-    // Find edges where from_node == cap_node_id
-    for edge in &plan.edges {
-        if edge.from_node == cap_node_id {
-            return Ok(edge.to_node.clone());
-        }
-    }
-
-    // If no outgoing edge, this cap is terminal - use the cap node ID itself
-    // as the output node (the orchestrator will store output there)
-    Ok(cap_node_id.to_string())
 }
 
 #[cfg(test)]
@@ -182,9 +161,19 @@ mod tests {
 
         let graph = plan_to_resolved_graph(&plan, &registry).await.unwrap();
 
+        // Edges: input→cap_0 (extract), cap_0→cap_1 (summarize)
+        // The output edge (cap_1→output) doesn't generate a ResolvedEdge
+        // because output nodes are not Cap nodes
         assert_eq!(graph.edges.len(), 2);
+
+        // First edge: input → cap_0 via extract cap
         assert_eq!(graph.edges[0].from, "input");
+        assert_eq!(graph.edges[0].to, "cap_0");  // Output stored at cap_0
         assert_eq!(graph.edges[0].cap_urn, "cap:in=media:pdf;op=extract;out=media:text");
+
+        // Second edge: cap_0 → cap_1 via summarize cap
+        assert_eq!(graph.edges[1].from, "cap_0");
+        assert_eq!(graph.edges[1].to, "cap_1");  // Output stored at cap_1
         assert_eq!(graph.edges[1].cap_urn, "cap:in=media:text;op=summarize;out=media:summary");
     }
 }
