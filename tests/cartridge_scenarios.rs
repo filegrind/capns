@@ -356,9 +356,18 @@ impl CapRegistryTrait for CartridgeRegistry {
 /// Get the cartridge directory path
 fn cartridge_dir(name: &str) -> Option<PathBuf> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
-    let dir = PathBuf::from(&manifest_dir)
-        .parent()? // machinefabric/
-        .join(name);
+    let manifest_path = PathBuf::from(&manifest_dir);
+
+    // testcartridge is inside capdag/, others are at workspace root
+    if name == "testcartridge" {
+        let dir = manifest_path.join(name);
+        if dir.exists() {
+            return Some(dir);
+        }
+    }
+
+    // Standard location: machinefabric/{name}
+    let dir = manifest_path.parent()?.join(name);
     if dir.exists() {
         Some(dir)
     } else {
@@ -571,11 +580,14 @@ fn build_cartridge(name: &str) -> Result<(), String> {
 /// names in the cartridge's `target/release/` directory.
 fn find_cartridge_binary(name: &str) -> Option<PathBuf> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
-    let release_dir = PathBuf::from(&manifest_dir)
-        .parent()? // machinefabric/
-        .join(name)
-        .join("target")
-        .join("release");
+    let manifest_path = PathBuf::from(&manifest_dir);
+
+    // testcartridge is inside capdag/, others are at workspace root
+    let release_dir = if name == "testcartridge" {
+        manifest_path.join(name).join("target").join("release")
+    } else {
+        manifest_path.parent()?.join(name).join("target").join("release")
+    };
 
     if !release_dir.exists() {
         return None;
