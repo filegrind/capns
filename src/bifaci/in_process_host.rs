@@ -352,6 +352,11 @@ impl InProcessPluginHost {
     /// - Request is pattern, registered cap is instance
     /// - Closest specificity to request wins
     /// - Ties broken by first match (deterministic)
+    /// Find the best handler for a cap URN.
+    ///
+    /// The registered cap (pattern) must accept the request cap (instance).
+    /// For example, registered `in=media:` accepts request `in="media:list;requirements;textable"`.
+    /// Among matches, pick the one with closest specificity to the request.
     fn find_handler_for_cap(cap_table: &CapTable, cap_urn: &str) -> Option<usize> {
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
@@ -363,7 +368,9 @@ impl InProcessPluginHost {
 
         for (registered_cap, handler_idx) in cap_table {
             if let Ok(registered_urn) = CapUrn::from_string(registered_cap) {
-                if request_urn.accepts(&registered_urn) {
+                // The registered cap (pattern) must accept the request (instance)
+                // e.g., registered `in=media:` accepts request `in="media:list;requirements;textable"`
+                if registered_urn.accepts(&request_urn) {
                     let specificity = registered_urn.specificity();
                     matches.push((*handler_idx, specificity));
                 }
@@ -396,15 +403,18 @@ impl InProcessPluginHost {
         local_read: R,
         local_write: W,
     ) -> Result<(), CborError> {
+        eprintln!("[InProcessPluginHost] run() starting, handler_count={}", self.handlers.len());
         let mut reader = FrameReader::new(local_read);
 
         // Writer runs in a separate task with SeqAssigner
         let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Frame>();
         let writer_task = tokio::spawn(async move {
+            eprintln!("[InProcessPluginHost] writer task started");
             let mut writer = FrameWriter::new(local_write);
             let mut seq_assigner = SeqAssigner::new();
 
             while let Some(mut frame) = write_rx.recv().await {
+                eprintln!("[InProcessPluginHost] writer: sending frame type={:?} id={}", frame.frame_type, frame.id);
                 seq_assigner.assign(&mut frame);
                 if let Err(e) = writer.write(&frame).await {
                     eprintln!("[InProcessPluginHost] writer error: {}", e);
@@ -414,10 +424,12 @@ impl InProcessPluginHost {
                     seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
             }
+            eprintln!("[InProcessPluginHost] writer task exiting");
         });
 
         // Send initial RelayNotify with aggregate caps
         let manifest = self.build_manifest();
+        eprintln!("[InProcessPluginHost] sending RelayNotify, manifest_len={}", manifest.len());
         let notify = Frame::relay_notify(&manifest, &Limits::default());
         write_tx
             .send(notify)
@@ -434,10 +446,18 @@ impl InProcessPluginHost {
         let identity_handler: Arc<dyn FrameHandler> = Arc::new(IdentityHandler);
 
         // Main read loop — forward frames to handlers, no accumulation
+        eprintln!("[InProcessPluginHost] entering main read loop");
         loop {
+            eprintln!("[InProcessPluginHost] waiting for frame...");
             let frame = match reader.read().await {
-                Ok(Some(f)) => f,
-                Ok(None) => break, // EOF — RelaySlave closed
+                Ok(Some(f)) => {
+                    eprintln!("[InProcessPluginHost] received frame type={:?} id={}", f.frame_type, f.id);
+                    f
+                }
+                Ok(None) => {
+                    eprintln!("[InProcessPluginHost] read EOF — RelaySlave closed");
+                    break;
+                }
                 Err(e) => {
                     eprintln!("[InProcessPluginHost] read error: {}", e);
                     break;
@@ -461,13 +481,22 @@ impl InProcessPluginHost {
 
                     // Identity cap is "cap:" — exact string match, NOT conforms_to.
                     let is_identity = cap_urn == CAP_IDENTITY;
+                    eprintln!("[InProcessPluginHost] REQ cap_urn={} is_identity={}", cap_urn, is_identity);
 
                     let handler: Arc<dyn FrameHandler> = if is_identity {
                         Arc::clone(&identity_handler)
                     } else {
+                        eprintln!("[InProcessPluginHost] searching cap_table with {} entries", cap_table.len());
+                        for (i, (cap, idx)) in cap_table.iter().enumerate() {
+                            eprintln!("[InProcessPluginHost]   cap_table[{}]: cap={} handler_idx={}", i, cap, idx);
+                        }
                         match Self::find_handler_for_cap(&cap_table, &cap_urn) {
-                            Some(idx) => Arc::clone(&handlers[idx].handler),
+                            Some(idx) => {
+                                eprintln!("[InProcessPluginHost] found handler at idx={}", idx);
+                                Arc::clone(&handlers[idx].handler)
+                            }
                             None => {
+                                eprintln!("[InProcessPluginHost] NO_HANDLER for cap={}", cap_urn);
                                 let mut err = Frame::err(
                                     rid,
                                     "NO_HANDLER",
@@ -484,16 +513,18 @@ impl InProcessPluginHost {
                     let (input_tx, input_rx) = mpsc::unbounded_channel::<Frame>();
                     active.insert(rid.clone(), input_tx);
 
-                    // Spawn handler task
+                    // Spawn handler task with logging
                     let output = ResponseWriter::new(
-                        rid,
-                        xid,
+                        rid.clone(),
+                        xid.clone(),
                         write_tx.clone(),
                         Limits::default().max_chunk,
                     );
-                    let cap_urn_owned = cap_urn;
+                    let cap_urn_owned = cap_urn.clone();
                     tokio::spawn(async move {
+                        eprintln!("[InProcessPluginHost] handler task starting for cap={}", cap_urn_owned);
                         handler.handle_request(&cap_urn_owned, input_rx, output).await;
+                        eprintln!("[InProcessPluginHost] handler task completed for cap={}", cap_urn_owned);
                     });
                 }
 

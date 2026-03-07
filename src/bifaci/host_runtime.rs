@@ -210,6 +210,11 @@ struct ManagedPlugin {
     hello_failed: bool,
     /// Pending heartbeats sent to this plugin (ID → sent time).
     pending_heartbeats: HashMap<MessageId, Instant>,
+    /// Stderr handle for capturing crash output.
+    stderr_handle: Option<tokio::process::ChildStderr>,
+    /// Last death error message (includes stderr if available). Used for ERR frames
+    /// sent when attempting to write to a dead plugin.
+    last_death_message: Option<String>,
 }
 
 impl ManagedPlugin {
@@ -227,6 +232,8 @@ impl ManagedPlugin {
             writer_handle: None,
             hello_failed: false,
             pending_heartbeats: HashMap::new(),
+            stderr_handle: None,
+            last_death_message: None,
         }
     }
 
@@ -247,6 +254,8 @@ impl ManagedPlugin {
             writer_handle: None,
             hello_failed: false,
             pending_heartbeats: HashMap::new(),
+            stderr_handle: None,
+            last_death_message: None,
         }
     }
 }
@@ -606,10 +615,14 @@ impl PluginHostRuntime {
                 if self.send_to_plugin(plugin_idx, frame.clone()).is_err() {
                     let flow_key = FlowKey { rid: frame.id.clone(), xid: Some(xid.clone()) };
                     let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                    let death_msg = self.plugins[plugin_idx]
+                        .last_death_message
+                        .as_deref()
+                        .unwrap_or("Plugin exited while processing request");
                     let mut err = Frame::err(
                         frame.id.clone(),
                         "PLUGIN_DIED",
-                        "Plugin exited while processing request",
+                        death_msg,
                     );
                     err.routing_id = frame.routing_id.clone();
                     err.seq = next_seq;
@@ -760,15 +773,55 @@ impl PluginHostRuntime {
         plugin_idx: usize,
         outbound_tx: &mpsc::UnboundedSender<Frame>,
     ) -> Result<(), AsyncHostError> {
+        use tokio::io::AsyncReadExt;
+
         let plugin = &mut self.plugins[plugin_idx];
         plugin.running = false;
         plugin.writer_tx = None;
+
+        // Capture stderr content BEFORE killing the process - this contains crash info
+        let mut stderr_content = String::new();
+        if let Some(ref mut stderr) = plugin.stderr_handle {
+            // Read available stderr data (with a reasonable limit)
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match tokio::time::timeout(
+                    Duration::from_millis(100),
+                    stderr.read(&mut buf)
+                ).await {
+                    Ok(Ok(0)) => break, // EOF
+                    Ok(Ok(n)) => {
+                        if let Ok(s) = std::str::from_utf8(&buf[..n]) {
+                            stderr_content.push_str(s);
+                        }
+                        // Limit total size
+                        if stderr_content.len() > 2000 {
+                            stderr_content.truncate(2000);
+                            stderr_content.push_str("... [truncated]");
+                            break;
+                        }
+                    }
+                    Ok(Err(_)) | Err(_) => break, // Error or timeout
+                }
+            }
+        }
+        plugin.stderr_handle = None;
 
         // Kill the process if it's still around
         if let Some(ref mut child) = plugin.process {
             let _ = child.kill().await;
         }
         plugin.process = None;
+
+        // Build error message with stderr content if available
+        let error_message = if stderr_content.is_empty() {
+            format!("Plugin {} exited unexpectedly (no stderr output)", plugin.path.display())
+        } else {
+            format!("Plugin {} exited unexpectedly. stderr:\n{}", plugin.path.display(), stderr_content)
+        };
+
+        // Store for late-arriving frames that try to write to the dead plugin
+        plugin.last_death_message = Some(error_message.clone());
 
         // Send ERR for pending PEER requests (outgoing_rids only)
         // NOTE: Do NOT send ERR for incoming_rxids! Those entries are intentionally leaked
@@ -790,7 +843,7 @@ impl PluginHostRuntime {
             let mut err_frame = Frame::err(
                 rid.clone(),
                 "PLUGIN_DIED",
-                &format!("Plugin {} exited unexpectedly", plugin.path.display()),
+                &error_message,
             );
             err_frame.seq = *next_seq;
             let _ = outbound_tx.send(err_frame);
@@ -846,7 +899,7 @@ impl PluginHostRuntime {
         let mut child = tokio::process::Command::new(&plugin.path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::piped()) // Capture stderr for crash diagnostics
             .kill_on_drop(true) // No orphan processes
             .spawn()
             .map_err(|e| {
@@ -859,6 +912,7 @@ impl PluginHostRuntime {
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take();
 
         // HELLO handshake
         let mut reader = FrameReader::new(stdout);
@@ -908,6 +962,8 @@ impl PluginHostRuntime {
         plugin.writer_tx = Some(writer_tx);
         plugin.reader_handle = Some(rh);
         plugin.writer_handle = Some(wh);
+        plugin.stderr_handle = stderr;
+        plugin.last_death_message = None; // Clear any previous death message
 
         self.update_cap_table();
 

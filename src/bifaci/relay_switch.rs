@@ -1055,10 +1055,11 @@ impl RelaySwitch {
             if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
                 let is_match = if preferred_urn.is_some() {
                     // Comparable: either side accepts the other (broader match set)
-                    request_urn.accepts(&registered_urn) || registered_urn.accepts(&request_urn)
+                    registered_urn.accepts(&request_urn) || request_urn.accepts(&registered_urn)
                 } else {
-                    // Standard: request is pattern, registered cap is instance
-                    request_urn.accepts(&registered_urn)
+                    // Standard: registered cap is pattern, request is instance
+                    // "Does the registered handler accept this request?"
+                    registered_urn.accepts(&request_urn)
                 };
 
                 if is_match {
