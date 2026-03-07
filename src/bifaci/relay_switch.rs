@@ -1056,10 +1056,14 @@ impl RelaySwitch {
         let mut matches: Vec<(usize, isize, bool)> = Vec::new(); // (master_idx, signed_distance, is_preferred)
 
         let cap_table = self.cap_table.read().await;
+        tracing::debug!(target: "find_master_for_cap", "Request: {} (specificity={})", cap_urn, request_specificity);
+        tracing::debug!(target: "find_master_for_cap", "Checking {} registered caps", cap_table.len());
         for (registered_cap, master_idx) in cap_table.iter() {
             if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
+                let dispatchable = registered_urn.is_dispatchable(&request_urn);
+                tracing::debug!(target: "find_master_for_cap", "{} -> dispatchable={}", registered_cap, dispatchable);
                 // Use is_dispatchable: can this provider handle this request?
-                if registered_urn.is_dispatchable(&request_urn) {
+                if dispatchable {
                     let specificity = registered_urn.specificity();
                     let signed_distance = specificity as isize - request_specificity as isize;
                     // Check if this registered cap is equivalent to the preferred cap
@@ -1071,6 +1075,7 @@ impl RelaySwitch {
             }
         }
 
+        tracing::debug!(target: "find_master_for_cap", "Found {} matches", matches.len());
         if matches.is_empty() {
             return None;
         }
@@ -1141,6 +1146,7 @@ impl RelaySwitch {
                 self.rid_to_xid.write().await.insert(rid.clone(), xid.clone());
 
                 // Record origin (where this request came from)
+                tracing::debug!(target: "relay_switch", "PEER REQ: inserting origin_map[({:?}, {:?})] = Some({}) from master {}", xid, rid, source_idx, source_idx);
                 self.origin_map.write().await.insert(key.clone(), Some(source_idx));
 
                 // Register routing
@@ -1168,6 +1174,9 @@ impl RelaySwitch {
             | FrameType::End
             | FrameType::Err
             | FrameType::Log => {
+                if frame.frame_type == FrameType::Log {
+                    tracing::debug!(target: "relay_switch", "Routing LOG frame: xid={:?} rid={:?}", frame.routing_id, frame.id);
+                }
                 // Branch based on XID presence to distinguish request vs response direction
                 if frame.routing_id.is_some() {
                     // ========================================
@@ -1190,8 +1199,10 @@ impl RelaySwitch {
                     // Get origin (where request came from)
                     let origin_idx = {
                         let origin = self.origin_map.read().await;
-                        origin.get(&key).copied().ok_or_else(|| {
-                            RelaySwitchError::Protocol("No origin recorded for request".to_string())
+                        let result = origin.get(&key).copied();
+                        tracing::debug!(target: "relay_switch", "origin_map lookup: key=({:?}, {:?}) result={:?}", xid, rid, result);
+                        result.ok_or_else(|| {
+                            RelaySwitchError::Protocol(format!("No origin recorded for request ({:?}, {:?})", xid, rid))
                         })?
                     };
 
@@ -1212,7 +1223,7 @@ impl RelaySwitch {
                             if let Some(tx) = tx_opt {
                                 // Send to external response channel (keep XID for now)
                                 let send_result = tx.send(frame.clone());
-                                tracing::info!("[RelaySwitch] sent to external_response_channel: {:?} result={:?}", frame.frame_type, send_result);
+                                tracing::debug!(target: "relay_switch", "Sent {:?} to external_response_channel: result={:?}", frame.frame_type, send_result);
 
                                 // Cleanup on terminal frame
                                 if is_terminal {

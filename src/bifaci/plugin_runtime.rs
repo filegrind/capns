@@ -2498,6 +2498,7 @@ impl PluginRuntime {
                 FrameType::Req => {
                     // Extract routing_id (XID) FIRST — all error paths must include it
                     let routing_id = frame.routing_id.clone();
+                    tracing::debug!(target: "plugin_runtime", "Received REQ: cap={:?} xid={:?} rid={:?}", frame.cap, routing_id, frame.id);
 
                     let cap_urn = match frame.cap.as_ref() {
                         Some(urn) => urn.clone(),
@@ -2598,6 +2599,7 @@ impl PluginRuntime {
                 FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd => {
                     // Try active request first
                     if let Some(ar) = active_requests.get(&frame.id) {
+                        tracing::debug!(target: "plugin_runtime", "Routing {:?} to active_request rid={:?}", frame.frame_type, frame.id);
                         if ar.raw_tx.send(frame.clone()).is_err() {
                             active_requests.remove(&frame.id);
                         }
@@ -2607,7 +2609,10 @@ impl PluginRuntime {
                     // Try peer response
                     let peer = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = peer.get(&frame.id) {
+                        tracing::debug!(target: "plugin_runtime", "Routing {:?} to peer_response rid={:?}", frame.frame_type, frame.id);
                         let _ = pr.sender.send(frame.clone());
+                    } else {
+                        tracing::debug!(target: "plugin_runtime", "{:?} rid={:?} not found in active_requests or pending_peer_requests", frame.frame_type, frame.id);
                     }
                     drop(peer);
                 }
@@ -2615,6 +2620,7 @@ impl PluginRuntime {
                 FrameType::End => {
                     // Try active request first -- send END then remove
                     if let Some(ar) = active_requests.remove(&frame.id) {
+                        tracing::debug!(target: "plugin_runtime", "Routing End to active_request rid={:?}", frame.id);
                         let _ = ar.raw_tx.send(frame.clone());
                         // raw_tx dropped here → Demux sees channel close after END
                         continue;
@@ -2623,7 +2629,10 @@ impl PluginRuntime {
                     // Try peer response — send END then remove
                     let mut peer = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = peer.remove(&frame.id) {
+                        tracing::debug!(target: "plugin_runtime", "Routing End to peer_response rid={:?}", frame.id);
                         let _ = pr.sender.send(frame.clone());
+                    } else {
+                        tracing::debug!(target: "plugin_runtime", "End rid={:?} not found in active_requests or pending_peer_requests", frame.id);
                     }
                     drop(peer);
                 }

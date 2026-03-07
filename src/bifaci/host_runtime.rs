@@ -520,6 +520,7 @@ impl PluginHostRuntime {
         outbound_tx: &mpsc::UnboundedSender<Frame>,
         resource_fn: &(impl Fn() -> Vec<u8> + Send),
     ) -> Result<(), AsyncHostError> {
+        tracing::debug!(target: "host_runtime", "handle_relay_frame: {:?} xid={:?} rid={:?}", frame.frame_type, frame.routing_id, frame.id);
         tracing::debug!("[PluginHostRuntime] handle_relay_frame: {:?} id={:?} cap={:?} xid={:?}", frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
@@ -600,10 +601,13 @@ impl PluginHostRuntime {
                 //   2. For non-peer requests, no further relay frames arrive after END
                 let key = (xid.clone(), frame.id.clone());
                 let (plugin_idx, routed_via_incoming) = if let Some(&idx) = self.incoming_rxids.get(&key) {
+                    tracing::debug!(target: "host_runtime", "Routing {:?} to plugin {} via incoming_rxids[({:?}, {:?})]", frame.frame_type, idx, xid, frame.id);
                     (idx, true)
                 } else if let Some(&idx) = self.outgoing_rids.get(&frame.id) {
+                    tracing::debug!(target: "host_runtime", "Routing {:?} to plugin {} via outgoing_rids[{:?}]", frame.frame_type, idx, frame.id);
                     (idx, false)
                 } else {
+                    tracing::debug!(target: "host_runtime", "No routing for {:?} xid={:?} rid={:?}, dropping", frame.frame_type, xid, frame.id);
                     return Ok(()); // Already cleaned up
                 };
 
@@ -658,7 +662,10 @@ impl PluginHostRuntime {
                 // LOG frames from peer responses — route back to the plugin
                 // that made the peer request, identified by outgoing_rids[RID].
                 if let Some(&plugin_idx) = self.outgoing_rids.get(&frame.id) {
+                    tracing::debug!(target: "host_runtime", "Routing LOG to plugin {} via outgoing_rids[{:?}]", plugin_idx, frame.id);
                     let _ = self.send_to_plugin(plugin_idx, frame);
+                } else {
+                    tracing::debug!(target: "host_runtime", "LOG frame not in outgoing_rids, dropping: rid={:?}", frame.id);
                 }
                 // If not a peer response LOG, ignore silently (stale routing)
                 Ok(())
@@ -723,6 +730,7 @@ impl PluginHostRuntime {
                 }
 
                 // Record in List 1: OUTGOING_RIDS
+                tracing::debug!(target: "host_runtime", "PEER REQ from plugin {}: cap={:?} rid={:?} -> storing in outgoing_rids", plugin_idx, frame.cap, frame.id);
                 self.outgoing_rids.insert(frame.id.clone(), plugin_idx);
 
                 // Track max-seen seq for host-generated ERR on death
@@ -740,6 +748,9 @@ impl PluginHostRuntime {
             // When responding to direct requests, frames will NOT have XID
             // NO routing decisions - only one destination (relay)
             _ => {
+                if frame.frame_type == FrameType::End || frame.frame_type == FrameType::Err {
+                    tracing::debug!(target: "host_runtime", "Forwarding {:?} from plugin {} to relay: xid={:?} rid={:?}", frame.frame_type, plugin_idx, frame.routing_id, frame.id);
+                }
                 // Track max-seen seq for flow, clean up on terminal
                 if frame.is_flow_frame() {
                     let flow_key = FlowKey::from_frame(&frame);
@@ -912,6 +923,21 @@ impl PluginHostRuntime {
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take();
 
+        // DEBUG: Forward plugin stderr to host stderr in real-time
+        if let Some(plugin_stderr) = stderr {
+            let plugin_path = plugin.path.clone();
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut reader = tokio::io::BufReader::new(plugin_stderr);
+                let mut line = String::new();
+                while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+                    tracing::debug!("[plugin:{}] {}", plugin_path.file_name().unwrap_or_default().to_string_lossy(), line.trim());
+                    line.clear();
+                }
+            });
+        }
+        let stderr: Option<tokio::process::ChildStderr> = None; // Already consumed above
+
         // HELLO handshake
         let mut reader = FrameReader::new(stdout);
         let mut writer = FrameWriter::new(stdin);
@@ -971,6 +997,9 @@ impl PluginHostRuntime {
     /// Send a frame to a specific plugin's stdin.
     fn send_to_plugin(&self, plugin_idx: usize, frame: Frame) -> Result<(), AsyncHostError> {
         let plugin = &self.plugins[plugin_idx];
+        if frame.frame_type == FrameType::Req {
+            tracing::debug!(target: "host_runtime", "send_to_plugin[{}]: {:?} cap={:?} xid={:?}", plugin_idx, frame.frame_type, frame.cap, frame.routing_id);
+        }
         let writer_tx = plugin.writer_tx.as_ref().ok_or_else(|| {
             AsyncHostError::Protocol(format!(
                 "Plugin {} not running — no writer channel",

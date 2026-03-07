@@ -785,6 +785,7 @@ impl ExecutionContext {
         let to = &edges[0].to;
 
         let total_streams = edges.len() + extra_args.len();
+        tracing::debug!(target: "execute_fanin", "cap={} streams={} to={}", cap_urn, total_streams, to);
         tracing::info!(
             "Executing cap: {} ({} input stream(s) -> {})",
             cap_urn,
@@ -796,6 +797,7 @@ impl ExecutionContext {
         let mut inputs: Vec<(Vec<u8>, String)> = edges
             .iter()
             .map(|edge| {
+                tracing::debug!(target: "execute_fanin", "Edge: {} -> {} (in_media={})", edge.from, edge.to, edge.in_media);
                 let data = self
                     .node_data
                     .get(&edge.from)
@@ -811,13 +813,16 @@ impl ExecutionContext {
         for (media_urn, data) in extra_args {
             inputs.push((data.clone(), media_urn.clone()));
         }
+        tracing::debug!(target: "execute_fanin", "Collected {} inputs", inputs.len());
 
         // Open ONE cap invocation for all inputs
+        tracing::debug!(target: "execute_fanin", "Calling execute_cap...");
         let (request_id, mut rx) = self
             .switch
             .execute_cap(cap_urn, vec![], "application/cbor")
             .await
             .map_err(|e| ExecutionError::HostError(format!("execute_cap: {}", e)))?;
+        tracing::debug!(target: "execute_fanin", "execute_cap returned, request_id={:?}", request_id);
 
         // Send each input as a separate named stream
         for (data, in_media) in &inputs {
@@ -891,14 +896,17 @@ impl ExecutionContext {
                 .send_to_master(se, None)
                 .await
                 .map_err(|e| ExecutionError::HostError(format!("STREAM_END: {}", e)))?;
+            tracing::debug!(target: "execute_fanin", "Sent STREAM_END for stream");
         }
 
         // END — no more input streams
+        tracing::debug!(target: "execute_fanin", "Sending END frame...");
         let end_frame = Frame::end(request_id.clone(), None);
         self.switch
             .send_to_master(end_frame, None)
             .await
             .map_err(|e| ExecutionError::HostError(format!("END: {}", e)))?;
+        tracing::debug!(target: "execute_fanin", "END frame sent, waiting for response...");
 
         // Collect response using tokio::select! to concurrently:
         // 1. Pump read_from_masters (routes peer requests internally)
@@ -938,6 +946,7 @@ impl ExecutionContext {
 
                 // Receive response frame
                 Some(frame) = rx.recv() => {
+                    tracing::debug!(target: "execute_fanin", "rx.recv() got: {:?}", frame.frame_type);
                     match frame.frame_type {
                         FrameType::Chunk => {
                             if let Some(payload) = &frame.payload {
@@ -961,9 +970,9 @@ impl ExecutionContext {
                             });
                         }
                         FrameType::Log => {
-                            if let Some(payload) = &frame.payload {
-                                let text = String::from_utf8_lossy(payload);
-                                tracing::info!("  [plugin log] {}", text);
+                            if let Some(msg) = frame.log_message() {
+                                let level = frame.log_level().unwrap_or("info");
+                                tracing::debug!("  [plugin log:{}] {}", level, msg);
                             }
                         }
                         _ => {
@@ -1010,12 +1019,16 @@ pub async fn execute_dag(
     initial_inputs: HashMap<String, NodeData>,
     dev_binaries: Vec<PathBuf>,
 ) -> Result<HashMap<String, NodeData>, ExecutionError> {
+    tracing::debug!(target: "execute_dag", "Starting...");
+
     // 1. Initialize plugin manager and discover/download all needed plugins
     let mut plugin_manager = PluginManager::new(plugin_dir, registry_url, dev_binaries);
     plugin_manager.init().await?;
+    tracing::debug!(target: "execute_dag", "Plugin manager initialized");
 
     let cap_urns: Vec<&str> = graph.edges.iter().map(|e| e.cap_urn.as_str()).collect();
     let plugins = plugin_manager.resolve_plugins(&cap_urns).await?;
+    tracing::debug!(target: "execute_dag", "Resolved {} plugins", plugins.len());
 
     tracing::info!("Resolved {} unique plugin binaries:", plugins.len());
     for (path, caps) in &plugins {
@@ -1023,14 +1036,18 @@ pub async fn execute_dag(
     }
 
     // 2. Create execution context and add plugin host as master
+    tracing::debug!(target: "execute_dag", "Creating execution context...");
     let mut ctx = ExecutionContext::new().await?;
+    tracing::debug!(target: "execute_dag", "Adding plugin host...");
     ctx.add_plugin_host(plugins).await?;
+    tracing::debug!(target: "execute_dag", "Plugin host added");
 
     // 3. Resolve initial inputs to raw bytes and set on nodes
     for (node, data) in initial_inputs {
         let bytes = data.into_bytes().await?;
         ctx.set_node_data(node, bytes);
     }
+    tracing::debug!(target: "execute_dag", "Initial inputs set");
 
     // 4. Group edges by (to, cap_urn) to detect fan-in, then sort groups topologically.
     //    Fan-in groups are executed as ONE cap invocation with multiple input streams —
@@ -1038,6 +1055,7 @@ pub async fn execute_dag(
     let groups = build_edge_groups(&graph.edges);
     let group_order = topological_sort_groups(&groups)
         .map_err(|e| ExecutionError::HostError(format!("Topological sort failed: {}", e)))?;
+    tracing::debug!(target: "execute_dag", "{} edge groups to execute", group_order.len());
 
     tracing::info!(
         "Executing {} cap group(s) in topological order",
@@ -1045,9 +1063,11 @@ pub async fn execute_dag(
     );
 
     // Execute groups - now fully async!
-    for idx in group_order {
+    for (i, idx) in group_order.iter().enumerate() {
+        tracing::debug!(target: "execute_dag", "Executing group {}/{}: cap={}", i+1, group_order.len(), groups[*idx].edges[0].cap_urn);
         // No extra arguments in CLI mode - all data flows through edges
-        ctx.execute_fanin(&groups[idx].edges, &[]).await?;
+        ctx.execute_fanin(&groups[*idx].edges, &[]).await?;
+        tracing::debug!(target: "execute_dag", "Group {} complete", i+1);
     }
 
     tracing::info!("\nExecution complete!\n");

@@ -2190,4 +2190,25 @@ mod tier_tests {
         assert!(cap.accepts_str("invalid").is_err());
         assert!(cap.conforms_to_str("invalid").is_err());
     }
+
+    // TEST568: is_dispatchable with different tag order in output spec
+    #[test]
+    fn test568_dispatch_output_tag_order() {
+        // Provider has: record;textable
+        let provider = CapUrn::from_string(
+            r#"cap:in="media:model-spec;textable";op=download-model;out="media:download-result;record;textable""#
+        ).unwrap();
+        // Request has: textable;record (same tags, different order)
+        let request = CapUrn::from_string(
+            r#"cap:in="media:model-spec;textable";op=download-model;out="media:download-result;textable;record""#
+        ).unwrap();
+
+        // After parsing, both should be normalized to same canonical form
+        assert_eq!(provider.out_spec(), request.out_spec(),
+            "Output specs should be normalized to same canonical form");
+
+        // And dispatch should work
+        assert!(provider.is_dispatchable(&request),
+            "Provider should dispatch request with same tags in different order");
+    }
 }
