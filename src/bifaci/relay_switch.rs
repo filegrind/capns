@@ -32,7 +32,7 @@
 //! ## Routing Rules
 //!
 //! **Engine → Plugin**:
-//! - REQ: route by cap URN using `request_urn.accepts(registered_urn)`
+//! - REQ: route by cap URN using `is_dispatchable` + closest-specificity matching
 //! - Continuation frames: route by req_id
 //!
 //! **Plugin → Plugin** (peer invocations):
@@ -538,19 +538,23 @@ impl RelaySwitch {
         Ok((rid, rx))
     }
 
-    /// Register an external request and return a response channel.
+    /// Register an external request and return the assigned XID and response channel.
     ///
     /// This is used when the caller builds their own frames via `build_request_frames`.
-    /// The caller must then send the frames via `send_to_master`. The switch will
-    /// route responses to the returned channel.
+    /// The caller must stamp the returned XID onto all frames (via `frame.routing_id = Some(xid)`)
+    /// before sending them via `send_to_master`. The switch will route responses to the
+    /// returned channel.
     ///
     /// Unlike `execute_cap`, this doesn't send any frames - it only sets up routing.
+    ///
+    /// Returns `(xid, response_receiver)` - the caller MUST set `frame.routing_id = Some(xid)`
+    /// on all frames before sending them.
     pub async fn register_external_request(
         &self,
         rid: MessageId,
         cap_urn: &str,
         preferred_cap: Option<&str>,
-    ) -> Result<mpsc::UnboundedReceiver<Frame>, RelaySwitchError> {
+    ) -> Result<(MessageId, mpsc::UnboundedReceiver<Frame>), RelaySwitchError> {
         // Find master that can handle this cap
         let dest_idx = self.find_master_for_cap(cap_urn, preferred_cap).await.ok_or_else(|| {
             RelaySwitchError::NoHandler(cap_urn.to_string())
@@ -579,9 +583,11 @@ impl RelaySwitch {
         );
 
         // Record RID → XID mapping for continuation frames
-        self.rid_to_xid.write().await.insert(rid, xid);
+        self.rid_to_xid.write().await.insert(rid.clone(), xid.clone());
 
-        Ok(rx)
+        tracing::info!("[RelaySwitch] register_external_request: registered key=({:?}, {:?}) dest_master={}", xid, rid, dest_idx);
+
+        Ok((xid, rx))
     }
 
     /// Dynamically add a new master connection to the switch.
@@ -776,16 +782,15 @@ impl RelaySwitch {
     /// Continuation frames: Routed by (XID, RID) pair.
     /// Send a frame to the appropriate master.
     ///
-    /// `preferred_cap`: when `Some`, uses `is_comparable` routing and prefers
+    /// `preferred_cap`: when `Some`, uses `is_dispatchable` routing and prefers
     /// the master whose registered cap is equivalent to this URN.
-    /// When `None`, uses standard `accepts` + closest-specificity routing.
+    /// When `None`, uses standard `is_dispatchable` + closest-specificity routing.
     pub async fn send_to_master(
         &self,
         mut frame: Frame,
         preferred_cap: Option<&str>,
     ) -> Result<(), RelaySwitchError> {
-        eprintln!("[RelaySwitch] send_to_master: {:?} id={:?} cap={:?} xid={:?}",
-            frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        tracing::debug!("[RelaySwitch] send_to_master: {:?} id={:?} cap={:?} xid={:?}", frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
@@ -988,8 +993,7 @@ impl RelaySwitch {
     /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
     /// Cleans up seq tracking on terminal frames (END/ERR).
     async fn write_to_master_idx(&self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
-        eprintln!("[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}",
-            master_idx, frame.frame_type, frame.id, frame.routing_id);
+        tracing::debug!("[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}", master_idx, frame.frame_type, frame.id, frame.routing_id);
 
         let masters = self.masters.read().await;
         let master = &masters[master_idx];
@@ -1019,22 +1023,24 @@ impl RelaySwitch {
 
     /// Find which master handles a given cap URN.
     ///
-    /// ## Without preference (`preferred_cap = None`)
+    /// ## Routing semantics
     ///
-    /// Uses `request.accepts(registered)` with closest-specificity matching.
-    /// This is the standard routing mode: specific requests route to specific
-    /// handlers, generic requests route to generic handlers.
+    /// Uses `is_dispatchable(provider, request)` to find all masters that can
+    /// legally handle the request. A provider is dispatchable if:
+    /// - Its input handling is compatible with the request's input
+    /// - Its output guarantees meet the request's output requirements
+    /// - Its cap-tags satisfy all explicit request constraints
+    ///
+    /// Among dispatchable matches, ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     ///
     /// ## With preference (`preferred_cap = Some(cap_urn)`)
     ///
-    /// Uses `is_comparable` (order-theoretic: `a.accepts(b) || b.accepts(a)`)
-    /// to find ALL masters on the same specialization chain as the request.
-    /// This is broader than `accepts` — it also finds masters whose caps are
-    /// more general than the request.
-    ///
-    /// Among the comparable matches, the master whose registered cap is
+    /// Among dispatchable matches, the master whose registered cap is
     /// equivalent to the preferred cap wins. If no equivalent match, falls
-    /// back to closest-specificity among the comparable set.
+    /// back to specificity-based ranking.
     async fn find_master_for_cap(&self, cap_urn: &str, preferred_cap: Option<&str>) -> Option<usize> {
         let request_urn = match crate::CapUrn::from_string(cap_urn) {
             Ok(u) => u,
@@ -1046,29 +1052,21 @@ impl RelaySwitch {
         // Parse preferred cap URN if provided
         let preferred_urn = preferred_cap.and_then(|p| crate::CapUrn::from_string(p).ok());
 
-        // Collect ALL matching masters with their specificity scores.
-        // When preferred_cap is set, use is_comparable (broader); otherwise accepts (standard).
-        let mut matches: Vec<(usize, usize, bool)> = Vec::new(); // (master_idx, specificity, is_preferred)
+        // Collect ALL dispatchable masters with their specificity scores.
+        let mut matches: Vec<(usize, isize, bool)> = Vec::new(); // (master_idx, signed_distance, is_preferred)
 
         let cap_table = self.cap_table.read().await;
         for (registered_cap, master_idx) in cap_table.iter() {
             if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
-                let is_match = if preferred_urn.is_some() {
-                    // Comparable: either side accepts the other (broader match set)
-                    registered_urn.accepts(&request_urn) || request_urn.accepts(&registered_urn)
-                } else {
-                    // Standard: registered cap is pattern, request is instance
-                    // "Does the registered handler accept this request?"
-                    registered_urn.accepts(&request_urn)
-                };
-
-                if is_match {
+                // Use is_dispatchable: can this provider handle this request?
+                if registered_urn.is_dispatchable(&request_urn) {
                     let specificity = registered_urn.specificity();
+                    let signed_distance = specificity as isize - request_specificity as isize;
                     // Check if this registered cap is equivalent to the preferred cap
                     let is_preferred = preferred_urn.as_ref().map_or(false, |pref| {
-                        pref.accepts(&registered_urn) && registered_urn.accepts(pref)
+                        pref.is_equivalent(&registered_urn)
                     });
-                    matches.push((*master_idx, specificity, is_preferred));
+                    matches.push((*master_idx, signed_distance, is_preferred));
                 }
             }
         }
@@ -1082,16 +1080,24 @@ impl RelaySwitch {
             return Some(idx);
         }
 
-        // Fall back to closest-specificity (ties broken by first match).
-        let min_distance = matches.iter()
-            .map(|(_, s, _)| (*s as isize - request_specificity as isize).unsigned_abs())
-            .min()
-            .unwrap();
+        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
+        // Sort by: (is_negative, abs_distance) so positives come before negatives at same abs
+        matches.sort_by(|a, b| {
+            let (_, dist_a, _) = a;
+            let (_, dist_b, _) = b;
 
-        matches
-            .iter()
-            .find(|(_, s, _)| (*s as isize - request_specificity as isize).unsigned_abs() == min_distance)
-            .map(|(idx, _, _)| *idx)
+            // First: non-negative distances before negative
+            match (dist_a >= &0, dist_b >= &0) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => {
+                    // Same sign: prefer smaller absolute distance
+                    dist_a.unsigned_abs().cmp(&dist_b.unsigned_abs())
+                }
+            }
+        });
+
+        matches.first().map(|(idx, _, _)| *idx)
     }
 
     /// Handle a frame arriving from a master (plugin → engine direction).
@@ -1103,8 +1109,7 @@ impl RelaySwitch {
         source_idx: usize,
         mut frame: Frame,
     ) -> Result<Option<Frame>, RelaySwitchError> {
-        eprintln!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} cap={:?} xid={:?}",
-            source_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        tracing::debug!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} cap={:?} xid={:?}", source_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
@@ -1200,12 +1205,14 @@ impl RelaySwitch {
                             // Check if there's a response channel registered
                             let tx_opt = {
                                 let channels = self.external_response_channels.read().await;
+                                tracing::debug!("[RelaySwitch] external_response_channels lookup: key=({:?}, {:?}) found={}", xid, rid, channels.contains_key(&key));
                                 channels.get(&key).cloned()
                             };
 
                             if let Some(tx) = tx_opt {
                                 // Send to external response channel (keep XID for now)
-                                let _ = tx.send(frame.clone());
+                                let send_result = tx.send(frame.clone());
+                                tracing::info!("[RelaySwitch] sent to external_response_channel: {:?} result={:?}", frame.frame_type, send_result);
 
                                 // Cleanup on terminal frame
                                 if is_terminal {
@@ -1220,6 +1227,7 @@ impl RelaySwitch {
                             } else {
                                 // No response channel (sent via send_to_master, not execute_cap)
                                 // Strip XID and return to caller (final leg)
+                                tracing::info!("[RelaySwitch] NO external_response_channel for key=({:?}, {:?}), returning frame to caller", xid, rid);
                                 frame.routing_id = None;
 
                                 // Cleanup on terminal frame
@@ -2056,9 +2064,18 @@ mod tests {
         let resp1 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![42]));
 
-        // More specific request should NOT match less specific registered cap
-        let req2 = Frame::req(MessageId::Uint(2), "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"", vec![], "text/plain");
-        let result = switch.send_to_master(req2, None).await;
+        // Request with more specific input and less specific output SHOULD match
+        // Input (contravariant): request's `media:text;utf8;normalized` conforms to provider's `media:text;utf8`
+        // Output (covariant): provider's `media:text;utf8` conforms to request's `media:text`
+        let req2_id = MessageId::Uint(2);
+        switch.send_to_master(Frame::req(req2_id.clone(), "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"", vec![], "text/plain"), None).await.unwrap();
+        switch.send_to_master(Frame::end(req2_id, None), None).await.unwrap();
+        let resp2 = switch.read_from_masters().await.unwrap().unwrap();
+        assert_eq!(resp2.payload, Some(vec![42]));
+
+        // Request with INCOMPATIBLE input should NOT match (different type family)
+        let req3 = Frame::req(MessageId::Uint(3), "cap:in=\"media:image;png\";op=process;out=\"media:text\"", vec![], "text/plain");
+        let result = switch.send_to_master(req3, None).await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RelaySwitchError::NoHandler(_)));
     }
@@ -2068,6 +2085,11 @@ mod tests {
     // =========================================================================
 
     // TEST437: find_master_for_cap with preferred_cap routes to generic handler
+    //
+    // With is_dispatchable semantics:
+    // - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf")
+    //   because media: (wildcard) accepts any input type
+    // - Preference routes to preferred among dispatchable candidates
     #[tokio::test]
     async fn test437_preferred_cap_routes_to_generic() {
         let (engine_sock0, slave_sock0) = UnixStream::pair().unwrap();
@@ -2097,7 +2119,7 @@ mod tests {
         // Without preference: routes to master 1 (specific, closest-specificity)
         assert_eq!(switch.find_master_for_cap(request, None).await, Some(1));
 
-        // With preference for generic cap: routes to master 0 (generic, via is_comparable)
+        // With preference for generic cap: routes to master 0 (generic, via is_equivalent)
         assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)).await, Some(0));
 
         // With preference for specific cap: routes to master 1 (specific, matches preference)
@@ -2127,13 +2149,17 @@ mod tests {
         assert_eq!(switch.find_master_for_cap(request, Some(unrelated)).await, Some(0));
     }
 
-    // TEST439: Without preference, specific request does NOT match generic handler
-    //          (confirms accepts semantics are unchanged)
+    // TEST439: Generic provider CAN dispatch specific request
+    //          (but only matches if no more specific provider exists)
+    //
+    // With is_dispatchable: generic provider (in=media:) CAN handle specific
+    // request (in="media:pdf") because media: accepts any input type.
+    // With preference, can route to generic even when more specific exists.
     #[tokio::test]
-    async fn test439_no_preference_specific_rejects_generic() {
+    async fn test439_generic_provider_can_dispatch_specific_request() {
         let (engine_sock, slave_sock) = UnixStream::pair().unwrap();
 
-        // Master 0: only generic handler
+        // Master 0: only generic handler (in=media: wildcard)
         let generic_cap = "cap:in=media:;op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         tokio::spawn(async move {
             slave_notify_with_identity(slave_sock,
@@ -2143,13 +2169,15 @@ mod tests {
 
         let switch = RelaySwitch::new(vec![engine_sock]).await.unwrap();
 
-        // Specific PDF request — without preference, generic handler can't match
-        // because request pattern requires pdf tag which generic doesn't have
+        // Specific PDF request — generic handler CAN dispatch it
+        // because provider's wildcard input (media:) accepts any input type
         let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
-        assert_eq!(switch.find_master_for_cap(request, None).await, None);
+        assert_eq!(switch.find_master_for_cap(request, None).await, Some(0),
+            "Generic provider can dispatch specific request as fallback");
 
-        // With preference for generic — now is_comparable finds it
-        assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)).await, Some(0));
+        // With preference for generic — routes to master 0
+        assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)).await, Some(0),
+            "Preference routes to generic provider");
     }
 
     // =========================================================================

@@ -187,7 +187,7 @@ fn resolve_glob(pattern: &str) -> Result<Vec<PathBuf>, InputResolverError> {
             Err(e) => {
                 // Glob error (e.g., permission denied on a matched path)
                 // Log and continue rather than fail completely
-                eprintln!("Warning: glob error: {}", e);
+                tracing::warn!("glob error: {}", e);
             }
         }
     }

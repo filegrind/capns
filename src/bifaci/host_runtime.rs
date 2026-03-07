@@ -520,8 +520,7 @@ impl PluginHostRuntime {
         outbound_tx: &mpsc::UnboundedSender<Frame>,
         resource_fn: &(impl Fn() -> Vec<u8> + Send),
     ) -> Result<(), AsyncHostError> {
-        eprintln!("[PluginHostRuntime] handle_relay_frame: {:?} id={:?} cap={:?} xid={:?}",
-            frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        tracing::debug!("[PluginHostRuntime] handle_relay_frame: {:?} id={:?} cap={:?} xid={:?}", frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 // PATH C: REQ coming FROM relay
@@ -680,8 +679,7 @@ impl PluginHostRuntime {
         frame: Frame,
         outbound_tx: &mpsc::UnboundedSender<Frame>,
     ) -> Result<(), AsyncHostError> {
-        eprintln!("[PluginHostRuntime] handle_plugin_frame: plugin={} {:?} id={:?} cap={:?} xid={:?}",
-            plugin_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        tracing::debug!("[PluginHostRuntime] handle_plugin_frame: plugin={} {:?} id={:?} cap={:?} xid={:?}", plugin_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
         match frame.frame_type {
             // HELLO after handshake is a fatal protocol error.
             FrameType::Hello => Err(AsyncHostError::Protocol(format!(
@@ -983,8 +981,14 @@ impl PluginHostRuntime {
     }
 
     /// Find which plugin handles a given cap URN.
-    /// Chooses the MOST SPECIFIC matching cap URN (highest specificity score).
-    /// If multiple matches have the same highest specificity, chooses one (deterministic).
+    ///
+    /// Uses `is_dispatchable(provider, request)` to find plugins that can
+    /// legally handle the request, then ranks by specificity.
+    ///
+    /// Ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     fn find_plugin_for_cap(&self, cap_urn: &str) -> Option<usize> {
         let request_urn = match crate::CapUrn::from_string(cap_urn) {
             Ok(u) => u,
@@ -993,15 +997,16 @@ impl PluginHostRuntime {
 
         let request_specificity = request_urn.specificity();
 
-        // Collect ALL matching plugins with their specificity scores
-        let mut matches: Vec<(usize, usize)> = Vec::new(); // (plugin_idx, specificity)
+        // Collect ALL dispatchable plugins with their specificity scores
+        let mut matches: Vec<(usize, isize)> = Vec::new(); // (plugin_idx, signed_distance)
 
         for (registered_cap, plugin_idx) in &self.cap_table {
             if let Ok(registered_urn) = crate::CapUrn::from_string(registered_cap) {
-                // Request is pattern, registered cap is instance
-                if request_urn.accepts(&registered_urn) {
+                // Use is_dispatchable: can this provider handle this request?
+                if registered_urn.is_dispatchable(&request_urn) {
                     let specificity = registered_urn.specificity();
-                    matches.push((*plugin_idx, specificity));
+                    let signed_distance = specificity as isize - request_specificity as isize;
+                    matches.push((*plugin_idx, signed_distance));
                 }
             }
         }
@@ -1010,17 +1015,23 @@ impl PluginHostRuntime {
             return None;
         }
 
-        // Prefer the match with specificity closest to the request's specificity.
-        // Ties broken by first match (deterministic).
-        let min_distance = matches.iter()
-            .map(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs())
-            .min()
-            .unwrap();
+        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
+        matches.sort_by(|a, b| {
+            let (_, dist_a) = a;
+            let (_, dist_b) = b;
 
-        matches
-            .iter()
-            .find(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs() == min_distance)
-            .map(|(idx, _)| *idx)
+            // First: non-negative distances before negative
+            match (dist_a >= &0, dist_b >= &0) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => {
+                    // Same sign: prefer smaller absolute distance
+                    dist_a.unsigned_abs().cmp(&dist_b.unsigned_abs())
+                }
+            }
+        });
+
+        matches.first().map(|(idx, _)| *idx)
     }
 
     // =========================================================================
@@ -2188,11 +2199,10 @@ mod tests {
         let urn_strings: Vec<String> = parsed_before.as_array().unwrap()
             .iter().map(|v| v.as_str().unwrap().to_string()).collect();
 
-        // Parse each URN and check if any matches using accepts/conforms_to
+        // Parse each URN and check if any is comparable to expected (on same chain)
         let found = urn_strings.iter().any(|urn_str| {
             if let Ok(cap_urn) = CapUrn::from_string(urn_str) {
-                // Check if the URNs match (either direction should work for exact match)
-                expected_urn.accepts(&cap_urn) || cap_urn.accepts(&expected_urn)
+                expected_urn.is_comparable(&cap_urn)
             } else {
                 false
             }
@@ -2224,7 +2234,7 @@ mod tests {
             "CAP_IDENTITY must always be present");
         let found_after = urn_strings_after.iter().any(|urn_str| {
             if let Ok(cap_urn) = CapUrn::from_string(urn_str) {
-                expected_urn.accepts(&cap_urn) || cap_urn.accepts(&expected_urn)
+                expected_urn.is_comparable(&cap_urn)
             } else {
                 false
             }

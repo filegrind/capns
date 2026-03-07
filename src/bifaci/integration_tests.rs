@@ -690,23 +690,23 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let plugin_handle = tokio::spawn(async move {
-            eprintln!("[TEST/plugin] Starting plugin thread");
+            tracing::info!("[TEST/plugin] Starting plugin thread");
             let (mut reader, _writer) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m).await;
-            eprintln!("[TEST/plugin] Handshake complete, waiting for EOF...");
+            tracing::info!("[TEST/plugin] Handshake complete, waiting for EOF...");
             // Plugin waits for EOF — no REQ should arrive since cap is unknown
             match reader.read().await {
                 Ok(None) => {
-                    eprintln!("[TEST/plugin] Got EOF, plugin exiting normally");
+                    tracing::info!("[TEST/plugin] Got EOF, plugin exiting normally");
                 }
                 Ok(Some(f)) => {
-                    eprintln!("[TEST/plugin] ERROR: Got frame {:?}, expected EOF!", f.frame_type);
+                    tracing::error!("[TEST/plugin] ERROR: Got frame {:?}, expected EOF!", f.frame_type);
                     panic!("Plugin should not receive frames for unknown cap, got {:?}", f.frame_type)
                 }
                 Err(e) => {
-                    eprintln!("[TEST/plugin] Got error: {:?}, treating as EOF", e);
+                    tracing::error!("[TEST/plugin] Got error: {:?}, treating as EOF", e);
                 }
             }
-            eprintln!("[TEST/plugin] Plugin thread completing");
+            tracing::info!("[TEST/plugin] Plugin thread completing");
         });
 
         let mut runtime = PluginHostRuntime::new();
@@ -733,21 +733,21 @@ mod tests {
         let engine_recv = tokio::spawn(async move {
             let mut r = FrameReader::new(eng_read);
             // Skip RelayNotify (initial capabilities notification)
-            eprintln!("[TEST/engine_recv] Starting, attempting first read...");
+            tracing::info!("[TEST/engine_recv] Starting, attempting first read...");
             let mut frame = r.read().await.unwrap().expect("Expected first frame");
-            eprintln!("[TEST/engine_recv] First frame: {:?}", frame.frame_type);
+            tracing::info!("[TEST/engine_recv] First frame: {:?}", frame.frame_type);
             if frame.frame_type == FrameType::RelayNotify {
-                eprintln!("[TEST/engine_recv] Got RelayNotify, reading second frame...");
+                tracing::info!("[TEST/engine_recv] Got RelayNotify, reading second frame...");
                 frame = r.read().await.unwrap().expect("Expected ERR frame after RelayNotify");
-                eprintln!("[TEST/engine_recv] Second frame: {:?}", frame.frame_type);
+                tracing::info!("[TEST/engine_recv] Second frame: {:?}", frame.frame_type);
             }
-            eprintln!("[TEST/engine_recv] Asserting frame is ERR...");
+            tracing::info!("[TEST/engine_recv] Asserting frame is ERR...");
             assert_eq!(frame.frame_type, FrameType::Err, "Should get ERR for unknown cap");
             assert_eq!(frame.id, req_id, "ERR should reference the original request ID");
             let meta = frame.meta.as_ref().expect("ERR should have meta");
             let code = meta.get("code").and_then(|v| v.as_text()).unwrap_or("");
             assert_eq!(code, "NO_HANDLER", "Error code should be NO_HANDLER, got: {}", code);
-            eprintln!("[TEST/engine_recv] All assertions passed, task completing!");
+            tracing::info!("[TEST/engine_recv] All assertions passed, task completing!");
         });
 
         // Host run should NOT return an error — it sends ERR frame and continues
@@ -755,11 +755,11 @@ mod tests {
             runtime.run(rt_relay_read, rt_relay_write, || vec![]).await
         });
 
-        eprintln!("[TEST] Waiting for engine_send to complete...");
+        tracing::info!("[TEST] Waiting for engine_send to complete...");
         engine_send.await.unwrap();
-        eprintln!("[TEST] engine_send completed, waiting for engine_recv...");
+        tracing::info!("[TEST] engine_send completed, waiting for engine_recv...");
         engine_recv.await.unwrap();
-        eprintln!("[TEST] engine_recv completed, test done!");
+        tracing::info!("[TEST] engine_recv completed, test done!");
 
         // Host and plugin are still running. Just drop them - they'll clean up when test ends.
         drop(run_handle);

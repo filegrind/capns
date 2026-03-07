@@ -11,7 +11,7 @@ use dot_parser::ast::Graph as AstGraph;
 use dot_parser::canonical::Graph as CanonicalGraph;
 use std::collections::{HashMap, HashSet};
 
-/// Check if two media URN strings are compatible via bidirectional accepts.
+/// Check if two media URN strings are on the same specialization chain.
 ///
 /// Returns true if either URN accepts the other, meaning they represent
 /// related media types where one may be more specific than the other.
@@ -22,13 +22,9 @@ fn media_urns_compatible(a: &str, b: &str) -> Result<bool, ParseOrchestrationErr
         .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
     let b_urn = MediaUrn::from_string(b)
         .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
-    let fwd = a_urn
-        .accepts(&b_urn)
-        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
-    let rev = b_urn
-        .accepts(&a_urn)
-        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
-    Ok(fwd || rev)
+    a_urn
+        .is_comparable(&b_urn)
+        .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))
 }
 
 /// Check if two media URN strings have compatible structures (record/opaque).

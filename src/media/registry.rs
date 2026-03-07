@@ -14,7 +14,7 @@
 //! ```ignore
 //! let registry = MediaUrnRegistry::new().await?;
 //! let spec = registry.get_media_spec("media:pdf").await?;
-//! println!("Title: {:?}", spec.title);
+//! tracing::info!("Title: {:?}", spec.title);
 //! ```
 
 use crate::media::spec::MediaSpecDef;
@@ -275,7 +275,7 @@ impl MediaUrnRegistry {
             let filename = match file.path().file_stem().and_then(|s| s.to_str()) {
                 Some(name) => name,
                 None => {
-                    eprintln!("[WARN] Skipping file with invalid filename: {:?}", file.path());
+                    tracing::warn!("Skipping file with invalid filename: {:?}", file.path());
                     continue;
                 }
             };
@@ -283,7 +283,7 @@ impl MediaUrnRegistry {
             let content = match file.contents_utf8() {
                 Some(c) => c,
                 None => {
-                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    tracing::warn!("Skipping non-UTF8 file: {:?}", file.path());
                     continue;
                 }
             };
@@ -291,7 +291,7 @@ impl MediaUrnRegistry {
             let spec: StoredMediaSpec = match serde_json::from_str(content) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("[WARN] Skipping invalid media spec {}: {}", filename, e);
+                    tracing::warn!("Skipping invalid media spec {}: {}", filename, e);
                     continue;
                 }
             };
@@ -314,13 +314,13 @@ impl MediaUrnRegistry {
                 let cache_content = match serde_json::to_string_pretty(&cache_entry) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("[WARN] Failed to serialize media spec {}: {}", filename, e);
+                        tracing::warn!("Failed to serialize media spec {}: {}", filename, e);
                         continue;
                     }
                 };
 
                 if let Err(e) = fs::write(&cache_file, cache_content) {
-                    eprintln!("[WARN] Failed to write media spec to cache {}: {}", filename, e);
+                    tracing::warn!("Failed to write media spec to cache {}: {}", filename, e);
                     continue;
                 }
 
@@ -363,7 +363,7 @@ impl MediaUrnRegistry {
             let content = match file.contents_utf8() {
                 Some(c) => c,
                 None => {
-                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    tracing::warn!("Skipping non-UTF8 file: {:?}", file.path());
                     continue;
                 }
             };
@@ -371,7 +371,7 @@ impl MediaUrnRegistry {
             let spec: StoredMediaSpec = match serde_json::from_str(content) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("[WARN] Skipping invalid media spec {}: {}", filename, e);
+                    tracing::warn!("Skipping invalid media spec {}: {}", filename, e);
                     continue;
                 }
             };
@@ -520,7 +520,7 @@ impl MediaUrnRegistry {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("[WARN] Failed to read cache entry: {}", e);
+                    tracing::warn!("Failed to read cache entry: {}", e);
                     continue;
                 }
             };
@@ -531,7 +531,7 @@ impl MediaUrnRegistry {
                     let content = match fs::read_to_string(&path) {
                         Ok(c) => c,
                         Err(e) => {
-                            eprintln!("[WARN] Failed to read cache file {:?}: {}", path, e);
+                            tracing::warn!("Failed to read cache file {:?}: {}", path, e);
                             continue;
                         }
                     };
@@ -539,7 +539,7 @@ impl MediaUrnRegistry {
                     let cache_entry: MediaCacheEntry = match serde_json::from_str(&content) {
                         Ok(e) => e,
                         Err(e) => {
-                            eprintln!("[WARN] Failed to parse cache file {:?}: {}", path, e);
+                            tracing::warn!("Failed to parse cache file {:?}: {}", path, e);
                             // Try to remove the invalid cache file
                             let _ = fs::remove_file(&path);
                             continue;
@@ -549,7 +549,7 @@ impl MediaUrnRegistry {
                     if cache_entry.is_expired() {
                         // Remove expired cache file
                         if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("[WARN] Failed to remove expired cache file {:?}: {}", path, e);
+                            tracing::warn!("Failed to remove expired cache file {:?}: {}", path, e);
                         }
                         continue;
                     }

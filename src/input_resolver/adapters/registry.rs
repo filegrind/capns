@@ -228,14 +228,14 @@ mod tests {
 
         // Check what URNs are registered for .json extension
         let urns = media_registry.media_urns_for_extension("json");
-        eprintln!("URNs for .json: {:?}", urns);
+        tracing::info!("URNs for .json: {:?}", urns);
 
         // Now detect a JSON file
         let path = PathBuf::from("test.json");
         let content = br#"{"key": "value"}"#;
         let result = adapter_registry.detect(&path, content);
 
-        eprintln!("Detection result: {:?}", result);
+        tracing::info!("Detection result: {:?}", result);
         assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
         assert!(result.media_urn.contains("record"));
     }

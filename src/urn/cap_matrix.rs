@@ -557,7 +557,8 @@ impl CapMatrix {
         
         for entry in self.sets.values() {
             for cap in &entry.capabilities {
-                if cap.urn.accepts(&request) {
+                // Use is_dispatchable: can this provider handle this request?
+                if cap.urn.is_dispatchable(&request) {
                     matching_sets.push(entry.host.as_ref());
                     break; // Found a matching capability for this host, no need to check others
                 }
@@ -581,7 +582,8 @@ impl CapMatrix {
 
         for entry in self.sets.values() {
             for cap in &entry.capabilities {
-                if cap.urn.accepts(&request) {
+                // Use is_dispatchable: can this provider handle this request?
+                if cap.urn.is_dispatchable(&request) {
                     let specificity = cap.urn.specificity();
                     match best_match {
                         None => {
@@ -737,7 +739,7 @@ impl CapSet for CompositeCapSet {
                 // Find best match in this registry
                 for entry in registry.sets.values() {
                     for cap in &entry.capabilities {
-                        if cap.urn.accepts(&request) {
+                        if cap.urn.is_dispatchable(&request) {
                             let specificity = cap.urn.specificity();
                             match &best_match {
                                 None => {
@@ -911,7 +913,7 @@ impl CapBlock {
 
         for entry in registry.sets.values() {
             for cap in &entry.capabilities {
-                if cap.urn.accepts(request) {
+                if cap.urn.is_dispatchable(request) {
                     let specificity = cap.urn.specificity();
                     match best {
                         None => {
@@ -1004,21 +1006,32 @@ mod tests {
         let sets = registry.find_cap_sets(&test_urn("op=test;basic")).unwrap();
         assert_eq!(sets.len(), 1);
 
-        // Test subset match (request has more specific requirements)
-        let sets = registry.find_cap_sets(&test_urn("op=test;basic;model=gpt-4")).unwrap();
-        assert_eq!(sets.len(), 1);
+        // Test that MORE SPECIFIC request does NOT match LESS SPECIFIC provider
+        // With is_dispatchable: if request requires model=gpt-4, provider must have it
+        assert!(registry.find_cap_sets(&test_urn("op=test;basic;model=gpt-4")).is_err(),
+            "Provider without model=gpt-4 cannot dispatch request requiring model=gpt-4");
+
+        // Test that LESS SPECIFIC request DOES match MORE SPECIFIC provider
+        // Request only needs op=test, provider has op=test;basic - provider refines request
+        let sets = registry.find_cap_sets(&test_urn("op=test")).unwrap();
+        assert_eq!(sets.len(), 1, "General request should match specific provider");
 
         // Test no match
         assert!(registry.find_cap_sets(&test_urn("op=different")).is_err());
     }
 
     // TEST118: Test selecting best cap set based on specificity ranking
+    //
+    // With is_dispatchable semantics:
+    // - Provider must satisfy ALL request constraints
+    // - General request matches specific provider (provider refines request)
+    // - Specific request does NOT match general provider (provider lacks constraints)
     #[tokio::test]
     async fn test118_best_cap_set_selection() {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
-        // Register general host
+        // Register general host (fewer tags)
         let general_host = Box::new(MockCapSet {
             name: "general".to_string(),
         });
@@ -1035,7 +1048,7 @@ mod tests {
             registered_by: None,
         };
 
-        // Register specific host
+        // Register specific host (more tags)
         let specific_host = Box::new(MockCapSet {
             name: "specific".to_string(),
         });
@@ -1055,12 +1068,23 @@ mod tests {
         registry.register_cap_set("general".to_string(), general_host, vec![general_cap]).unwrap();
         registry.register_cap_set("specific".to_string(), specific_host, vec![specific_cap]).unwrap();
 
-        // Request should match the more specific host (using valid URN characters)
-        let (_best_host, _best_cap) = registry.find_best_cap_set(&test_urn("op=generate;text;model=gpt-4;temperature=low")).unwrap();
+        // General request (op=generate) should match BOTH providers
+        // Both providers have op=generate, so both can dispatch
+        let all_sets = registry.find_cap_sets(&test_urn("op=generate")).unwrap();
+        assert_eq!(all_sets.len(), 2, "General request should match both providers");
 
-        // Both sets should match, but we should get the more specific one
-        let all_sets = registry.find_cap_sets(&test_urn("op=generate;text;model=gpt-4;temperature=low")).unwrap();
-        assert_eq!(all_sets.len(), 2);
+        // Best match should prefer the more specific provider (higher specificity)
+        let (_best_host, best_cap) = registry.find_best_cap_set(&test_urn("op=generate")).unwrap();
+        assert_eq!(best_cap.title, "Specific Text Generation Capability",
+            "More specific provider should be preferred");
+
+        // Specific request (requiring text;model=gpt-4) should only match specific provider
+        let all_sets = registry.find_cap_sets(&test_urn("op=generate;text;model=gpt-4")).unwrap();
+        assert_eq!(all_sets.len(), 1, "Only specific provider can dispatch request requiring text;model=gpt-4");
+
+        // Request requiring temperature=low matches NEITHER (both lack it)
+        assert!(registry.find_cap_sets(&test_urn("op=generate;temperature=low")).is_err(),
+            "Neither provider has temperature=low");
     }
 
     // TEST119: Test invalid URN returns InvalidUrn error
@@ -1101,8 +1125,15 @@ mod tests {
 
         registry.register_cap_set("test".to_string(), host, vec![cap]).unwrap();
 
+        // Exact match - provider can dispatch
         assert!(registry.accepts_request(&test_urn("op=test")));
-        assert!(registry.accepts_request(&test_urn("op=test;extra=param")));
+
+        // Request with extra constraint - provider CANNOT dispatch (lacks extra=param)
+        // This is the key is_dispatchable semantic: provider must satisfy ALL request constraints
+        assert!(!registry.accepts_request(&test_urn("op=test;extra=param")),
+            "Provider op=test cannot dispatch request requiring extra=param");
+
+        // Different op - no match
         assert!(!registry.accepts_request(&test_urn("op=different")));
     }
 
@@ -1307,13 +1338,18 @@ mod tests {
         assert_eq!(best.cap.title, "PDF Thumbnail Plugin");
         assert_eq!(best.specificity, 4);
 
-        // Also test that for a different file type, provider wins
+        // Test that request requiring ext=wav matches NEITHER provider
+        // - Generic provider lacks ext tag (cannot satisfy ext=wav constraint)
+        // - PDF plugin has ext=pdf (value conflict with ext=wav)
         let request_wav = r#"cap:ext=wav;in="media:binary";op=generate_thumbnail;out="media:binary""#;
-        let best_wav = composite.find_best_cap_set(request_wav).unwrap();
+        assert!(composite.find_best_cap_set(request_wav).is_err(),
+            "Neither provider can dispatch ext=wav request");
 
-        // Only provider matches (plugin doesn't match ext=wav)
-        assert_eq!(best_wav.registry_name, "providers");
-        assert_eq!(best_wav.cap.title, "Generic Thumbnail Provider");
+        // Test that generic request (no ext constraint) matches BOTH providers
+        // Both can dispatch, but PDF plugin is more specific
+        let request_any = r#"cap:in="media:binary";op=generate_thumbnail;out="media:binary""#;
+        let best_any = composite.find_best_cap_set(request_any).unwrap();
+        assert_eq!(best_any.registry_name, "plugins", "More specific PDF plugin should win");
     }
 
     // TEST126: Test composite can method returns CapCaller for capability execution

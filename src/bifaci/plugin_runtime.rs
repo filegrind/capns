@@ -1161,9 +1161,8 @@ fn extract_effective_payload(
                         if key == "media_urn" {
                             if let Ok(arg_urn) = MediaUrn::from_string(urn_str) {
                                 for target in &valid_targets {
-                                    let fwd = arg_urn.conforms_to(target).unwrap_or(false);
-                                    let rev = target.accepts(&arg_urn).unwrap_or(false);
-                                    if fwd || rev {
+                                    // Use is_comparable for discovery: are they on the same chain?
+                                    if arg_urn.is_comparable(target).unwrap_or(false) {
                                         found_matching_arg = true;
                                         break;
                                     }
@@ -1736,9 +1735,13 @@ impl PluginRuntime {
     /// Find a handler for a cap URN.
     /// Returns the OpFactory if found, None otherwise.
     ///
-    /// Matching direction: request is pattern, registered cap is instance.
-    /// `request.accepts(registered_cap)` — the request must accept the registered cap,
-    /// meaning the registered cap must be able to satisfy what the request asks for.
+    /// Uses `is_dispatchable(provider, request)` to find handlers that can
+    /// legally handle the request, then ranks by specificity.
+    ///
+    /// Ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     pub fn find_handler(&self, cap_urn: &str) -> Option<OpFactory> {
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
@@ -1746,19 +1749,32 @@ impl PluginRuntime {
         };
 
         let request_specificity = request_urn.specificity();
-        let mut best: Option<(OpFactory, usize)> = None;
+        // (handler, signed_distance, is_non_negative)
+        let mut best: Option<(OpFactory, isize)> = None;
 
         for (registered_cap_str, handler) in &self.handlers {
             if let Ok(registered_urn) = CapUrn::from_string(registered_cap_str) {
-                if request_urn.accepts(&registered_urn) {
+                // Use is_dispatchable: can this provider handle this request?
+                if registered_urn.is_dispatchable(&request_urn) {
                     let specificity = registered_urn.specificity();
-                    let distance = (specificity as isize - request_specificity as isize).unsigned_abs();
-                    match &best {
-                        None => best = Some((Arc::clone(handler), distance)),
-                        Some((_, best_distance)) if distance < *best_distance => {
-                            best = Some((Arc::clone(handler), distance));
+                    let signed_distance = specificity as isize - request_specificity as isize;
+
+                    let dominated = match &best {
+                        None => false,
+                        Some((_, best_dist)) => {
+                            // Current best dominates if:
+                            // - best is non-negative and candidate is negative
+                            // - OR both same sign and best has smaller abs distance
+                            match (best_dist >= &0, signed_distance >= 0) {
+                                (true, false) => true, // best is refinement, candidate is fallback
+                                (false, true) => false, // candidate is refinement, best is fallback
+                                _ => best_dist.unsigned_abs() <= signed_distance.unsigned_abs()
+                            }
                         }
-                        _ => {}
+                    };
+
+                    if !dominated {
+                        best = Some((Arc::clone(handler), signed_distance));
                     }
                 }
             }
@@ -1830,7 +1846,7 @@ impl PluginRuntime {
         if subcommand == "manifest" {
             let json = serde_json::to_string_pretty(manifest)
                 .map_err(|e| RuntimeError::Serialize(e.to_string()))?;
-            println!("{}", json);
+            tracing::info!("{}", json);
             return Ok(());
         }
 
@@ -3565,12 +3581,10 @@ mod tests {
                     }
                 }
 
-                // Match against in_spec
+                // Match against in_spec using is_comparable for discovery
                 if let (Some(urn_str), Some(val)) = (arg_urn_str, arg_value) {
                     if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
-                        let matches = in_spec.accepts(&arg_urn).unwrap_or(false) ||
-                                     arg_urn.conforms_to(&in_spec).unwrap_or(false);
-                        if matches {
+                        if in_spec.is_comparable(&arg_urn).unwrap_or(false) {
                             found_value = Some(val);
                             break;
                         }

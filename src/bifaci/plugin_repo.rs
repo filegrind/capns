@@ -285,7 +285,7 @@ impl PluginRepo {
                     Self::update_cache(&mut caches, repo_url, registry);
                 }
                 Err(e) => {
-                    eprintln!("Failed to sync plugin repo {}: {}", repo_url, e);
+                    tracing::error!("Failed to sync plugin repo {}: {}", repo_url, e);
                     // Continue with other repos
                 }
             }

@@ -40,12 +40,12 @@ fn expand_dev_binary_path(path: &str) -> Vec<PathBuf> {
                     .collect()
             }
             Err(e) => {
-                eprintln!("Error reading dev-bins directory '{}': {}", path, e);
+                tracing::error!("Error reading dev-bins directory '{}': {}", path, e);
                 vec![]
             }
         }
     } else {
-        eprintln!("Error: Dev binary path does not exist: {}", path);
+        tracing::error!("Dev binary path does not exist: {}", path);
         vec![]
     }
 }
@@ -138,12 +138,12 @@ fn expand_input_path(path: &str) -> Vec<PathBuf> {
                     .filter(|p| p.is_file())
                     .collect();
                 if files.is_empty() {
-                    eprintln!("Warning: No files matched glob pattern '{}'", path);
+                    tracing::warn!("No files matched glob pattern '{}'", path);
                 }
                 files
             }
             Err(e) => {
-                eprintln!("Error parsing glob pattern '{}': {}", path, e);
+                tracing::error!("Error parsing glob pattern '{}': {}", path, e);
                 vec![]
             }
         }
@@ -158,37 +158,36 @@ fn expand_input_path(path: &str) -> Vec<PathBuf> {
                     .collect()
             }
             Err(e) => {
-                eprintln!("Error reading directory '{}': {}", path, e);
+                tracing::error!("Error reading directory '{}': {}", path, e);
                 vec![]
             }
         }
     } else if path_buf.is_file() {
         vec![path_buf]
     } else {
-        eprintln!("Error: Path does not exist: {}", path);
+        tracing::error!("Path does not exist: {}", path);
         vec![]
     }
 }
 
 fn print_usage(program: &str) {
-    eprintln!("Usage: {} [options] <dot-file> <input-paths...>", program);
-    eprintln!();
-    eprintln!("Execute a DOT graph pipeline on input files.");
-    eprintln!();
-    eprintln!("Options:");
-    eprintln!("  --dev-bins <binary> ...  Use local plugin binaries");
-    eprintln!("  --help                   Show this help");
-    eprintln!();
-    eprintln!("Input paths can be:");
-    eprintln!("  - Single file:   /path/to/file.pdf");
-    eprintln!("  - Directory:     /path/to/pdfs/");
-    eprintln!("  - Glob pattern:  /path/to/*.pdf");
-    eprintln!();
-    eprintln!("Examples:");
-    eprintln!("  {} pipeline.dot /tmp/test.pdf", program);
-    eprintln!("  {} pipeline.dot /tmp/pdfs/", program);
-    eprintln!("  {} pipeline.dot '/tmp/*.pdf'", program);
-    eprintln!("  {} --dev-bins ./pdfcartridge pipeline.dot /tmp/*.pdf", program);
+    tracing::info!(
+        "Usage: {} [options] <dot-file> <input-paths...>\n\n\
+         Execute a DOT graph pipeline on input files.\n\n\
+         Options:\n\
+           --dev-bins <binary> ...  Use local plugin binaries\n\
+           --help                   Show this help\n\n\
+         Input paths can be:\n\
+           - Single file:   /path/to/file.pdf\n\
+           - Directory:     /path/to/pdfs/\n\
+           - Glob pattern:  /path/to/*.pdf\n\n\
+         Examples:\n\
+           {} pipeline.dot /tmp/test.pdf\n\
+           {} pipeline.dot /tmp/pdfs/\n\
+           {} pipeline.dot '/tmp/*.pdf'\n\
+           {} --dev-bins ./pdfcartridge pipeline.dot /tmp/*.pdf",
+        program, program, program, program, program
+    );
 }
 
 #[tokio::main]
@@ -219,7 +218,7 @@ async fn main() {
                 {
                     let expanded = expand_dev_binary_path(&args[arg_idx]);
                     if expanded.is_empty() {
-                        eprintln!("Error: No executables found in: {}", args[arg_idx]);
+                        tracing::error!("No executables found in: {}", args[arg_idx]);
                         process::exit(1);
                     }
                     dev_binaries.extend(expanded);
@@ -231,7 +230,7 @@ async fn main() {
     }
 
     if arg_idx >= args.len() {
-        eprintln!("Error: Missing DOT file argument");
+        tracing::error!("Missing DOT file argument");
         print_usage(&args[0]);
         process::exit(1);
     }
@@ -243,7 +242,7 @@ async fn main() {
     let dot_content = match fs::read_to_string(dot_file) {
         Ok(content) => content,
         Err(e) => {
-            eprintln!("Error reading DOT file '{}': {}", dot_file, e);
+            tracing::error!("Error reading DOT file '{}': {}", dot_file, e);
             process::exit(1);
         }
     };
@@ -251,7 +250,7 @@ async fn main() {
     // Find input nodes automatically
     let input_nodes = find_input_nodes(&dot_content);
     if input_nodes.is_empty() {
-        eprintln!("Error: No input nodes found in DOT graph");
+        tracing::error!("No input nodes found in DOT graph");
         process::exit(1);
     }
 
@@ -263,7 +262,7 @@ async fn main() {
     }
 
     if all_files.is_empty() {
-        eprintln!("Error: No input files found");
+        tracing::error!("No input files found");
         process::exit(1);
     }
 
@@ -274,36 +273,35 @@ async fn main() {
     // TODO: Support multiple input nodes with explicit mapping
     let input_node = &input_nodes[0];
 
-    println!("=== capdag: DOT Graph Execution ===\n");
-    println!("DOT file: {}", dot_file);
-    println!("Input node: {}", input_node);
-    println!("Input files: {}", all_files.len());
+    tracing::info!("=== capdag: DOT Graph Execution ===\n");
+    tracing::info!("DOT file: {}", dot_file);
+    tracing::info!("Input node: {}", input_node);
+    tracing::info!("Input files: {}", all_files.len());
     for f in &all_files {
-        println!("  - {}", f.display());
+        tracing::info!("  - {}", f.display());
     }
-    println!();
 
     // Create CapDag registry
-    println!("Creating CapDag registry...");
+    tracing::info!("Creating CapDag registry...");
     let registry = match CapRegistry::new().await {
         Ok(reg) => reg,
         Err(e) => {
-            eprintln!("Error creating CapDag registry: {}", e);
+            tracing::error!("Error creating CapDag registry: {}", e);
             process::exit(1);
         }
     };
 
     // Parse and validate
-    println!("Parsing and validating DOT graph...");
+    tracing::info!("Parsing and validating DOT graph...");
     let graph = match parse_dot_to_cap_dag(&dot_content, &registry).await {
         Ok(g) => {
-            println!("Validation successful");
-            println!("  Nodes: {}", g.nodes.len());
-            println!("  Edges: {}", g.edges.len());
+            tracing::info!("Validation successful");
+            tracing::info!("  Nodes: {}", g.nodes.len());
+            tracing::info!("  Edges: {}", g.edges.len());
             g
         }
         Err(e) => {
-            eprintln!("\nValidation failed: {}", e);
+            tracing::error!("\nValidation failed: {}", e);
             process::exit(1);
         }
     };
@@ -315,13 +313,12 @@ async fn main() {
     // Registry URL
     let registry_url = "https://machinefabric.com/api/plugins".to_string();
 
-    println!("\n=== Executing DAG ===\n");
+    tracing::info!("\n=== Executing DAG ===\n");
     if !dev_binaries.is_empty() {
-        println!("Dev mode: {} local binaries", dev_binaries.len());
+        tracing::info!("Dev mode: {} local binaries", dev_binaries.len());
         for bin in &dev_binaries {
-            println!("  - {}", bin.display());
+            tracing::info!("  - {}", bin.display());
         }
-        println!();
     }
 
     // Process each file
@@ -329,38 +326,41 @@ async fn main() {
     let mut error_count = 0;
 
     for file in &all_files {
-        println!("--- Processing: {} ---", file.display());
+        tracing::info!("--- Processing: {} ---", file.display());
 
         let mut initial_inputs = HashMap::new();
         initial_inputs.insert(input_node.clone(), NodeData::FilePath(file.clone()));
 
         match execute_dag(&graph, plugin_dir.clone(), registry_url.clone(), initial_inputs, dev_binaries.clone()).await {
             Ok(outputs) => {
-                println!("Results:");
+                tracing::info!("Results:");
                 for (node, data) in outputs {
                     match data {
-                        NodeData::Bytes(ref b) => println!("  {}: {} bytes", node, b.len()),
+                        NodeData::Bytes(ref b) => tracing::info!("  {}: {} bytes", node, b.len()),
                         NodeData::Text(ref t) => {
                             let preview = if t.len() > 80 { &t[..80] } else { t };
-                            println!("  {}: {}", node, preview.replace('\n', " "));
+                            tracing::info!("  {}: {}", node, preview.replace('\n', " "));
                         }
-                        NodeData::FilePath(ref p) => println!("  {}: {}", node, p.display()),
+                        NodeData::FilePath(ref p) => tracing::info!("  {}: {}", node, p.display()),
                     }
                 }
                 success_count += 1;
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                tracing::error!("{}", e);
                 error_count += 1;
             }
         }
-        println!();
     }
 
-    println!("=== Summary ===");
-    println!("Processed: {}", all_files.len());
-    println!("Success: {}", success_count);
-    println!("Errors: {}", error_count);
+    tracing::info!("=== Summary ===");
+    tracing::info!("Processed: {}", all_files.len());
+    tracing::info!("Success: {}", success_count);
+    if error_count > 0 {
+        tracing::error!("Errors: {}", error_count);
+    } else {
+        tracing::info!("Errors: {}", error_count);
+    }
 
     if error_count > 0 {
         process::exit(1);

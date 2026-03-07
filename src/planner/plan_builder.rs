@@ -75,40 +75,36 @@ impl CapPlanBuilder {
     /// Check if a cap is available (has a provider/plugin installed).
     /// If no filter is set, returns true (considers all caps available).
     ///
-    /// Uses semantic URN matching via `conforms_to()` - NOT string comparison.
-    /// The pattern is the requested cap (from registry), the instance is the
-    /// available cap (from plugin). We check: does the plugin's cap conform to
-    /// what the registry says we need?
+    /// Uses `is_dispatchable(provider, request)` to check if any available
+    /// plugin can handle the requested cap.
     fn is_cap_available(&self, cap_urn: &str) -> bool {
         match &self.available_cap_urns {
             Some(available) => {
-                // Parse the cap URN we're checking (the pattern/request)
-                let pattern = match crate::CapUrn::from_string(cap_urn) {
+                // Parse the cap URN we're checking (the request)
+                let request = match crate::CapUrn::from_string(cap_urn) {
                     Ok(u) => u,
                     Err(e) => {
-                        eprintln!(
-                            "is_cap_available: Failed to parse cap URN '{}': {}. \
-                             This is a bug - cap URNs in the registry should be valid.",
+                        tracing::error!(
+                            "is_cap_available: Failed to parse cap URN '{}': {}. This is a bug - cap URNs in the registry should be valid.",
                             cap_urn, e
                         );
                         return false;
                     }
                 };
 
-                // Check if any available cap (instance) conforms to the pattern
+                // Check if any available cap (provider) can dispatch the request
                 for available_urn in available {
                     match crate::CapUrn::from_string(available_urn) {
-                        Ok(instance) => {
-                            // instance.conforms_to(&pattern): does the plugin's cap
-                            // satisfy what the registry requires?
-                            if instance.conforms_to(&pattern) {
+                        Ok(provider) => {
+                            // provider.is_dispatchable(&request): can the plugin's cap
+                            // handle what we're requesting?
+                            if provider.is_dispatchable(&request) {
                                 return true;
                             }
                         }
                         Err(e) => {
-                            eprintln!(
-                                "is_cap_available: Failed to parse available cap URN '{}': {}. \
-                                 This is a bug - plugin-reported URNs should be valid.",
+                            tracing::error!(
+                                "is_cap_available: Failed to parse available cap URN '{}': {}. This is a bug - plugin-reported URNs should be valid.",
                                 available_urn, e
                             );
                         }
@@ -220,9 +216,8 @@ impl CapPlanBuilder {
 
             let edge_key = (input_canonical.clone(), cap_urn.clone());
             if !seen_edges.insert(edge_key) {
-                eprintln!(
-                    "BUG: Duplicate cap_urn detected in graph building (find_path): {} (input_spec: {}). \
-                     This indicates stale caps in the registry - run upload-standards to sync.",
+                tracing::error!(
+                    "BUG: Duplicate cap_urn detected in graph building (find_path): {} (input_spec: {}). This indicates stale caps in the registry - run upload-standards to sync.",
                     cap_urn, input_spec
                 );
                 return Err(PlannerError::Internal(format!(
@@ -791,9 +786,8 @@ impl CapPlanBuilder {
 
             let edge_key = (input_canonical.clone(), cap_urn.clone());
             if !seen_edges.insert(edge_key) {
-                eprintln!(
-                    "BUG: Duplicate cap_urn detected in graph building (get_reachable_targets_with_metadata): {} (input_spec: {}). \
-                     This indicates stale caps in the registry - run upload-standards to sync.",
+                tracing::error!(
+                    "BUG: Duplicate cap_urn detected in graph building (get_reachable_targets_with_metadata): {} (input_spec: {}). This indicates stale caps in the registry - run upload-standards to sync.",
                     cap_urn, input_spec
                 );
                 return Err(PlannerError::Internal(format!(
@@ -917,9 +911,8 @@ impl CapPlanBuilder {
 
             let edge_key = (input_canonical.clone(), cap_urn.clone());
             if !seen_edges.insert(edge_key) {
-                eprintln!(
-                    "BUG: Duplicate cap_urn detected in graph building (find_all_paths): {} (input_spec: {}). \
-                     This indicates stale caps in the registry - run upload-standards to sync.",
+                tracing::error!(
+                    "BUG: Duplicate cap_urn detected in graph building (find_all_paths): {} (input_spec: {}). This indicates stale caps in the registry - run upload-standards to sync.",
                     cap_urn, input_spec
                 );
                 return Err(PlannerError::Internal(format!(
@@ -981,10 +974,9 @@ impl CapPlanBuilder {
         let mut deviation_penalty = 0i32;
         for step in &path.steps {
             if let Ok(step_out) = MediaUrn::from_string(&step.to_spec) {
-                let related_to_source = step_out.conforms_to(source).unwrap_or(false)
-                    || source.conforms_to(&step_out).unwrap_or(false);
-                let related_to_target = step_out.conforms_to(target).unwrap_or(false)
-                    || target.conforms_to(&step_out).unwrap_or(false);
+                // Use is_comparable for relatedness check (same chain)
+                let related_to_source = step_out.is_comparable(source).unwrap_or(false);
+                let related_to_target = step_out.is_comparable(target).unwrap_or(false);
                 if !related_to_source && !related_to_target {
                     deviation_penalty += 1;
                 }
@@ -2314,85 +2306,85 @@ mod tests {
         Ok(())
     }
 
-    // TEST1103: Tests that is_cap_available uses conforms_to (not accepts) correctly
-    // The available cap (instance) must conform to the requested cap (pattern).
-    // This tests the directionality: instance.conforms_to(&pattern)
+    // TEST1103: Tests that is_cap_available uses is_dispatchable correctly
+    // The available cap (provider) must be dispatchable for the requested cap (request).
+    // This tests the directionality: provider.is_dispatchable(&request)
     #[test]
-    fn test1103_is_cap_available_uses_conforms_to_correctly() {
-        // A more specific cap (with extra tags) should conform to a general pattern
-        let general_pattern = CapUrn::from_string(
+    fn test1103_is_cap_available_uses_is_dispatchable_correctly() {
+        // A more specific provider should be dispatchable for a general request
+        let general_request = CapUrn::from_string(
             "cap:in=media:pdf;op=extract;out=media:text"
         ).unwrap();
 
-        let specific_instance = CapUrn::from_string(
+        let specific_provider = CapUrn::from_string(
             "cap:in=media:pdf;op=extract;out=media:text;version=2"
         ).unwrap();
 
-        // instance.conforms_to(&pattern) should be true: specific conforms to general
+        // provider.is_dispatchable(&request) should be true: specific provider refines general request
         assert!(
-            specific_instance.conforms_to(&general_pattern),
-            "Specific cap should conform to general pattern"
+            specific_provider.is_dispatchable(&general_request),
+            "Specific provider should be dispatchable for general request"
         );
 
-        // pattern.conforms_to(&instance) should be false: general does NOT conform to specific
+        // request.is_dispatchable(&provider) should be false: general request cannot handle specific provider's requirements
         assert!(
-            !general_pattern.conforms_to(&specific_instance),
-            "General pattern should NOT conform to specific instance (missing version tag)"
+            !general_request.is_dispatchable(&specific_provider),
+            "General request should NOT be dispatchable for specific provider (missing version tag)"
         );
 
         // Now test via is_cap_available
         let registry = CapRegistry::new_for_test();
-        // Registry has the general pattern
-        let registry_cap = Cap::new(general_pattern.clone(), "Extract".to_string(), "extract".to_string());
+        // Registry has the general request
+        let registry_cap = Cap::new(general_request.clone(), "Extract".to_string(), "extract".to_string());
         registry.add_caps_to_cache(vec![registry_cap]);
 
-        // Plugin provides the specific instance
+        // Plugin provides the specific provider
         let mut available = HashSet::new();
-        available.insert(specific_instance.to_string());
+        available.insert(specific_provider.to_string());
 
         let builder = create_test_plan_builder_with_registry(registry)
             .with_available_caps(available);
 
-        // is_cap_available checks: does any available cap (instance) conform to the pattern?
-        // This should be TRUE because specific_instance conforms to general_pattern
+        // is_cap_available checks: does any available cap (provider) dispatch the request?
+        // This should be TRUE because specific_provider is dispatchable for general_request
         assert!(
-            builder.is_cap_available(&general_pattern.to_string()),
-            "is_cap_available should return true when available cap conforms to requested pattern"
+            builder.is_cap_available(&general_request.to_string()),
+            "is_cap_available should return true when available provider can dispatch requested cap"
         );
     }
 
-    // TEST1104: Tests that is_cap_available rejects when instance doesn't conform to pattern
+    // TEST1104: Tests that is_cap_available rejects when provider cannot dispatch request
     #[test]
-    fn test1104_is_cap_available_rejects_non_conforming() {
-        // Create two caps that don't conform to each other
-        let pattern = CapUrn::from_string(
+    fn test1104_is_cap_available_rejects_non_dispatchable() {
+        // Request requires specific tag that provider doesn't have
+        let request = CapUrn::from_string(
             "cap:in=media:pdf;op=extract;out=media:text;required=yes"
         ).unwrap();
 
-        let instance = CapUrn::from_string(
+        let provider = CapUrn::from_string(
             "cap:in=media:pdf;op=extract;out=media:text"  // missing required=yes
         ).unwrap();
 
-        // instance does NOT conform to pattern (missing required tag)
+        // provider is NOT dispatchable for request (missing required tag that request needs)
         assert!(
-            !instance.conforms_to(&pattern),
-            "Instance missing required tag should not conform to pattern"
+            !provider.is_dispatchable(&request),
+            "Provider missing required tag should not be dispatchable for request"
         );
 
         let registry = CapRegistry::new_for_test();
-        let registry_cap = Cap::new(pattern.clone(), "Extract".to_string(), "extract".to_string());
+        let registry_cap = Cap::new(request.clone(), "Extract".to_string(), "extract".to_string());
         registry.add_caps_to_cache(vec![registry_cap]);
 
         let mut available = HashSet::new();
-        available.insert(instance.to_string());
+        available.insert(provider.to_string());
 
         let builder = create_test_plan_builder_with_registry(registry)
             .with_available_caps(available);
 
-        // is_cap_available should return FALSE because instance doesn't conform to pattern
+        // is_cap_available should return FALSE because provider cannot dispatch request
         assert!(
-            !builder.is_cap_available(&pattern.to_string()),
-            "is_cap_available should return false when available cap doesn't conform to pattern"
+            !builder.is_cap_available(&request.to_string()),
+            "is_cap_available should return false when provider cannot dispatch requested cap"
         );
     }
 }

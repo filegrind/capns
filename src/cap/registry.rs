@@ -175,7 +175,7 @@ impl CapRegistry {
             let filename = match file.path().file_stem().and_then(|s| s.to_str()) {
                 Some(name) => name,
                 None => {
-                    eprintln!("[WARN] Skipping file with invalid filename: {:?}", file.path());
+                    tracing::warn!("Skipping file with invalid filename: {:?}", file.path());
                     continue;
                 }
             };
@@ -184,7 +184,7 @@ impl CapRegistry {
             let content = match file.contents_utf8() {
                 Some(c) => c,
                 None => {
-                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    tracing::warn!("Skipping non-UTF8 file: {:?}", file.path());
                     continue;
                 }
             };
@@ -192,7 +192,7 @@ impl CapRegistry {
             let cap: Cap = match serde_json::from_str(content) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("[WARN] Skipping invalid cap definition {}: {}", filename, e);
+                    tracing::warn!("Skipping invalid cap definition {}: {}", filename, e);
                     continue;
                 }
             };
@@ -217,13 +217,13 @@ impl CapRegistry {
                 let cache_content = match serde_json::to_string_pretty(&cache_entry) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("[WARN] Failed to serialize standard cap {}: {}", filename, e);
+                        tracing::warn!("Failed to serialize standard cap {}: {}", filename, e);
                         continue;
                     }
                 };
 
                 if let Err(e) = fs::write(&cache_file, cache_content) {
-                    eprintln!("[WARN] Failed to write standard cap to cache {}: {}", filename, e);
+                    tracing::warn!("Failed to write standard cap to cache {}: {}", filename, e);
                     continue;
                 }
 
@@ -256,7 +256,7 @@ impl CapRegistry {
             let content = match file.contents_utf8() {
                 Some(c) => c,
                 None => {
-                    eprintln!("[WARN] Skipping non-UTF8 file: {:?}", file.path());
+                    tracing::warn!("Skipping non-UTF8 file: {:?}", file.path());
                     continue;
                 }
             };
@@ -264,7 +264,7 @@ impl CapRegistry {
             let cap: Cap = match serde_json::from_str(content) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("[WARN] Skipping invalid cap definition {}: {}", filename, e);
+                    tracing::warn!("Skipping invalid cap definition {}: {}", filename, e);
                     continue;
                 }
             };
@@ -315,7 +315,7 @@ impl CapRegistry {
     /// Get all currently cached caps from in-memory cache
     pub async fn get_cached_caps(&self) -> Result<Vec<Cap>, RegistryError> {
         let cached_caps = self.cached_caps.lock().map_err(|e| {
-            eprintln!("Stack trace: {}", std::backtrace::Backtrace::capture());
+            tracing::error!("Stack trace: {}", std::backtrace::Backtrace::capture());
             RegistryError::CacheError(format!("Failed to lock cache: {}", e))
         })?;
         Ok(cached_caps.values().cloned().collect())
@@ -354,7 +354,7 @@ impl CapRegistry {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("[WARN] Failed to read cache entry: {}", e);
+                    tracing::warn!("Failed to read cache entry: {}", e);
                     continue;
                 }
             };
@@ -365,7 +365,7 @@ impl CapRegistry {
                     let content = match fs::read_to_string(&path) {
                         Ok(c) => c,
                         Err(e) => {
-                            eprintln!("[WARN] Failed to read cache file {:?}: {}", path, e);
+                            tracing::warn!("Failed to read cache file {:?}: {}", path, e);
                             continue;
                         }
                     };
@@ -373,7 +373,7 @@ impl CapRegistry {
                     let cache_entry: CacheEntry = match serde_json::from_str(&content) {
                         Ok(e) => e,
                         Err(e) => {
-                            eprintln!("[WARN] Failed to parse cache file {:?}: {}", path, e);
+                            tracing::warn!("Failed to parse cache file {:?}: {}", path, e);
                             // Try to remove the invalid cache file
                             let _ = fs::remove_file(&path);
                             continue;
@@ -383,7 +383,7 @@ impl CapRegistry {
                     if cache_entry.is_expired() {
                         // Remove expired cache file
                         if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("[WARN] Failed to remove expired cache file {:?}: {}", path, e);
+                            tracing::warn!("Failed to remove expired cache file {:?}: {}", path, e);
                         }
                         continue;
                     }

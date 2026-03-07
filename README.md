@@ -132,13 +132,14 @@ Capabilities match requests based on per-tag value semantics:
 | `K=v` | Must-have, exact value | NO | OK | NO |
 
 ```rust
-let cap = CapUrn::from_string(
+let provider = CapUrn::from_string(
     "cap:in=\"media:binary\";op=extract;out=\"media:object\";ext=pdf")?;
 let request = CapUrn::from_string(
     "cap:in=\"media:binary\";op=extract;out=\"media:object\"")?;
 
-if cap.accepts(&request) {
-    println!("Cap can handle this request");
+// For dispatch/routing, use is_dispatchable
+if provider.is_dispatchable(&request) {
+    println!("Provider can dispatch this request");
 }
 ```
 

@@ -413,7 +413,7 @@ impl ProfileSchemaRegistry {
                 }
             }
             None => {
-                eprintln!("[WARN] Schema not available for profile '{}' - skipping validation", profile_url);
+                tracing::warn!("Schema not available for profile '{}' - skipping validation", profile_url);
                 Ok(())
             }
         }

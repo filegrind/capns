@@ -1557,8 +1557,8 @@ pub async fn validate_no_inline_media_spec_redefinition(
 
                 // Not found in cache, and online registry unreachable
                 // Log warning and allow operation (graceful degradation)
-                eprintln!(
-                    "[WARN] XV5: Could not verify inline spec '{}' against online registry ({}). Allowing operation in offline mode.",
+                tracing::warn!(
+                    "XV5: Could not verify inline spec '{}' against online registry ({}). Allowing operation in offline mode.",
                     media_urn, e
                 );
                 continue;
@@ -1572,8 +1572,8 @@ pub async fn validate_no_inline_media_spec_redefinition(
                     });
                 }
 
-                eprintln!(
-                    "[WARN] XV5: Could not verify inline spec '{}' against registry ({}). Allowing operation.",
+                tracing::warn!(
+                    "XV5: Could not verify inline spec '{}' against registry ({}). Allowing operation.",
                     media_urn, e
                 );
                 continue;

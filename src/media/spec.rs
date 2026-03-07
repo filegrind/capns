@@ -541,9 +541,8 @@ pub async fn resolve_media_urn(
         Err(e) => {
             // Registry lookup failed (not in cache, online unreachable or not found)
             // Log and continue to error
-            eprintln!(
-                "[WARN] Media URN '{}' not found in registry: {} - \
-                ensure it's defined in capdag-dot-com/standard/media/",
+            tracing::warn!(
+                "Media URN '{}' not found in registry: {} - ensure it's defined in capdag-dot-com/standard/media/",
                 media_urn, e
             );
         }

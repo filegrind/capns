@@ -1439,6 +1439,7 @@ fn extract_text(outputs: &HashMap<String, NodeData>, node: &str) -> String {
 
 // TEST014: PDF fan-out produces metadata, outline, and thumbnail from a single PDF input
 #[tokio::test]
+#[serial]
 async fn test948_pdf_document_intelligence() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
@@ -1627,6 +1628,7 @@ async fn test950_pdf_full_intelligence_pipeline() {
 
 // TEST017: Markdown fan-out produces metadata, outline, and thumbnail
 #[tokio::test]
+#[serial]
 async fn test951_text_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
@@ -1685,6 +1687,7 @@ async fn test951_text_document_intelligence() {
 
 // TEST018: Parallel processing of PDF and markdown through independent fan-outs
 #[tokio::test]
+#[serial]
 async fn test952_multi_format_document_processing() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
@@ -1823,6 +1826,7 @@ async fn test953_model_plus_dimensions() {
 
 // TEST020: Model spec fan-out to availability and status checks
 #[tokio::test]
+#[serial]
 async fn test954_model_availability_plus_status() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
@@ -2031,6 +2035,7 @@ async fn test957_audio_transcription() {
 
 // TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
 #[tokio::test]
+#[serial]
 async fn test958_pdf_complete_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
@@ -2098,6 +2103,7 @@ async fn test958_pdf_complete_analysis() {
 
 // TEST025: All 4 modelcartridge inspection ops on a single model spec
 #[tokio::test]
+#[serial]
 async fn test959_model_full_inspection() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
@@ -2174,6 +2180,7 @@ async fn test959_model_full_inspection() {
 
 // TEST026: 7-cap parallel analysis — all pdf ops + all md ops on two documents
 #[tokio::test]
+#[serial]
 async fn test960_two_format_full_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
@@ -2253,6 +2260,7 @@ async fn test960_two_format_full_analysis() {
 
 // TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis
 #[tokio::test]
+#[serial]
 async fn test961_model_plus_pdf_combined() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge"]);
 
@@ -2323,6 +2331,7 @@ async fn test961_model_plus_pdf_combined() {
 
 // TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
 #[tokio::test]
+#[serial]
 async fn test962_three_cartridge_pipeline() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "txtcartridge"]);
 
@@ -2643,6 +2652,7 @@ fn build_llm_constrained_request(model_spec: &str, prompt: &str) -> Vec<u8> {
 
 // TEST029: Plain text fan-out produces metadata, outline, and thumbnail from txt input
 #[tokio::test]
+#[serial]
 async fn test963_txt_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
@@ -2696,6 +2706,7 @@ async fn test963_txt_document_intelligence() {
 
 // TEST030: RST document fan-out produces metadata, outline (with headers), and thumbnail
 #[tokio::test]
+#[serial]
 async fn test964_rst_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
@@ -2749,6 +2760,7 @@ async fn test964_rst_document_intelligence() {
 
 // TEST031: Log file fan-out produces metadata, outline, and thumbnail from log input
 #[tokio::test]
+#[serial]
 async fn test965_log_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
@@ -2802,6 +2814,7 @@ async fn test965_log_document_intelligence() {
 
 // TEST032: 12-cap DAG processing all four text formats simultaneously
 #[tokio::test]
+#[serial]
 async fn test966_all_text_formats_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
@@ -2881,6 +2894,7 @@ async fn test966_all_text_formats_intelligence() {
 
 // TEST033: List all locally cached models via modelcartridge
 #[tokio::test]
+#[serial]
 async fn test967_model_list_models() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
@@ -3716,6 +3730,7 @@ async fn test981_mlx_embeddings_dimensions() {
 /// Flow: single cap
 /// Tests: modelcartridge download-model cap
 #[tokio::test]
+#[serial]
 async fn test982_model_download() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 

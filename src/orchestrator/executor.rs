@@ -234,17 +234,17 @@ impl PluginManager {
         fs::create_dir_all(&self.plugin_dir)?;
 
         for (bin_path, _) in &self.dev_plugins.clone() {
-            eprintln!("[DevMode] Discovering manifest from {:?}...", bin_path);
+            tracing::info!("[DevMode] Discovering manifest from {:?}...", bin_path);
             match self.discover_manifest(bin_path).await {
                 Ok(manifest) => {
-                    eprintln!("[DevMode] Plugin: {}", manifest.name);
+                    tracing::info!("[DevMode] Plugin: {}", manifest.name);
                     for cap in &manifest.caps {
-                        eprintln!("[DevMode]   - {}", cap.urn);
+                        tracing::info!("[DevMode]   - {}", cap.urn);
                     }
                     self.dev_plugins.insert(bin_path.clone(), manifest);
                 }
                 Err(e) => {
-                    eprintln!("[DevMode] Failed: {:?}: {}", bin_path, e);
+                    tracing::error!("[DevMode] Failed: {:?}: {}", bin_path, e);
                     return Err(e);
                 }
             }
@@ -349,10 +349,12 @@ impl PluginManager {
             }
         })?;
 
-        // Check dev plugins first
+        // Check dev plugins first - use is_dispatchable to find any plugin
+        // that can legally handle the requested cap.
         for (bin_path, manifest) in &self.dev_plugins {
             for cap in &manifest.caps {
-                if requested_urn.conforms_to(&cap.urn) && cap.urn.conforms_to(&requested_urn) {
+                // cap.urn is the provider, requested_urn is the request
+                if cap.urn.is_dispatchable(&requested_urn) {
                     return Ok((bin_path.clone(), format!("dev:{}", bin_path.display())));
                 }
             }
@@ -478,7 +480,7 @@ impl PluginManager {
             .trim_end_matches('/');
         let download_url = format!("{}/plugins/binaries/{}", base_url, plugin_info.binary_name);
 
-        eprintln!(
+        tracing::info!(
             "Downloading plugin {} v{} from {}",
             plugin_id, plugin_info.version, download_url
         );
@@ -520,7 +522,7 @@ impl PluginManager {
         perms.set_mode(0o755);
         fs::set_permissions(&plugin_path, perms)?;
 
-        eprintln!(
+        tracing::info!(
             "Installed plugin {} v{} to {:?}",
             plugin_id, plugin_info.version, plugin_path
         );
@@ -654,7 +656,7 @@ impl ExecutionContext {
 
         let host_handle = tokio::spawn(async move {
             if let Err(e) = host.run(host_read, host_write, || Vec::new()).await {
-                eprintln!("[PluginHostRuntime] Fatal: {}", e);
+                tracing::error!("[PluginHostRuntime] Fatal: {}", e);
             }
         });
 
@@ -678,7 +680,7 @@ impl ExecutionContext {
                 FrameWriter::new(BufWriter::new(slave_ext_write)),
                 Some((&initial_caps_json, &Limits::default())),
             ).await {
-                eprintln!("[RelaySlave] Fatal: {}", e);
+                tracing::error!("[RelaySlave] Fatal: {}", e);
             }
         });
 
@@ -783,7 +785,7 @@ impl ExecutionContext {
         let to = &edges[0].to;
 
         let total_streams = edges.len() + extra_args.len();
-        eprintln!(
+        tracing::info!(
             "Executing cap: {} ({} input stream(s) -> {})",
             cap_urn,
             total_streams,
@@ -917,7 +919,7 @@ impl ExecutionContext {
                 pump_result = self.switch.read_from_masters_timeout(Duration::from_millis(200)) => {
                     match pump_result {
                         Ok(Some(frame)) => {
-                            eprintln!(
+                            tracing::debug!(
                                 "  [engine] {:?} id={:?} cap={:?}",
                                 frame.frame_type, frame.id, frame.cap
                             );
@@ -961,7 +963,7 @@ impl ExecutionContext {
                         FrameType::Log => {
                             if let Some(payload) = &frame.payload {
                                 let text = String::from_utf8_lossy(payload);
-                                eprintln!("  [plugin log] {}", text);
+                                tracing::info!("  [plugin log] {}", text);
                             }
                         }
                         _ => {
@@ -1015,9 +1017,9 @@ pub async fn execute_dag(
     let cap_urns: Vec<&str> = graph.edges.iter().map(|e| e.cap_urn.as_str()).collect();
     let plugins = plugin_manager.resolve_plugins(&cap_urns).await?;
 
-    eprintln!("\nResolved {} unique plugin binaries:", plugins.len());
+    tracing::info!("Resolved {} unique plugin binaries:", plugins.len());
     for (path, caps) in &plugins {
-        eprintln!("  {:?} -> {} caps", path, caps.len());
+        tracing::info!("  {:?} -> {} caps", path, caps.len());
     }
 
     // 2. Create execution context and add plugin host as master
@@ -1037,8 +1039,8 @@ pub async fn execute_dag(
     let group_order = topological_sort_groups(&groups)
         .map_err(|e| ExecutionError::HostError(format!("Topological sort failed: {}", e)))?;
 
-    eprintln!(
-        "\nExecuting {} cap group(s) in topological order\n",
+    tracing::info!(
+        "Executing {} cap group(s) in topological order",
         group_order.len()
     );
 
@@ -1048,7 +1050,7 @@ pub async fn execute_dag(
         ctx.execute_fanin(&groups[idx].edges, &[]).await?;
     }
 
-    eprintln!("\nExecution complete!\n");
+    tracing::info!("\nExecution complete!\n");
 
     // Explicitly shut down infrastructure
     let node_data = ctx.shutdown();

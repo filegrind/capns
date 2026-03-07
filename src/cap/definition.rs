@@ -728,10 +728,15 @@ impl Cap {
         resolve_media_urn(media_urn, Some(&self.media_specs), registry).await
     }
 
-    /// Check if this cap accepts a request string
+    /// Check if this cap (provider) can dispatch the given request.
+    ///
+    /// Uses `is_dispatchable` which correctly handles the 3-axis Cap URN matching:
+    /// - Input axis: provider can handle request's input (same or more specific)
+    /// - Output axis: provider meets request's output needs (same or more specific)
+    /// - Cap-tags axis: provider satisfies all explicit request constraints
     pub fn accepts_request(&self, request: &str) -> bool {
         let request_urn = CapUrn::from_string(request).expect("Invalid cap URN in request");
-        request_urn.accepts(&self.urn)
+        self.urn.is_dispatchable(&request_urn)
     }
 
     /// Get the cap URN as a string

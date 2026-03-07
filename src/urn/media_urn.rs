@@ -280,6 +280,14 @@ impl MediaUrn {
         self.is_equivalent(&other)
     }
 
+    /// Check if two media URNs are on the same specialization chain.
+    /// Equivalent to `self.accepts(other) || other.accepts(self)`.
+    ///
+    /// Use this for discovery/grouping, NOT for dispatch.
+    pub fn is_comparable(&self, other: &MediaUrn) -> Result<bool, MediaUrnError> {
+        self.0.is_comparable(&other.0).map_err(MediaUrnError::Match)
+    }
+
     /// Get the specificity of this media URN
     ///
     /// Specificity is the count of non-wildcard tags.
@@ -745,18 +753,18 @@ mod debug_tests {
     // TEST078: Debug test for conforms_to behavior between different media URN types
     #[test]
     fn debug_matching_behavior() {
-        println!("MEDIA_IDENTITY = {}", MEDIA_IDENTITY);
-        println!("MEDIA_STRING = {}", MEDIA_STRING);
-        println!("MEDIA_OBJECT = {}", MEDIA_OBJECT);
+        tracing::debug!("MEDIA_IDENTITY = {}", MEDIA_IDENTITY);
+        tracing::debug!("MEDIA_STRING = {}", MEDIA_STRING);
+        tracing::debug!("MEDIA_OBJECT = {}", MEDIA_OBJECT);
 
         let str_urn = MediaUrn::from_string(MEDIA_STRING).unwrap();
         let obj_urn = MediaUrn::from_string(MEDIA_OBJECT).unwrap();
         let _bin_urn = MediaUrn::from_string(MEDIA_IDENTITY).unwrap();
 
-        println!("string.conforms_to(string) = {:?}", str_urn.conforms_to(&str_urn));
-        println!("object.conforms_to(string) = {:?}", obj_urn.conforms_to(&str_urn));
-        println!("object.conforms_to(object) = {:?}", obj_urn.conforms_to(&obj_urn));
-        println!("string.conforms_to(object) = {:?}", str_urn.conforms_to(&obj_urn));
+        tracing::debug!("string.conforms_to(string) = {:?}", str_urn.conforms_to(&str_urn));
+        tracing::debug!("object.conforms_to(string) = {:?}", obj_urn.conforms_to(&str_urn));
+        tracing::debug!("object.conforms_to(object) = {:?}", obj_urn.conforms_to(&obj_urn));
+        tracing::debug!("string.conforms_to(object) = {:?}", str_urn.conforms_to(&obj_urn));
 
         // MEDIA_OBJECT (media:record) should NOT conform to MEDIA_STRING (media:textable)
         // because MEDIA_OBJECT lacks textable - records are not inherently textable.

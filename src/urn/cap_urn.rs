@@ -373,6 +373,163 @@ impl CapUrn {
         Ok(self.conforms_to(&cap))
     }
 
+    /// Check if two cap URNs are comparable in the order-theoretic sense.
+    ///
+    /// Two URNs are comparable if either one accepts (subsumes) the other.
+    /// This is the symmetric closure of the accepts relation.
+    ///
+    /// Use this for routing when you want to find any handler that could
+    /// potentially satisfy a request, regardless of which is more specific.
+    pub fn is_comparable(&self, other: &CapUrn) -> bool {
+        self.accepts(other) || other.accepts(self)
+    }
+
+    /// Check if two cap URNs are equivalent in the order-theoretic sense.
+    ///
+    /// Two URNs are equivalent if each accepts (subsumes) the other.
+    /// This means they have the same position in the specificity lattice.
+    ///
+    /// Use this for exact matching where you need URNs to be interchangeable.
+    pub fn is_equivalent(&self, other: &CapUrn) -> bool {
+        self.accepts(other) && other.accepts(self)
+    }
+
+    /// Check if this provider can dispatch (handle) the given request.
+    ///
+    /// This is the PRIMARY predicate for routing/dispatch decisions.
+    ///
+    /// A provider is dispatchable for a request iff:
+    /// 1. Input axis: provider can handle request's input (provider.in same or more specific)
+    /// 2. Output axis: provider meets request's output needs (provider.out same or more specific)
+    /// 3. Cap-tags: provider satisfies all explicit request tags, may add more
+    ///
+    /// Key insight: This is NOT symmetric. `provider.is_dispatchable(&request)` may be true
+    /// while `request.is_dispatchable(&provider)` is false.
+    ///
+    /// # Arguments
+    /// * `request` - The request URN (partial specification, may have wildcards)
+    ///
+    /// # Returns
+    /// * `true` if this provider can legally handle the request
+    /// * `false` if there's a contradiction or incompatibility
+    pub fn is_dispatchable(&self, request: &CapUrn) -> bool {
+        // Axis 1: Input - provider must handle at least what request specifies
+        if !self.input_dispatchable(request) {
+            return false;
+        }
+
+        // Axis 2: Output - provider must produce at least what request needs
+        if !self.output_dispatchable(request) {
+            return false;
+        }
+
+        // Axis 3: Cap-tags - provider must satisfy explicit request constraints
+        if !self.cap_tags_dispatchable(request) {
+            return false;
+        }
+
+        true
+    }
+
+    /// Check if provider's input is dispatchable for request's input.
+    ///
+    /// Input is CONTRAVARIANT: provider with looser input constraint can handle
+    /// request with stricter input. A provider accepting `media:` (any) can handle
+    /// a request specifying `media:pdf` (specific).
+    ///
+    /// The check is: does request's input conform to provider's input requirement?
+    /// - Provider `in=media:` (accepts any) + Request `in=media:pdf` -> YES (pdf conforms to any)
+    /// - Provider `in=media:pdf` + Request `in=media:` -> NO (any doesn't conform to pdf)
+    fn input_dispatchable(&self, request: &CapUrn) -> bool {
+        // Request wildcard: any provider input is fine (request doesn't constrain what it sends)
+        if request.in_urn == "media:" {
+            return true;
+        }
+
+        // Provider wildcard: provider accepts any input, including request's specific input
+        if self.in_urn == "media:" {
+            return true;
+        }
+
+        // Both specific: request input must conform to provider's input requirement
+        // (request sends something the provider can handle)
+        let req_in = match MediaUrn::from_string(&request.in_urn) {
+            Ok(u) => u,
+            Err(_) => return false,
+        };
+        let prov_in = match MediaUrn::from_string(&self.in_urn) {
+            Ok(u) => u,
+            Err(_) => return false,
+        };
+
+        // Request input conforms to provider input = request sends what provider can handle
+        req_in.conforms_to(&prov_in).unwrap_or(false)
+    }
+
+    /// Check if provider's output is dispatchable for request's output.
+    ///
+    /// Rules:
+    /// - Request wildcard (media:): any provider output is acceptable
+    /// - Otherwise: provider output must conform to (be same or more specific than) request output
+    fn output_dispatchable(&self, request: &CapUrn) -> bool {
+        // Request wildcard: any provider output is fine
+        if request.out_urn == "media:" {
+            return true;
+        }
+
+        // Provider wildcard: cannot guarantee specific output request needs
+        // This is asymmetric with input! Generic output doesn't satisfy specific requirement.
+        if self.out_urn == "media:" {
+            return false;
+        }
+
+        // Both specific: provider output must conform to request output
+        // (provider can be same or more specific - providing more is OK)
+        let req_out = match MediaUrn::from_string(&request.out_urn) {
+            Ok(u) => u,
+            Err(_) => return false,
+        };
+        let prov_out = match MediaUrn::from_string(&self.out_urn) {
+            Ok(u) => u,
+            Err(_) => return false,
+        };
+
+        // Provider output conforms to request output = provider guarantees at least what request needs
+        prov_out.conforms_to(&req_out).unwrap_or(false)
+    }
+
+    /// Check if provider's cap-tags are dispatchable for request's cap-tags.
+    ///
+    /// Rules:
+    /// - Every explicit request tag must be satisfied by provider
+    /// - Provider may have extra tags (refinement is OK)
+    /// - Wildcard (*) in request means any value acceptable
+    /// - Wildcard (*) in provider means provider can handle any value
+    fn cap_tags_dispatchable(&self, request: &CapUrn) -> bool {
+        // Every explicit request tag must be satisfied by provider
+        for (key, request_value) in &request.tags {
+            match self.tags.get(key) {
+                Some(provider_value) => {
+                    // Both have the tag - check compatibility
+                    if request_value == "*" { continue; }  // request wildcard accepts anything
+                    if provider_value == "*" { continue; } // provider wildcard handles anything
+                    if request_value != provider_value { return false; } // value conflict
+                }
+                None => {
+                    // Provider missing a tag that request specifies
+                    if request_value != "*" {
+                        // Request needs specific value, provider doesn't have the tag
+                        // This is a conflict - provider cannot satisfy the constraint
+                        return false;
+                    }
+                    // Request has wildcard (*), provider omitting is OK
+                }
+            }
+        }
+        // Provider may have extra tags not in request - that's refinement, always OK
+        true
+    }
+
     /// Calculate specificity score for cap matching
     ///
     /// More specific caps have higher scores and are preferred.
@@ -642,11 +799,11 @@ impl CapMatcher {
         matches
     }
 
-    /// Check if two cap sets overlap (any pair where one accepts the other)
+    /// Check if two cap sets overlap (any pair is comparable)
     pub fn are_compatible(caps1: &[CapUrn], caps2: &[CapUrn]) -> bool {
         caps1
             .iter()
-            .any(|c1| caps2.iter().any(|c2| c1.accepts(c2) || c2.accepts(c1)))
+            .any(|c1| caps2.iter().any(|c2| c1.is_comparable(c2)))
     }
 }
 

@@ -346,17 +346,15 @@ impl InProcessPluginHost {
         table
     }
 
-    /// Find the best handler for a cap URN using closest-specificity matching.
-    ///
-    /// Mirrors `PluginHostRuntime::find_plugin_for_cap()` exactly:
-    /// - Request is pattern, registered cap is instance
-    /// - Closest specificity to request wins
-    /// - Ties broken by first match (deterministic)
     /// Find the best handler for a cap URN.
     ///
-    /// The registered cap (pattern) must accept the request cap (instance).
-    /// For example, registered `in=media:` accepts request `in="media:list;requirements;textable"`.
-    /// Among matches, pick the one with closest specificity to the request.
+    /// Uses `is_dispatchable(provider, request)` to find handlers that can
+    /// legally handle the request, then ranks by specificity.
+    ///
+    /// Ranking prefers:
+    /// 1. Equivalent matches (distance 0)
+    /// 2. More specific providers (positive distance) - refinements
+    /// 3. More generic providers (negative distance) - fallbacks
     fn find_handler_for_cap(cap_table: &CapTable, cap_urn: &str) -> Option<usize> {
         let request_urn = match CapUrn::from_string(cap_urn) {
             Ok(u) => u,
@@ -364,15 +362,15 @@ impl InProcessPluginHost {
         };
 
         let request_specificity = request_urn.specificity();
-        let mut matches: Vec<(usize, usize)> = Vec::new(); // (handler_idx, specificity)
+        let mut matches: Vec<(usize, isize)> = Vec::new(); // (handler_idx, signed_distance)
 
         for (registered_cap, handler_idx) in cap_table {
             if let Ok(registered_urn) = CapUrn::from_string(registered_cap) {
-                // The registered cap (pattern) must accept the request (instance)
-                // e.g., registered `in=media:` accepts request `in="media:list;requirements;textable"`
-                if registered_urn.accepts(&request_urn) {
+                // Use is_dispatchable: can this provider handle this request?
+                if registered_urn.is_dispatchable(&request_urn) {
                     let specificity = registered_urn.specificity();
-                    matches.push((*handler_idx, specificity));
+                    let signed_distance = specificity as isize - request_specificity as isize;
+                    matches.push((*handler_idx, signed_distance));
                 }
             }
         }
@@ -381,18 +379,23 @@ impl InProcessPluginHost {
             return None;
         }
 
-        let min_distance = matches
-            .iter()
-            .map(|(_, s)| (*s as isize - request_specificity as isize).unsigned_abs())
-            .min()
-            .unwrap();
+        // Ranking: prefer equivalent (0), then more specific (+), then more generic (-)
+        matches.sort_by(|a, b| {
+            let (_, dist_a) = a;
+            let (_, dist_b) = b;
 
-        matches
-            .iter()
-            .find(|(_, s)| {
-                (*s as isize - request_specificity as isize).unsigned_abs() == min_distance
-            })
-            .map(|(idx, _)| *idx)
+            // First: non-negative distances before negative
+            match (dist_a >= &0, dist_b >= &0) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => {
+                    // Same sign: prefer smaller absolute distance
+                    dist_a.unsigned_abs().cmp(&dist_b.unsigned_abs())
+                }
+            }
+        });
+
+        matches.first().map(|(idx, _)| *idx)
     }
 
     /// Run the host. Returns when the local connection closes.
@@ -403,33 +406,33 @@ impl InProcessPluginHost {
         local_read: R,
         local_write: W,
     ) -> Result<(), CborError> {
-        eprintln!("[InProcessPluginHost] run() starting, handler_count={}", self.handlers.len());
+        tracing::info!("[InProcessPluginHost] run() starting, handler_count={}", self.handlers.len());
         let mut reader = FrameReader::new(local_read);
 
         // Writer runs in a separate task with SeqAssigner
         let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Frame>();
         let writer_task = tokio::spawn(async move {
-            eprintln!("[InProcessPluginHost] writer task started");
+            tracing::info!("[InProcessPluginHost] writer task started");
             let mut writer = FrameWriter::new(local_write);
             let mut seq_assigner = SeqAssigner::new();
 
             while let Some(mut frame) = write_rx.recv().await {
-                eprintln!("[InProcessPluginHost] writer: sending frame type={:?} id={}", frame.frame_type, frame.id);
+                tracing::info!("[InProcessPluginHost] writer: sending frame type={:?} id={}", frame.frame_type, frame.id);
                 seq_assigner.assign(&mut frame);
                 if let Err(e) = writer.write(&frame).await {
-                    eprintln!("[InProcessPluginHost] writer error: {}", e);
+                    tracing::error!("[InProcessPluginHost] writer error: {}", e);
                     break;
                 }
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
                     seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
             }
-            eprintln!("[InProcessPluginHost] writer task exiting");
+            tracing::info!("[InProcessPluginHost] writer task exiting");
         });
 
         // Send initial RelayNotify with aggregate caps
         let manifest = self.build_manifest();
-        eprintln!("[InProcessPluginHost] sending RelayNotify, manifest_len={}", manifest.len());
+        tracing::info!("[InProcessPluginHost] sending RelayNotify, manifest_len={}", manifest.len());
         let notify = Frame::relay_notify(&manifest, &Limits::default());
         write_tx
             .send(notify)
@@ -446,20 +449,20 @@ impl InProcessPluginHost {
         let identity_handler: Arc<dyn FrameHandler> = Arc::new(IdentityHandler);
 
         // Main read loop — forward frames to handlers, no accumulation
-        eprintln!("[InProcessPluginHost] entering main read loop");
+        tracing::info!("[InProcessPluginHost] entering main read loop");
         loop {
-            eprintln!("[InProcessPluginHost] waiting for frame...");
+            tracing::info!("[InProcessPluginHost] waiting for frame...");
             let frame = match reader.read().await {
                 Ok(Some(f)) => {
-                    eprintln!("[InProcessPluginHost] received frame type={:?} id={}", f.frame_type, f.id);
+                    tracing::info!("[InProcessPluginHost] received frame type={:?} id={}", f.frame_type, f.id);
                     f
                 }
                 Ok(None) => {
-                    eprintln!("[InProcessPluginHost] read EOF — RelaySlave closed");
+                    tracing::info!("[InProcessPluginHost] read EOF — RelaySlave closed");
                     break;
                 }
                 Err(e) => {
-                    eprintln!("[InProcessPluginHost] read error: {}", e);
+                    tracing::error!("[InProcessPluginHost] read error: {}", e);
                     break;
                 }
             };
@@ -481,22 +484,22 @@ impl InProcessPluginHost {
 
                     // Identity cap is "cap:" — exact string match, NOT conforms_to.
                     let is_identity = cap_urn == CAP_IDENTITY;
-                    eprintln!("[InProcessPluginHost] REQ cap_urn={} is_identity={}", cap_urn, is_identity);
+                    tracing::info!("[InProcessPluginHost] REQ cap_urn={} is_identity={}", cap_urn, is_identity);
 
                     let handler: Arc<dyn FrameHandler> = if is_identity {
                         Arc::clone(&identity_handler)
                     } else {
-                        eprintln!("[InProcessPluginHost] searching cap_table with {} entries", cap_table.len());
+                        tracing::debug!("[InProcessPluginHost] searching cap_table with {} entries", cap_table.len());
                         for (i, (cap, idx)) in cap_table.iter().enumerate() {
-                            eprintln!("[InProcessPluginHost]   cap_table[{}]: cap={} handler_idx={}", i, cap, idx);
+                            tracing::info!("[InProcessPluginHost]   cap_table[{}]: cap={} handler_idx={}", i, cap, idx);
                         }
                         match Self::find_handler_for_cap(&cap_table, &cap_urn) {
                             Some(idx) => {
-                                eprintln!("[InProcessPluginHost] found handler at idx={}", idx);
+                                tracing::info!("[InProcessPluginHost] found handler at idx={}", idx);
                                 Arc::clone(&handlers[idx].handler)
                             }
                             None => {
-                                eprintln!("[InProcessPluginHost] NO_HANDLER for cap={}", cap_urn);
+                                tracing::info!("[InProcessPluginHost] NO_HANDLER for cap={}", cap_urn);
                                 let mut err = Frame::err(
                                     rid,
                                     "NO_HANDLER",
@@ -522,9 +525,9 @@ impl InProcessPluginHost {
                     );
                     let cap_urn_owned = cap_urn.clone();
                     tokio::spawn(async move {
-                        eprintln!("[InProcessPluginHost] handler task starting for cap={}", cap_urn_owned);
+                        tracing::info!("[InProcessPluginHost] handler task starting for cap={}", cap_urn_owned);
                         handler.handle_request(&cap_urn_owned, input_rx, output).await;
-                        eprintln!("[InProcessPluginHost] handler task completed for cap={}", cap_urn_owned);
+                        tracing::info!("[InProcessPluginHost] handler task completed for cap={}", cap_urn_owned);
                     });
                 }
 
