@@ -627,17 +627,6 @@ mod tests {
         buf
     }
 
-    /// CBOR-decode a response chunk payload to extract raw bytes.
-    fn decode_chunk_payload(payload: &[u8]) -> Vec<u8> {
-        let value: ciborium::Value =
-            ciborium::from_reader(payload).expect("response chunk not valid CBOR");
-        match value {
-            ciborium::Value::Bytes(b) => b,
-            ciborium::Value::Text(s) => s.into_bytes(),
-            other => panic!("unexpected CBOR type in response chunk: {:?}", other),
-        }
-    }
-
     // TEST654: InProcessPluginHost routes REQ to matching handler and returns response
     #[tokio::test]
     async fn test654_routes_req_to_handler() {
@@ -702,7 +691,7 @@ mod tests {
 
         let resp_chunk = reader.read().await.unwrap().unwrap();
         assert_eq!(resp_chunk.frame_type, FrameType::Chunk);
-        let resp_data = decode_chunk_payload(resp_chunk.payload.as_deref().unwrap());
+        let resp_data = decode_chunk_payload(resp_chunk.payload.as_deref().unwrap()).unwrap();
         assert_eq!(resp_data, b"hello world");
 
         let resp_se = reader.read().await.unwrap().unwrap();

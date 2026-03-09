@@ -59,6 +59,7 @@ pub use media::profile::{ProfileSchemaRegistry, ProfileSchemaError};
 pub use standard::*;
 
 // Bifaci protocol — frames, I/O, runtimes
+pub use bifaci::decode_chunk_payload;
 pub use bifaci::frame::{Frame, FrameType, MessageId, Limits, FlowKey, SeqAssigner, ReorderBuffer, PROTOCOL_VERSION, DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK, DEFAULT_MAX_REORDER_BUFFER};
 pub use bifaci::io::{
     CborError, FrameReader, FrameWriter, HandshakeResult,
