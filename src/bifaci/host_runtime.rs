@@ -215,6 +215,10 @@ struct ManagedPlugin {
     /// Last death error message (includes stderr if available). Used for ERR frames
     /// sent when attempting to write to a dead plugin.
     last_death_message: Option<String>,
+    /// Set to true before killing the process to signal that the death is
+    /// intentional. handle_plugin_death checks this to avoid treating ordered
+    /// shutdowns as unexpected crashes.
+    ordered_shutdown: bool,
 }
 
 impl ManagedPlugin {
@@ -234,6 +238,7 @@ impl ManagedPlugin {
             pending_heartbeats: HashMap::new(),
             stderr_handle: None,
             last_death_message: None,
+            ordered_shutdown: false,
         }
     }
 
@@ -256,6 +261,7 @@ impl ManagedPlugin {
             pending_heartbeats: HashMap::new(),
             stderr_handle: None,
             last_death_message: None,
+            ordered_shutdown: false,
         }
     }
 }
@@ -777,6 +783,14 @@ impl PluginHostRuntime {
     }
 
     /// Handle a plugin death (reader loop exited).
+    ///
+    /// Three cases:
+    /// 1. **Ordered shutdown** (`ordered_shutdown == true`): We asked for this.
+    ///    Clean up routing tables, no ERR frames, no error messages.
+    /// 2. **Unexpected death with pending outgoing work**: Genuine crash mid-flight.
+    ///    Send ERR for pending peer requests, store death message.
+    /// 3. **Unexpected death, idle**: Plugin exited on its own (OS jetsam,
+    ///    resource reclaim, natural exit). Clean up, no ERR — next request respawns.
     async fn handle_plugin_death(
         &mut self,
         plugin_idx: usize,
@@ -784,83 +798,68 @@ impl PluginHostRuntime {
     ) -> Result<(), AsyncHostError> {
         use tokio::io::AsyncReadExt;
 
-        let plugin = &mut self.plugins[plugin_idx];
-        plugin.running = false;
-        plugin.writer_tx = None;
+        // Scope the mutable borrow of the plugin so we can access self later.
+        let was_ordered;
+        let stderr_content;
+        {
+            let plugin = &mut self.plugins[plugin_idx];
+            plugin.running = false;
+            plugin.writer_tx = None;
+            was_ordered = plugin.ordered_shutdown;
+            plugin.ordered_shutdown = false; // Reset for potential respawn
 
-        // Capture stderr content BEFORE killing the process - this contains crash info
-        let mut stderr_content = String::new();
-        if let Some(ref mut stderr) = plugin.stderr_handle {
-            // Read available stderr data (with a reasonable limit)
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match tokio::time::timeout(
-                    Duration::from_millis(100),
-                    stderr.read(&mut buf)
-                ).await {
-                    Ok(Ok(0)) => break, // EOF
-                    Ok(Ok(n)) => {
-                        if let Ok(s) = std::str::from_utf8(&buf[..n]) {
-                            stderr_content.push_str(s);
+            // Capture stderr content BEFORE killing the process
+            let mut captured = String::new();
+            if let Some(ref mut stderr) = plugin.stderr_handle {
+                let mut buf = vec![0u8; 4096];
+                loop {
+                    match tokio::time::timeout(
+                        Duration::from_millis(100),
+                        stderr.read(&mut buf)
+                    ).await {
+                        Ok(Ok(0)) => break,
+                        Ok(Ok(n)) => {
+                            if let Ok(s) = std::str::from_utf8(&buf[..n]) {
+                                captured.push_str(s);
+                            }
+                            if captured.len() > 2000 {
+                                captured.truncate(2000);
+                                captured.push_str("... [truncated]");
+                                break;
+                            }
                         }
-                        // Limit total size
-                        if stderr_content.len() > 2000 {
-                            stderr_content.truncate(2000);
-                            stderr_content.push_str("... [truncated]");
-                            break;
-                        }
+                        Ok(Err(_)) | Err(_) => break,
                     }
-                    Ok(Err(_)) | Err(_) => break, // Error or timeout
                 }
             }
+            plugin.stderr_handle = None;
+
+            // Kill the process if it's still around
+            if let Some(ref mut child) = plugin.process {
+                let _ = child.kill().await;
+            }
+            plugin.process = None;
+            stderr_content = captured;
         }
-        plugin.stderr_handle = None;
 
-        // Kill the process if it's still around
-        if let Some(ref mut child) = plugin.process {
-            let _ = child.kill().await;
-        }
-        plugin.process = None;
-
-        // Build error message with stderr content if available
-        let error_message = if stderr_content.is_empty() {
-            format!("Plugin {} exited unexpectedly (no stderr output)", plugin.path.display())
-        } else {
-            format!("Plugin {} exited unexpectedly. stderr:\n{}", plugin.path.display(), stderr_content)
-        };
-
-        // Store for late-arriving frames that try to write to the dead plugin
-        plugin.last_death_message = Some(error_message.clone());
-
-        // Send ERR for pending PEER requests (outgoing_rids only)
-        // NOTE: Do NOT send ERR for incoming_rxids! Those entries are intentionally leaked
-        // to handle out-of-order frame arrival. They don't represent pending work.
-        // Collect (rid, next_seq) for host-generated ERR frames.
+        // Clean up routing tables regardless of death cause.
+        // outgoing_rids: peer requests the plugin initiated
         let failed_outgoing: Vec<(MessageId, u64)> = self
             .outgoing_rids
             .iter()
             .filter(|(_, &idx)| idx == plugin_idx)
             .map(|(rid, _)| {
-                // Peer REQs from plugin have no XID
                 let flow_key = FlowKey { rid: rid.clone(), xid: None };
                 let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
                 (rid.clone(), next_seq)
             })
             .collect();
 
-        for (rid, next_seq) in &failed_outgoing {
-            let mut err_frame = Frame::err(
-                rid.clone(),
-                "PLUGIN_DIED",
-                &error_message,
-            );
-            err_frame.seq = *next_seq;
-            let _ = outbound_tx.send(err_frame);
+        for (rid, _) in &failed_outgoing {
             self.outgoing_rids.remove(rid);
         }
 
-        // Clean up incoming_rxids entries for this plugin (leaked routing entries)
-        // Also clean up outgoing_max_seq for flows associated with these entries
+        // incoming_rxids: intentionally leaked routing entries — clean up
         let failed_incoming_keys: Vec<(MessageId, MessageId)> = self
             .incoming_rxids
             .iter()
@@ -872,9 +871,41 @@ impl PluginHostRuntime {
         }
         self.incoming_rxids.retain(|(_, _), &mut idx| idx != plugin_idx);
 
-        // Remove caps temporarily (will be re-added on relaunch)
+        // Determine whether to send ERR frames.
+        // Ordered shutdown: we asked for this — never send ERR.
+        // Unordered with pending outgoing: genuine crash — send ERR.
+        // Unordered, idle: natural exit — no ERR needed.
+        //
+        // Only outgoing_rids represent genuinely pending work.
+        // incoming_rxids are intentionally leaked after request completion
+        // and do NOT mean work is pending.
+        let has_genuine_pending_work = !was_ordered && !failed_outgoing.is_empty();
+
+        if has_genuine_pending_work {
+            let error_message = if stderr_content.is_empty() {
+                format!("Plugin {} exited unexpectedly (no stderr output)", self.plugins[plugin_idx].path.display())
+            } else {
+                format!("Plugin {} exited unexpectedly. stderr:\n{}", self.plugins[plugin_idx].path.display(), stderr_content)
+            };
+
+            self.plugins[plugin_idx].last_death_message = Some(error_message.clone());
+
+            for (rid, next_seq) in &failed_outgoing {
+                let mut err_frame = Frame::err(
+                    rid.clone(),
+                    "PLUGIN_DIED",
+                    &error_message,
+                );
+                err_frame.seq = *next_seq;
+                let _ = outbound_tx.send(err_frame);
+            }
+        } else {
+            self.plugins[plugin_idx].last_death_message = None;
+        }
+
+        // Rebuild cap table for on-demand respawn routing
         self.update_cap_table();
-        self.rebuild_capabilities(Some(outbound_tx)); // Send RelayNotify to relay
+        self.rebuild_capabilities(Some(outbound_tx));
 
         Ok(())
     }
@@ -1245,6 +1276,7 @@ impl PluginHostRuntime {
     /// blocks on the plugin's read().
     async fn kill_all_plugins(&mut self) {
         for plugin in &mut self.plugins {
+            plugin.ordered_shutdown = true;
             if let Some(ref mut child) = plugin.process {
                 let _ = child.kill().await;
             }
