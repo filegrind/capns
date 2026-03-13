@@ -50,6 +50,7 @@ use async_trait::async_trait;
 use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
+use std::os::unix::io::FromRawFd;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -2539,7 +2540,18 @@ impl PluginRuntime {
     /// Run in Plugin CBOR mode - binary frame protocol via stdin/stdout.
     async fn run_cbor_mode(&self) -> Result<(), RuntimeError> {
         let stdin = tokio::io::stdin();
-        let stdout = tokio::io::stdout();
+
+        // Duplicate stdout so CBOR frame I/O is immune to anything that
+        // closes the original FD 1 (e.g. a native library closing stdout).
+        // The duplicated FD points to the same pipe but lives at a different
+        // descriptor number, so close(STDOUT_FILENO) won't affect it.
+        let safe_fd = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        if safe_fd < 0 {
+            return Err(RuntimeError::Io(std::io::Error::last_os_error()));
+        }
+        let stdout = tokio::fs::File::from_std(unsafe {
+            std::fs::File::from_raw_fd(safe_fd)
+        });
 
         // Use async buffered readers/writers
         let reader = BufReader::new(stdin);
