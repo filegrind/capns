@@ -825,7 +825,7 @@ impl ExecutionContext {
             .execute_cap(cap_urn, vec![], "application/cbor")
             .await
             .map_err(|e| ExecutionError::HostError(format!("execute_cap: {}", e)))?;
-        tracing::debug!(target: "execute_fanin", "execute_cap returned, request_id={:?}", request_id);
+        tracing::info!("[execute_fanin] dispatched cap='{}' request_id={:?}", cap_urn, request_id);
 
         // Send each input as a separate named stream
         for (data, in_media) in &inputs {
@@ -949,7 +949,9 @@ impl ExecutionContext {
 
                 // Receive response frame
                 Some(frame) = rx.recv() => {
-                    tracing::debug!(target: "execute_fanin", "rx.recv() got: {:?}", frame.frame_type);
+                    if frame.frame_type != FrameType::Log {
+                        tracing::info!("[execute_fanin] rx.recv(): {:?} id={:?} payload_len={}", frame.frame_type, frame.id, frame.payload.as_ref().map_or(0, |p| p.len()));
+                    }
                     match frame.frame_type {
                         FrameType::Chunk => {
                             if let Some(payload) = &frame.payload {
@@ -985,6 +987,8 @@ impl ExecutionContext {
                 }
             }
         }
+
+        tracing::info!("[execute_fanin] got End for cap='{}' request_id={:?} response_len={}", cap_urn, request_id, response_chunks.len());
 
         // Branch on list vs scalar output media URN.
         //

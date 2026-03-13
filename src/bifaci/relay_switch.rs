@@ -394,14 +394,21 @@ impl RelaySwitch {
                 loop {
                     match reader.read().await {
                         Ok(Some(frame)) => {
+                            tracing::info!(
+                                "[RelaySwitch] master {} reader: {:?} id={:?} xid={:?}",
+                                master_idx, frame.frame_type, frame.id, frame.routing_id
+                            );
                             if tx.send((master_idx, Ok(frame))).is_err() {
+                                tracing::warn!("[RelaySwitch] master {} reader: frame_tx closed", master_idx);
                                 break;
                             }
                         }
                         Ok(None) => {
+                            tracing::warn!("[RelaySwitch] master {} reader: socket closed (EOF)", master_idx);
                             break;
                         }
                         Err(e) => {
+                            tracing::error!("[RelaySwitch] master {} reader: socket error: {}", master_idx, e);
                             let _ = tx.send((master_idx, Err(e)));
                             break;
                         }
@@ -582,6 +589,10 @@ impl RelaySwitch {
         frame_with_xid.routing_id = Some(xid);
 
         // Forward to destination
+        tracing::info!(
+            "[RelaySwitch] execute_cap: dispatching to master {} cap='{}' rid={:?} xid={:?}",
+            dest_idx, cap_urn, rid, frame_with_xid.routing_id
+        );
         self.write_to_master_idx(dest_idx, &mut frame_with_xid).await?;
 
         Ok((rid, rx))
@@ -785,12 +796,23 @@ impl RelaySwitch {
             loop {
                 match reader.read().await {
                     Ok(Some(frame)) => {
+                        if frame.frame_type != crate::bifaci::frame::FrameType::Log {
+                            tracing::info!(
+                                "[RelaySwitch] master {} reader: {:?} id={:?} xid={:?}",
+                                master_idx, frame.frame_type, frame.id, frame.routing_id
+                            );
+                        }
                         if tx.send((master_idx, Ok(frame))).is_err() {
+                            tracing::warn!("[RelaySwitch] master {} reader: frame_tx closed", master_idx);
                             break;
                         }
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        tracing::warn!("[RelaySwitch] master {} reader: socket closed (EOF)", master_idx);
+                        break;
+                    }
                     Err(e) => {
+                        tracing::error!("[RelaySwitch] master {} reader: socket error: {}", master_idx, e);
                         let _ = tx.send((master_idx, Err(e)));
                         break;
                     }
@@ -1163,7 +1185,9 @@ impl RelaySwitch {
         source_idx: usize,
         mut frame: Frame,
     ) -> Result<Option<Frame>, RelaySwitchError> {
-        tracing::debug!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} cap={:?} xid={:?}", source_idx, frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        if frame.frame_type != FrameType::Log {
+            tracing::info!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} xid={:?}", source_idx, frame.frame_type, frame.id, frame.routing_id);
+        }
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
@@ -1272,7 +1296,9 @@ impl RelaySwitch {
                             if let Some(tx) = tx_opt {
                                 // Send to external response channel (keep XID for now)
                                 let send_result = tx.send(frame.clone());
-                                tracing::debug!(target: "relay_switch", "Sent {:?} to external_response_channel: result={:?}", frame.frame_type, send_result);
+                                if frame.frame_type != FrameType::Log {
+                                    tracing::info!("[RelaySwitch] routed {:?} to executor: xid={:?} rid={:?} ok={}", frame.frame_type, xid, rid, send_result.is_ok());
+                                }
 
                                 // Cleanup on terminal frame
                                 if is_terminal {
