@@ -801,6 +801,7 @@ impl PluginHostRuntime {
         // Scope the mutable borrow of the plugin so we can access self later.
         let was_ordered;
         let stderr_content;
+        let exit_info: String;
         {
             let plugin = &mut self.plugins[plugin_idx];
             plugin.running = false;
@@ -834,9 +835,35 @@ impl PluginHostRuntime {
             }
             plugin.stderr_handle = None;
 
-            // Kill the process if it's still around
+            // Capture exit status and kill the process if it's still around
             if let Some(ref mut child) = plugin.process {
-                let _ = child.kill().await;
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::process::ExitStatusExt;
+                            if let Some(sig) = status.signal() {
+                                exit_info = format!("killed by signal {}", sig);
+                            } else {
+                                exit_info = format!("exit code {}", status.code().unwrap_or(-1));
+                            }
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            exit_info = format!("exit code {:?}", status.code());
+                        }
+                    }
+                    Ok(None) => {
+                        // Still running — kill it
+                        let _ = child.kill().await;
+                        exit_info = "still running (killed)".to_string();
+                    }
+                    Err(e) => {
+                        exit_info = format!("try_wait failed: {}", e);
+                    }
+                }
+            } else {
+                exit_info = String::new();
             }
             plugin.process = None;
             stderr_content = captured;
@@ -875,10 +902,11 @@ impl PluginHostRuntime {
         // Unordered death is always an error — a plugin should only exit when
         // orderedShutdown was set. Send PLUGIN_DIED for ALL pending work.
         if !was_ordered {
+            let exit_suffix = if exit_info.is_empty() { String::new() } else { format!(" ({})", exit_info) };
             let error_message = if stderr_content.is_empty() {
-                format!("Plugin {} exited unexpectedly (no stderr output)", self.plugins[plugin_idx].path.display())
+                format!("Plugin {} exited unexpectedly{}. stderr:", self.plugins[plugin_idx].path.display(), exit_suffix)
             } else {
-                format!("Plugin {} exited unexpectedly. stderr:\n{}", self.plugins[plugin_idx].path.display(), stderr_content)
+                format!("Plugin {} exited unexpectedly{}. stderr:\n{}", self.plugins[plugin_idx].path.display(), exit_suffix, stderr_content)
             };
 
             self.plugins[plugin_idx].last_death_message = Some(error_message.clone());
