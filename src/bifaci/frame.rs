@@ -389,6 +389,19 @@ impl Frame {
         frame
     }
 
+    /// Create a LOG frame with progress (0.0–1.0) and a human-readable status message.
+    /// Uses level="progress" with an additional "progress" key in metadata.
+    pub fn progress(id: MessageId, progress: f32, message: &str) -> Self {
+        let mut meta = BTreeMap::new();
+        meta.insert("level".to_string(), ciborium::Value::Text("progress".to_string()));
+        meta.insert("message".to_string(), ciborium::Value::Text(message.to_string()));
+        meta.insert("progress".to_string(), ciborium::Value::Float(progress as f64));
+
+        let mut frame = Self::new(FrameType::Log, id);
+        frame.meta = Some(meta);
+        frame
+    }
+
     /// Create an ERR frame
     pub fn err(id: MessageId, code: &str, message: &str) -> Self {
         let mut meta = BTreeMap::new();
@@ -590,6 +603,34 @@ impl Frame {
                     Some(s.as_str())
                 } else {
                     None
+                }
+            })
+        })
+    }
+
+    /// Get progress value (0.0–1.0) if this is a LOG frame with level="progress"
+    pub fn log_progress(&self) -> Option<f32> {
+        if self.frame_type != FrameType::Log {
+            return None;
+        }
+        self.meta.as_ref().and_then(|m| {
+            // Only return progress if level is "progress"
+            let is_progress = m.get("level").and_then(|v| {
+                if let ciborium::Value::Text(s) = v {
+                    if s == "progress" { Some(()) } else { None }
+                } else {
+                    None
+                }
+            });
+            is_progress?;
+            m.get("progress").and_then(|v| {
+                match v {
+                    ciborium::Value::Float(f) => Some(*f as f32),
+                    ciborium::Value::Integer(i) => {
+                        let val: i128 = (*i).into();
+                        Some(val as f32)
+                    }
+                    _ => None,
                 }
             })
         })

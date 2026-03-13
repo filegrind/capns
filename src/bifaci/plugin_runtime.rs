@@ -483,6 +483,13 @@ impl OutputStream {
         let _ = self.sender.send(&frame);
     }
 
+    /// Emit a progress update (0.0–1.0) with a human-readable status message.
+    pub fn progress(&self, progress: f32, message: &str) {
+        let mut frame = Frame::progress(self.request_id.clone(), progress, message);
+        frame.routing_id = self.routing_id.clone();
+        let _ = self.sender.send(&frame);
+    }
+
     /// Close the output stream (sends STREAM_END). Idempotent.
     /// If stream was never started, sends STREAM_START first.
     pub fn close(&self) -> Result<(), RuntimeError> {
