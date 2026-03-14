@@ -656,6 +656,9 @@ impl Op<()> for PeerOp {
         let edge1_response = req.peer().call_with_bytes(
             edge1_urn,
             &[("media:node1;textable", input)],
+            req.output(),
+            0.0,
+            0.50,
         ).await.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
 
         // Collect edge1 response and decode CBOR
@@ -671,6 +674,9 @@ impl Op<()> for PeerOp {
         let edge2_response = req.peer().call_with_bytes(
             edge2_urn,
             &[("media:node2;textable", &edge1_bytes)],
+            req.output(),
+            0.50,
+            0.50,
         ).await.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
 
         let edge2_cbor = edge2_response.collect_value().await

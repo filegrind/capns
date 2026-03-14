@@ -36,6 +36,75 @@ use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
+/// Callback for reporting per-cap progress (0.0–1.0) with a human-readable message.
+pub type CapProgressFn = Arc<dyn Fn(f32, &str) + Send + Sync>;
+
+/// Maps child progress [0.0, 1.0] into a parent range [base, base + weight].
+///
+/// This is the single progress mapping computation used everywhere:
+/// - DAG execution: per-group subdivision
+/// - ForEach plans: per-item subdivision
+/// - Peer calls: caller's progress range delegation
+/// - LLM cartridge client: frame-to-callback mapping
+///
+/// All child progress values are clamped to [0.0, 1.0] before mapping.
+/// The mapped result is `base + child_progress.clamp(0.0, 1.0) * weight`.
+
+/// Map child progress [0.0, 1.0] into parent range [base, base + weight].
+///
+/// This is the canonical progress mapping formula. Every place in the system
+/// that subdivides progress must use this function — no ad-hoc derivations.
+#[inline]
+pub fn map_progress(child_progress: f32, base: f32, weight: f32) -> f32 {
+    base + child_progress.clamp(0.0, 1.0) * weight
+}
+
+/// Wraps a `CapProgressFn` with a progress range subdivision.
+#[derive(Clone)]
+pub struct ProgressMapper {
+    base: f32,
+    weight: f32,
+    parent: CapProgressFn,
+}
+
+impl ProgressMapper {
+    /// Create a mapper that maps child [0.0, 1.0] into parent [base, base + weight].
+    pub fn new(parent: &CapProgressFn, base: f32, weight: f32) -> Self {
+        Self {
+            base,
+            weight,
+            parent: Arc::clone(parent),
+        }
+    }
+
+    /// Report child progress. The value is clamped to [0.0, 1.0] and mapped.
+    pub fn report(&self, child_progress: f32, msg: &str) {
+        let overall = map_progress(child_progress, self.base, self.weight);
+        (self.parent)(overall, msg);
+    }
+
+    /// Convert into a `CapProgressFn` for passing to APIs that expect one.
+    pub fn as_cap_progress_fn(&self) -> CapProgressFn {
+        let mapper = self.clone();
+        Arc::new(move |p: f32, msg: &str| {
+            mapper.report(p, msg);
+        })
+    }
+
+    /// Create a sub-mapper that maps a child range within this mapper's range.
+    ///
+    /// Example: if this mapper maps to [0.2, 0.8] (base=0.2, weight=0.6),
+    /// and you create a sub-mapper with sub_base=0.5, sub_weight=0.5,
+    /// the sub-mapper maps to [0.5, 0.8] in the parent's coordinate space.
+    pub fn sub_mapper(&self, sub_base: f32, sub_weight: f32) -> Self {
+        Self {
+            base: self.base + sub_base * self.weight,
+            weight: sub_weight * self.weight,
+            parent: Arc::clone(&self.parent),
+        }
+    }
+}
+
 /// Cap URN for the identity capability (always available from any plugin runtime).
 const CAP_IDENTITY: &str = "cap:";
 
@@ -781,6 +850,7 @@ impl ExecutionContext {
         &mut self,
         edges: &[ResolvedEdge],
         extra_args: &[(String, Vec<u8>)],
+        progress_fn: Option<&CapProgressFn>,
     ) -> Result<(), ExecutionError> {
         assert!(!edges.is_empty(), "execute_fanin requires at least one edge");
 
@@ -921,6 +991,8 @@ impl ExecutionContext {
         // be processed while we wait for the response.
         let mut response_chunks: Vec<u8> = Vec::new();
         let mut got_end = false;
+        let wait_start = std::time::Instant::now();
+        let mut last_heartbeat = std::time::Instant::now();
 
         while !got_end {
             tokio::select! {
@@ -937,6 +1009,10 @@ impl ExecutionContext {
                         }
                         Ok(None) => {
                             // Timeout or internal frame — peer routing happened, continue
+                            if last_heartbeat.elapsed() > Duration::from_secs(30) {
+                                tracing::warn!("[execute_fanin] WAITING for cap='{}' rid={:?} elapsed={:.0}s (no response yet)", cap_urn, request_id, wait_start.elapsed().as_secs_f64());
+                                last_heartbeat = std::time::Instant::now();
+                            }
                         }
                         Err(e) => {
                             return Err(ExecutionError::HostError(format!(
@@ -949,9 +1025,7 @@ impl ExecutionContext {
 
                 // Receive response frame
                 Some(frame) = rx.recv() => {
-                    if frame.frame_type != FrameType::Log {
-                        tracing::info!("[execute_fanin] rx.recv(): {:?} id={:?} payload_len={}", frame.frame_type, frame.id, frame.payload.as_ref().map_or(0, |p| p.len()));
-                    }
+                    tracing::debug!("[execute_fanin] rx.recv(): {:?} id={:?} payload_len={}", frame.frame_type, frame.id, frame.payload.as_ref().map_or(0, |p| p.len()));
                     match frame.frame_type {
                         FrameType::Chunk => {
                             if let Some(payload) = &frame.payload {
@@ -975,9 +1049,15 @@ impl ExecutionContext {
                             });
                         }
                         FrameType::Log => {
-                            if let Some(msg) = frame.log_message() {
+                            if let Some(p) = frame.log_progress() {
+                                let msg = frame.log_message().unwrap_or("");
+                                if let Some(pfn) = &progress_fn {
+                                    pfn(p, msg);
+                                }
+                                tracing::debug!("  [plugin progress:{:.2}] {}", p, msg);
+                            } else if let Some(msg) = frame.log_message() {
                                 let level = frame.log_level().unwrap_or("info");
-                                tracing::debug!("  [plugin log:{}] {}", level, msg);
+                                tracing::info!("[plugin log:{}] cap='{}' {}", level, cap_urn, msg);
                             }
                         }
                         _ => {
@@ -1093,7 +1173,7 @@ pub async fn execute_dag(
     for (i, idx) in group_order.iter().enumerate() {
         tracing::debug!(target: "execute_dag", "Executing group {}/{}: cap={}", i+1, group_order.len(), groups[*idx].edges[0].cap_urn);
         // No extra arguments in CLI mode - all data flows through edges
-        ctx.execute_fanin(&groups[*idx].edges, &[]).await?;
+        ctx.execute_fanin(&groups[*idx].edges, &[], None).await?;
         tracing::debug!(target: "execute_dag", "Group {} complete", i+1);
     }
 
@@ -1109,4 +1189,263 @@ pub async fn execute_dag(
         .collect();
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // TEST700: map_progress clamps child to [0.0, 1.0] and maps to [base, base+weight]
+    #[test]
+    fn test700_map_progress_basic_mapping() {
+        // Identity mapping: base=0, weight=1
+        assert_eq!(map_progress(0.0, 0.0, 1.0), 0.0);
+        assert_eq!(map_progress(0.5, 0.0, 1.0), 0.5);
+        assert_eq!(map_progress(1.0, 0.0, 1.0), 1.0);
+
+        // Subdivision: base=0.2, weight=0.6 → range [0.2, 0.8]
+        assert_eq!(map_progress(0.0, 0.2, 0.6), 0.2);
+        assert_eq!(map_progress(0.5, 0.2, 0.6), 0.5);
+        assert_eq!(map_progress(1.0, 0.2, 0.6), 0.8);
+
+        // Clamping: values outside [0, 1] are clamped before mapping
+        assert_eq!(map_progress(-0.5, 0.2, 0.6), 0.2); // clamp to 0 → base
+        assert_eq!(map_progress(1.5, 0.2, 0.6), 0.8);  // clamp to 1 → base+weight
+    }
+
+    // TEST701: map_progress is deterministic — same inputs always produce same output
+    #[test]
+    fn test701_map_progress_deterministic() {
+        for i in 0..100 {
+            let p = i as f32 / 100.0;
+            let a = map_progress(p, 0.1, 0.8);
+            let b = map_progress(p, 0.1, 0.8);
+            assert_eq!(a, b, "map_progress must be deterministic for p={}", p);
+        }
+    }
+
+    // TEST702: map_progress output is monotonic for monotonically increasing input
+    #[test]
+    fn test702_map_progress_monotonic() {
+        let mut prev = map_progress(0.0, 0.1, 0.7);
+        for i in 1..=100 {
+            let p = i as f32 / 100.0;
+            let curr = map_progress(p, 0.1, 0.7);
+            assert!(
+                curr >= prev,
+                "map_progress must be monotonic: p={}, prev={}, curr={}",
+                p, prev, curr
+            );
+            prev = curr;
+        }
+    }
+
+    // TEST703: map_progress output is bounded within [base, base+weight]
+    #[test]
+    fn test703_map_progress_bounded() {
+        let base = 0.15;
+        let weight = 0.55;
+        for i in -10..=110 {
+            let p = i as f32 / 100.0;
+            let result = map_progress(p, base, weight);
+            assert!(
+                result >= base && result <= base + weight,
+                "map_progress({}, {}, {}) = {} must be in [{}, {}]",
+                p, base, weight, result, base, base + weight
+            );
+        }
+    }
+
+    // TEST704: ProgressMapper correctly maps through a CapProgressFn
+    #[test]
+    fn test704_progress_mapper_reports_through_parent() {
+        let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_clone = Arc::clone(&reported);
+        let parent: CapProgressFn = Arc::new(move |p: f32, msg: &str| {
+            reported_clone.lock().unwrap().push((p, msg.to_string()));
+        });
+
+        let mapper = ProgressMapper::new(&parent, 0.2, 0.6);
+        mapper.report(0.0, "start");
+        mapper.report(0.5, "half");
+        mapper.report(1.0, "done");
+
+        let reports = reported.lock().unwrap();
+        assert_eq!(reports.len(), 3);
+        assert!((reports[0].0 - 0.2).abs() < 0.001, "0% maps to base=0.2");
+        assert!((reports[1].0 - 0.5).abs() < 0.001, "50% maps to 0.5");
+        assert!((reports[2].0 - 0.8).abs() < 0.001, "100% maps to base+weight=0.8");
+    }
+
+    // TEST705: ProgressMapper.as_cap_progress_fn produces same mapping
+    #[test]
+    fn test705_progress_mapper_as_cap_progress_fn() {
+        let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_clone = Arc::clone(&reported);
+        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+            reported_clone.lock().unwrap().push(p);
+        });
+
+        let mapper = ProgressMapper::new(&parent, 0.1, 0.3);
+        let pfn = mapper.as_cap_progress_fn();
+
+        pfn(0.0, "a");
+        pfn(0.5, "b");
+        pfn(1.0, "c");
+
+        let reports = reported.lock().unwrap();
+        assert_eq!(reports.len(), 3);
+        assert!((reports[0] - 0.1).abs() < 0.001);
+        assert!((reports[1] - 0.25).abs() < 0.001);
+        assert!((reports[2] - 0.4).abs() < 0.001);
+    }
+
+    // TEST706: ProgressMapper.sub_mapper chains correctly
+    #[test]
+    fn test706_progress_mapper_sub_mapper() {
+        let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_clone = Arc::clone(&reported);
+        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+            reported_clone.lock().unwrap().push(p);
+        });
+
+        // Parent maps [0, 1] to [0.2, 0.8] (base=0.2, weight=0.6)
+        let mapper = ProgressMapper::new(&parent, 0.2, 0.6);
+
+        // Sub-mapper maps [0, 1] to the second half of parent's range
+        // sub_base=0.5, sub_weight=0.5 → [0.2 + 0.5*0.6, 0.2 + (0.5+0.5)*0.6] = [0.5, 0.8]
+        let sub = mapper.sub_mapper(0.5, 0.5);
+        sub.report(0.0, "sub_start");
+        sub.report(1.0, "sub_end");
+
+        let reports = reported.lock().unwrap();
+        assert_eq!(reports.len(), 2);
+        assert!((reports[0] - 0.5).abs() < 0.001, "sub 0% maps to 0.5");
+        assert!((reports[1] - 0.8).abs() < 0.001, "sub 100% maps to 0.8");
+    }
+
+    // TEST707: Per-group subdivision produces monotonic, bounded progress for N groups
+    #[test]
+    fn test707_per_group_subdivision_monotonic_bounded() {
+        let all_progress = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let all_clone = Arc::clone(&all_progress);
+        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+            all_clone.lock().unwrap().push(p);
+        });
+
+        let n_groups = 5;
+        let total = n_groups as f32;
+
+        for i in 0..n_groups {
+            let base = i as f32 / total;
+            let weight = 1.0 / total;
+            let mapper = ProgressMapper::new(&parent, base, weight);
+
+            // Each group reports 0%, 50%, 100%
+            mapper.report(0.0, "start");
+            mapper.report(0.5, "half");
+            mapper.report(1.0, "done");
+        }
+
+        let progress = all_progress.lock().unwrap();
+        assert_eq!(progress.len(), 15); // 5 groups * 3 reports
+
+        // Verify monotonicity
+        for i in 1..progress.len() {
+            assert!(
+                progress[i] >= progress[i - 1],
+                "Progress must be monotonic: [{}]={} < [{}]={}",
+                i - 1, progress[i - 1], i, progress[i]
+            );
+        }
+
+        // Verify bounded [0.0, 1.0]
+        for (i, &p) in progress.iter().enumerate() {
+            assert!(
+                p >= 0.0 && p <= 1.0,
+                "Progress[{}]={} must be in [0.0, 1.0]",
+                i, p
+            );
+        }
+
+        // First should be 0.0 (group 0, 0%)
+        assert!((progress[0] - 0.0).abs() < 0.001);
+        // Last should be 1.0 (group 4, 100% = 4/5 + 1/5 * 1.0 = 1.0)
+        assert!((progress[14] - 1.0).abs() < 0.001);
+    }
+
+    // TEST708: ForEach item subdivision produces correct ranges
+    #[test]
+    fn test708_foreach_item_subdivision() {
+        let all_progress = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let all_clone = Arc::clone(&all_progress);
+        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+            all_clone.lock().unwrap().push(p);
+        });
+
+        // ForEach: prefix [0.0, 0.05), body [0.05, 0.95), suffix [0.95, 1.0)
+        let body_base = 0.05_f32;
+        let body_weight = 0.90_f32;
+        let item_count = 4;
+        let item_weight = body_weight / item_count as f32;
+
+        for i in 0..item_count {
+            let item_base = body_base + i as f32 * item_weight;
+            let mapper = ProgressMapper::new(&parent, item_base, item_weight);
+
+            // Each item reports 0% and 100%
+            mapper.report(0.0, "item_start");
+            mapper.report(1.0, "item_done");
+        }
+
+        let progress = all_progress.lock().unwrap();
+        assert_eq!(progress.len(), 8); // 4 items * 2 reports
+
+        // Item 0 start: 0.05 + 0 * 0.225 = 0.05
+        assert!((progress[0] - 0.05).abs() < 0.01, "item 0 start: got {}", progress[0]);
+        // Item 0 end: 0.05 + 0.225 = 0.275
+        assert!((progress[1] - 0.275).abs() < 0.01, "item 0 end: got {}", progress[1]);
+        // Item 3 end: 0.05 + 4 * 0.225 = 0.95
+        assert!((progress[7] - 0.95).abs() < 0.01, "item 3 end: got {}", progress[7]);
+
+        // All monotonic
+        for i in 1..progress.len() {
+            assert!(progress[i] >= progress[i - 1], "monotonic check failed at {}", i);
+        }
+    }
+
+    // TEST709: High-frequency progress emission does not violate bounds
+    // (Regression test for the deadlock scenario — verifies computation stays bounded)
+    #[test]
+    fn test709_high_frequency_progress_bounded() {
+        let count = Arc::new(AtomicU32::new(0));
+        let max_val = Arc::new(std::sync::Mutex::new(f32::MIN));
+        let min_val = Arc::new(std::sync::Mutex::new(f32::MAX));
+
+        let count_clone = Arc::clone(&count);
+        let max_clone = Arc::clone(&max_val);
+        let min_clone = Arc::clone(&min_val);
+        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+            count_clone.fetch_add(1, Ordering::Relaxed);
+            let mut max = max_clone.lock().unwrap();
+            if p > *max { *max = p; }
+            let mut min = min_clone.lock().unwrap();
+            if p < *min { *min = p; }
+        });
+
+        let mapper = ProgressMapper::new(&parent, 0.1, 0.8);
+
+        // Simulate 100,000 rapid progress updates (like model download without throttle)
+        for i in 0..100_000 {
+            let p = i as f32 / 100_000.0;
+            mapper.report(p, "downloading");
+        }
+
+        assert_eq!(count.load(Ordering::Relaxed), 100_000);
+        let min = *min_val.lock().unwrap();
+        let max = *max_val.lock().unwrap();
+        assert!(min >= 0.1, "min {} must be >= base 0.1", min);
+        assert!(max <= 0.9, "max {} must be <= base+weight 0.9", max);
+    }
 }

@@ -96,7 +96,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
             loop {
                 match socket_read.read().await {
                     Ok(Some(frame)) => {
-                        tracing::info!("[RelaySlave] t1 received from socket: type={:?} id={}", frame.frame_type, frame.id);
+                        tracing::debug!("[RelaySlave] t1 received from socket: type={:?} id={}", frame.frame_type, frame.id);
                         if frame.frame_type == FrameType::RelayState {
                             if let Some(payload) = frame.payload {
                                 *rs1.lock().unwrap() = payload;
@@ -121,7 +121,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
                                 }
                             }
                             for f in ready_frames {
-                                tracing::info!("[RelaySlave] t1 forwarding to local: type={:?} id={}", f.frame_type, f.id);
+                                tracing::debug!("[RelaySlave] t1 forwarding to local: type={:?} id={}", f.frame_type, f.id);
                                 if let Err(e) = local_writer.write(&f).await {
                                     tracing::error!("[RelaySlave] t1 local_writer error: {}", e);
                                     let mut guard = err1.lock().await;
@@ -157,7 +157,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
             loop {
                 match local_reader.read().await {
                     Ok(Some(frame)) => {
-                        tracing::info!("[RelaySlave] t2 received from local: type={:?} id={}", frame.frame_type, frame.id);
+                        tracing::debug!("[RelaySlave] t2 received from local: type={:?} id={}", frame.frame_type, frame.id);
                         // Forward all frames, including RelayNotify (capability updates)
                         // RelayState is still dropped (deprecated/unused)
                         if frame.frame_type == FrameType::RelayState {
@@ -180,7 +180,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
                                 }
                             }
                             for f in ready_frames {
-                                tracing::info!("[RelaySlave] t2 forwarding to socket: type={:?} id={}", f.frame_type, f.id);
+                                tracing::debug!("[RelaySlave] t2 forwarding to socket: type={:?} id={}", f.frame_type, f.id);
                                 if let Err(e) = socket_write.write(&f).await {
                                     tracing::error!("[RelaySlave] t2 socket_write error: {}", e);
                                     let mut guard = err2.lock().await;

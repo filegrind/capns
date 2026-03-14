@@ -47,5 +47,8 @@ pub use executor::{
     EdgeGroup,
     PluginManager,
     ExecutionContext,
+    CapProgressFn,
+    ProgressMapper,
+    map_progress,
     execute_dag,
 };

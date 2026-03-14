@@ -394,7 +394,7 @@ impl RelaySwitch {
                 loop {
                     match reader.read().await {
                         Ok(Some(frame)) => {
-                            tracing::info!(
+                            tracing::debug!(
                                 "[RelaySwitch] master {} reader: {:?} id={:?} xid={:?}",
                                 master_idx, frame.frame_type, frame.id, frame.routing_id
                             );
@@ -797,7 +797,7 @@ impl RelaySwitch {
                 match reader.read().await {
                     Ok(Some(frame)) => {
                         if frame.frame_type != crate::bifaci::frame::FrameType::Log {
-                            tracing::info!(
+                            tracing::debug!(
                                 "[RelaySwitch] master {} reader: {:?} id={:?} xid={:?}",
                                 master_idx, frame.frame_type, frame.id, frame.routing_id
                             );
@@ -1185,9 +1185,7 @@ impl RelaySwitch {
         source_idx: usize,
         mut frame: Frame,
     ) -> Result<Option<Frame>, RelaySwitchError> {
-        if frame.frame_type != FrameType::Log {
-            tracing::info!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} xid={:?}", source_idx, frame.frame_type, frame.id, frame.routing_id);
-        }
+        tracing::debug!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} xid={:?}", source_idx, frame.frame_type, frame.id, frame.routing_id);
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
@@ -1219,7 +1217,7 @@ impl RelaySwitch {
                 self.rid_to_xid.write().await.insert(rid.clone(), xid.clone());
 
                 // Record origin (where this request came from)
-                tracing::debug!(target: "relay_switch", "PEER REQ: inserting origin_map[({:?}, {:?})] = Some({}) from master {}", xid, rid, source_idx, source_idx);
+                tracing::info!("[RelaySwitch] PEER_REQ: master {} → master {} cap='{}' rid={:?} xid={:?}", source_idx, dest_idx, cap_urn, rid, xid);
                 self.origin_map.write().await.insert(key.clone(), Some(source_idx));
 
                 // Register routing
@@ -1329,10 +1327,13 @@ impl RelaySwitch {
                         }
                         Some(master_idx) => {
                             // Route back to source master — KEEP XID.
-                            // The source master's PluginHost needs XID to not drop the frame
-                            // (Swift PluginHost requires XID on all relay frames).
-                            // The PluginHost uses outgoingRids[RID] for peer response routing.
+                            if is_terminal {
+                                tracing::info!("[RelaySwitch] PEER_RESP: routing {:?} back to master {} xid={:?} rid={:?}", frame.frame_type, master_idx, xid, rid);
+                            }
                             self.write_to_master_idx(master_idx, &mut frame).await?;
+                            if is_terminal {
+                                tracing::info!("[RelaySwitch] PEER_RESP: write to master {} completed", master_idx);
+                            }
 
                             // Cleanup on terminal frame
                             if is_terminal {

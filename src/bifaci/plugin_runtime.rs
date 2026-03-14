@@ -490,6 +490,21 @@ impl OutputStream {
         let _ = self.sender.send(&frame);
     }
 
+    /// Clone the sender for use in spawned tasks (e.g., peer LOG forwarding).
+    pub fn sender_clone(&self) -> Arc<dyn FrameSender> {
+        Arc::clone(&self.sender)
+    }
+
+    /// Clone the request ID.
+    pub fn request_id_clone(&self) -> MessageId {
+        self.request_id.clone()
+    }
+
+    /// Clone the routing ID.
+    pub fn routing_id_clone(&self) -> Option<MessageId> {
+        self.routing_id.clone()
+    }
+
     /// Close the output stream (sends STREAM_END). Idempotent.
     /// If stream was never started, sends STREAM_START first.
     pub fn close(&self) -> Result<(), RuntimeError> {
@@ -538,8 +553,21 @@ impl PeerCall {
 
     /// Finish sending args and get the response stream.
     /// Sends END for the peer request, spawns Demux on response channel.
-    pub async fn finish(mut self) -> Result<InputStream, RuntimeError> {
+    ///
+    /// Peer LOG frames (including progress) are mapped to the caller's progress range
+    /// and forwarded via the caller's emitter. `base` is the progress value at the start
+    /// of this peer call, `weight` is the fraction of overall progress this call represents.
+    /// For example, if this peer call is 5%–25% of the handler's work: base=0.05, weight=0.20.
+    ///
+    /// A peer reporting progress=0.50 will cause emitter.progress(0.05 + 0.50 * 0.20 = 0.15).
+    pub async fn finish(
+        mut self,
+        emitter: &OutputStream,
+        base: f32,
+        weight: f32,
+    ) -> Result<InputStream, RuntimeError> {
         // Send END frame for the peer request
+        tracing::info!("[PeerCall] finish: sending END for peer_rid={:?}", self.request_id);
         let end_frame = Frame::end(self.request_id.clone(), None);
         self.sender.send(&end_frame)?;
 
@@ -547,8 +575,37 @@ impl PeerCall {
         let response_rx = self.response_rx.take()
             .ok_or_else(|| RuntimeError::PeerRequest("PeerCall already finished".to_string()))?;
 
+        // Set up LOG frame forwarding channel
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::unbounded_channel();
+
         // Spawn single-stream Demux for the response
-        let input_stream = demux_single_stream(response_rx).await?;
+        tracing::info!("[PeerCall] finish: awaiting peer response for peer_rid={:?}", self.request_id);
+        let input_stream = demux_single_stream(response_rx, Some(log_tx)).await?;
+        tracing::info!("[PeerCall] finish: peer response received for peer_rid={:?}", self.request_id);
+
+        // Spawn a task to forward peer LOG frames as caller's progress
+        let emitter_sender = emitter.sender_clone();
+        let emitter_request_id = emitter.request_id_clone();
+        let emitter_routing_id = emitter.routing_id_clone();
+        tokio::spawn(async move {
+            while let Some(frame) = log_rx.recv().await {
+                if let Some(peer_progress) = frame.log_progress() {
+                    // Map peer's [0.0, 1.0] to caller's [base, base+weight]
+                    let mapped = crate::map_progress(peer_progress, base, weight);
+                    let msg = frame.log_message().unwrap_or("");
+                    let mut progress_frame = Frame::progress(emitter_request_id.clone(), mapped, msg);
+                    progress_frame.routing_id = emitter_routing_id.clone();
+                    let _ = emitter_sender.send(&progress_frame);
+                } else if let Some(msg) = frame.log_message() {
+                    // Forward non-progress LOG frames from peer as regular logs
+                    let level = frame.log_level().unwrap_or("info");
+                    let mut log_frame = Frame::log(emitter_request_id.clone(), level, msg);
+                    log_frame.routing_id = emitter_routing_id.clone();
+                    let _ = emitter_sender.send(&log_frame);
+                }
+            }
+        });
+
         Ok(input_stream)
     }
 }
@@ -567,14 +624,24 @@ pub trait PeerInvoker: Send + Sync {
     fn call(&self, cap_urn: &str) -> Result<PeerCall, RuntimeError>;
 
     /// Convenience: open call, write each arg's bytes, finish, return response.
-    async fn call_with_bytes(&self, cap_urn: &str, args: &[(&str, &[u8])]) -> Result<InputStream, RuntimeError> {
+    ///
+    /// `emitter` is the caller's output stream for forwarding peer LOG/progress frames.
+    /// `base` and `weight` define the progress range this peer call maps to.
+    async fn call_with_bytes(
+        &self,
+        cap_urn: &str,
+        args: &[(&str, &[u8])],
+        emitter: &OutputStream,
+        base: f32,
+        weight: f32,
+    ) -> Result<InputStream, RuntimeError> {
         let call = self.call(cap_urn)?;
         for &(media_urn, data) in args {
             let arg = call.arg(media_urn);
             arg.write(data)?;
             arg.close()?;
         }
-        call.finish().await
+        call.finish(emitter, base, weight).await
     }
 }
 
@@ -1261,6 +1328,7 @@ fn extract_effective_payload(
 impl PeerInvoker for PeerInvokerImpl {
     fn call(&self, cap_urn: &str) -> Result<PeerCall, RuntimeError> {
         let request_id = MessageId::new_uuid();
+        tracing::info!("[PluginRuntime] PEER_CALL: cap='{}' peer_rid={:?} origin_rid={:?}", cap_urn, request_id, self.origin_request_id);
 
         // Create tokio channel for response frames (unbounded to avoid backpressure issues)
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -1568,7 +1636,10 @@ fn demux_multi_stream(
 ///
 /// Fully async - spawns a tokio task (not blocking) to process frames
 /// and forwards decoded chunks to the InputStream for async consumption.
-async fn demux_single_stream(mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Frame>) -> Result<InputStream, RuntimeError> {
+async fn demux_single_stream(
+    mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Frame>,
+    log_tx: Option<tokio::sync::mpsc::UnboundedSender<Frame>>,
+) -> Result<InputStream, RuntimeError> {
     let (chunk_tx, chunk_rx) = tokio::sync::mpsc::unbounded_channel();
     let (meta_tx, meta_rx) = tokio::sync::oneshot::channel::<String>();
 
@@ -1609,6 +1680,11 @@ async fn demux_single_stream(mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Fr
                             Ok(value) => { let _ = chunk_tx.send(Ok(value)); }
                             Err(e) => { let _ = chunk_tx.send(Err(StreamError::Decode(e.to_string()))); }
                         }
+                    }
+                }
+                FrameType::Log => {
+                    if let Some(ref tx) = log_tx {
+                        let _ = tx.send(frame);
                     }
                 }
                 FrameType::StreamEnd | FrameType::End => {
@@ -2549,13 +2625,16 @@ impl PluginRuntime {
         let stdin = tokio::io::stdin();
 
         // Duplicate stdout so CBOR frame I/O is immune to anything that
-        // closes the original FD 1 (e.g. a native library closing stdout).
-        // The duplicated FD points to the same pipe but lives at a different
-        // descriptor number, so close(STDOUT_FILENO) won't affect it.
+        // writes to or closes the original FD 1 (e.g. a native library
+        // writing to stdout, Metal shader compilation).  The duplicated FD
+        // points to the same pipe but lives at a different descriptor number.
         let safe_fd = unsafe { libc::dup(libc::STDOUT_FILENO) };
         if safe_fd < 0 {
             return Err(RuntimeError::Io(std::io::Error::last_os_error()));
         }
+        // Redirect FD 1 → stderr so any stray stdout writes end up in the
+        // log instead of injecting non-CBOR bytes into the frame pipe.
+        unsafe { libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO); }
         let stdout = tokio::fs::File::from_std(unsafe {
             std::fs::File::from_raw_fd(safe_fd)
         });
@@ -2587,6 +2666,12 @@ impl PluginRuntime {
                 // Cleanup seq tracking on terminal frames
                 if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
                     seq_assigner.remove(&FlowKey::from_frame(&frame));
+                }
+                // Flush when no more frames are queued so the host sees
+                // progress/log frames immediately instead of waiting for
+                // BufWriter's 8KB buffer to fill.
+                if output_rx.is_empty() {
+                    let _ = frame_writer.inner_mut().flush().await;
                 }
             }
             // CRITICAL: Flush buffered output before exiting!
@@ -2661,6 +2746,7 @@ impl PluginRuntime {
                     let max_chunk = negotiated_limits.max_chunk;
 
                     let handle = tokio::spawn(async move {
+                        tracing::info!("[PluginRuntime] handler started: cap='{}' rid={:?}", cap_urn_clone, request_id);
                         // Build file-path context for Demux
                         let fp_ctx = FilePathContext::new(&cap_urn_clone, manifest_clone).ok();
 
@@ -2697,12 +2783,14 @@ impl PluginRuntime {
 
                         match result {
                             Ok(()) => {
+                                tracing::info!("[PluginRuntime] handler completed OK: cap='{}' rid={:?}", cap_urn_clone, request_id);
                                 // Send END frame with routing_id
                                 let mut end_frame = Frame::end(request_id, None);
                                 end_frame.routing_id = routing_id;
                                 let _ = sender.send(&end_frame);
                             }
                             Err(e) => {
+                                tracing::error!("[PluginRuntime] handler FAILED: cap='{}' rid={:?} error={}", cap_urn_clone, request_id, e);
                                 let mut err_frame = Frame::err(request_id, "HANDLER_ERROR", &e.to_string());
                                 err_frame.routing_id = routing_id;
                                 let _ = sender.send(&err_frame);
@@ -2730,7 +2818,7 @@ impl PluginRuntime {
                         tracing::debug!(target: "plugin_runtime", "Routing {:?} to peer_response rid={:?}", frame.frame_type, frame.id);
                         let _ = pr.sender.send(frame.clone());
                     } else {
-                        tracing::debug!(target: "plugin_runtime", "{:?} rid={:?} not found in active_requests or pending_peer_requests", frame.frame_type, frame.id);
+                        tracing::warn!("[PluginRuntime] {:?} rid={:?} not found in active_requests or pending_peer_requests", frame.frame_type, frame.id);
                     }
                     drop(peer);
                 }
@@ -2738,7 +2826,7 @@ impl PluginRuntime {
                 FrameType::End => {
                     // Try active request first -- send END then remove
                     if let Some(ar) = active_requests.remove(&frame.id) {
-                        tracing::debug!(target: "plugin_runtime", "Routing End to active_request rid={:?}", frame.id);
+                        tracing::info!("[PluginRuntime] END routed to active_request rid={:?}", frame.id);
                         let _ = ar.raw_tx.send(frame.clone());
                         // raw_tx dropped here → Demux sees channel close after END
                         continue;
@@ -2747,15 +2835,16 @@ impl PluginRuntime {
                     // Try peer response — send END then remove
                     let mut peer = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = peer.remove(&frame.id) {
-                        tracing::debug!(target: "plugin_runtime", "Routing End to peer_response rid={:?}", frame.id);
+                        tracing::info!("[PluginRuntime] PEER_END received: peer_rid={:?} origin_rid={:?}", frame.id, pr.origin_request_id);
                         let _ = pr.sender.send(frame.clone());
                     } else {
-                        tracing::debug!(target: "plugin_runtime", "End rid={:?} not found in active_requests or pending_peer_requests", frame.id);
+                        tracing::warn!("[PluginRuntime] END for unknown rid={:?} (not in active_requests or pending_peer_requests)", frame.id);
                     }
                     drop(peer);
                 }
 
                 FrameType::Err => {
+                    tracing::error!("[PluginRuntime] ERR received: rid={:?} code={:?} msg={:?}", frame.id, frame.error_code(), frame.error_message());
                     // Try active request first
                     if let Some(ar) = active_requests.remove(&frame.id) {
                         let _ = ar.raw_tx.send(frame.clone());
@@ -2786,11 +2875,16 @@ impl PluginRuntime {
                     // on the cap execution that triggered the peer call.
                     let peer = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = peer.get(&frame.id) {
-                        let level = frame.log_level().unwrap_or("INFO");
                         let message = frame.log_message().unwrap_or("");
-                        let mut log_frame = Frame::log(pr.origin_request_id.clone(), level, message);
-                        log_frame.routing_id = pr.origin_routing_id.clone();
-                        let _ = output_tx.send(log_frame);
+                        let mut forwarded = if let Some(p) = frame.log_progress() {
+                            // Preserve progress value — this is the canonical progress signal.
+                            Frame::progress(pr.origin_request_id.clone(), p, message)
+                        } else {
+                            let level = frame.log_level().unwrap_or("INFO");
+                            Frame::log(pr.origin_request_id.clone(), level, message)
+                        };
+                        forwarded.routing_id = pr.origin_routing_id.clone();
+                        let _ = output_tx.send(forwarded);
                     }
                     drop(peer);
                 }
@@ -3369,7 +3463,16 @@ mod tests {
     #[tokio::test]
     async fn test255_no_peer_invoker_with_arguments() {
         let no_peer = NoPeerInvoker;
-        let result = no_peer.call_with_bytes("cap:op=test", &[("media:test", b"value".as_slice())]).await;
+        let (sender, _frames) = MockFrameSender::new();
+        let emitter = OutputStream::new(
+            Arc::new(sender),
+            "s".to_string(),
+            "media:void".to_string(),
+            MessageId::new_uuid(),
+            None,
+            256_000,
+        );
+        let result = no_peer.call_with_bytes("cap:op=test", &[("media:test", b"value".as_slice())], &emitter, 0.0, 1.0).await;
         assert!(result.is_err());
     }
 
@@ -5846,7 +5949,16 @@ mod tests {
             response_rx: Some(response_rx),
         };
 
-        let _response = peer.finish().await.expect("finish must succeed");
+        let (emitter_sender, _emitter_frames) = MockFrameSender::new();
+        let emitter = OutputStream::new(
+            Arc::new(emitter_sender),
+            "emitter-stream".to_string(),
+            "media:void".to_string(),
+            MessageId::new_uuid(),
+            None,
+            256_000,
+        );
+        let _response = peer.finish(&emitter, 0.0, 1.0).await.expect("finish must succeed");
 
         let captured = frames.lock().unwrap();
         let end_frame = captured.iter().find(|f| f.frame_type == FrameType::End)
@@ -5895,7 +6007,16 @@ mod tests {
             response_rx: Some(response_rx),
         };
 
-        let response_stream = peer.finish().await.expect("finish must succeed");
+        let (emitter_sender, _emitter_frames) = MockFrameSender::new();
+        let emitter = OutputStream::new(
+            Arc::new(emitter_sender),
+            "emitter-stream".to_string(),
+            "media:void".to_string(),
+            MessageId::new_uuid(),
+            None,
+            256_000,
+        );
+        let response_stream = peer.finish(&emitter, 0.0, 1.0).await.expect("finish must succeed");
         assert_eq!(response_stream.media_urn(), "media:response");
 
         let bytes = response_stream.collect_bytes().await.expect("collect must succeed");
