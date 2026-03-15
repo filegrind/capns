@@ -44,8 +44,9 @@ use tokio::net::UnixStream;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
-/// Callback for reporting per-cap progress (0.0–1.0) with a human-readable message.
-pub type CapProgressFn = Arc<dyn Fn(f32, &str) + Send + Sync>;
+/// Callback for reporting per-cap progress.
+/// Parameters: (progress 0.0–1.0, cap URN string, human-readable message)
+pub type CapProgressFn = Arc<dyn Fn(f32, &str, &str) + Send + Sync>;
 
 /// Maps child progress [0.0, 1.0] into a parent range [base, base + weight].
 ///
@@ -86,16 +87,16 @@ impl ProgressMapper {
     }
 
     /// Report child progress. The value is clamped to [0.0, 1.0] and mapped.
-    pub fn report(&self, child_progress: f32, msg: &str) {
+    pub fn report(&self, child_progress: f32, cap_urn: &str, msg: &str) {
         let overall = map_progress(child_progress, self.base, self.weight);
-        (self.parent)(overall, msg);
+        (self.parent)(overall, cap_urn, msg);
     }
 
     /// Convert into a `CapProgressFn` for passing to APIs that expect one.
     pub fn as_cap_progress_fn(&self) -> CapProgressFn {
         let mapper = self.clone();
-        Arc::new(move |p: f32, msg: &str| {
-            mapper.report(p, msg);
+        Arc::new(move |p: f32, cap_urn: &str, msg: &str| {
+            mapper.report(p, cap_urn, msg);
         })
     }
 
@@ -1087,11 +1088,11 @@ impl ExecutionContext {
                         }
                         FrameType::Log => {
                             if let Some(p) = frame.log_progress() {
-                                let msg = frame.log_message().unwrap_or("");
+                                let plugin_msg = frame.log_message().unwrap_or("");
                                 if let Some(pfn) = &progress_fn {
-                                    pfn(p, msg);
+                                    pfn(p, cap_urn, plugin_msg);
                                 }
-                                tracing::debug!("  [plugin progress:{:.2}] {}", p, msg);
+                                tracing::debug!("  [plugin progress:{:.2}] {}", p, plugin_msg);
                             } else if let Some(msg) = frame.log_message() {
                                 let level = frame.log_level().unwrap_or("info");
                                 tracing::info!("[plugin log:{}] cap='{}' {}", level, cap_urn, msg);
@@ -1232,7 +1233,7 @@ pub async fn execute_dag(
 
         // Report group completion
         if let Some(pfn) = &progress_fn {
-            pfn(group_boundaries[i + 1], &format!("Completed {}", groups[*idx].edges[0].cap_urn));
+            pfn(group_boundaries[i + 1], &groups[*idx].edges[0].cap_urn, "Completed");
         }
 
         tracing::debug!(target: "execute_dag", "Group {} complete", i+1);
@@ -1323,14 +1324,14 @@ mod tests {
     fn test704_progress_mapper_reports_through_parent() {
         let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
         let reported_clone = Arc::clone(&reported);
-        let parent: CapProgressFn = Arc::new(move |p: f32, msg: &str| {
+        let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, msg: &str| {
             reported_clone.lock().unwrap().push((p, msg.to_string()));
         });
 
         let mapper = ProgressMapper::new(&parent, 0.2, 0.6);
-        mapper.report(0.0, "start");
-        mapper.report(0.5, "half");
-        mapper.report(1.0, "done");
+        mapper.report(0.0, "", "start");
+        mapper.report(0.5, "", "half");
+        mapper.report(1.0, "", "done");
 
         let reports = reported.lock().unwrap();
         assert_eq!(reports.len(), 3);
@@ -1344,16 +1345,16 @@ mod tests {
     fn test705_progress_mapper_as_cap_progress_fn() {
         let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
         let reported_clone = Arc::clone(&reported);
-        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+        let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, _msg: &str| {
             reported_clone.lock().unwrap().push(p);
         });
 
         let mapper = ProgressMapper::new(&parent, 0.1, 0.3);
         let pfn = mapper.as_cap_progress_fn();
 
-        pfn(0.0, "a");
-        pfn(0.5, "b");
-        pfn(1.0, "c");
+        pfn(0.0, "", "a");
+        pfn(0.5, "", "b");
+        pfn(1.0, "", "c");
 
         let reports = reported.lock().unwrap();
         assert_eq!(reports.len(), 3);
@@ -1367,7 +1368,7 @@ mod tests {
     fn test706_progress_mapper_sub_mapper() {
         let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
         let reported_clone = Arc::clone(&reported);
-        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+        let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, _msg: &str| {
             reported_clone.lock().unwrap().push(p);
         });
 
@@ -1377,8 +1378,8 @@ mod tests {
         // Sub-mapper maps [0, 1] to the second half of parent's range
         // sub_base=0.5, sub_weight=0.5 → [0.2 + 0.5*0.6, 0.2 + (0.5+0.5)*0.6] = [0.5, 0.8]
         let sub = mapper.sub_mapper(0.5, 0.5);
-        sub.report(0.0, "sub_start");
-        sub.report(1.0, "sub_end");
+        sub.report(0.0, "", "sub_start");
+        sub.report(1.0, "", "sub_end");
 
         let reports = reported.lock().unwrap();
         assert_eq!(reports.len(), 2);
@@ -1394,7 +1395,7 @@ mod tests {
     fn test707_per_group_subdivision_monotonic_bounded() {
         let all_progress = Arc::new(std::sync::Mutex::new(Vec::new()));
         let all_clone = Arc::clone(&all_progress);
-        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+        let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, _msg: &str| {
             all_clone.lock().unwrap().push(p);
         });
 
@@ -1409,9 +1410,9 @@ mod tests {
             let mapper = ProgressMapper::new(&parent, base, weight);
 
             // Each group reports 0%, 50%, 100%
-            mapper.report(0.0, "start");
-            mapper.report(0.5, "half");
-            mapper.report(1.0, "done");
+            mapper.report(0.0, "", "start");
+            mapper.report(0.5, "", "half");
+            mapper.report(1.0, "", "done");
         }
 
         let progress = all_progress.lock().unwrap();
@@ -1450,7 +1451,7 @@ mod tests {
     fn test708_foreach_item_subdivision() {
         let all_progress = Arc::new(std::sync::Mutex::new(Vec::new()));
         let all_clone = Arc::clone(&all_progress);
-        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+        let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, _msg: &str| {
             all_clone.lock().unwrap().push(p);
         });
 
@@ -1470,8 +1471,8 @@ mod tests {
             let mapper = ProgressMapper::new(&parent, item_base, item_weight);
 
             // Each item reports 0% and 100%
-            mapper.report(0.0, "item_start");
-            mapper.report(1.0, "item_done");
+            mapper.report(0.0, "", "item_start");
+            mapper.report(1.0, "", "item_done");
         }
 
         let progress = all_progress.lock().unwrap();
@@ -1502,7 +1503,7 @@ mod tests {
         let count_clone = Arc::clone(&count);
         let max_clone = Arc::clone(&max_val);
         let min_clone = Arc::clone(&min_val);
-        let parent: CapProgressFn = Arc::new(move |p: f32, _msg: &str| {
+        let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, _msg: &str| {
             count_clone.fetch_add(1, Ordering::Relaxed);
             let mut max = max_clone.lock().unwrap();
             if p > *max { *max = p; }
@@ -1515,7 +1516,7 @@ mod tests {
         // Simulate 100,000 rapid progress updates (like model download without throttle)
         for i in 0..100_000 {
             let p = i as f32 / 100_000.0;
-            mapper.report(p, "downloading");
+            mapper.report(p, "", "downloading");
         }
 
         assert_eq!(count.load(Ordering::Relaxed), 100_000);

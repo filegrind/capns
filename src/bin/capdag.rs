@@ -459,8 +459,8 @@ async fn main() {
         let mut initial_inputs = HashMap::new();
         initial_inputs.insert(input_node.clone(), NodeData::FilePath(file.clone()));
 
-        let progress: CapProgressFn = Arc::new(|p: f32, msg: &str| {
-            eprintln!("  [{:5.1}%] {}", p * 100.0, msg);
+        let progress: CapProgressFn = Arc::new(|p: f32, cap_urn: &str, msg: &str| {
+            eprintln!("  [{:5.1}%] {} {}", p * 100.0, cap_urn, msg);
         });
 
         match execute_dag(&graph, plugin_dir.clone(), registry_url.clone(), initial_inputs, dev_binaries.clone(), registry.clone(), Some(&progress)).await {

@@ -21,23 +21,203 @@ use std::process::Command;
 use std::sync::{Arc, LazyLock};
 use tempfile::TempDir;
 
-/// Initialize tracing subscriber for test visibility (idle warnings, activity timeouts).
-/// Safe to call multiple times — subsequent calls silently no-op.
-fn init_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter("warn")
-        .with_target(false)
-        .with_writer(std::io::stderr)
-        .try_init();
+/// Write directly to /dev/tty, bypassing cargo test's stderr capture.
+/// Returns None if no TTY is available (e.g., CI).
+fn tty_writer() -> Option<std::fs::File> {
+    std::fs::OpenOptions::new().write(true).open("/dev/tty").ok()
 }
 
-/// Build a progress callback that prints live updates to stderr during test execution.
+/// Initialize tracing subscriber that writes to /dev/tty (bypasses cargo capture).
+/// Safe to call multiple times — subsequent calls silently no-op.
+fn init_tracing() {
+    if let Some(tty) = tty_writer() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter("warn")
+            .with_target(false)
+            .with_writer(std::sync::Mutex::new(tty))
+            .try_init();
+    }
+}
+
+/// Per-cap progress entry.
+struct CapProgress {
+    /// Local progress within this cap [0.0, 1.0]
+    pct: f32,
+    /// Short label (the op= value from the cap URN)
+    label: String,
+    /// Last status message from the plugin
+    last_msg: String,
+    /// When this cap started executing
+    start: std::time::Instant,
+    /// Global DAG percentage where this cap's range starts
+    global_base: f32,
+    /// Global DAG percentage where this cap's range ends (set on completion)
+    global_end: f32,
+}
+
+/// Multi-cap progress display state.
+struct ProgressState {
+    caps: Vec<CapProgress>,
+    done: bool,
+    /// Last seen global percentage — used to detect new cap boundaries
+    last_global_pct: f32,
+}
+
+impl ProgressState {
+    fn new() -> Self {
+        Self { caps: Vec::new(), done: false, last_global_pct: 0.0 }
+    }
+
+    /// Extract a short label from a cap URN (the op= value).
+    fn cap_label(cap_urn: &str) -> String {
+        if let Some(pos) = cap_urn.find(";op=") {
+            let after = &cap_urn[pos + 4..];
+            let end = after.find(';').unwrap_or(after.len());
+            return after[..end].to_string();
+        }
+        if let Some(pos) = cap_urn.find("op=") {
+            let after = &cap_urn[pos + 3..];
+            let end = after.find(';').unwrap_or(after.len());
+            return after[..end].to_string();
+        }
+        if cap_urn.len() > 24 { cap_urn[..24].to_string() } else { cap_urn.to_string() }
+    }
+
+    fn update(&mut self, global_pct: f32, cap_urn: &str, msg: &str) {
+        let label = Self::cap_label(cap_urn);
+
+        if msg == "Completed" {
+            // Group finished — mark this cap as done
+            if let Some(entry) = self.caps.iter_mut().find(|c| c.label == label && c.pct < 1.0) {
+                entry.pct = 1.0;
+                entry.global_end = global_pct;
+                entry.last_msg = "done".to_string();
+            } else {
+                self.caps.push(CapProgress {
+                    pct: 1.0,
+                    label,
+                    last_msg: "done".to_string(),
+                    start: std::time::Instant::now(),
+                    global_base: self.last_global_pct,
+                    global_end: global_pct,
+                });
+            }
+            self.last_global_pct = global_pct;
+            return;
+        }
+
+        // Sub-progress — find or create entry for this cap
+        if let Some(entry) = self.caps.iter_mut().find(|c| c.label == label && c.pct < 1.0) {
+            let range = entry.global_end - entry.global_base;
+            if range > 0.0 {
+                entry.pct = ((global_pct - entry.global_base) / range).clamp(0.0, 0.999);
+            }
+            entry.last_msg.clear();
+            entry.last_msg.push_str(msg);
+        } else {
+            self.caps.push(CapProgress {
+                pct: 0.0,
+                label,
+                last_msg: msg.to_string(),
+                start: std::time::Instant::now(),
+                global_base: self.last_global_pct,
+                global_end: 1.0, // provisional — corrected on "Completed"
+            });
+        }
+    }
+}
+
+/// Render all cap progress bars to the bottom N rows of the terminal.
+fn render_progress(f: &mut std::fs::File, state: &ProgressState) {
+    use std::io::Write;
+    let _ = write!(f, "\x1b7"); // save cursor
+
+    if state.done {
+        // Erase all progress lines
+        for i in 0..state.caps.len() {
+            let row_offset = state.caps.len() - i;
+            let _ = write!(f, "\x1b[999;1H"); // jump to bottom
+            if row_offset > 1 {
+                let _ = write!(f, "\x1b[{}A", row_offset - 1); // go up
+            }
+            let _ = write!(f, "\x1b[K"); // erase line
+        }
+    } else {
+        // Draw each cap on its own row, starting from bottom
+        let n = state.caps.len();
+        for (i, cap) in state.caps.iter().enumerate() {
+            let rows_from_bottom = n - 1 - i;
+            let _ = write!(f, "\x1b[999;1H"); // jump to bottom
+            if rows_from_bottom > 0 {
+                let _ = write!(f, "\x1b[{}A", rows_from_bottom);
+            }
+            let _ = write!(f, "\x1b[K"); // erase line
+
+            let elapsed = cap.start.elapsed().as_secs_f64();
+            let bar_w: usize = 16;
+            let label = if cap.label.len() > 24 { &cap.label[..24] } else { &cap.label };
+
+            if cap.pct >= 1.0 {
+                let _ = write!(
+                    f,
+                    "  \x1b[32m{label:<24}\x1b[0m [\x1b[32m{}\x1b[0m] {elapsed:5.1}s  \x1b[32m✓\x1b[0m",
+                    "█".repeat(bar_w),
+                );
+            } else {
+                let pct = cap.pct * 100.0;
+                let filled = (cap.pct * bar_w as f32) as usize;
+                let empty = bar_w.saturating_sub(filled + 1);
+                let m = if cap.last_msg.len() > 36 { &cap.last_msg[..36] } else { &cap.last_msg };
+                let _ = write!(
+                    f,
+                    "  \x1b[36m{label:<24}\x1b[0m [\x1b[32m{}\x1b[0m▸{}] \x1b[36m{pct:>5.1}%\x1b[0m {elapsed:5.1}s  {m}",
+                    "█".repeat(filled),
+                    "·".repeat(empty),
+                );
+            }
+        }
+    }
+
+    let _ = write!(f, "\x1b8"); // restore cursor
+    let _ = f.flush();
+}
+
+/// Build a progress callback with per-cap progress bars at the terminal bottom.
+///
+/// A background thread refreshes the display every 500ms so elapsed
+/// times keep ticking between progress events.
 fn test_progress_fn() -> CapProgressFn {
     init_tracing();
-    let start = std::time::Instant::now();
-    Arc::new(move |p: f32, msg: &str| {
-        let elapsed = start.elapsed().as_secs_f64();
-        eprintln!("  [{:5.1}%] {:6.1}s  {}", p * 100.0, elapsed, msg);
+    let state = Arc::new(std::sync::Mutex::new(ProgressState::new()));
+
+    // Refresh thread — keeps elapsed timers ticking
+    if let Some(mut tty) = tty_writer() {
+        let bg_state = Arc::clone(&state);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let s = bg_state.lock().unwrap();
+                render_progress(&mut tty, &s);
+                if s.done { break; }
+            }
+        });
+    }
+
+    let tty = tty_writer();
+    Arc::new(move |p: f32, cap_urn: &str, msg: &str| {
+        {
+            let mut s = state.lock().unwrap();
+            s.update(p, cap_urn, msg);
+            if p >= 1.0 && msg == "Completed" {
+                s.done = true;
+            }
+        }
+        if let Some(ref tty) = tty {
+            if let Ok(mut f) = tty.try_clone() {
+                let s = state.lock().unwrap();
+                render_progress(&mut f, &s);
+            }
+        }
     })
 }
 
