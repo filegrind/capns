@@ -1,0 +1,4 @@
+[llm_model_info cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_model_info;out="media:llm-model-info;json;record"]
+[llm_vocab cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_vocab;out="media:llm-vocab-response;json;record"]
+[request_input -> llm_model_info -> model_info]
+[request_input -> llm_vocab -> vocab]

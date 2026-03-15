@@ -1,0 +1,2 @@
+[generate_text cap:in="media:model-spec;textable";llm;ml-model;mlx;op=generate_text;out="media:generated-text;textable;record"]
+[model_spec -> generate_text -> generated_text]

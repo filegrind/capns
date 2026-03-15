@@ -1,0 +1,2 @@
+[download-model cap:in="media:model-spec;textable";op=download-model;out="media:download-result;textable;record"]
+[model_spec -> download-model -> download_result]

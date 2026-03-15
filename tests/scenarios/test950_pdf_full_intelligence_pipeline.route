@@ -1,0 +1,8 @@
+[extract_metadata cap:in=media:pdf;op=extract_metadata;out="media:file-metadata;textable;record"]
+[extract_outline cap:in=media:pdf;op=extract_outline;out="media:document-outline;textable;record"]
+[generate_thumbnail cap:in=media:pdf;op=generate_thumbnail;out="media:image;png;thumbnail"]
+[generate_image_embeddings cap:candle;in="media:image;png";ml-model;op=generate_image_embeddings;out="media:embedding-vector;textable;record"]
+[pdf_input -> extract_metadata -> metadata]
+[pdf_input -> extract_outline -> outline]
+[pdf_input -> generate_thumbnail -> thumbnail]
+[thumbnail -> generate_image_embeddings -> img_embedding]

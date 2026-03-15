@@ -238,6 +238,23 @@ pub struct CapChainPathInfo {
     pub description: String,
 }
 
+impl CapChainPathInfo {
+    /// Convert this resolved path to a route graph.
+    ///
+    /// Cap steps become edges; ForEach sets `is_loop` on the next cap;
+    /// Collect and WrapInList are elided (implicit in transitions).
+    pub fn to_route_graph(&self) -> crate::route::RouteGraph {
+        crate::route::RouteGraph::from_path(self)
+    }
+
+    /// Serialize this resolved path to canonical one-line route notation.
+    ///
+    /// This is the primary identifier for accessibility and comparison.
+    pub fn to_route_notation(&self) -> String {
+        self.to_route_graph().to_route_notation()
+    }
+}
+
 // =============================================================================
 // IMPLEMENTATION
 // =============================================================================

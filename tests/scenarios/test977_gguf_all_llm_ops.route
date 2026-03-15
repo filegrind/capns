@@ -1,0 +1,8 @@
+[llm_model_info cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_model_info;out="media:llm-model-info;json;record"]
+[llm_vocab cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_vocab;out="media:llm-vocab-response;json;record"]
+[llm_inference cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_inference;out="media:llm-text-stream;ndjson;streaming"]
+[llm_inference_constrained cap:constrained;gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_inference_constrained;out="media:llm-text-stream;ndjson;streaming"]
+[request_input -> llm_model_info -> model_info]
+[request_input -> llm_vocab -> vocab]
+[request_input -> llm_inference -> generation]
+[request_input -> llm_inference_constrained -> constrained_generation]

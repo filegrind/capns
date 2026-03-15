@@ -1,0 +1,2 @@
+[describe_image cap:candle;in="media:image;png";ml-model;op=describe_image;out="media:image-description;textable"]
+[image_input -> describe_image -> description]

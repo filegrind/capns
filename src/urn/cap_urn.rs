@@ -523,13 +523,12 @@ impl CapUrn {
                     if request_value != provider_value { return false; } // value conflict
                 }
                 None => {
-                    // Provider missing a tag that request specifies
-                    if request_value != "*" {
-                        // Request needs specific value, provider doesn't have the tag
-                        // This is a conflict - provider cannot satisfy the constraint
-                        return false;
-                    }
-                    // Request has wildcard (*), provider omitting is OK
+                    // Provider missing a tag that request specifies.
+                    // Even wildcard (*) means "any value is fine" — the tag
+                    // must still be present.  Without this, a GGUF plugin
+                    // (no `candle` tag) would match a registry cap that
+                    // requires `candle=*`, causing cross-backend mismatches.
+                    return false;
                 }
             }
         }

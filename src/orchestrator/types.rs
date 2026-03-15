@@ -1,4 +1,4 @@
-//! Types for DOT parsing and orchestration
+//! Types for route notation orchestration
 //!
 //! This module defines the error types and IR structures used by the orchestrator.
 
@@ -10,32 +10,16 @@ use thiserror::Error;
 // Error Types
 // =============================================================================
 
-/// Errors that can occur during DOT parsing and orchestration
+/// Errors that can occur during route notation parsing and orchestration
 #[derive(Debug, Error)]
 pub enum ParseOrchestrationError {
-    /// DOT parsing failed
-    #[error("DOT parse failed: {0}")]
-    DotParseFailed(String),
-
-    /// Edge is missing the required 'label' attribute
-    #[error("Edge from '{from}' to '{to}' is missing label attribute")]
-    EdgeMissingLabel { from: String, to: String },
-
-    /// Edge label does not start with 'cap:'
-    #[error("Edge from '{from}' to '{to}' has label '{label}' that does not start with 'cap:'")]
-    EdgeLabelNotCapUrn {
-        from: String,
-        to: String,
-        label: String,
-    },
+    /// Route notation parsing failed
+    #[error("Route notation parse failed: {0}")]
+    RouteNotationParseFailed(String),
 
     /// Cap URN not found in registry
     #[error("Cap URN '{cap_urn}' not found in registry")]
     CapNotFound { cap_urn: String },
-
-    /// Cap URN is invalid
-    #[error("Cap URN '{cap_urn}' is invalid: {details}")]
-    CapInvalid { cap_urn: String, details: String },
 
     /// Node media URN conflicts with existing assignment
     #[error(
@@ -45,16 +29,6 @@ pub enum ParseOrchestrationError {
         node: String,
         existing: String,
         required_by_cap: String,
-    },
-
-    /// Node media attribute conflicts with derived media URN
-    #[error(
-        "Node '{node}' has media attribute '{attr_value}' that conflicts with derived media URN '{existing}'"
-    )]
-    NodeMediaAttrConflict {
-        node: String,
-        existing: String,
-        attr_value: String,
     },
 
     /// Graph contains a cycle (not a DAG)
@@ -95,11 +69,11 @@ pub enum ParseOrchestrationError {
 /// A resolved edge in the orchestration graph
 #[derive(Debug, Clone)]
 pub struct ResolvedEdge {
-    /// Source node DOT ID
+    /// Source node name
     pub from: String,
-    /// Target node DOT ID
+    /// Target node name
     pub to: String,
-    /// Cap URN string from label
+    /// Cap URN string
     pub cap_urn: String,
     /// Resolved cap definition
     pub cap: Cap,
@@ -112,7 +86,7 @@ pub struct ResolvedEdge {
 /// A resolved orchestration graph
 #[derive(Debug, Clone)]
 pub struct ResolvedGraph {
-    /// Map from DOT node ID to derived media URN
+    /// Map from node name to derived media URN
     pub nodes: HashMap<String, String>,
     /// Resolved edges with cap definitions
     pub edges: Vec<ResolvedEdge>,

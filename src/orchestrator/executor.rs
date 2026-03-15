@@ -31,6 +31,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
+
+/// Default cap-level activity timeout in seconds.
+/// If a plugin sends no frames (Chunk, Log, progress, peer requests) for this
+/// duration, the executor aborts with `ExecutionError::ActivityTimeout`.
+const DEFAULT_ACTIVITY_TIMEOUT_SECS: u64 = 120;
+
+/// Cap metadata key for per-cap activity timeout override.
+const ACTIVITY_TIMEOUT_METADATA_KEY: &str = "activity_timeout_secs";
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::UnixStream;
 use tokio::process::Command;
@@ -135,6 +143,12 @@ pub enum ExecutionError {
     #[error("Registry error: {0}")]
     RegistryError(String),
 
+    #[error("Activity timeout for cap {cap_urn}: no activity for {idle_secs}s (limit: {limit_secs}s)")]
+    ActivityTimeout {
+        cap_urn: String,
+        idle_secs: u64,
+        limit_secs: u64,
+    },
 }
 
 // =============================================================================

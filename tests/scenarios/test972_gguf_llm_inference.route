@@ -1,0 +1,2 @@
+[llm_inference cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_inference;out="media:llm-text-stream;ndjson;streaming"]
+[request_input -> llm_inference -> generation]

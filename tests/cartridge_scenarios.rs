@@ -11,7 +11,7 @@
 use capdag::{Cap, CapUrn, CapUrnBuilder, CapRegistry};
 use capdag::orchestrator::{
     execute_dag, NodeData,
-    parse_dot_to_cap_dag, CapRegistryTrait, ParseOrchestrationError,
+    parse_route_to_cap_dag, CapRegistryTrait, ParseOrchestrationError,
 };
 use serial_test::serial;
 use std::collections::HashMap;
@@ -801,543 +801,23 @@ fn generate_test_wav() -> Vec<u8> {
 }
 
 // =============================================================================
-// DOT Construction Helpers
+// Route Notation Helpers
 // =============================================================================
 
-/// Escape a cap URN string for use inside a DOT label attribute.
-/// The URN's internal double quotes become escaped quotes in the DOT string.
-fn escape_for_dot(cap_urn: &str) -> String {
-    cap_urn.replace('"', "\\\"")
-}
-
-/// Build a DOT edge line from node names and a cap URN.
-fn dot_edge(from: &str, to: &str, cap_urn: &CapUrn) -> String {
-    format!(
-        "        {} -> {} [label=\"{}\"];",
-        from,
-        to,
-        escape_for_dot(&cap_urn.to_string())
-    )
-}
-
-/// Build a DOT node declaration with an explicit media type attribute.
-///
-/// Used for secondary-arg fan-in nodes (e.g., model_spec) where the node's
-/// actual data type differs from the cap's primary in= spec. The executor
-/// uses this declared media type as the stream label, letting the cartridge
-/// handler identify each stream by its exact type.
-fn dot_node(name: &str, media_urn: &str) -> String {
-    format!("        {} [media=\"{}\"];", name, media_urn)
-}
-
-/// Build a complete DOT digraph from a name and edge lines.
-fn dot_graph(name: &str, edges: &[String]) -> String {
-    format!(
-        "    digraph {} {{\n{}\n    }}",
-        name,
-        edges.join("\n")
-    )
-}
-
-/// Path to test scenario DOT files
+/// Path to test scenario route files
 fn scenarios_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("scenarios")
 }
 
-/// Load a DOT file from the scenarios directory and generate a diagram.
-/// Returns the DOT string content for parsing.
-fn load_scenario_dot(name: &str) -> String {
-    let dot_path = scenarios_dir().join(format!("{}.dot", name));
-    let dot_content = std::fs::read_to_string(&dot_path)
-        .unwrap_or_else(|e| panic!("Failed to read DOT file {}: {}", dot_path.display(), e));
-
-    // Generate diagram using graphviz dot command
-    let diagrams_dir = scenarios_dir().join("diagrams");
-    std::fs::create_dir_all(&diagrams_dir).expect("Failed to create diagrams directory");
-
-    let svg_path = diagrams_dir.join(format!("{}.svg", name));
-    let output = std::process::Command::new("dot")
-        .args(["-Tsvg", "-o", svg_path.to_str().unwrap()])
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            use std::io::Write;
-            if let Some(stdin) = child.stdin.as_mut() {
-                stdin.write_all(dot_content.as_bytes())?;
-            }
-            child.wait_with_output()
-        });
-
-    match output {
-        Ok(result) if result.status.success() => {
-            eprintln!("[DOT] Generated diagram: {}", svg_path.display());
-        }
-        Ok(result) => {
-            eprintln!("[DOT] Warning: dot command failed: {}", String::from_utf8_lossy(&result.stderr));
-        }
-        Err(e) => {
-            eprintln!("[DOT] Warning: Could not run dot command: {} (graphviz may not be installed)", e);
-        }
-    }
-
-    dot_content
+/// Load a route notation file from the scenarios directory.
+fn load_scenario_route(name: &str) -> String {
+    let route_path = scenarios_dir().join(format!("{}.route", name));
+    std::fs::read_to_string(&route_path)
+        .unwrap_or_else(|e| panic!("Failed to read route file {}: {}", route_path.display(), e))
 }
 
-/// Save DOT content to a file in the scenarios directory.
-fn save_scenario_dot(name: &str, dot_content: &str) {
-    let dot_path = scenarios_dir().join(format!("{}.dot", name));
-    std::fs::write(&dot_path, dot_content)
-        .unwrap_or_else(|e| panic!("Failed to write DOT file {}: {}", dot_path.display(), e));
-    eprintln!("[DOT] Saved: {}", dot_path.display());
-}
-
-/// Generate all scenario DOT files.
-/// Run with: cargo test generate_all_scenario_dots -- --ignored --nocapture
-#[test]
-#[ignore]
-fn generate_all_scenario_dots() {
-    std::fs::create_dir_all(scenarios_dir()).expect("Failed to create scenarios directory");
-
-    // TEST014: PDF document intelligence (fan-out)
-    save_scenario_dot("test948_pdf_document_intelligence", &dot_graph(
-        "pdf_document_intelligence",
-        &[
-            dot_edge("pdf_input", "metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST015: PDF thumbnail to image embedding (chain)
-    save_scenario_dot("test949_pdf_thumbnail_to_image_embedding", &dot_graph(
-        "pdf_thumbnail_to_image_embedding",
-        &[
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "embedding", &candle_image_embeddings()),
-        ],
-    ));
-
-    // TEST016: PDF full intelligence pipeline (fan-out + chain)
-    save_scenario_dot("test950_pdf_full_intelligence_pipeline", &dot_graph(
-        "pdf_full_intelligence",
-        &[
-            dot_edge("pdf_input", "metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "img_embedding", &candle_image_embeddings()),
-        ],
-    ));
-
-    // TEST017: Text document intelligence (fan-out)
-    save_scenario_dot("test951_text_document_intelligence", &dot_graph(
-        "text_document_intelligence",
-        &[
-            dot_edge("md_input", "metadata", &md_extract_metadata()),
-            dot_edge("md_input", "outline", &md_extract_outline()),
-            dot_edge("md_input", "thumbnail", &md_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST018: Multi-format document processing (parallel fan-outs)
-    save_scenario_dot("test952_multi_format_document_processing", &dot_graph(
-        "multi_format_processing",
-        &[
-            dot_edge("pdf_input", "pdf_metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "pdf_outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "pdf_thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("md_input", "md_metadata", &md_extract_metadata()),
-            dot_edge("md_input", "md_outline", &md_extract_outline()),
-            dot_edge("md_input", "md_thumbnail", &md_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST019: Model plus dimensions (fan-out)
-    save_scenario_dot("test953_model_plus_dimensions", &dot_graph(
-        "model_plus_dimensions",
-        &[
-            dot_edge("model_spec", "availability", &model_availability()),
-            dot_edge("model_spec", "dimensions", &candle_embeddings_dimensions()),
-        ],
-    ));
-
-    // TEST020: Model availability plus status (fan-out)
-    save_scenario_dot("test954_model_availability_plus_status", &dot_graph(
-        "model_availability_plus_status",
-        &[
-            dot_edge("model_spec", "availability", &model_availability()),
-            dot_edge("model_spec", "status", &model_status()),
-        ],
-    ));
-
-    // TEST021: Text embedding (single cap)
-    save_scenario_dot("test955_text_embedding", &dot_graph(
-        "text_embedding",
-        &[
-            dot_edge("text_input", "embedding", &candle_text_embeddings()),
-        ],
-    ));
-
-    // TEST022: Candle describe image (single cap)
-    save_scenario_dot("test956_candle_describe_image", &dot_graph(
-        "candle_describe_image",
-        &[
-            dot_edge("image_input", "description", &candle_describe_image()),
-        ],
-    ));
-
-    // TEST023: Audio transcription (single cap)
-    save_scenario_dot("test957_audio_transcription", &dot_graph(
-        "audio_transcription",
-        &[
-            dot_edge("audio_input", "transcription", &candle_transcribe()),
-        ],
-    ));
-
-    // TEST024: PDF complete analysis (4 cap fan-out)
-    save_scenario_dot("test958_pdf_complete_analysis", &dot_graph(
-        "pdf_complete_analysis",
-        &[
-            dot_edge("pdf_input", "metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("pdf_input", "pages", &pdf_disbind()),
-        ],
-    ));
-
-    // TEST025: Model full inspection (4 cap fan-out)
-    save_scenario_dot("test959_model_full_inspection", &dot_graph(
-        "model_full_inspection",
-        &[
-            dot_edge("model_spec", "availability", &model_availability()),
-            dot_edge("model_spec", "status", &model_status()),
-            dot_edge("model_spec", "contents", &model_contents()),
-            dot_edge("model_spec", "path", &model_path()),
-        ],
-    ));
-
-    // TEST026: Two format full analysis (8 cap parallel fan-outs)
-    save_scenario_dot("test960_two_format_full_analysis", &dot_graph(
-        "two_format_full_analysis",
-        &[
-            dot_edge("pdf_input", "pdf_metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "pdf_outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "pdf_thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("pdf_input", "pdf_pages", &pdf_disbind()),
-            dot_edge("md_input", "md_metadata", &md_extract_metadata()),
-            dot_edge("md_input", "md_outline", &md_extract_outline()),
-            dot_edge("md_input", "md_thumbnail", &md_generate_thumbnail()),
-            dot_edge("md_input", "text_embedding", &candle_text_embeddings()),
-        ],
-    ));
-
-    // TEST027: Model plus PDF combined (5 cap parallel)
-    save_scenario_dot("test961_model_plus_pdf_combined", &dot_graph(
-        "model_plus_pdf_combined",
-        &[
-            dot_edge("model_spec", "availability", &model_availability()),
-            dot_edge("model_spec", "status", &model_status()),
-            dot_edge("pdf_input", "metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST028: Three cartridge pipeline (chain)
-    save_scenario_dot("test962_three_cartridge_pipeline", &dot_graph(
-        "three_cartridge_pipeline",
-        &[
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "img_embedding", &candle_image_embeddings()),
-        ],
-    ));
-
-    // TEST029: TXT document intelligence (fan-out)
-    save_scenario_dot("test963_txt_document_intelligence", &dot_graph(
-        "txt_document_intelligence",
-        &[
-            dot_edge("txt_input", "metadata", &txt_extract_metadata()),
-            dot_edge("txt_input", "outline", &txt_extract_outline()),
-            dot_edge("txt_input", "thumbnail", &txt_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST030: RST document intelligence (fan-out)
-    save_scenario_dot("test964_rst_document_intelligence", &dot_graph(
-        "rst_document_intelligence",
-        &[
-            dot_edge("rst_input", "metadata", &rst_extract_metadata()),
-            dot_edge("rst_input", "outline", &rst_extract_outline()),
-            dot_edge("rst_input", "thumbnail", &rst_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST031: LOG document intelligence (fan-out)
-    save_scenario_dot("test965_log_document_intelligence", &dot_graph(
-        "log_document_intelligence",
-        &[
-            dot_edge("log_input", "metadata", &log_extract_metadata()),
-            dot_edge("log_input", "outline", &log_extract_outline()),
-            dot_edge("log_input", "thumbnail", &log_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST032: All text formats intelligence (12 cap parallel fan-outs)
-    save_scenario_dot("test966_all_text_formats_intelligence", &dot_graph(
-        "all_text_formats_intelligence",
-        &[
-            dot_edge("md_input", "md_metadata", &md_extract_metadata()),
-            dot_edge("md_input", "md_outline", &md_extract_outline()),
-            dot_edge("md_input", "md_thumbnail", &md_generate_thumbnail()),
-            dot_edge("txt_input", "txt_metadata", &txt_extract_metadata()),
-            dot_edge("txt_input", "txt_outline", &txt_extract_outline()),
-            dot_edge("txt_input", "txt_thumbnail", &txt_generate_thumbnail()),
-            dot_edge("rst_input", "rst_metadata", &rst_extract_metadata()),
-            dot_edge("rst_input", "rst_outline", &rst_extract_outline()),
-            dot_edge("rst_input", "rst_thumbnail", &rst_generate_thumbnail()),
-            dot_edge("log_input", "log_metadata", &log_extract_metadata()),
-            dot_edge("log_input", "log_outline", &log_extract_outline()),
-            dot_edge("log_input", "log_thumbnail", &log_generate_thumbnail()),
-        ],
-    ));
-
-    // TEST033: Model list models (single cap)
-    save_scenario_dot("test967_model_list_models", &dot_graph(
-        "model_list_models",
-        &[
-            dot_edge("repo_input", "model_list", &model_list_models()),
-        ],
-    ));
-
-    // TEST034: GGUF embeddings dimensions (single cap)
-    save_scenario_dot("test968_gguf_embeddings_dimensions", &dot_graph(
-        "gguf_embeddings_dimensions",
-        &[
-            dot_edge("model_spec", "dimensions", &gguf_embeddings_dimensions()),
-        ],
-    ));
-
-    // TEST035: GGUF LLM model info (single cap)
-    save_scenario_dot("test969_gguf_llm_model_info", &dot_graph(
-        "gguf_llm_model_info",
-        &[
-            dot_edge("model_spec", "model_info", &gguf_llm_model_info()),
-        ],
-    ));
-
-    // TEST036: GGUF LLM vocab (single cap)
-    save_scenario_dot("test970_gguf_llm_vocab", &dot_graph(
-        "gguf_llm_vocab",
-        &[
-            dot_edge("model_spec", "vocab", &gguf_llm_vocab()),
-        ],
-    ));
-
-    // TEST037: GGUF model info plus vocab (fan-out)
-    save_scenario_dot("test971_gguf_model_info_plus_vocab", &dot_graph(
-        "gguf_model_info_plus_vocab",
-        &[
-            dot_edge("model_spec", "model_info", &gguf_llm_model_info()),
-            dot_edge("model_spec", "vocab", &gguf_llm_vocab()),
-        ],
-    ));
-
-    // TEST038: GGUF LLM inference (fan-in)
-    save_scenario_dot("test972_gguf_llm_inference", &dot_graph(
-        "gguf_llm_inference",
-        &[
-            dot_node("request", "media:llm-generation-request;json;record"),
-            dot_edge("request", "response", &gguf_llm_inference()),
-        ],
-    ));
-
-    // TEST039: GGUF LLM inference constrained (fan-in)
-    save_scenario_dot("test973_gguf_llm_inference_constrained", &dot_graph(
-        "gguf_llm_inference_constrained",
-        &[
-            dot_node("request", "media:llm-generation-request;json;record"),
-            dot_edge("request", "response", &gguf_llm_inference_constrained()),
-        ],
-    ));
-
-    // TEST040: GGUF generate embeddings (fan-in)
-    save_scenario_dot("test974_gguf_generate_embeddings", &dot_graph(
-        "gguf_generate_embeddings",
-        &[
-            dot_node("model_spec", "media:model-spec;textable"),
-            dot_edge("text_input", "embedding", &gguf_generate_embeddings()),
-            dot_edge("model_spec", "embedding", &gguf_generate_embeddings()),
-        ],
-    ));
-
-    // TEST041: GGUF describe image (fan-in)
-    save_scenario_dot("test975_gguf_describe_image", &dot_graph(
-        "gguf_vision",
-        &[
-            dot_node("model_spec", "media:model-spec;textable"),
-            dot_edge("image_input", "description", &gguf_describe_image()),
-            dot_edge("model_spec", "description", &gguf_describe_image()),
-        ],
-    ));
-
-    // TEST042: PDF thumbnail to GGUF vision (cross-cartridge chain)
-    save_scenario_dot("test976_pdf_thumbnail_to_gguf_vision", &dot_graph(
-        "pdf_thumbnail_to_gguf_vision",
-        &[
-            dot_node("model_spec", "media:model-spec;textable"),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "description", &gguf_describe_image()),
-            dot_edge("model_spec", "description", &gguf_describe_image()),
-        ],
-    ));
-
-    // TEST043: GGUF all LLM ops (fan-out)
-    save_scenario_dot("test977_gguf_all_llm_ops", &dot_graph(
-        "gguf_all_llm_ops",
-        &[
-            dot_edge("model_spec", "model_info", &gguf_llm_model_info()),
-            dot_edge("model_spec", "vocab", &gguf_llm_vocab()),
-            dot_edge("model_spec", "dimensions", &gguf_embeddings_dimensions()),
-        ],
-    ));
-
-    // TEST044: MLX text generation (single cap)
-    save_scenario_dot("test978_mlx_generate_text", &dot_graph(
-        "mlx_generate_text",
-        &[
-            dot_edge("model_spec", "generated_text", &mlx_generate_text()),
-        ],
-    ));
-
-    // TEST045: MLX describe image (single cap)
-    save_scenario_dot("test979_mlx_describe_image", &dot_graph(
-        "mlx_describe_image",
-        &[
-            dot_edge("image_input", "description", &mlx_describe_image()),
-        ],
-    ));
-
-    // TEST046: MLX generate embeddings (single cap)
-    save_scenario_dot("test980_mlx_generate_embeddings", &dot_graph(
-        "mlx_generate_embeddings",
-        &[
-            dot_edge("text_input", "embedding", &mlx_generate_embeddings()),
-        ],
-    ));
-
-    // TEST047: MLX embeddings dimensions (single cap)
-    save_scenario_dot("test981_mlx_embeddings_dimensions", &dot_graph(
-        "mlx_embeddings_dimensions",
-        &[
-            dot_edge("model_spec", "dimensions", &mlx_embeddings_dimensions()),
-        ],
-    ));
-
-    // TEST048: Model download (single cap)
-    save_scenario_dot("test982_model_download", &dot_graph(
-        "model_download",
-        &[
-            dot_edge("model_spec", "download_result", &model_download()),
-        ],
-    ));
-
-    // TEST049: 4-step chain: PDF → thumbnail → candle describe → text embeddings
-    save_scenario_dot("test983_pdf_to_thumbnail_to_describe_to_embed", &dot_graph(
-        "pdf_thumbnail_describe_embed_chain",
-        &[
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "description", &candle_describe_image()),
-            dot_edge("description", "embedding", &candle_text_embeddings()),
-        ],
-    ));
-
-    // TEST050: 3-step chain with fan-in: PDF → thumbnail → gguf describe (with model_spec)
-    save_scenario_dot("test984_pdf_thumbnail_to_gguf_describe_fanin", &dot_graph(
-        "pdf_thumbnail_gguf_describe_fanin",
-        &[
-            dot_node("model_spec", "media:model-spec;textable"),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "description", &gguf_describe_image()),
-            dot_edge("model_spec", "description", &gguf_describe_image()),
-        ],
-    ));
-
-    // TEST051: Audio transcription → text embeddings (cross-ML chain)
-    save_scenario_dot("test985_audio_transcribe_to_embed", &dot_graph(
-        "audio_transcribe_embed_chain",
-        &[
-            dot_edge("audio_input", "transcription", &candle_transcribe()),
-            // Note: transcription output is record with text field, needs extraction
-            // For now we test the chain structure
-        ],
-    ));
-
-    // TEST052: PDF fan-out + chain: metadata + thumbnail → image embedding
-    save_scenario_dot("test986_pdf_fanout_with_chain", &dot_graph(
-        "pdf_fanout_with_chain",
-        &[
-            dot_edge("pdf_input", "metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "outline", &pdf_extract_outline()),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "img_embedding", &candle_image_embeddings()),
-        ],
-    ));
-
-    // TEST053: Multi-format parallel with chains: PDF + MD both get thumbnails and embeddings
-    save_scenario_dot("test987_multi_format_parallel_chains", &dot_graph(
-        "multi_format_parallel_chains",
-        &[
-            dot_edge("pdf_input", "pdf_thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("pdf_thumbnail", "pdf_img_embed", &candle_image_embeddings()),
-            dot_edge("md_input", "md_thumbnail", &md_generate_thumbnail()),
-            dot_edge("md_thumbnail", "md_img_embed", &candle_image_embeddings()),
-        ],
-    ));
-
-    // TEST054: Deep chain: PDF → thumbnail → describe → embed → (parallel with) PDF metadata
-    save_scenario_dot("test988_deep_chain_with_parallel", &dot_graph(
-        "deep_chain_with_parallel",
-        &[
-            dot_edge("pdf_input", "metadata", &pdf_extract_metadata()),
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "description", &candle_describe_image()),
-            dot_edge("description", "desc_embedding", &candle_text_embeddings()),
-            dot_edge("thumbnail", "img_embedding", &candle_image_embeddings()),
-        ],
-    ));
-
-    // TEST055: 5-step maximum chain: model download → status → (proves model ready) + PDF thumbnail → describe → embed
-    save_scenario_dot("test989_five_cartridge_chain", &dot_graph(
-        "five_cartridge_stress_test",
-        &[
-            // Model management path
-            dot_edge("model_spec", "availability", &model_availability()),
-            dot_edge("model_spec", "status", &model_status()),
-            // PDF processing path
-            dot_edge("pdf_input", "thumbnail", &pdf_generate_thumbnail()),
-            dot_edge("thumbnail", "description", &candle_describe_image()),
-            dot_edge("description", "embedding", &candle_text_embeddings()),
-        ],
-    ));
-
-    // TEST056: All txtcartridge formats → thumbnails → parallel image embeddings
-    save_scenario_dot("test990_all_text_formats_to_image_embeds", &dot_graph(
-        "all_text_formats_to_image_embeds",
-        &[
-            dot_edge("txt_input", "txt_thumbnail", &txt_generate_thumbnail()),
-            dot_edge("txt_thumbnail", "txt_img_embed", &candle_image_embeddings()),
-            dot_edge("md_input", "md_thumbnail", &md_generate_thumbnail()),
-            dot_edge("md_thumbnail", "md_img_embed", &candle_image_embeddings()),
-            dot_edge("rst_input", "rst_thumbnail", &rst_generate_thumbnail()),
-            dot_edge("rst_thumbnail", "rst_img_embed", &candle_image_embeddings()),
-            dot_edge("log_input", "log_thumbnail", &log_generate_thumbnail()),
-            dot_edge("log_thumbnail", "log_img_embed", &candle_image_embeddings()),
-        ],
-    ));
-
-    eprintln!("\n[DOT] Generated all scenario DOT files in: {}", scenarios_dir().display());
-}
 
 // =============================================================================
 // ML Model Specs (matching candlecartridge defaults)
@@ -1373,12 +853,12 @@ async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf)
     let mut registry = CartridgeRegistry::new();
     registry.register(download_urn.clone());
 
-    let dot = dot_graph(
-        "pre_download",
-        &[dot_edge("model", "result", &download_urn)],
+    let route = format!(
+        "[download cap:{}]\n[model -> download -> result]",
+        download_urn.to_string()
     );
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Pre-download DAG parse failed");
 
@@ -1457,10 +937,10 @@ async fn test948_pdf_document_intelligence() {
     registry.register(pdf_extract_outline());
     registry.register(pdf_generate_thumbnail());
 
-    let dot = load_scenario_dot("test948_pdf_document_intelligence");
-    eprintln!("[TEST014] DOT:\n{}", dot);
+    let route = load_scenario_route("test948_pdf_document_intelligence");
+    eprintln!("[TEST014] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -1525,10 +1005,10 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
     }).expect("modelcartridge binary required").clone();
     ensure_model_downloaded(MODEL_CLIP, modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test949_pdf_thumbnail_to_image_embedding");
-    eprintln!("[TEST015] DOT:\n{}", dot);
+    let route = load_scenario_route("test949_pdf_thumbnail_to_image_embedding");
+    eprintln!("[TEST015] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -1584,10 +1064,10 @@ async fn test950_pdf_full_intelligence_pipeline() {
     }).expect("modelcartridge binary required").clone();
     ensure_model_downloaded(MODEL_CLIP, modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test950_pdf_full_intelligence_pipeline");
-    eprintln!("[TEST016] DOT:\n{}", dot);
+    let route = load_scenario_route("test950_pdf_full_intelligence_pipeline");
+    eprintln!("[TEST016] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4);
@@ -1649,10 +1129,10 @@ async fn test951_text_document_intelligence() {
     registry.register(md_extract_outline());
     registry.register(md_generate_thumbnail());
 
-    let dot = load_scenario_dot("test951_text_document_intelligence");
-    eprintln!("[TEST017] DOT:\n{}", dot);
+    let route = load_scenario_route("test951_text_document_intelligence");
+    eprintln!("[TEST017] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -1712,10 +1192,10 @@ async fn test952_multi_format_document_processing() {
     registry.register(md_extract_outline());
     registry.register(md_generate_thumbnail());
 
-    let dot = load_scenario_dot("test952_multi_format_document_processing");
-    eprintln!("[TEST018] DOT:\n{}", dot);
+    let route = load_scenario_route("test952_multi_format_document_processing");
+    eprintln!("[TEST018] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 6);
@@ -1793,10 +1273,10 @@ async fn test953_model_plus_dimensions() {
     }).expect("modelcartridge binary required").clone();
     ensure_model_downloaded(MODEL_BERT, modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test953_model_plus_dimensions");
-    eprintln!("[TEST019] DOT:\n{}", dot);
+    let route = load_scenario_route("test953_model_plus_dimensions");
+    eprintln!("[TEST019] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -1849,10 +1329,10 @@ async fn test954_model_availability_plus_status() {
     registry.register(model_availability());
     registry.register(model_status());
 
-    let dot = load_scenario_dot("test954_model_availability_plus_status");
-    eprintln!("[TEST020] DOT:\n{}", dot);
+    let route = load_scenario_route("test954_model_availability_plus_status");
+    eprintln!("[TEST020] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -1905,10 +1385,10 @@ async fn test955_text_embedding() {
     }).expect("modelcartridge binary required").clone();
     ensure_model_downloaded(MODEL_BERT, modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test955_text_embedding");
-    eprintln!("[TEST021] DOT:\n{}", dot);
+    let route = load_scenario_route("test955_text_embedding");
+    eprintln!("[TEST021] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -1962,10 +1442,10 @@ async fn test956_candle_describe_image() {
     }).expect("modelcartridge binary required").clone();
     ensure_model_downloaded(MODEL_BLIP, modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test956_candle_describe_image");
-    eprintln!("[TEST022] DOT:\n{}", dot);
+    let route = load_scenario_route("test956_candle_describe_image");
+    eprintln!("[TEST022] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -2013,10 +1493,10 @@ async fn test957_audio_transcription() {
     }).expect("modelcartridge binary required").clone();
     ensure_model_downloaded(MODEL_WHISPER, modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test957_audio_transcription");
-    eprintln!("[TEST023] DOT:\n{}", dot);
+    let route = load_scenario_route("test957_audio_transcription");
+    eprintln!("[TEST023] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -2064,10 +1544,10 @@ async fn test958_pdf_complete_analysis() {
     registry.register(pdf_generate_thumbnail());
     registry.register(pdf_disbind());
 
-    let dot = load_scenario_dot("test958_pdf_complete_analysis");
-    eprintln!("[TEST024] DOT:\n{}", dot);
+    let route = load_scenario_route("test958_pdf_complete_analysis");
+    eprintln!("[TEST024] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4, "4 edges expected");
@@ -2133,10 +1613,10 @@ async fn test959_model_full_inspection() {
     registry.register(model_contents());
     registry.register(model_path());
 
-    let dot = load_scenario_dot("test959_model_full_inspection");
-    eprintln!("[TEST025] DOT:\n{}", dot);
+    let route = load_scenario_route("test959_model_full_inspection");
+    eprintln!("[TEST025] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4);
@@ -2214,10 +1694,10 @@ async fn test960_two_format_full_analysis() {
     registry.register(md_extract_outline());
     registry.register(md_generate_thumbnail());
 
-    let dot = load_scenario_dot("test960_two_format_full_analysis");
-    eprintln!("[TEST026] DOT:\n{}", dot);
+    let route = load_scenario_route("test960_two_format_full_analysis");
+    eprintln!("[TEST026] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 7, "7 edges expected");
@@ -2293,10 +1773,10 @@ async fn test961_model_plus_pdf_combined() {
     registry.register(pdf_extract_outline());
     registry.register(pdf_generate_thumbnail());
 
-    let dot = load_scenario_dot("test961_model_plus_pdf_combined");
-    eprintln!("[TEST027] DOT:\n{}", dot);
+    let route = load_scenario_route("test961_model_plus_pdf_combined");
+    eprintln!("[TEST027] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 5);
@@ -2366,10 +1846,10 @@ async fn test962_three_cartridge_pipeline() {
     registry.register(md_extract_metadata());
     registry.register(md_generate_thumbnail());
 
-    let dot = load_scenario_dot("test962_three_cartridge_pipeline");
-    eprintln!("[TEST028] DOT:\n{}", dot);
+    let route = load_scenario_route("test962_three_cartridge_pipeline");
+    eprintln!("[TEST028] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 6);
@@ -2685,10 +2165,10 @@ async fn test963_txt_document_intelligence() {
     registry.register(txt_extract_outline());
     registry.register(txt_generate_thumbnail());
 
-    let dot = load_scenario_dot("test963_txt_document_intelligence");
-    eprintln!("[TEST029] DOT:\n{}", dot);
+    let route = load_scenario_route("test963_txt_document_intelligence");
+    eprintln!("[TEST029] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -2740,10 +2220,10 @@ async fn test964_rst_document_intelligence() {
     registry.register(rst_extract_outline());
     registry.register(rst_generate_thumbnail());
 
-    let dot = load_scenario_dot("test964_rst_document_intelligence");
-    eprintln!("[TEST030] DOT:\n{}", dot);
+    let route = load_scenario_route("test964_rst_document_intelligence");
+    eprintln!("[TEST030] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -2795,10 +2275,10 @@ async fn test965_log_document_intelligence() {
     registry.register(log_extract_outline());
     registry.register(log_generate_thumbnail());
 
-    let dot = load_scenario_dot("test965_log_document_intelligence");
-    eprintln!("[TEST031] DOT:\n{}", dot);
+    let route = load_scenario_route("test965_log_document_intelligence");
+    eprintln!("[TEST031] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -2859,10 +2339,10 @@ async fn test966_all_text_formats_intelligence() {
     registry.register(md_extract_outline());
     registry.register(md_generate_thumbnail());
 
-    let dot = load_scenario_dot("test966_all_text_formats_intelligence");
-    eprintln!("[TEST032] DOT:\n{}", dot);
+    let route = load_scenario_route("test966_all_text_formats_intelligence");
+    eprintln!("[TEST032] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 12, "12 edges expected");
@@ -2929,10 +2409,10 @@ async fn test967_model_list_models() {
     let mut registry = CartridgeRegistry::new();
     registry.register(model_list_models());
 
-    let dot = load_scenario_dot("test967_model_list_models");
-    eprintln!("[TEST033] DOT:\n{}", dot);
+    let route = load_scenario_route("test967_model_list_models");
+    eprintln!("[TEST033] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -2985,10 +2465,10 @@ async fn test968_gguf_embeddings_dimensions() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_EMBED, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test968_gguf_embeddings_dimensions");
-    eprintln!("[TEST034] DOT:\n{}", dot);
+    let route = load_scenario_route("test968_gguf_embeddings_dimensions");
+    eprintln!("[TEST034] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3039,10 +2519,10 @@ async fn test969_gguf_llm_model_info() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test969_gguf_llm_model_info");
-    eprintln!("[TEST035] DOT:\n{}", dot);
+    let route = load_scenario_route("test969_gguf_llm_model_info");
+    eprintln!("[TEST035] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3095,10 +2575,10 @@ async fn test970_gguf_llm_vocab() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test970_gguf_llm_vocab");
-    eprintln!("[TEST036] DOT:\n{}", dot);
+    let route = load_scenario_route("test970_gguf_llm_vocab");
+    eprintln!("[TEST036] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3152,10 +2632,10 @@ async fn test971_gguf_model_info_plus_vocab() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test971_gguf_model_info_plus_vocab");
-    eprintln!("[TEST037] DOT:\n{}", dot);
+    let route = load_scenario_route("test971_gguf_model_info_plus_vocab");
+    eprintln!("[TEST037] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -3211,10 +2691,10 @@ async fn test972_gguf_llm_inference() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test972_gguf_llm_inference");
-    eprintln!("[TEST038] DOT:\n{}", dot);
+    let route = load_scenario_route("test972_gguf_llm_inference");
+    eprintln!("[TEST038] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3265,10 +2745,10 @@ async fn test973_gguf_llm_inference_constrained() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test973_gguf_llm_inference_constrained");
-    eprintln!("[TEST039] DOT:\n{}", dot);
+    let route = load_scenario_route("test973_gguf_llm_inference_constrained");
+    eprintln!("[TEST039] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3322,10 +2802,10 @@ async fn test974_gguf_generate_embeddings() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_EMBED, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test974_gguf_generate_embeddings");
-    eprintln!("[TEST040] DOT:\n{}", dot);
+    let route = load_scenario_route("test974_gguf_generate_embeddings");
+    eprintln!("[TEST040] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3385,10 +2865,10 @@ async fn test975_gguf_describe_image() {
     // Vision model is large (~1.8GB) — pre-download; test proceeds regardless of download outcome
     ensure_model_downloaded(MODEL_GGUF_VISION, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test975_gguf_describe_image");
-    eprintln!("[TEST041] DOT:\n{}", dot);
+    let route = load_scenario_route("test975_gguf_describe_image");
+    eprintln!("[TEST041] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
 
@@ -3442,10 +2922,10 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_VISION, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test976_pdf_thumbnail_to_gguf_vision");
-    eprintln!("[TEST042] DOT:\n{}", dot);
+    let route = load_scenario_route("test976_pdf_thumbnail_to_gguf_vision");
+    eprintln!("[TEST042] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed — thumbnail→vision media URN compatibility check");
     assert_eq!(graph.edges.len(), 3);
@@ -3507,10 +2987,10 @@ async fn test977_gguf_all_llm_ops() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test977_gguf_all_llm_ops");
-    eprintln!("[TEST043] DOT:\n{}", dot);
+    let route = load_scenario_route("test977_gguf_all_llm_ops");
+    eprintln!("[TEST043] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4);
@@ -3587,10 +3067,10 @@ async fn test978_mlx_generate_text() {
         .clone();
     ensure_model_downloaded(MODEL_MLX_LLM, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test978_mlx_generate_text");
-    eprintln!("[TEST044] DOT:\n{}", dot);
+    let route = load_scenario_route("test978_mlx_generate_text");
+    eprintln!("[TEST044] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3636,10 +3116,10 @@ async fn test979_mlx_describe_image() {
         .clone();
     ensure_model_downloaded(MODEL_MLX_VISION, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test979_mlx_describe_image");
-    eprintln!("[TEST045] DOT:\n{}", dot);
+    let route = load_scenario_route("test979_mlx_describe_image");
+    eprintln!("[TEST045] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3685,10 +3165,10 @@ async fn test980_mlx_generate_embeddings() {
         .clone();
     ensure_model_downloaded(MODEL_MLX_EMBED, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test980_mlx_generate_embeddings");
-    eprintln!("[TEST046] DOT:\n{}", dot);
+    let route = load_scenario_route("test980_mlx_generate_embeddings");
+    eprintln!("[TEST046] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3734,10 +3214,10 @@ async fn test981_mlx_embeddings_dimensions() {
         .clone();
     ensure_model_downloaded(MODEL_MLX_EMBED, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test981_mlx_embeddings_dimensions");
-    eprintln!("[TEST047] DOT:\n{}", dot);
+    let route = load_scenario_route("test981_mlx_embeddings_dimensions");
+    eprintln!("[TEST047] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3780,10 +3260,10 @@ async fn test982_model_download() {
     let mut registry = CartridgeRegistry::new();
     registry.register(model_download());
 
-    let dot = load_scenario_dot("test982_model_download");
-    eprintln!("[TEST048] DOT:\n{}", dot);
+    let route = load_scenario_route("test982_model_download");
+    eprintln!("[TEST048] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3836,10 +3316,10 @@ async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
     ensure_model_downloaded(MODEL_BLIP, &modelcartridge_bin).await;
     ensure_model_downloaded(MODEL_BERT, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test983_pdf_to_thumbnail_to_describe_to_embed");
-    eprintln!("[TEST049] DOT:\n{}", dot);
+    let route = load_scenario_route("test983_pdf_to_thumbnail_to_describe_to_embed");
+    eprintln!("[TEST049] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3, "3-step chain");
@@ -3890,10 +3370,10 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_VISION, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test984_pdf_thumbnail_to_gguf_describe_fanin");
-    eprintln!("[TEST050] DOT:\n{}", dot);
+    let route = load_scenario_route("test984_pdf_thumbnail_to_gguf_describe_fanin");
+    eprintln!("[TEST050] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     // 3 edges: pdf→thumbnail, thumbnail→description, model_spec→description
@@ -3943,10 +3423,10 @@ async fn test985_audio_transcribe_to_embed() {
         .clone();
     ensure_model_downloaded(MODEL_WHISPER, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test985_audio_transcribe_to_embed");
-    eprintln!("[TEST051] DOT:\n{}", dot);
+    let route = load_scenario_route("test985_audio_transcribe_to_embed");
+    eprintln!("[TEST051] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3994,10 +3474,10 @@ async fn test986_pdf_fanout_with_chain() {
         .clone();
     ensure_model_downloaded(MODEL_CLIP, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test986_pdf_fanout_with_chain");
-    eprintln!("[TEST052] DOT:\n{}", dot);
+    let route = load_scenario_route("test986_pdf_fanout_with_chain");
+    eprintln!("[TEST052] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4, "3 fan-out + 1 chain");
@@ -4049,10 +3529,10 @@ async fn test987_multi_format_parallel_chains() {
         .clone();
     ensure_model_downloaded(MODEL_CLIP, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test987_multi_format_parallel_chains");
-    eprintln!("[TEST053] DOT:\n{}", dot);
+    let route = load_scenario_route("test987_multi_format_parallel_chains");
+    eprintln!("[TEST053] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4, "2 parallel chains × 2 steps");
@@ -4108,10 +3588,10 @@ async fn test988_deep_chain_with_parallel() {
     ensure_model_downloaded(MODEL_BERT, &modelcartridge_bin).await;
     ensure_model_downloaded(MODEL_CLIP, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test988_deep_chain_with_parallel");
-    eprintln!("[TEST054] DOT:\n{}", dot);
+    let route = load_scenario_route("test988_deep_chain_with_parallel");
+    eprintln!("[TEST054] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 5, "Complex 5-edge graph");
@@ -4168,10 +3648,10 @@ async fn test989_five_cartridge_chain() {
     ensure_model_downloaded(MODEL_BLIP, &modelcartridge_bin).await;
     ensure_model_downloaded(MODEL_BERT, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test989_five_cartridge_chain");
-    eprintln!("[TEST055] DOT:\n{}", dot);
+    let route = load_scenario_route("test989_five_cartridge_chain");
+    eprintln!("[TEST055] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 5, "5 edges in stress test");
@@ -4225,10 +3705,10 @@ async fn test990_all_text_formats_to_image_embeds() {
         .clone();
     ensure_model_downloaded(MODEL_CLIP, &modelcartridge_bin).await;
 
-    let dot = load_scenario_dot("test990_all_text_formats_to_image_embeds");
-    eprintln!("[TEST056] DOT:\n{}", dot);
+    let route = load_scenario_route("test990_all_text_formats_to_image_embeds");
+    eprintln!("[TEST056] Route:\n{}", route);
 
-    let graph = parse_dot_to_cap_dag(&dot, &registry)
+    let graph = parse_route_to_cap_dag(&route, &registry)
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 8, "4 formats × 2 steps = 8 edges");

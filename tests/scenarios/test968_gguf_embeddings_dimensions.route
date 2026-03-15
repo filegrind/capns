@@ -1,0 +1,2 @@
+[embeddings_dimensions cap:gguf;in="media:model-spec;textable";ml-model;op=embeddings_dimensions;out="media:integer;textable;numeric"]
+[model_spec -> embeddings_dimensions -> dimensions]

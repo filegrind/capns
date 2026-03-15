@@ -35,6 +35,7 @@ pub mod bifaci;
 pub mod standard;
 pub mod planner;
 pub mod orchestrator;
+pub mod route;
 pub mod input_resolver;
 
 // URN types
@@ -121,10 +122,13 @@ pub use planner::{
     PlanExecutor,
 };
 
-// Orchestrator — DOT graph parsing and DAG execution
+// Route notation — typed DAG path identifiers
+pub use route::{RouteGraph, RouteEdge, RouteNotationError, parse_route_notation};
+
+// Orchestrator — route notation parsing and DAG execution
 pub use orchestrator::{
     ParseOrchestrationError, ResolvedEdge, ResolvedGraph, CapRegistryTrait,
-    parse_dot_to_cap_dag, plan_to_resolved_graph, execute_dag, NodeData, ExecutionError,
+    parse_route_to_cap_dag, plan_to_resolved_graph, execute_dag, NodeData, ExecutionError,
     EdgeGroup, PluginManager, ExecutionContext, CapProgressFn, ProgressMapper, map_progress,
     split_cbor_array, assemble_cbor_array, split_cbor_sequence, assemble_cbor_sequence, CborUtilError,
 };

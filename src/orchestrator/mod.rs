@@ -1,23 +1,21 @@
-//! Orchestrator: DOT Parser with CapDag Orchestration
+//! Orchestrator: Route Notation Parser with CapDag Orchestration
 //!
-//! This module parses DOT digraphs and interprets edge labels starting with `cap:`
-//! as Cap URNs. It resolves each Cap URN via a CapDag registry, validates the graph,
-//! and produces a validated, executable DAG IR.
+//! This module parses route notation and resolves cap URNs via a registry,
+//! validates the graph, and produces a validated, executable DAG IR.
 //!
 //! # Example
 //!
 //! ```ignore
-//! use capdag::orchestrator::{parse_dot_to_cap_dag, CapRegistryTrait};
+//! use capdag::orchestrator::{parse_route_to_cap_dag, CapRegistryTrait};
 //! use capdag::CapRegistry;
 //!
-//! let dot = r#"
-//!     digraph G {
-//!         A -> B [label="cap:in=\"media:pdf;bytes\";op=extract;out=\"media:txt;textable\""];
-//!     }
+//! let route = r#"
+//!     [extract cap:in="media:pdf;bytes";op=extract;out="media:txt;textable"]
+//!     [A -> extract -> B]
 //! "#;
 //!
 //! let registry = CapRegistry::new().await?;
-//! let graph = parse_dot_to_cap_dag(dot, &registry).await?;
+//! let graph = parse_route_to_cap_dag(route, &registry).await?;
 //! ```
 
 pub mod types;
@@ -35,7 +33,7 @@ pub use types::{
     CapRegistryTrait,
 };
 
-pub use parser::parse_dot_to_cap_dag;
+pub use parser::parse_route_to_cap_dag;
 
 pub use plan_converter::plan_to_resolved_graph;
 

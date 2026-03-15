@@ -1,0 +1,8 @@
+[model-availability cap:in="media:model-spec;textable";op=model-availability;out="media:model-availability;textable;record"]
+[model-status cap:in="media:model-spec;textable";op=model-status;out="media:model-status;textable;record"]
+[model-contents cap:in="media:model-spec;textable";op=model-contents;out="media:model-contents;textable;record"]
+[model-path cap:in="media:model-spec;textable";op=model-path;out="media:model-path;textable;record"]
+[model_spec -> model-availability -> availability]
+[model_spec -> model-status -> status]
+[model_spec -> model-contents -> contents]
+[model_spec -> model-path -> path]

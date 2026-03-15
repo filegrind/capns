@@ -1,8 +1,9 @@
-//! capdag: DOT-based DAG executor for Cap pipelines
+//! capdag: Route notation DAG executor for Cap pipelines
 //!
-//! A unified CLI for executing and validating DOT graph pipelines.
+//! A unified CLI for executing and validating route notation pipelines.
 
-use capdag::orchestrator::{parse_dot_to_cap_dag, execute_dag, NodeData};
+use capdag::orchestrator::{parse_route_to_cap_dag, execute_dag, NodeData};
+use capdag::route::RouteGraph;
 use capdag::CapRegistry;
 use std::collections::HashMap;
 use std::env;
@@ -50,41 +51,84 @@ fn expand_dev_binary_path(path: &str) -> Vec<PathBuf> {
     }
 }
 
-/// Find input nodes in the DOT graph (nodes with no incoming edges)
-fn find_input_nodes(dot_content: &str) -> Vec<String> {
-    // Simple parser: find nodes that appear as sources but never as targets
-    let mut sources: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut targets: std::collections::HashSet<String> = std::collections::HashSet::new();
+/// Find input nodes in the route notation (root sources with no incoming edges).
+///
+/// Parses the route notation into a RouteGraph and returns the node names
+/// that are root sources (not produced by any cap).
+fn find_input_nodes(route_content: &str) -> Vec<String> {
+    let graph = match RouteGraph::from_string(route_content) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!("Failed to parse route notation for input node detection: {}", e);
+            return vec![];
+        }
+    };
 
-    for line in dot_content.lines() {
-        let line = line.trim();
-        if line.contains("->") {
-            // Parse: source -> target [label=...]
-            if let Some(arrow_pos) = line.find("->") {
-                let source = line[..arrow_pos].trim().to_string();
-                let rest = &line[arrow_pos + 2..];
-                // Target is everything before [ or ;
-                let target = rest
-                    .split(|c| c == '[' || c == ';')
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
+    // Re-parse to get node names — RouteGraph discards them.
+    // Use the same pest extraction as the orchestrator.
+    use pest::Parser;
+    use capdag::route::parser::{RouteParser, Rule};
 
-                if !source.is_empty() {
-                    sources.insert(source);
-                }
-                if !target.is_empty() {
-                    targets.insert(target);
+    let pairs = match RouteParser::parse(Rule::program, route_content.trim()) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("Failed to re-parse route notation: {}", e);
+            return vec![];
+        }
+    };
+
+    // Collect all source and target node names from wirings
+    let mut all_sources: Vec<String> = Vec::new();
+    let mut all_targets: Vec<String> = Vec::new();
+
+    let program = pairs.into_iter().next().unwrap();
+    for pair in program.into_inner() {
+        if pair.as_rule() != Rule::stmt {
+            continue;
+        }
+        let inner = pair.into_inner().next().unwrap();
+        let content = inner.into_inner().next().unwrap();
+        if content.as_rule() != Rule::wiring {
+            continue;
+        }
+
+        let mut inner_pairs = content.into_inner();
+
+        // Source
+        let source_pair = inner_pairs.next().unwrap();
+        let source_inner = source_pair.into_inner().next().unwrap();
+        match source_inner.as_rule() {
+            Rule::group => {
+                for p in source_inner.into_inner() {
+                    if p.as_rule() == Rule::alias {
+                        all_sources.push(p.as_str().to_string());
+                    }
                 }
             }
+            Rule::alias => {
+                all_sources.push(source_inner.as_str().to_string());
+            }
+            _ => {}
         }
+
+        // Skip arrow, loop_cap, arrow
+        inner_pairs.next();
+        inner_pairs.next();
+        inner_pairs.next();
+
+        // Target
+        let target = inner_pairs.next().unwrap().as_str().to_string();
+        all_targets.push(target);
     }
 
-    // Input nodes are sources that are never targets
-    sources
-        .difference(&targets)
-        .cloned()
+    // Input nodes are sources that never appear as targets
+    let target_set: std::collections::HashSet<&str> =
+        all_targets.iter().map(|s| s.as_str()).collect();
+
+    let mut seen = std::collections::HashSet::new();
+    all_sources
+        .into_iter()
+        .filter(|s| !target_set.contains(s.as_str()) && seen.insert(s.clone()))
         .collect()
 }
 
@@ -172,8 +216,8 @@ fn expand_input_path(path: &str) -> Vec<PathBuf> {
 
 fn print_usage(program: &str) {
     tracing::info!(
-        "Usage: {} [options] <dot-file> <input-paths...>\n\n\
-         Execute a DOT graph pipeline on input files.\n\n\
+        "Usage: {} [options] <route-file> <input-paths...>\n\n\
+         Execute a route notation pipeline on input files.\n\n\
          Options:\n\
            --dev-bins <binary> ...  Use local plugin binaries\n\
            --help                   Show this help\n\n\
@@ -182,10 +226,10 @@ fn print_usage(program: &str) {
            - Directory:     /path/to/pdfs/\n\
            - Glob pattern:  /path/to/*.pdf\n\n\
          Examples:\n\
-           {} pipeline.dot /tmp/test.pdf\n\
-           {} pipeline.dot /tmp/pdfs/\n\
-           {} pipeline.dot '/tmp/*.pdf'\n\
-           {} --dev-bins ./pdfcartridge pipeline.dot /tmp/*.pdf",
+           {} pipeline.route /tmp/test.pdf\n\
+           {} pipeline.route /tmp/pdfs/\n\
+           {} pipeline.route '/tmp/*.pdf'\n\
+           {} --dev-bins ./pdfcartridge pipeline.route /tmp/*.pdf",
         program, program, program, program, program
     );
 }
@@ -214,7 +258,7 @@ async fn main() {
                 arg_idx += 1;
                 while arg_idx < args.len()
                     && !args[arg_idx].starts_with("--")
-                    && !args[arg_idx].ends_with(".dot")
+                    && !args[arg_idx].ends_with(".route")
                 {
                     let expanded = expand_dev_binary_path(&args[arg_idx]);
                     if expanded.is_empty() {
@@ -230,27 +274,27 @@ async fn main() {
     }
 
     if arg_idx >= args.len() {
-        tracing::error!("Missing DOT file argument");
+        tracing::error!("Missing route file argument");
         print_usage(&args[0]);
         process::exit(1);
     }
 
-    let dot_file = &args[arg_idx];
+    let route_file = &args[arg_idx];
     arg_idx += 1;
 
-    // Read DOT file
-    let dot_content = match fs::read_to_string(dot_file) {
+    // Read route file
+    let route_content = match fs::read_to_string(route_file) {
         Ok(content) => content,
         Err(e) => {
-            tracing::error!("Error reading DOT file '{}': {}", dot_file, e);
+            tracing::error!("Error reading route file '{}': {}", route_file, e);
             process::exit(1);
         }
     };
 
     // Find input nodes automatically
-    let input_nodes = find_input_nodes(&dot_content);
+    let input_nodes = find_input_nodes(&route_content);
     if input_nodes.is_empty() {
-        tracing::error!("No input nodes found in DOT graph");
+        tracing::error!("No input nodes found in route notation");
         process::exit(1);
     }
 
@@ -270,11 +314,10 @@ async fn main() {
     all_files.sort();
 
     // For now, use the first input node for all files
-    // TODO: Support multiple input nodes with explicit mapping
     let input_node = &input_nodes[0];
 
-    tracing::info!("=== capdag: DOT Graph Execution ===\n");
-    tracing::info!("DOT file: {}", dot_file);
+    tracing::info!("=== capdag: Route Notation Execution ===\n");
+    tracing::info!("Route file: {}", route_file);
     tracing::info!("Input node: {}", input_node);
     tracing::info!("Input files: {}", all_files.len());
     for f in &all_files {
@@ -292,8 +335,8 @@ async fn main() {
     };
 
     // Parse and validate
-    tracing::info!("Parsing and validating DOT graph...");
-    let graph = match parse_dot_to_cap_dag(&dot_content, registry.as_ref()).await {
+    tracing::info!("Parsing and validating route notation...");
+    let graph = match parse_route_to_cap_dag(&route_content, registry.as_ref()).await {
         Ok(g) => {
             tracing::info!("Validation successful");
             tracing::info!("  Nodes: {}", g.nodes.len());

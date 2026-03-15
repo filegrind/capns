@@ -1,7 +1,7 @@
 //! Integration tests for capdag orchestrator using testcartridge
 //!
 //! These tests verify the orchestrator's ability to:
-//! 1. Parse and validate DOT graphs with Cap URNs
+//! 1. Parse and validate route notation graphs with Cap URNs
 //! 2. Execute DAGs using testcartridge capabilities
 //! 3. Handle data flow between nodes
 //! 4. Work with CBOR protocol via PluginHost
@@ -9,7 +9,7 @@
 //! testcartridge provides simple, predictable test caps without heavy dependencies
 //! The testcartridge binary will be auto-built if missing or outdated
 
-use capdag::orchestrator::{parse_dot_to_cap_dag, execute_dag, NodeData, CapRegistryTrait, ParseOrchestrationError};
+use capdag::orchestrator::{parse_route_to_cap_dag, execute_dag, NodeData, CapRegistryTrait, ParseOrchestrationError};
 use capdag::{Cap, CapUrn, CapRegistry};
 use std::collections::HashMap;
 use std::env;
@@ -285,25 +285,28 @@ fn create_test_cap_registry() -> Arc<CapRegistry> {
 // Phase 1: Basic macino Functionality with testcartridge
 // =============================================================================
 
-// TEST001: Parse simple DOT graph with test-edge1
+// TEST001: Parse simple route notation graph with test-edge1
 #[tokio::test]
 async fn test935_parse_simple_testcartridge_graph() {
     let registry = TestcartridgeRegistry::new();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[A -> test_edge1 -> B]
+"#;
 
-    let result = parse_dot_to_cap_dag(dot, &registry).await;
+    let result = parse_route_to_cap_dag(route, &registry).await;
     assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
 
     let graph = result.unwrap();
     assert_eq!(graph.nodes.len(), 2);
     assert_eq!(graph.edges.len(), 1);
-    assert_eq!(graph.nodes.get("A").unwrap(), "media:node1;textable");
-    assert_eq!(graph.nodes.get("B").unwrap(), "media:node2;textable");
+    let node_a = capdag::MediaUrn::from_string(graph.nodes.get("A").unwrap()).unwrap();
+    let expected_a = capdag::MediaUrn::from_string("media:node1;textable").unwrap();
+    assert!(node_a.is_equivalent(&expected_a).unwrap());
+    let node_b = capdag::MediaUrn::from_string(graph.nodes.get("B").unwrap()).unwrap();
+    let expected_b = capdag::MediaUrn::from_string("media:node2;textable").unwrap();
+    assert!(node_b.is_equivalent(&expected_b).unwrap());
 }
 
 // TEST002: Execute single-edge DAG (test-edge1)
@@ -312,13 +315,12 @@ async fn test936_execute_single_edge_dag() {
     let registry = TestcartridgeRegistry::new();
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            input -> output [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[input -> test_edge1 -> output]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     // Create initial input
     let mut initial_inputs = HashMap::new();
@@ -349,20 +351,20 @@ async fn test936_execute_single_edge_dag() {
     }
 }
 
-// TEST003: Execute two-edge chain (test-edge1 → test-edge2)
+// TEST003: Execute two-edge chain (test-edge1 -> test-edge2)
 #[tokio::test]
 async fn test937_execute_edge1_to_edge2_chain() {
     let registry = TestcartridgeRegistry::new();
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[test_edge2 cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable"]
+[A -> test_edge1 -> B]
+[B -> test_edge2 -> C]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("CHAIN".to_string()));
@@ -395,13 +397,12 @@ async fn test938_execute_with_file_input() {
     let registry = TestcartridgeRegistry::new();
     let (temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            input -> output [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[input -> test_edge1 -> output]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     // Create test input file
     let input_file = temp.path().join("input.txt");
@@ -436,13 +437,12 @@ async fn test939_execute_large_payload() {
     let registry = TestcartridgeRegistry::new();
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            input -> output [label="cap:in=\"media:void\";op=test_large;out=\"media:\""];
-        }
-    "#;
+    let route = r#"
+[test_large cap:in="media:void";op=test_large;out="media:"]
+[input -> test_large -> output]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     // test-large generates payload based on size, but with media:void input
     let mut initial_inputs = HashMap::new();
@@ -479,16 +479,16 @@ async fn test940_fan_in_pattern() {
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
     // Two parallel paths that merge
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-            C -> D [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-            B -> E [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-            D -> E [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[test_edge2 cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable"]
+[A -> test_edge1 -> B]
+[C -> test_edge1 -> D]
+[B -> test_edge2 -> E]
+[D -> test_edge2 -> E]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("PATH1".to_string()));
@@ -523,13 +523,12 @@ async fn test941_reject_cycles() {
     let registry = TestcartridgeRegistry::new();
 
     // Create a self-loop using identity cap
-    let dot = r#"
-        digraph G {
-            A -> A [label="cap:in=\"media:node1;textable\";op=identity;out=\"media:node1;textable\""];
-        }
-    "#;
+    let route = r#"
+[identity cap:in="media:node1;textable";op=identity;out="media:node1;textable"]
+[A -> identity -> A]
+"#;
 
-    let result = parse_dot_to_cap_dag(dot, &registry).await;
+    let result = parse_route_to_cap_dag(route, &registry).await;
     assert!(result.is_err(), "Should reject cycle");
 
     match result.err() {
@@ -540,39 +539,35 @@ async fn test941_reject_cycles() {
     }
 }
 
-// TEST008: Empty graph (no edges)
+// TEST008: Empty route notation (no edges)
 #[tokio::test]
 async fn test942_empty_graph() {
     let registry = TestcartridgeRegistry::new();
 
-    let dot = r#"
-        digraph G {
-            A;
-            B;
+    let route = "";
+
+    let result = parse_route_to_cap_dag(route, &registry).await;
+    assert!(result.is_err(), "Should fail on empty route notation");
+
+    match result.err() {
+        Some(ParseOrchestrationError::RouteNotationParseFailed(_)) => {
+            // Expected error
         }
-    "#;
-
-    let result = parse_dot_to_cap_dag(dot, &registry).await;
-    assert!(result.is_ok(), "Failed to parse empty graph: {:?}", result.err());
-
-    let graph = result.unwrap();
-    assert_eq!(graph.edges.len(), 0);
-    // Nodes without caps won't have media URNs derived
-    assert!(graph.nodes.is_empty());
+        other => panic!("Expected RouteNotationParseFailed, got: {:?}", other),
+    }
 }
 
-// TEST009: Invalid cap URN in label
+// TEST009: Invalid cap URN in route notation
 #[tokio::test]
 async fn test943_invalid_cap_urn() {
     let registry = TestcartridgeRegistry::new();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:INVALID"];
-        }
-    "#;
+    let route = concat!(
+        r#"[bad cap:INVALID]"#,
+        "[A -> bad -> B]"
+    );
 
-    let result = parse_dot_to_cap_dag(dot, &registry).await;
+    let result = parse_route_to_cap_dag(route, &registry).await;
     assert!(result.is_err(), "Should reject invalid cap URN");
 }
 
@@ -581,13 +576,12 @@ async fn test943_invalid_cap_urn() {
 async fn test944_cap_not_found() {
     let registry = TestcartridgeRegistry::new();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:unknown\";op=nonexistent;out=\"media:unknown\""];
-        }
-    "#;
+    let route = r#"
+[nonexistent cap:in="media:unknown";op=nonexistent;out="media:unknown"]
+[A -> nonexistent -> B]
+"#;
 
-    let result = parse_dot_to_cap_dag(dot, &registry).await;
+    let result = parse_route_to_cap_dag(route, &registry).await;
     assert!(result.is_err(), "Should fail when cap not found");
 
     match result.err() {
@@ -602,24 +596,26 @@ async fn test944_cap_not_found() {
 // Phase 2: Long Chain Tests (4-6 caps)
 // =============================================================================
 
-// TEST011: 4-cap chain: edge1 → edge2 → edge7 → edge8
-// node1 → node2 → node3 → node6 → node7
-// "hello" → "[PREPEND]hello" → "[PREPEND]hello[APPEND]" → "[PREPEND]HELLO[APPEND]" → "]DNEPPA[OLLEH]DNEPERP["
+// TEST011: 4-cap chain: edge1 -> edge2 -> edge7 -> edge8
+// node1 -> node2 -> node3 -> node6 -> node7
+// "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP["
 #[tokio::test]
 async fn test945_four_cap_chain() {
     let registry = TestcartridgeRegistry::new();
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-            C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
-            D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[test_edge2 cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable"]
+[test_edge7 cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable"]
+[test_edge8 cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable"]
+[A -> test_edge1 -> B]
+[B -> test_edge2 -> C]
+[C -> test_edge7 -> D]
+[D -> test_edge8 -> E]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
@@ -648,25 +644,28 @@ async fn test945_four_cap_chain() {
     }
 }
 
-// TEST012: 5-cap chain: edge1 → edge2 → edge7 → edge8 → edge9
-// node1 → node2 → node3 → node6 → node7 → node8
+// TEST012: 5-cap chain: edge1 -> edge2 -> edge7 -> edge8 -> edge9
+// node1 -> node2 -> node3 -> node6 -> node7 -> node8
 // adds <<...>> wrapping around the reversed string
 #[tokio::test]
 async fn test946_five_cap_chain() {
     let registry = TestcartridgeRegistry::new();
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-            C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
-            D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
-            E -> F [label="cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[test_edge2 cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable"]
+[test_edge7 cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable"]
+[test_edge8 cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable"]
+[test_edge9 cap:in="media:node7;textable";op=test_edge9;out="media:node8;textable"]
+[A -> test_edge1 -> B]
+[B -> test_edge2 -> C]
+[C -> test_edge7 -> D]
+[D -> test_edge8 -> E]
+[E -> test_edge9 -> F]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
@@ -693,26 +692,30 @@ async fn test946_five_cap_chain() {
     }
 }
 
-// TEST013: 6-cap chain: edge1 → edge2 → edge7 → edge8 → edge9 → edge10
-// Full cycle: node1 → node2 → node3 → node6 → node7 → node8 → node1
+// TEST013: 6-cap chain: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10
+// Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1
 // Completes the round trip: unwrap markers + lowercase
 #[tokio::test]
 async fn test947_six_cap_chain() {
     let registry = TestcartridgeRegistry::new();
     let (_temp, plugin_dir, dev_binaries) = setup_test_env();
 
-    let dot = r#"
-        digraph G {
-            A -> B [label="cap:in=\"media:node1;textable\";op=test_edge1;out=\"media:node2;textable\""];
-            B -> C [label="cap:in=\"media:node2;textable\";op=test_edge2;out=\"media:node3;textable\""];
-            C -> D [label="cap:in=\"media:node3;textable\";op=test_edge7;out=\"media:node6;textable\""];
-            D -> E [label="cap:in=\"media:node6;textable\";op=test_edge8;out=\"media:node7;textable\""];
-            E -> F [label="cap:in=\"media:node7;textable\";op=test_edge9;out=\"media:node8;textable\""];
-            F -> G [label="cap:in=\"media:node8;textable\";op=test_edge10;out=\"media:node1;textable\""];
-        }
-    "#;
+    let route = r#"
+[test_edge1 cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable"]
+[test_edge2 cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable"]
+[test_edge7 cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable"]
+[test_edge8 cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable"]
+[test_edge9 cap:in="media:node7;textable";op=test_edge9;out="media:node8;textable"]
+[test_edge10 cap:in="media:node8;textable";op=test_edge10;out="media:node1;textable"]
+[A -> test_edge1 -> B]
+[B -> test_edge2 -> C]
+[C -> test_edge7 -> D]
+[D -> test_edge8 -> E]
+[E -> test_edge9 -> F]
+[F -> test_edge10 -> G]
+"#;
 
-    let graph = parse_dot_to_cap_dag(dot, &registry).await.expect("Parse failed");
+    let graph = parse_route_to_cap_dag(route, &registry).await.expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
@@ -871,8 +874,8 @@ async fn test403_peer_invoke_roundtrip() {
 
     // Expected flow:
     // 1. test-peer receives "CHAIN"
-    // 2. Calls peer.invoke(test-edge1, "CHAIN") → "[PREPEND]CHAIN"
-    // 3. Calls peer.invoke(test-edge2, "[PREPEND]CHAIN") → "[PREPEND]CHAIN[APPEND]"
+    // 2. Calls peer.invoke(test-edge1, "CHAIN") -> "[PREPEND]CHAIN"
+    // 3. Calls peer.invoke(test-edge2, "[PREPEND]CHAIN") -> "[PREPEND]CHAIN[APPEND]"
     // 4. Returns final result
     assert_eq!(result_str, "[PREPEND]CHAIN[APPEND]",
         "Peer invoke chain should prepend and append correctly");

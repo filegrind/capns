@@ -1,0 +1,2 @@
+[llm_model_info cap:gguf;in="media:llm-generation-request;json;record";llm;ml-model;op=llm_model_info;out="media:llm-model-info;json;record"]
+[request_input -> llm_model_info -> model_info]

@@ -1,0 +1,2 @@
+[generate_embeddings cap:candle;in="media:textable";ml-model;op=generate_embeddings;out="media:embedding-vector;textable;record"]
+[text_input -> generate_embeddings -> embedding]

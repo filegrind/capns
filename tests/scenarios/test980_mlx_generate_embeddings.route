@@ -1,0 +1,2 @@
+[generate_embeddings cap:in="media:textable";ml-model;mlx;op=generate_embeddings;out="media:embedding-vector;textable;record"]
+[text_input -> generate_embeddings -> embedding]

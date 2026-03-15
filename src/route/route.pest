@@ -1,0 +1,54 @@
+// Bracket-delimited route notation grammar for pest.
+//
+// Examples:
+//   [extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
+//   [doc -> extract -> text]
+//   [(thumbnail, model_spec) -> describe -> description]
+//   [pages -> LOOP p2t -> texts]
+//
+// WHITESPACE is defined as implicit — pest inserts optional whitespace
+// between `~` operands in non-atomic rules. Do NOT use explicit
+// WHITESPACE+/WHITESPACE* inside non-atomic rules (the implicit and
+// explicit mechanisms conflict due to PEG greedy matching).
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+program = { SOI ~ stmt* ~ EOI }
+
+stmt = { "[" ~ inner ~ "]" }
+
+inner = { wiring | header }
+
+// Header: alias must be followed by a cap URN starting with "cap:".
+// Implicit whitespace between alias and cap_urn ensures at least one
+// space is required (alias stops at non-alphanumeric, cap_urn starts
+// with "cap:" — they can't run together).
+header = { alias ~ cap_urn }
+
+wiring = { source ~ arrow ~ loop_cap ~ arrow ~ alias }
+
+source = { group | alias }
+
+group = { "(" ~ alias ~ ("," ~ alias)+ ~ ")" }
+
+// loop_cap must be atomic so that "LOOP" and the alias aren't
+// separated by implicit whitespace in a way that would consume
+// the required space between them. Instead we use the non-atomic
+// rule with the ordered choice: first try LOOP + alias, then bare alias.
+loop_cap = { loop_keyword ~ alias | alias }
+loop_keyword = { "LOOP" }
+
+arrow = { "-"+ ~ ">" }
+
+alias = @{ alias_start ~ alias_continue* }
+alias_start = { ASCII_ALPHA | "_" }
+alias_continue = { ASCII_ALPHANUMERIC | "_" | "-" }
+
+cap_urn = @{ "cap:" ~ cap_urn_body* }
+
+// Read until the statement-closing `]`, except allow quoted strings
+// to contain arbitrary characters, including `]`.
+cap_urn_body = { quoted_value | !"]" ~ ANY }
+
+// Supports escaped quotes inside quoted strings.
+quoted_value = { "\"" ~ ( "\\\"" | "\\\\" | !("\"") ~ ANY )* ~ "\"" }
