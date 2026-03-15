@@ -2,7 +2,7 @@
 //!
 //! A unified CLI for executing and validating route notation pipelines.
 
-use capdag::orchestrator::{parse_route_to_cap_dag, execute_dag, NodeData};
+use capdag::orchestrator::{parse_route_to_cap_dag, execute_dag, NodeData, ResolvedGraph};
 use capdag::route::RouteGraph;
 use capdag::{CapProgressFn, CapRegistry};
 use std::collections::HashMap;
@@ -215,11 +215,87 @@ fn expand_input_path(path: &str) -> Vec<PathBuf> {
     }
 }
 
+/// Escape text for Mermaid labels (double-quoted strings).
+fn mermaid_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "#quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Generate Mermaid flowchart code from a resolved graph.
+fn generate_mermaid(graph: &ResolvedGraph) -> String {
+    let mut out = String::new();
+    out.push_str("graph LR\n");
+
+    // Collect which nodes are input (not a target of any edge) vs output (not a source)
+    let mut targets: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut sources: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for edge in &graph.edges {
+        sources.insert(&edge.from);
+        targets.insert(&edge.to);
+    }
+
+    // Emit node definitions with media URN subtitle
+    for (name, media_urn) in &graph.nodes {
+        let is_input = sources.contains(name.as_str()) && !targets.contains(name.as_str());
+        let is_output = targets.contains(name.as_str()) && !sources.contains(name.as_str());
+
+        let escaped_name = mermaid_escape(name);
+        let escaped_urn = mermaid_escape(media_urn);
+
+        if is_input {
+            // Stadium shape for inputs
+            out.push_str(&format!(
+                "    {}([\"{}<br/><small>{}</small>\"])\n",
+                name, escaped_name, escaped_urn
+            ));
+        } else if is_output {
+            // Double-circle shape for outputs
+            out.push_str(&format!(
+                "    {}(((\"{}<br/><small>{}</small>\")))\n",
+                name, escaped_name, escaped_urn
+            ));
+        } else {
+            // Rectangle for intermediate nodes
+            out.push_str(&format!(
+                "    {}[\"{}<br/><small>{}</small>\"]\n",
+                name, escaped_name, escaped_urn
+            ));
+        }
+    }
+
+    out.push('\n');
+
+    // Emit edges with cap title + URN subtitle
+    // Deduplicate fan-in edges (multiple edges to same target with same cap)
+    let mut seen_edges: std::collections::HashSet<(String, String, String)> =
+        std::collections::HashSet::new();
+
+    for edge in &graph.edges {
+        let key = (edge.from.clone(), edge.to.clone(), edge.cap_urn.clone());
+        if !seen_edges.insert(key) {
+            continue;
+        }
+
+        let title = mermaid_escape(&edge.cap.title);
+        let urn = mermaid_escape(&edge.cap_urn);
+
+        out.push_str(&format!(
+            "    {} -->|\"{}<br/><small>{}</small>\"| {}\n",
+            edge.from, title, urn, edge.to
+        ));
+    }
+
+    out
+}
+
 fn print_usage(program: &str) {
     tracing::info!(
-        "Usage: {} [options] <route-file> <input-paths...>\n\n\
+        "Usage: {} [options] <route-file> [input-paths...]\n\n\
          Execute a route notation pipeline on input files.\n\n\
          Options:\n\
+           --mermaid                Output Mermaid diagram code and exit\n\
            --dev-bins <binary> ...  Use local plugin binaries\n\
            --help                   Show this help\n\n\
          Input paths can be:\n\
@@ -227,9 +303,9 @@ fn print_usage(program: &str) {
            - Directory:     /path/to/pdfs/\n\
            - Glob pattern:  /path/to/*.pdf\n\n\
          Examples:\n\
+           {} --mermaid pipeline.route\n\
            {} pipeline.route /tmp/test.pdf\n\
            {} pipeline.route /tmp/pdfs/\n\
-           {} pipeline.route '/tmp/*.pdf'\n\
            {} --dev-bins ./pdfcartridge pipeline.route /tmp/*.pdf",
         program, program, program, program, program
     );
@@ -246,6 +322,7 @@ async fn main() {
 
     // Parse arguments
     let mut dev_binaries = Vec::new();
+    let mut mermaid_mode = false;
     let mut arg_idx = 1;
 
     // Parse flags
@@ -254,6 +331,10 @@ async fn main() {
             "--help" | "-h" => {
                 print_usage(&args[0]);
                 process::exit(0);
+            }
+            "--mermaid" => {
+                mermaid_mode = true;
+                arg_idx += 1;
             }
             "--dev-bins" => {
                 arg_idx += 1;
@@ -292,6 +373,30 @@ async fn main() {
         }
     };
 
+    // Create CapDag registry
+    let registry = match CapRegistry::new().await {
+        Ok(reg) => Arc::new(reg),
+        Err(e) => {
+            tracing::error!("Error creating CapDag registry: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Parse and validate route notation
+    let graph = match parse_route_to_cap_dag(&route_content, registry.as_ref()).await {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!("Validation failed: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // --mermaid: output diagram and exit
+    if mermaid_mode {
+        println!("{}", generate_mermaid(&graph));
+        process::exit(0);
+    }
+
     // Find input nodes automatically
     let input_nodes = find_input_nodes(&route_content);
     if input_nodes.is_empty() {
@@ -325,30 +430,9 @@ async fn main() {
         tracing::info!("  - {}", f.display());
     }
 
-    // Create CapDag registry
-    tracing::info!("Creating CapDag registry...");
-    let registry = match CapRegistry::new().await {
-        Ok(reg) => std::sync::Arc::new(reg),
-        Err(e) => {
-            tracing::error!("Error creating CapDag registry: {}", e);
-            process::exit(1);
-        }
-    };
-
-    // Parse and validate
     tracing::info!("Parsing and validating route notation...");
-    let graph = match parse_route_to_cap_dag(&route_content, registry.as_ref()).await {
-        Ok(g) => {
-            tracing::info!("Validation successful");
-            tracing::info!("  Nodes: {}", g.nodes.len());
-            tracing::info!("  Edges: {}", g.edges.len());
-            g
-        }
-        Err(e) => {
-            tracing::error!("\nValidation failed: {}", e);
-            process::exit(1);
-        }
-    };
+    tracing::info!("  Nodes: {}", graph.nodes.len());
+    tracing::info!("  Edges: {}", graph.edges.len());
 
     // Set up plugin directory
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));

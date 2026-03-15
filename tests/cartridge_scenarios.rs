@@ -573,7 +573,6 @@ fn load_scenario_route(name: &str) -> String {
         .unwrap_or_else(|e| panic!("Failed to read route file {}: {}", route_path.display(), e))
 }
 
-
 // =============================================================================
 // ML Model Specs (matching candlecartridge defaults)
 // =============================================================================
@@ -674,7 +673,6 @@ fn extract_text(outputs: &HashMap<String, NodeData>, node: &str) -> String {
 async fn test948_pdf_document_intelligence() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
-
     let route = load_scenario_route("test948_pdf_document_intelligence");
     eprintln!("[TEST014] Route:\n{}", route);
 
@@ -734,7 +732,6 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
-
     // Pre-download CLIP model needed for image embeddings
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
         p.to_str().map_or(false, |s| s.contains("modelcartridge"))
@@ -788,7 +785,6 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
 async fn test950_pdf_full_intelligence_pipeline() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
-
 
     // Pre-download CLIP model needed for image embeddings
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -857,7 +853,6 @@ async fn test950_pdf_full_intelligence_pipeline() {
 async fn test951_text_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-
     let route = load_scenario_route("test951_text_document_intelligence");
     eprintln!("[TEST017] Route:\n{}", route);
 
@@ -913,7 +908,6 @@ async fn test951_text_document_intelligence() {
 #[serial]
 async fn test952_multi_format_document_processing() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
-
 
     let route = load_scenario_route("test952_multi_format_document_processing");
     eprintln!("[TEST018] Route:\n{}", route);
@@ -987,7 +981,6 @@ async fn test952_multi_format_document_processing() {
 async fn test953_model_plus_dimensions() {
     let dev_binaries = require_binaries(&["modelcartridge", "candlecartridge"]);
 
-
     // Pre-download BERT model needed for embeddings dimensions
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
         p.to_str().map_or(false, |s| s.contains("modelcartridge"))
@@ -1047,7 +1040,6 @@ async fn test953_model_plus_dimensions() {
 async fn test954_model_availability_plus_status() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-
     let route = load_scenario_route("test954_model_availability_plus_status");
     eprintln!("[TEST020] Route:\n{}", route);
 
@@ -1095,7 +1087,6 @@ async fn test954_model_availability_plus_status() {
 async fn test955_text_embedding() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
-
 
     // Pre-download BERT model needed for text embeddings
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1152,7 +1143,6 @@ async fn test956_candle_describe_image() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
-
     // Pre-download BLIP model needed for image description
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
         p.to_str().map_or(false, |s| s.contains("modelcartridge"))
@@ -1201,7 +1191,6 @@ async fn test956_candle_describe_image() {
 async fn test957_audio_transcription() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
-
 
     // Pre-download Whisper model needed for audio transcription
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1254,7 +1243,6 @@ async fn test957_audio_transcription() {
 #[serial]
 async fn test958_pdf_complete_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
-
 
     let route = load_scenario_route("test958_pdf_complete_analysis");
     eprintln!("[TEST024] Route:\n{}", route);
@@ -1319,7 +1307,6 @@ async fn test958_pdf_complete_analysis() {
 #[serial]
 async fn test959_model_full_inspection() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
-
 
     let route = load_scenario_route("test959_model_full_inspection");
     eprintln!("[TEST025] Route:\n{}", route);
@@ -1394,7 +1381,6 @@ async fn test959_model_full_inspection() {
 async fn test960_two_format_full_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
-
     let route = load_scenario_route("test960_two_format_full_analysis");
     eprintln!("[TEST026] Route:\n{}", route);
 
@@ -1468,7 +1454,6 @@ async fn test960_two_format_full_analysis() {
 async fn test961_model_plus_pdf_combined() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge"]);
 
-
     let route = load_scenario_route("test961_model_plus_pdf_combined");
     eprintln!("[TEST027] Route:\n{}", route);
 
@@ -1534,7 +1519,6 @@ async fn test961_model_plus_pdf_combined() {
 #[serial]
 async fn test962_three_cartridge_pipeline() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "txtcartridge"]);
-
 
     let route = load_scenario_route("test962_three_cartridge_pipeline");
     eprintln!("[TEST028] Route:\n{}", route);
@@ -1664,7 +1648,6 @@ fn build_llm_constrained_request(model_spec: &str, prompt: &str) -> Vec<u8> {
 async fn test963_txt_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-
     let route = load_scenario_route("test963_txt_document_intelligence");
     eprintln!("[TEST029] Route:\n{}", route);
 
@@ -1711,7 +1694,6 @@ async fn test963_txt_document_intelligence() {
 #[serial]
 async fn test964_rst_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
-
 
     let route = load_scenario_route("test964_rst_document_intelligence");
     eprintln!("[TEST030] Route:\n{}", route);
@@ -1764,7 +1746,6 @@ async fn test964_rst_document_intelligence() {
 async fn test965_log_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-
     let route = load_scenario_route("test965_log_document_intelligence");
     eprintln!("[TEST031] Route:\n{}", route);
 
@@ -1810,7 +1791,6 @@ async fn test965_log_document_intelligence() {
 #[serial]
 async fn test966_all_text_formats_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
-
 
     let route = load_scenario_route("test966_all_text_formats_intelligence");
     eprintln!("[TEST032] Route:\n{}", route);
@@ -1882,7 +1862,6 @@ async fn test966_all_text_formats_intelligence() {
 async fn test967_model_list_models() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-
     let route = load_scenario_route("test967_model_list_models");
     eprintln!("[TEST033] Route:\n{}", route);
 
@@ -1929,7 +1908,6 @@ async fn test967_model_list_models() {
 #[serial]
 async fn test968_gguf_embeddings_dimensions() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -1982,7 +1960,6 @@ async fn test968_gguf_embeddings_dimensions() {
 #[serial]
 async fn test969_gguf_llm_model_info() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2038,7 +2015,6 @@ async fn test969_gguf_llm_model_info() {
 async fn test970_gguf_llm_vocab() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2092,7 +2068,6 @@ async fn test970_gguf_llm_vocab() {
 #[serial]
 async fn test971_gguf_model_info_plus_vocab() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2151,7 +2126,6 @@ async fn test971_gguf_model_info_plus_vocab() {
 async fn test972_gguf_llm_inference() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2203,7 +2177,6 @@ async fn test972_gguf_llm_inference() {
 #[serial]
 async fn test973_gguf_llm_inference_constrained() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2259,7 +2232,6 @@ async fn test973_gguf_llm_inference_constrained() {
 #[serial]
 async fn test974_gguf_generate_embeddings() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2321,7 +2293,6 @@ async fn test974_gguf_generate_embeddings() {
 async fn test975_gguf_describe_image() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2376,7 +2347,6 @@ async fn test975_gguf_describe_image() {
 async fn test976_pdf_thumbnail_to_gguf_vision() {
     let dev_binaries =
         require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2437,7 +2407,6 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
 #[serial]
 async fn test977_gguf_all_llm_ops() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2517,7 +2486,6 @@ async fn test977_gguf_all_llm_ops() {
 async fn test978_mlx_generate_text() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2564,7 +2532,6 @@ async fn test978_mlx_generate_text() {
 #[ignore] // MLX cartridge requires macOS with Apple Silicon
 async fn test979_mlx_describe_image() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2613,7 +2580,6 @@ async fn test979_mlx_describe_image() {
 async fn test980_mlx_generate_embeddings() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2660,7 +2626,6 @@ async fn test980_mlx_generate_embeddings() {
 #[ignore] // MLX cartridge requires macOS with Apple Silicon
 async fn test981_mlx_embeddings_dimensions() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2713,7 +2678,6 @@ async fn test981_mlx_embeddings_dimensions() {
 async fn test982_model_download() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-
     let route = load_scenario_route("test982_model_download");
     eprintln!("[TEST048] Route:\n{}", route);
 
@@ -2757,7 +2721,6 @@ async fn test982_model_download() {
 #[serial]
 async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2811,7 +2774,6 @@ async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
 async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
     let dev_binaries = require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2863,7 +2825,6 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
 async fn test985_audio_transcribe_to_embed() {
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -2909,7 +2870,6 @@ async fn test985_audio_transcribe_to_embed() {
 #[serial]
 async fn test986_pdf_fanout_with_chain() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2962,7 +2922,6 @@ async fn test986_pdf_fanout_with_chain() {
 async fn test987_multi_format_parallel_chains() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge", "candlecartridge", "modelcartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -3013,7 +2972,6 @@ async fn test987_multi_format_parallel_chains() {
 #[serial]
 async fn test988_deep_chain_with_parallel() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3070,7 +3028,6 @@ async fn test988_deep_chain_with_parallel() {
 async fn test989_five_cartridge_chain() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "candlecartridge"]);
 
-
     let modelcartridge_bin = dev_binaries
         .iter()
         .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
@@ -3122,7 +3079,6 @@ async fn test989_five_cartridge_chain() {
 #[serial]
 async fn test990_all_text_formats_to_image_embeds() {
     let dev_binaries = require_binaries(&["txtcartridge", "candlecartridge", "modelcartridge"]);
-
 
     let modelcartridge_bin = dev_binaries
         .iter()
