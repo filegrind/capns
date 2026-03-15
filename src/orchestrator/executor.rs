@@ -871,6 +871,13 @@ impl ExecutionContext {
         let cap_urn = &edges[0].cap_urn;
         let to = &edges[0].to;
 
+        let activity_timeout_secs = edges[0].cap.metadata
+            .get(ACTIVITY_TIMEOUT_METADATA_KEY)
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(DEFAULT_ACTIVITY_TIMEOUT_SECS);
+        let activity_timeout = Duration::from_secs(activity_timeout_secs);
+
         let total_streams = edges.len() + extra_args.len();
         tracing::debug!(target: "execute_fanin", "cap={} streams={} to={}", cap_urn, total_streams, to);
         tracing::info!(
@@ -1006,7 +1013,8 @@ impl ExecutionContext {
         let mut response_chunks: Vec<u8> = Vec::new();
         let mut got_end = false;
         let wait_start = std::time::Instant::now();
-        let mut last_heartbeat = std::time::Instant::now();
+        let mut last_activity = std::time::Instant::now();
+        let mut last_warn_secs: u64 = 0;
 
         while !got_end {
             tokio::select! {
@@ -1016,16 +1024,30 @@ impl ExecutionContext {
                 pump_result = self.switch.read_from_masters_timeout(Duration::from_millis(200)) => {
                     match pump_result {
                         Ok(Some(frame)) => {
+                            last_activity = std::time::Instant::now();
                             tracing::debug!(
                                 "  [engine] {:?} id={:?} cap={:?}",
                                 frame.frame_type, frame.id, frame.cap
                             );
                         }
                         Ok(None) => {
-                            // Timeout or internal frame — peer routing happened, continue
-                            if last_heartbeat.elapsed() > Duration::from_secs(30) {
-                                tracing::warn!("[execute_fanin] WAITING for cap='{}' rid={:?} elapsed={:.0}s (no response yet)", cap_urn, request_id, wait_start.elapsed().as_secs_f64());
-                                last_heartbeat = std::time::Instant::now();
+                            let idle = last_activity.elapsed();
+                            if idle > activity_timeout {
+                                return Err(ExecutionError::ActivityTimeout {
+                                    cap_urn: cap_urn.clone(),
+                                    idle_secs: idle.as_secs(),
+                                    limit_secs: activity_timeout_secs,
+                                });
+                            }
+                            // Warn every 30s while idle
+                            let idle_secs = idle.as_secs();
+                            if idle_secs >= 30 && idle_secs / 30 > last_warn_secs / 30 {
+                                last_warn_secs = idle_secs;
+                                tracing::warn!(
+                                    "[execute_fanin] cap='{}' rid={:?} idle={:.0}s timeout={}s elapsed={:.0}s",
+                                    cap_urn, request_id, idle.as_secs_f64(),
+                                    activity_timeout_secs, wait_start.elapsed().as_secs_f64()
+                                );
                             }
                         }
                         Err(e) => {
@@ -1039,6 +1061,7 @@ impl ExecutionContext {
 
                 // Receive response frame
                 Some(frame) = rx.recv() => {
+                    last_activity = std::time::Instant::now();
                     tracing::debug!("[execute_fanin] rx.recv(): {:?} id={:?} payload_len={}", frame.frame_type, frame.id, frame.payload.as_ref().map_or(0, |p| p.len()));
                     match frame.frame_type {
                         FrameType::Chunk => {
@@ -1139,6 +1162,7 @@ pub async fn execute_dag(
     initial_inputs: HashMap<String, NodeData>,
     dev_binaries: Vec<PathBuf>,
     cap_registry: Arc<CapRegistry>,
+    progress_fn: Option<&CapProgressFn>,
 ) -> Result<HashMap<String, NodeData>, ExecutionError> {
     tracing::debug!(target: "execute_dag", "Starting...");
 
@@ -1176,18 +1200,41 @@ pub async fn execute_dag(
     let groups = build_edge_groups(&graph.edges);
     let group_order = topological_sort_groups(&groups)
         .map_err(|e| ExecutionError::HostError(format!("Topological sort failed: {}", e)))?;
-    tracing::debug!(target: "execute_dag", "{} edge groups to execute", group_order.len());
+    let n_groups = group_order.len();
+    tracing::debug!(target: "execute_dag", "{} edge groups to execute", n_groups);
 
     tracing::info!(
         "Executing {} cap group(s) in topological order",
-        group_order.len()
+        n_groups
     );
 
-    // Execute groups - now fully async!
+    // Pre-compute group boundaries for deterministic progress subdivision
+    let group_boundaries: Vec<f32> = if n_groups > 0 {
+        (0..=n_groups)
+            .map(|i| i as f32 / n_groups as f32)
+            .collect()
+    } else {
+        vec![0.0]
+    };
+
+    // Execute groups in topological order
     for (i, idx) in group_order.iter().enumerate() {
-        tracing::debug!(target: "execute_dag", "Executing group {}/{}: cap={}", i+1, group_order.len(), groups[*idx].edges[0].cap_urn);
-        // No extra arguments in CLI mode - all data flows through edges
-        ctx.execute_fanin(&groups[*idx].edges, &[], None).await?;
+        tracing::debug!(target: "execute_dag", "Executing group {}/{}: cap={}", i+1, n_groups, groups[*idx].edges[0].cap_urn);
+
+        // Per-group progress subdivision
+        let group_pfn: Option<CapProgressFn> = progress_fn.map(|parent| {
+            let base = group_boundaries[i];
+            let weight = group_boundaries[i + 1] - base;
+            ProgressMapper::new(parent, base, weight).as_cap_progress_fn()
+        });
+
+        ctx.execute_fanin(&groups[*idx].edges, &[], group_pfn.as_ref()).await?;
+
+        // Report group completion
+        if let Some(pfn) = &progress_fn {
+            pfn(group_boundaries[i + 1], &format!("Completed {}", groups[*idx].edges[0].cap_urn));
+        }
+
         tracing::debug!(target: "execute_dag", "Group {} complete", i+1);
     }
 
@@ -1340,6 +1387,9 @@ mod tests {
     }
 
     // TEST707: Per-group subdivision produces monotonic, bounded progress for N groups
+    //
+    // Uses pre-computed boundaries (same pattern as production code) to guarantee
+    // monotonicity regardless of f32 rounding.
     #[test]
     fn test707_per_group_subdivision_monotonic_bounded() {
         let all_progress = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1348,12 +1398,14 @@ mod tests {
             all_clone.lock().unwrap().push(p);
         });
 
-        let n_groups = 5;
-        let total = n_groups as f32;
+        let n_groups: usize = 5;
+        let boundaries: Vec<f32> = (0..=n_groups)
+            .map(|i| i as f32 / n_groups as f32)
+            .collect();
 
         for i in 0..n_groups {
-            let base = i as f32 / total;
-            let weight = 1.0 / total;
+            let base = boundaries[i];
+            let weight = boundaries[i + 1] - base;
             let mapper = ProgressMapper::new(&parent, base, weight);
 
             // Each group reports 0%, 50%, 100%
@@ -1369,8 +1421,8 @@ mod tests {
         for i in 1..progress.len() {
             assert!(
                 progress[i] >= progress[i - 1],
-                "Progress must be monotonic: [{}]={} < [{}]={}",
-                i - 1, progress[i - 1], i, progress[i]
+                "monotonic violation at index {}: {} < {}",
+                i, progress[i], progress[i - 1]
             );
         }
 
@@ -1385,11 +1437,15 @@ mod tests {
 
         // First should be 0.0 (group 0, 0%)
         assert!((progress[0] - 0.0).abs() < 0.001);
-        // Last should be 1.0 (group 4, 100% = 4/5 + 1/5 * 1.0 = 1.0)
+        // Last should be 1.0 (group 4, 100%)
         assert!((progress[14] - 1.0).abs() < 0.001);
     }
 
-    // TEST708: ForEach item subdivision produces correct ranges
+    // TEST708: ForEach item subdivision produces correct, monotonic ranges
+    //
+    // Mirrors the production code in interpreter.rs: pre-compute item boundaries
+    // from the same formula so the end of item N and the start of item N+1 are
+    // the same f32 value (no divergent accumulation paths).
     #[test]
     fn test708_foreach_item_subdivision() {
         let all_progress = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1401,11 +1457,16 @@ mod tests {
         // ForEach: prefix [0.0, 0.05), body [0.05, 0.95), suffix [0.95, 1.0)
         let body_base = 0.05_f32;
         let body_weight = 0.90_f32;
-        let item_count = 4;
-        let item_weight = body_weight / item_count as f32;
+        let item_count: usize = 4;
+
+        // Pre-compute boundaries from a single formula — same as production code
+        let item_boundaries: Vec<f32> = (0..=item_count)
+            .map(|i| body_base + body_weight * (i as f32 / item_count as f32))
+            .collect();
 
         for i in 0..item_count {
-            let item_base = body_base + i as f32 * item_weight;
+            let item_base = item_boundaries[i];
+            let item_weight = item_boundaries[i + 1] - item_base;
             let mapper = ProgressMapper::new(&parent, item_base, item_weight);
 
             // Each item reports 0% and 100%
@@ -1416,16 +1477,17 @@ mod tests {
         let progress = all_progress.lock().unwrap();
         assert_eq!(progress.len(), 8); // 4 items * 2 reports
 
-        // Item 0 start: 0.05 + 0 * 0.225 = 0.05
+        // Item 0 start: body_base = 0.05
         assert!((progress[0] - 0.05).abs() < 0.01, "item 0 start: got {}", progress[0]);
-        // Item 0 end: 0.05 + 0.225 = 0.275
+        // Item 0 end: boundary[1] = 0.05 + 0.90 * 0.25 = 0.275
         assert!((progress[1] - 0.275).abs() < 0.01, "item 0 end: got {}", progress[1]);
-        // Item 3 end: 0.05 + 4 * 0.225 = 0.95
+        // Item 3 end: boundary[4] = 0.05 + 0.90 * 1.0 = 0.95
         assert!((progress[7] - 0.95).abs() < 0.01, "item 3 end: got {}", progress[7]);
 
-        // All monotonic
+        // All monotonic — this is the core invariant
         for i in 1..progress.len() {
-            assert!(progress[i] >= progress[i - 1], "monotonic check failed at {}", i);
+            assert!(progress[i] >= progress[i - 1],
+                "monotonic violation at index {}: {} < {}", i, progress[i], progress[i - 1]);
         }
     }
 
@@ -1461,5 +1523,20 @@ mod tests {
         let max = *max_val.lock().unwrap();
         assert!(min >= 0.1, "min {} must be >= base 0.1", min);
         assert!(max <= 0.9, "max {} must be <= base+weight 0.9", max);
+    }
+
+    // TEST710: ActivityTimeout error formats correctly
+    #[test]
+    fn test710_activity_timeout_error_display() {
+        let err = ExecutionError::ActivityTimeout {
+            cap_urn: "cap:op=describe_image".to_string(),
+            idle_secs: 125,
+            limit_secs: 120,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("Activity timeout"), "msg: {}", msg);
+        assert!(msg.contains("cap:op=describe_image"), "msg: {}", msg);
+        assert!(msg.contains("125s"), "msg: {}", msg);
+        assert!(msg.contains("120s"), "msg: {}", msg);
     }
 }

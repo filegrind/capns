@@ -112,16 +112,30 @@ pub async fn parse_route_to_cap_dag(
                 // Primary source: use cap's in= spec
                 cap_in_media.clone()
             } else {
-                // Secondary source (fan-in): must already be assigned by a prior wiring.
-                // RouteGraph::from_string validates this, so if we get here without an
-                // assigned type, the invariant is broken.
-                node_media.get(src_name).cloned().unwrap_or_else(|| {
-                    panic!(
-                        "BUG: fan-in secondary source '{}' has no assigned media type — \
-                         RouteGraph::from_string should have rejected this",
-                        src_name
-                    )
-                })
+                // Secondary source (fan-in): resolve from existing assignment
+                // or from the cap's args list (e.g., model-spec inputs).
+                let existing = node_media.get(src_name);
+                let is_wildcard = existing.map_or(false, |m| m.to_string() == "media:");
+                if let Some(media) = existing.filter(|_| !is_wildcard) {
+                    media.clone()
+                } else {
+                    // Resolve from cap.args — secondary sources map to args
+                    // beyond the primary in= spec (arg index i-1 for source i).
+                    let arg_idx = i - 1;
+                    let arg_media = cap.args.get(arg_idx).and_then(|arg| {
+                        MediaUrn::from_string(&arg.media_urn).ok()
+                    });
+                    match arg_media {
+                        Some(media) => media,
+                        None => {
+                            return Err(ParseOrchestrationError::RouteNotationParseFailed(format!(
+                                "fan-in secondary source '{}' (index {}) has no media type and \
+                                 cap '{}' has no matching arg at index {}",
+                                src_name, i, cap_urn_str, arg_idx
+                            )));
+                        }
+                    }
+                }
             };
 
             // Validate source node media compatibility

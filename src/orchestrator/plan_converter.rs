@@ -316,14 +316,14 @@ mod tests {
     #[tokio::test]
     async fn test773_wrap_in_list_passthrough() {
         let registry = MockRegistry::new();
-        registry.add_cap("cap:in=media:pdf;op=extract;out=media:text;textable").await;
-        registry.add_cap("cap:in=media:text;list;textable;op=embed;out=media:embedding-vector;textable;record").await;
+        registry.add_cap(r#"cap:in=media:pdf;op=extract;out="media:text;textable""#).await;
+        registry.add_cap(r#"cap:in="media:list;text;textable";op=embed;out="media:embedding-vector;record;textable""#).await;
 
         let mut plan = CapExecutionPlan::new("wrap_plan");
         plan.add_node(CapNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(CapNode::cap("cap_0", "cap:in=media:pdf;op=extract;out=media:text;textable"));
+        plan.add_node(CapNode::cap("cap_0", r#"cap:in=media:pdf;op=extract;out="media:text;textable""#));
         plan.add_node(CapNode::wrap_in_list("wrap_0", "media:text;textable", "media:list;text;textable"));
-        plan.add_node(CapNode::cap("cap_1", "cap:in=media:text;list;textable;op=embed;out=media:embedding-vector;textable;record"));
+        plan.add_node(CapNode::cap("cap_1", r#"cap:in="media:list;text;textable";op=embed;out="media:embedding-vector;record;textable""#));
         plan.add_node(CapNode::output("output", "result", "cap_1"));
 
         plan.add_edge(CapEdge::direct("input", "cap_0"));

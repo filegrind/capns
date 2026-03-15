@@ -335,6 +335,7 @@ async fn test936_execute_single_edge_dag() {
         initial_inputs,
         dev_binaries,
         cap_registry,
+        None,
     ).await;
 
     assert!(result.is_ok(), "Execution failed: {:?}", result.err());
@@ -377,6 +378,7 @@ async fn test937_execute_edge1_to_edge2_chain() {
         initial_inputs,
         dev_binaries,
         cap_registry,
+        None,
     ).await.expect("Execution failed");
 
     let final_output = outputs.get("C").expect("No final output");
@@ -418,6 +420,7 @@ async fn test938_execute_with_file_input() {
         initial_inputs,
         dev_binaries,
         create_test_cap_registry(),
+        None,
     ).await.expect("Execution failed");
 
     let output = outputs.get("output").expect("No output");
@@ -455,6 +458,7 @@ async fn test939_execute_large_payload() {
         initial_inputs,
         dev_binaries,
         create_test_cap_registry(),
+        None,
     ).await.expect("Execution failed");
 
     let output = outputs.get("output").expect("No output");
@@ -501,6 +505,7 @@ async fn test940_fan_in_pattern() {
         initial_inputs,
         dev_binaries,
         create_test_cap_registry(),
+        None,
     ).await.expect("Execution failed");
 
     // Both paths should reach E (one will overwrite the other)
@@ -627,6 +632,7 @@ async fn test945_four_cap_chain() {
         initial_inputs,
         dev_binaries,
         create_test_cap_registry(),
+        None,
     ).await.expect("Execution failed");
 
     let final_output = outputs.get("E").expect("No final output");
@@ -677,6 +683,7 @@ async fn test946_five_cap_chain() {
         initial_inputs,
         dev_binaries,
         create_test_cap_registry(),
+        None,
     ).await.expect("Execution failed");
 
     let final_output = outputs.get("F").expect("No final output");
@@ -727,6 +734,7 @@ async fn test947_six_cap_chain() {
         initial_inputs,
         dev_binaries,
         create_test_cap_registry(),
+        None,
     ).await.expect("Execution failed");
 
     let final_output = outputs.get("G").expect("No final output");

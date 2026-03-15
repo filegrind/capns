@@ -192,23 +192,17 @@ pub fn parse_route_notation(input: &str) -> Result<RouteGraph, RouteNotationErro
                 assign_or_check_node(src, &cap_in_media, &mut node_media, *position)?;
                 source_urns.push(cap_in_media.clone());
             } else {
-                // Secondary source (fan-in): must already be assigned
-                match node_media.get(src) {
-                    Some(existing) => {
-                        source_urns.push(existing.clone());
-                    }
-                    None => {
-                        return Err(RouteNotationError::InvalidWiring {
-                            position: *position,
-                            details: format!(
-                                "fan-in secondary source '{}' has no assigned media type — \
-                                 it must appear as a target of a prior wiring or as a \
-                                 primary source with a known type",
-                                src
-                            ),
-                        });
-                    }
-                }
+                // Secondary source (fan-in): use existing type if assigned,
+                // otherwise use wildcard media: — the orchestrator parser will
+                // resolve the real type from the cap's args via registry lookup.
+                let secondary_media = node_media.get(src)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let wildcard = MediaUrn::from_string("media:").expect("wildcard media URN");
+                        node_media.insert(src.to_string(), wildcard.clone());
+                        wildcard
+                    });
+                source_urns.push(secondary_media);
             }
         }
 
@@ -429,15 +423,19 @@ mod tests {
     }
 
     #[test]
-    fn fan_in_secondary_unassigned_fails() {
+    fn fan_in_secondary_unassigned_gets_wildcard() {
+        // Unassigned secondary sources get wildcard media: at the route level.
+        // The orchestrator parser resolves the real type from cap.args.
         let input = concat!(
             r#"[describe cap:in="media:image;png";op=describe_image;out="media:image-description;textable"]"#,
-            "[(thumbnail, model_spec) -> describe -> description]"
+            "\n[(thumbnail, model_spec) -> describe -> description]"
         );
-        assert!(matches!(
-            RouteGraph::from_string(input),
-            Err(RouteNotationError::InvalidWiring { .. })
-        ));
+        let graph = RouteGraph::from_string(input).expect("should parse with wildcard secondary");
+        assert_eq!(graph.edges().len(), 1);
+        // Secondary source gets wildcard media:
+        assert_eq!(graph.edges()[0].sources.len(), 2);
+        assert_eq!(graph.edges()[0].sources[0].to_string(), "media:image;png");
+        assert_eq!(graph.edges()[0].sources[1].to_string(), "media:");
     }
 
     // =========================================================================

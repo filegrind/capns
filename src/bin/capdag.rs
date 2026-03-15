@@ -4,13 +4,14 @@
 
 use capdag::orchestrator::{parse_route_to_cap_dag, execute_dag, NodeData};
 use capdag::route::RouteGraph;
-use capdag::CapRegistry;
+use capdag::{CapProgressFn, CapRegistry};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process;
+use std::sync::Arc;
 
 /// Expand dev binary path - supports single file or directory of executables
 fn expand_dev_binary_path(path: &str) -> Vec<PathBuf> {
@@ -374,7 +375,11 @@ async fn main() {
         let mut initial_inputs = HashMap::new();
         initial_inputs.insert(input_node.clone(), NodeData::FilePath(file.clone()));
 
-        match execute_dag(&graph, plugin_dir.clone(), registry_url.clone(), initial_inputs, dev_binaries.clone(), registry.clone()).await {
+        let progress: CapProgressFn = Arc::new(|p: f32, msg: &str| {
+            eprintln!("  [{:5.1}%] {}", p * 100.0, msg);
+        });
+
+        match execute_dag(&graph, plugin_dir.clone(), registry_url.clone(), initial_inputs, dev_binaries.clone(), registry.clone(), Some(&progress)).await {
             Ok(outputs) => {
                 tracing::info!("Results:");
                 for (node, data) in outputs {

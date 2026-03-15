@@ -1,4 +1,4 @@
 [model-availability cap:in="media:model-spec;textable";op=model-availability;out="media:model-availability;textable;record"]
-[embeddings_dimensions cap:candle;in="media:model-spec;textable";ml-model;op=embeddings_dimensions;out="media:model-dim;integer;textable;numeric"]
+[embeddings_dimensions cap:candle;in="media:candle;embeddings;model-spec;textable";ml-model;op=embeddings_dimensions;out="media:model-dim;integer;textable;numeric"]
 [model_spec -> model-availability -> availability]
 [model_spec -> embeddings_dimensions -> dimensions]

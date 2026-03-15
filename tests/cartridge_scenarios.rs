@@ -8,301 +8,56 @@
 //! - Cartridge binaries will be auto-built if missing or outdated
 //! - ML-dependent tests require pre-downloaded models
 
-use capdag::{Cap, CapUrn, CapUrnBuilder, CapRegistry};
+use capdag::{CapProgressFn, CapRegistry};
 use capdag::orchestrator::{
     execute_dag, NodeData,
-    parse_route_to_cap_dag, CapRegistryTrait, ParseOrchestrationError,
+    parse_route_to_cap_dag,
 };
 use serial_test::serial;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tempfile::TempDir;
 
-// =============================================================================
-// Cap URN Builders — mirror the exact builder calls in each cartridge
-// =============================================================================
-
-// -- pdfcartridge caps (matches standard/caps.rs helpers with MEDIA_PDF input) --
-
-fn pdf_generate_thumbnail() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_thumbnail")
-        .in_spec("media:pdf")
-        .out_spec("media:image;png;thumbnail")
-        .build()
-        .expect("pdf generate_thumbnail URN")
+/// Initialize tracing subscriber for test visibility (idle warnings, activity timeouts).
+/// Safe to call multiple times — subsequent calls silently no-op.
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("warn")
+        .with_target(false)
+        .with_writer(std::io::stderr)
+        .try_init();
 }
 
-fn pdf_extract_metadata() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_metadata")
-        .in_spec("media:pdf")
-        .out_spec("media:file-metadata;textable;record")
-        .build()
-        .expect("pdf extract_metadata URN")
-}
-
-fn pdf_disbind() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "disbind")
-        .in_spec("media:pdf")
-        .out_spec("media:disbound-page;textable;list")
-        .build()
-        .expect("pdf disbind URN")
-}
-
-fn pdf_extract_outline() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_outline")
-        .in_spec("media:pdf")
-        .out_spec("media:document-outline;textable;record")
-        .build()
-        .expect("pdf extract_outline URN")
-}
-
-// -- txtcartridge caps (matches standard/caps.rs helpers with MEDIA_MD input) --
-
-fn md_generate_thumbnail() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_thumbnail")
-        .in_spec("media:md;textable")
-        .out_spec("media:image;png;thumbnail")
-        .build()
-        .expect("md generate_thumbnail URN")
-}
-
-fn md_extract_metadata() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_metadata")
-        .in_spec("media:md;textable")
-        .out_spec("media:file-metadata;textable;record")
-        .build()
-        .expect("md extract_metadata URN")
-}
-
-fn md_extract_outline() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_outline")
-        .in_spec("media:md;textable")
-        .out_spec("media:document-outline;textable;record")
-        .build()
-        .expect("md extract_outline URN")
-}
-
-// -- candlecartridge caps (matches candlecartridge/src/main.rs builders) --
-
-fn candle_text_embeddings() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_embeddings")
-        .solo_tag("ml-model")
-        .solo_tag("candle")
-        .in_spec("media:textable")
-        .out_spec("media:embedding-vector;textable;record")
-        .build()
-        .expect("candle text embeddings URN")
-}
-
-fn candle_embeddings_dimensions() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "embeddings_dimensions")
-        .solo_tag("ml-model")
-        .solo_tag("candle")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:model-dim;integer;textable;numeric")
-        .build()
-        .expect("candle embeddings_dimensions URN")
-}
-
-fn candle_image_embeddings() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_image_embeddings")
-        .solo_tag("ml-model")
-        .solo_tag("candle")
-        .in_spec("media:image;png")  // no bytes tag — retired
-        .out_spec("media:embedding-vector;textable;record")
-        .build()
-        .expect("candle image embeddings URN")
-}
-
-fn candle_describe_image() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "describe_image")
-        .solo_tag("ml-model")
-        .solo_tag("candle")
-        .in_spec("media:image;png")
-        .out_spec("media:image-description;textable")
-        .build()
-        .expect("candle describe_image URN")
-}
-
-fn candle_transcribe() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "transcribe")
-        .solo_tag("ml-model")
-        .solo_tag("candle")
-        .in_spec("media:audio;wav;speech")  // no bytes tag — retired
-        .out_spec("media:transcription;textable;record")
-        .build()
-        .expect("candle transcribe URN")
-}
-
-// -- modelcartridge caps (matches modelcartridge/src/main.rs) --
-
-fn model_availability() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "model-availability")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:model-availability;textable;record")
-        .build()
-        .expect("model-availability URN")
-}
-
-fn model_status() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "model-status")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:model-status;textable;record")
-        .build()
-        .expect("model-status URN")
-}
-
-fn model_contents() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "model-contents")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:model-contents;textable;record")
-        .build()
-        .expect("model-contents URN")
-}
-
-fn model_path() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "model-path")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:model-path;textable;record")
-        .build()
-        .expect("model-path URN")
-}
-
-fn model_download() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "download-model")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:download-result;textable;record")
-        .build()
-        .expect("model download URN")
+/// Build a progress callback that prints live updates to stderr during test execution.
+fn test_progress_fn() -> CapProgressFn {
+    init_tracing();
+    let start = std::time::Instant::now();
+    Arc::new(move |p: f32, msg: &str| {
+        let elapsed = start.elapsed().as_secs_f64();
+        eprintln!("  [{:5.1}%] {:6.1}s  {}", p * 100.0, elapsed, msg);
+    })
 }
 
 // =============================================================================
-// MLX Cartridge Caps
+// Standard Cap Registry — loaded from bundled capgraph definitions
 // =============================================================================
 
-fn mlx_generate_text() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_text")
-        .solo_tag("llm")
-        .solo_tag("ml-model")
-        .solo_tag("mlx")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:generated-text;textable;record")
-        .build()
-        .expect("mlx generate_text URN")
-}
+/// Shared registry loaded with all standard cap definitions from capgraph.
+/// Created once, shared across all tests. This is the same registry that
+/// production uses — no hand-built test doubles.
+static STANDARD_REGISTRY: LazyLock<Arc<CapRegistry>> = LazyLock::new(|| {
+    let registry = CapRegistry::new_for_test();
+    let standard_caps = registry.get_standard_caps()
+        .expect("Failed to load standard caps from bundled definitions");
+    registry.add_caps_to_cache(standard_caps);
+    Arc::new(registry)
+});
 
-fn mlx_describe_image() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "describe_image")
-        .solo_tag("vision")
-        .solo_tag("ml-model")
-        .solo_tag("mlx")
-        .in_spec("media:image;png")
-        .out_spec("media:image-description;textable")
-        .build()
-        .expect("mlx describe_image URN")
-}
-
-fn mlx_generate_embeddings() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_embeddings")
-        .solo_tag("ml-model")
-        .solo_tag("mlx")
-        .in_spec("media:textable")
-        .out_spec("media:embedding-vector;textable;record")
-        .build()
-        .expect("mlx generate_embeddings URN")
-}
-
-fn mlx_embeddings_dimensions() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "embeddings_dimensions")
-        .solo_tag("ml-model")
-        .solo_tag("mlx")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:model-dim;integer;textable;numeric")
-        .build()
-        .expect("mlx embeddings_dimensions URN")
-}
-
-// =============================================================================
-// CartridgeRegistry — populated from the cap URN builders above
-// =============================================================================
-
-struct CartridgeRegistry {
-    caps: HashMap<String, Cap>,
-}
-
-impl CartridgeRegistry {
-    fn new() -> Self {
-        Self {
-            caps: HashMap::new(),
-        }
-    }
-
-    fn register(&mut self, urn: CapUrn) {
-        let op = urn
-            .get_tag("op")
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-        let cap = Cap {
-            urn: urn.clone(),
-            title: format!("Cap {}", op),
-            cap_description: None,
-            metadata: HashMap::new(),
-            command: "cartridge".to_string(),
-            media_specs: vec![],
-            args: vec![],
-            output: None,
-            metadata_json: None,
-            registered_by: None,
-        };
-        self.caps.insert(urn.to_string(), cap);
-    }
-}
-
-#[async_trait::async_trait]
-impl CapRegistryTrait for CartridgeRegistry {
-    async fn lookup(&self, urn: &str) -> Result<Cap, ParseOrchestrationError> {
-        let normalized = CapUrn::from_string(urn)
-            .map_err(|e| ParseOrchestrationError::CapUrnParseError(format!("{:?}", e)))?
-            .to_string();
-
-        self.caps
-            .iter()
-            .find(|(k, _)| {
-                if let Ok(k_norm) = CapUrn::from_string(k) {
-                    k_norm.to_string() == normalized
-                } else {
-                    false
-                }
-            })
-            .map(|(_, v)| v.clone())
-            .ok_or_else(|| ParseOrchestrationError::CapNotFound {
-                cap_urn: urn.to_string(),
-            })
-    }
+fn standard_registry() -> Arc<CapRegistry> {
+    STANDARD_REGISTRY.clone()
 }
 
 // =============================================================================
@@ -844,21 +599,14 @@ const MODEL_MLX_EMBED: &str = "hf:mlx-community/all-MiniLM-L6-v2-4bit";
 /// This prevents ML cartridges from hanging on peer model-download requests
 /// during DAG execution. Runs a single-edge DAG: model_spec → download-model.
 async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf) {
-    eprintln!(
-        "[PreDownload] Ensuring model is available: {}",
-        model_spec
+    eprintln!("[PreDownload] Ensuring model is available: {}", model_spec);
+
+    let route = concat!(
+        r#"[download cap:in="media:model-spec;textable";op=download-model;out="media:download-result;textable;record"]"#,
+        "\n[model_spec -> download -> result]"
     );
 
-    let download_urn = model_download();
-    let mut registry = CartridgeRegistry::new();
-    registry.register(download_urn.clone());
-
-    let route = format!(
-        "[download cap:{}]\n[model -> download -> result]",
-        download_urn.to_string()
-    );
-
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(route, &*standard_registry())
         .await
         .expect("Pre-download DAG parse failed");
 
@@ -867,7 +615,7 @@ async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf)
     std::fs::create_dir_all(&plugin_dir).expect("plugin dir");
 
     let mut inputs = HashMap::new();
-    inputs.insert("model".to_string(), NodeData::Text(model_spec.to_string()));
+    inputs.insert("model_spec".to_string(), NodeData::Text(model_spec.to_string()));
 
     match execute_dag(
         &graph,
@@ -875,14 +623,15 @@ async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf)
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         vec![modelcartridge_bin.clone()],
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     {
         Ok(outputs) => {
-            if let Some(NodeData::Bytes(b)) = outputs.get("result") {
+            if let Some((node, NodeData::Bytes(b))) = outputs.iter().next() {
                 let result = String::from_utf8_lossy(b);
-                eprintln!("[PreDownload] Result: {}", &result[..result.len().min(200)]);
+                eprintln!("[PreDownload] {}: {}", node, &result[..result.len().min(200)]);
             }
         }
         Err(e) => {
@@ -900,13 +649,6 @@ fn setup_test_env(dev_binaries: Vec<PathBuf>) -> (TempDir, PathBuf, Vec<PathBuf>
     let plugin_dir = temp_dir.path().join("plugins");
     std::fs::create_dir_all(&plugin_dir).expect("Failed to create plugin dir");
     (temp_dir, plugin_dir, dev_binaries)
-}
-
-/// Create an Arc<CapRegistry> from a CartridgeRegistry for execute_dag
-fn create_cap_registry(registry: &CartridgeRegistry) -> Arc<CapRegistry> {
-    let cap_registry = CapRegistry::new_for_test();
-    cap_registry.add_caps_to_cache(registry.caps.values().cloned().collect());
-    Arc::new(cap_registry)
 }
 
 fn extract_bytes(outputs: &HashMap<String, NodeData>, node: &str) -> Vec<u8> {
@@ -932,15 +674,11 @@ fn extract_text(outputs: &HashMap<String, NodeData>, node: &str) -> String {
 async fn test948_pdf_document_intelligence() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
 
     let route = load_scenario_route("test948_pdf_document_intelligence");
     eprintln!("[TEST014] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -955,7 +693,8 @@ async fn test948_pdf_document_intelligence() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -995,9 +734,6 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_generate_thumbnail());
-    registry.register(candle_image_embeddings());
 
     // Pre-download CLIP model needed for image embeddings
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1008,7 +744,7 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
     let route = load_scenario_route("test949_pdf_thumbnail_to_image_embedding");
     eprintln!("[TEST015] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -1023,7 +759,8 @@ async fn test949_pdf_thumbnail_to_image_embedding() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1052,11 +789,6 @@ async fn test950_pdf_full_intelligence_pipeline() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(candle_image_embeddings());
 
     // Pre-download CLIP model needed for image embeddings
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1067,7 +799,7 @@ async fn test950_pdf_full_intelligence_pipeline() {
     let route = load_scenario_route("test950_pdf_full_intelligence_pipeline");
     eprintln!("[TEST016] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4);
@@ -1083,7 +815,8 @@ async fn test950_pdf_full_intelligence_pipeline() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1124,15 +857,11 @@ async fn test950_pdf_full_intelligence_pipeline() {
 async fn test951_text_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(md_extract_metadata());
-    registry.register(md_extract_outline());
-    registry.register(md_generate_thumbnail());
 
     let route = load_scenario_route("test951_text_document_intelligence");
     eprintln!("[TEST017] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -1150,7 +879,8 @@ async fn test951_text_document_intelligence() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1184,18 +914,11 @@ async fn test951_text_document_intelligence() {
 async fn test952_multi_format_document_processing() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(md_extract_metadata());
-    registry.register(md_extract_outline());
-    registry.register(md_generate_thumbnail());
 
     let route = load_scenario_route("test952_multi_format_document_processing");
     eprintln!("[TEST018] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 6);
@@ -1215,7 +938,8 @@ async fn test952_multi_format_document_processing() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1263,9 +987,6 @@ async fn test952_multi_format_document_processing() {
 async fn test953_model_plus_dimensions() {
     let dev_binaries = require_binaries(&["modelcartridge", "candlecartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_availability());
-    registry.register(candle_embeddings_dimensions());
 
     // Pre-download BERT model needed for embeddings dimensions
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1276,7 +997,7 @@ async fn test953_model_plus_dimensions() {
     let route = load_scenario_route("test953_model_plus_dimensions");
     eprintln!("[TEST019] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -1294,7 +1015,8 @@ async fn test953_model_plus_dimensions() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1325,14 +1047,11 @@ async fn test953_model_plus_dimensions() {
 async fn test954_model_availability_plus_status() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_availability());
-    registry.register(model_status());
 
     let route = load_scenario_route("test954_model_availability_plus_status");
     eprintln!("[TEST020] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -1350,7 +1069,8 @@ async fn test954_model_availability_plus_status() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1376,8 +1096,6 @@ async fn test955_text_embedding() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(candle_text_embeddings());
 
     // Pre-download BERT model needed for text embeddings
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1388,7 +1106,7 @@ async fn test955_text_embedding() {
     let route = load_scenario_route("test955_text_embedding");
     eprintln!("[TEST021] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -1405,7 +1123,8 @@ async fn test955_text_embedding() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1433,8 +1152,6 @@ async fn test956_candle_describe_image() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(candle_describe_image());
 
     // Pre-download BLIP model needed for image description
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1445,7 +1162,7 @@ async fn test956_candle_describe_image() {
     let route = load_scenario_route("test956_candle_describe_image");
     eprintln!("[TEST022] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -1462,7 +1179,8 @@ async fn test956_candle_describe_image() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1484,8 +1202,6 @@ async fn test957_audio_transcription() {
     // modelcartridge required: candlecartridge sends peer requests for model downloading
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(candle_transcribe());
 
     // Pre-download Whisper model needed for audio transcription
     let modelcartridge_bin = &dev_binaries.iter().find(|p| {
@@ -1496,7 +1212,7 @@ async fn test957_audio_transcription() {
     let route = load_scenario_route("test957_audio_transcription");
     eprintln!("[TEST023] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -1513,7 +1229,8 @@ async fn test957_audio_transcription() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1538,16 +1255,11 @@ async fn test957_audio_transcription() {
 async fn test958_pdf_complete_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(pdf_disbind());
 
     let route = load_scenario_route("test958_pdf_complete_analysis");
     eprintln!("[TEST024] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4, "4 edges expected");
@@ -1563,7 +1275,8 @@ async fn test958_pdf_complete_analysis() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1607,16 +1320,11 @@ async fn test958_pdf_complete_analysis() {
 async fn test959_model_full_inspection() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_availability());
-    registry.register(model_status());
-    registry.register(model_contents());
-    registry.register(model_path());
 
     let route = load_scenario_route("test959_model_full_inspection");
     eprintln!("[TEST025] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4);
@@ -1643,7 +1351,8 @@ async fn test959_model_full_inspection() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1685,19 +1394,11 @@ async fn test959_model_full_inspection() {
 async fn test960_two_format_full_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(pdf_disbind());
-    registry.register(md_extract_metadata());
-    registry.register(md_extract_outline());
-    registry.register(md_generate_thumbnail());
 
     let route = load_scenario_route("test960_two_format_full_analysis");
     eprintln!("[TEST026] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 7, "7 edges expected");
@@ -1717,7 +1418,8 @@ async fn test960_two_format_full_analysis() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1766,17 +1468,11 @@ async fn test960_two_format_full_analysis() {
 async fn test961_model_plus_pdf_combined() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_availability());
-    registry.register(model_status());
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
 
     let route = load_scenario_route("test961_model_plus_pdf_combined");
     eprintln!("[TEST027] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 5);
@@ -1796,7 +1492,8 @@ async fn test961_model_plus_pdf_combined() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1838,18 +1535,11 @@ async fn test961_model_plus_pdf_combined() {
 async fn test962_three_cartridge_pipeline() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_availability());
-    registry.register(model_status());
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(md_extract_metadata());
-    registry.register(md_generate_thumbnail());
 
     let route = load_scenario_route("test962_three_cartridge_pipeline");
     eprintln!("[TEST028] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 6);
@@ -1873,7 +1563,8 @@ async fn test962_three_cartridge_pipeline() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -1909,194 +1600,7 @@ async fn test962_three_cartridge_pipeline() {
 }
 
 // =============================================================================
-// Additional Cap URN Builders
-// =============================================================================
-
-// -- txtcartridge txt format (matches txtcartridge's plain-text media type) --
-
-fn txt_generate_thumbnail() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_thumbnail")
-        .in_spec("media:txt;textable")
-        .out_spec("media:image;png;thumbnail")
-        .build()
-        .expect("txt generate_thumbnail URN")
-}
-
-fn txt_extract_metadata() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_metadata")
-        .in_spec("media:txt;textable")
-        .out_spec("media:file-metadata;textable;record")
-        .build()
-        .expect("txt extract_metadata URN")
-}
-
-fn txt_extract_outline() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_outline")
-        .in_spec("media:txt;textable")
-        .out_spec("media:document-outline;textable;record")
-        .build()
-        .expect("txt extract_outline URN")
-}
-
-// -- txtcartridge rst format --
-
-fn rst_generate_thumbnail() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_thumbnail")
-        .in_spec("media:rst;textable")
-        .out_spec("media:image;png;thumbnail")
-        .build()
-        .expect("rst generate_thumbnail URN")
-}
-
-fn rst_extract_metadata() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_metadata")
-        .in_spec("media:rst;textable")
-        .out_spec("media:file-metadata;textable;record")
-        .build()
-        .expect("rst extract_metadata URN")
-}
-
-fn rst_extract_outline() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_outline")
-        .in_spec("media:rst;textable")
-        .out_spec("media:document-outline;textable;record")
-        .build()
-        .expect("rst extract_outline URN")
-}
-
-// -- txtcartridge log format --
-
-fn log_generate_thumbnail() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_thumbnail")
-        .in_spec("media:log;textable")
-        .out_spec("media:image;png;thumbnail")
-        .build()
-        .expect("log generate_thumbnail URN")
-}
-
-fn log_extract_metadata() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_metadata")
-        .in_spec("media:log;textable")
-        .out_spec("media:file-metadata;textable;record")
-        .build()
-        .expect("log extract_metadata URN")
-}
-
-fn log_extract_outline() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "extract_outline")
-        .in_spec("media:log;textable")
-        .out_spec("media:document-outline;textable;record")
-        .build()
-        .expect("log extract_outline URN")
-}
-
-// -- modelcartridge list-models --
-
-fn model_list_models() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "list-models")
-        .in_spec("media:model-repo;textable;record")
-        .out_spec("media:model-list;textable;record")
-        .build()
-        .expect("model list-models URN")
-}
-
-// -- ggufcartridge caps (mirrors exact builder calls in ggufcartridge/src/main.rs) --
-
-fn gguf_embeddings_dimensions() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "embeddings_dimensions")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:model-spec;textable")
-        .out_spec("media:integer;textable;numeric")
-        .build()
-        .expect("gguf embeddings_dimensions URN")
-}
-
-fn gguf_llm_model_info() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "llm_model_info")
-        .solo_tag("llm")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:llm-generation-request;json;record")
-        .out_spec("media:llm-model-info;json;record")
-        .build()
-        .expect("gguf llm_model_info URN")
-}
-
-fn gguf_llm_vocab() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "llm_vocab")
-        .solo_tag("llm")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:llm-generation-request;json;record")
-        .out_spec("media:llm-vocab-response;json;record")
-        .build()
-        .expect("gguf llm_vocab URN")
-}
-
-fn gguf_llm_inference() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "llm_inference")
-        .solo_tag("llm")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:llm-generation-request;json;record")
-        .out_spec("media:llm-text-stream;ndjson;streaming")
-        .build()
-        .expect("gguf llm_inference URN")
-}
-
-fn gguf_llm_inference_constrained() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "llm_inference_constrained")
-        .solo_tag("constrained")
-        .solo_tag("llm")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:llm-generation-request;json;record")
-        .out_spec("media:llm-text-stream;ndjson;streaming")
-        .build()
-        .expect("gguf llm_inference_constrained URN")
-}
-
-fn gguf_generate_embeddings() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_embeddings")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:textable")
-        .out_spec("media:embedding-vector;textable;record")
-        .build()
-        .expect("gguf generate_embeddings URN")
-}
-
-fn gguf_describe_image() -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "describe_image")
-        .solo_tag("vision")
-        .solo_tag("ml-model")
-        .solo_tag("gguf")
-        .in_spec("media:image;png")
-        .out_spec("media:image-description;textable")
-        .build()
-        .expect("gguf describe_image URN")
-}
-
-// =============================================================================
-// Additional Model Constants (GGUF)
+// GGUF Model Constants
 // =============================================================================
 
 /// Small GGUF embedding model (~84MB) for embedding tests
@@ -2160,18 +1664,14 @@ fn build_llm_constrained_request(model_spec: &str, prompt: &str) -> Vec<u8> {
 async fn test963_txt_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(txt_extract_metadata());
-    registry.register(txt_extract_outline());
-    registry.register(txt_generate_thumbnail());
 
     let route = load_scenario_route("test963_txt_document_intelligence");
     eprintln!("[TEST029] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
-    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edges.len(), 2);
 
     let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -2183,7 +1683,8 @@ async fn test963_txt_document_intelligence() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2191,10 +1692,6 @@ async fn test963_txt_document_intelligence() {
     let meta = extract_text(&outputs, "metadata");
     eprintln!("[TEST029] metadata: {}", &meta[..meta.len().min(200)]);
     assert!(!meta.is_empty(), "txt metadata must not be empty");
-
-    let outline = extract_text(&outputs, "outline");
-    eprintln!("[TEST029] outline: {}", &outline[..outline.len().min(200)]);
-    assert!(!outline.is_empty(), "txt outline must not be empty");
 
     let thumb = extract_bytes(&outputs, "thumbnail");
     eprintln!("[TEST029] thumbnail: {} bytes", thumb.len());
@@ -2215,15 +1712,11 @@ async fn test963_txt_document_intelligence() {
 async fn test964_rst_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(rst_extract_metadata());
-    registry.register(rst_extract_outline());
-    registry.register(rst_generate_thumbnail());
 
     let route = load_scenario_route("test964_rst_document_intelligence");
     eprintln!("[TEST030] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3);
@@ -2238,7 +1731,8 @@ async fn test964_rst_document_intelligence() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2270,18 +1764,14 @@ async fn test964_rst_document_intelligence() {
 async fn test965_log_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(log_extract_metadata());
-    registry.register(log_extract_outline());
-    registry.register(log_generate_thumbnail());
 
     let route = load_scenario_route("test965_log_document_intelligence");
     eprintln!("[TEST031] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
-    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edges.len(), 2);
 
     let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -2293,7 +1783,8 @@ async fn test965_log_document_intelligence() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2301,11 +1792,6 @@ async fn test965_log_document_intelligence() {
     let meta = extract_text(&outputs, "metadata");
     eprintln!("[TEST031] metadata: {}", &meta[..meta.len().min(200)]);
     assert!(!meta.is_empty(), "log metadata must not be empty");
-
-    // Log files don't have section headers — outline may be minimal but must not error
-    let outline = extract_text(&outputs, "outline");
-    eprintln!("[TEST031] outline: {}", &outline[..outline.len().min(200)]);
-    assert!(!outline.is_empty(), "log outline response must not be empty");
 
     let thumb = extract_bytes(&outputs, "thumbnail");
     assert!(
@@ -2325,28 +1811,17 @@ async fn test965_log_document_intelligence() {
 async fn test966_all_text_formats_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(txt_extract_metadata());
-    registry.register(txt_extract_outline());
-    registry.register(txt_generate_thumbnail());
-    registry.register(rst_extract_metadata());
-    registry.register(rst_extract_outline());
-    registry.register(rst_generate_thumbnail());
-    registry.register(log_extract_metadata());
-    registry.register(log_extract_outline());
-    registry.register(log_generate_thumbnail());
-    registry.register(md_extract_metadata());
-    registry.register(md_extract_outline());
-    registry.register(md_generate_thumbnail());
 
     let route = load_scenario_route("test966_all_text_formats_intelligence");
     eprintln!("[TEST032] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
-    assert_eq!(graph.edges.len(), 12, "12 edges expected");
-    assert_eq!(graph.nodes.len(), 16, "4 inputs + 12 outputs");
+    // md: 3 ops (metadata, outline, thumbnail), rst: 3 ops, txt: 2 ops, log: 2 ops = 10
+    assert_eq!(graph.edges.len(), 10, "10 edges expected");
+    // 4 inputs + 10 outputs = 14 nodes
+    assert_eq!(graph.nodes.len(), 14, "4 inputs + 10 outputs");
 
     let (_temp, plugin_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -2361,16 +1836,17 @@ async fn test966_all_text_formats_intelligence() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
 
-    // All 12 output nodes must have data
+    // 10 output nodes must have data (outline only for md and rst)
     let expected_nodes = [
-        "txt_metadata", "txt_outline", "txt_thumbnail",
+        "txt_metadata", "txt_thumbnail",
         "rst_metadata", "rst_outline", "rst_thumbnail",
-        "log_metadata", "log_outline", "log_thumbnail",
+        "log_metadata", "log_thumbnail",
         "md_metadata", "md_outline", "md_thumbnail",
     ];
     for node in &expected_nodes {
@@ -2392,7 +1868,7 @@ async fn test966_all_text_formats_intelligence() {
         assert!(!extract_text(&outputs, node).is_empty(), "{} must not be empty", node);
     }
 
-    eprintln!("[TEST032] All 12 outputs verified across 4 text formats");
+    eprintln!("[TEST032] All 10 outputs verified across 4 text formats");
 }
 
 // =============================================================================
@@ -2406,13 +1882,11 @@ async fn test966_all_text_formats_intelligence() {
 async fn test967_model_list_models() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_list_models());
 
     let route = load_scenario_route("test967_model_list_models");
     eprintln!("[TEST033] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -2428,7 +1902,8 @@ async fn test967_model_list_models() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2455,8 +1930,6 @@ async fn test967_model_list_models() {
 async fn test968_gguf_embeddings_dimensions() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_embeddings_dimensions());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2468,7 +1941,7 @@ async fn test968_gguf_embeddings_dimensions() {
     let route = load_scenario_route("test968_gguf_embeddings_dimensions");
     eprintln!("[TEST034] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2485,7 +1958,8 @@ async fn test968_gguf_embeddings_dimensions() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2509,8 +1983,6 @@ async fn test968_gguf_embeddings_dimensions() {
 async fn test969_gguf_llm_model_info() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_llm_model_info());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2522,7 +1994,7 @@ async fn test969_gguf_llm_model_info() {
     let route = load_scenario_route("test969_gguf_llm_model_info");
     eprintln!("[TEST035] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2539,7 +2011,8 @@ async fn test969_gguf_llm_model_info() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2565,8 +2038,6 @@ async fn test969_gguf_llm_model_info() {
 async fn test970_gguf_llm_vocab() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_llm_vocab());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2578,7 +2049,7 @@ async fn test970_gguf_llm_vocab() {
     let route = load_scenario_route("test970_gguf_llm_vocab");
     eprintln!("[TEST036] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2595,7 +2066,8 @@ async fn test970_gguf_llm_vocab() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2621,9 +2093,6 @@ async fn test970_gguf_llm_vocab() {
 async fn test971_gguf_model_info_plus_vocab() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_llm_model_info());
-    registry.register(gguf_llm_vocab());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2635,7 +2104,7 @@ async fn test971_gguf_model_info_plus_vocab() {
     let route = load_scenario_route("test971_gguf_model_info_plus_vocab");
     eprintln!("[TEST037] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 2);
@@ -2653,7 +2122,8 @@ async fn test971_gguf_model_info_plus_vocab() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2681,8 +2151,6 @@ async fn test971_gguf_model_info_plus_vocab() {
 async fn test972_gguf_llm_inference() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_llm_inference());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2694,7 +2162,7 @@ async fn test972_gguf_llm_inference() {
     let route = load_scenario_route("test972_gguf_llm_inference");
     eprintln!("[TEST038] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2714,7 +2182,8 @@ async fn test972_gguf_llm_inference() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2735,8 +2204,6 @@ async fn test972_gguf_llm_inference() {
 async fn test973_gguf_llm_inference_constrained() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_llm_inference_constrained());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2748,7 +2215,7 @@ async fn test973_gguf_llm_inference_constrained() {
     let route = load_scenario_route("test973_gguf_llm_inference_constrained");
     eprintln!("[TEST039] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2768,7 +2235,8 @@ async fn test973_gguf_llm_inference_constrained() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2792,8 +2260,6 @@ async fn test973_gguf_llm_inference_constrained() {
 async fn test974_gguf_generate_embeddings() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_generate_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2805,7 +2271,7 @@ async fn test974_gguf_generate_embeddings() {
     let route = load_scenario_route("test974_gguf_generate_embeddings");
     eprintln!("[TEST040] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2826,7 +2292,8 @@ async fn test974_gguf_generate_embeddings() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2854,8 +2321,6 @@ async fn test974_gguf_generate_embeddings() {
 async fn test975_gguf_describe_image() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_describe_image());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2868,7 +2333,7 @@ async fn test975_gguf_describe_image() {
     let route = load_scenario_route("test975_gguf_describe_image");
     eprintln!("[TEST041] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
 
@@ -2889,7 +2354,8 @@ async fn test975_gguf_describe_image() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2911,9 +2377,6 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
     let dev_binaries =
         require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_generate_thumbnail());
-    registry.register(gguf_describe_image());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2925,7 +2388,7 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
     let route = load_scenario_route("test976_pdf_thumbnail_to_gguf_vision");
     eprintln!("[TEST042] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed — thumbnail→vision media URN compatibility check");
     assert_eq!(graph.edges.len(), 3);
@@ -2944,7 +2407,8 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -2974,11 +2438,6 @@ async fn test976_pdf_thumbnail_to_gguf_vision() {
 async fn test977_gguf_all_llm_ops() {
     let dev_binaries = require_binaries(&["ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(gguf_llm_model_info());
-    registry.register(gguf_llm_vocab());
-    registry.register(gguf_llm_inference());
-    registry.register(gguf_llm_inference_constrained());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2990,7 +2449,7 @@ async fn test977_gguf_all_llm_ops() {
     let route = load_scenario_route("test977_gguf_all_llm_ops");
     eprintln!("[TEST043] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4);
@@ -3013,7 +2472,8 @@ async fn test977_gguf_all_llm_ops() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3057,8 +2517,6 @@ async fn test977_gguf_all_llm_ops() {
 async fn test978_mlx_generate_text() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(mlx_generate_text());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3070,7 +2528,7 @@ async fn test978_mlx_generate_text() {
     let route = load_scenario_route("test978_mlx_generate_text");
     eprintln!("[TEST044] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3088,7 +2546,8 @@ async fn test978_mlx_generate_text() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3106,8 +2565,6 @@ async fn test978_mlx_generate_text() {
 async fn test979_mlx_describe_image() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(mlx_describe_image());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3119,7 +2576,7 @@ async fn test979_mlx_describe_image() {
     let route = load_scenario_route("test979_mlx_describe_image");
     eprintln!("[TEST045] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3137,7 +2594,8 @@ async fn test979_mlx_describe_image() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3155,8 +2613,6 @@ async fn test979_mlx_describe_image() {
 async fn test980_mlx_generate_embeddings() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(mlx_generate_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3168,7 +2624,7 @@ async fn test980_mlx_generate_embeddings() {
     let route = load_scenario_route("test980_mlx_generate_embeddings");
     eprintln!("[TEST046] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3186,7 +2642,8 @@ async fn test980_mlx_generate_embeddings() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3204,8 +2661,6 @@ async fn test980_mlx_generate_embeddings() {
 async fn test981_mlx_embeddings_dimensions() {
     let dev_binaries = require_binaries(&["mlxcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(mlx_embeddings_dimensions());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3217,7 +2672,7 @@ async fn test981_mlx_embeddings_dimensions() {
     let route = load_scenario_route("test981_mlx_embeddings_dimensions");
     eprintln!("[TEST047] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3235,7 +2690,8 @@ async fn test981_mlx_embeddings_dimensions() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3257,13 +2713,11 @@ async fn test981_mlx_embeddings_dimensions() {
 async fn test982_model_download() {
     let dev_binaries = require_binaries(&["modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_download());
 
     let route = load_scenario_route("test982_model_download");
     eprintln!("[TEST048] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3281,7 +2735,8 @@ async fn test982_model_download() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3303,10 +2758,6 @@ async fn test982_model_download() {
 async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_generate_thumbnail());
-    registry.register(candle_describe_image());
-    registry.register(candle_text_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3319,7 +2770,7 @@ async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
     let route = load_scenario_route("test983_pdf_to_thumbnail_to_describe_to_embed");
     eprintln!("[TEST049] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 3, "3-step chain");
@@ -3334,7 +2785,8 @@ async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3359,9 +2811,6 @@ async fn test983_pdf_to_thumbnail_to_describe_to_embed() {
 async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
     let dev_binaries = require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_generate_thumbnail());
-    registry.register(gguf_describe_image());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3373,7 +2822,7 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
     let route = load_scenario_route("test984_pdf_thumbnail_to_gguf_describe_fanin");
     eprintln!("[TEST050] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     // 3 edges: pdf→thumbnail, thumbnail→description, model_spec→description
@@ -3393,7 +2842,8 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3413,8 +2863,6 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
 async fn test985_audio_transcribe_to_embed() {
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(candle_transcribe());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3426,7 +2874,7 @@ async fn test985_audio_transcribe_to_embed() {
     let route = load_scenario_route("test985_audio_transcribe_to_embed");
     eprintln!("[TEST051] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 1);
@@ -3441,7 +2889,8 @@ async fn test985_audio_transcribe_to_embed() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3461,11 +2910,6 @@ async fn test985_audio_transcribe_to_embed() {
 async fn test986_pdf_fanout_with_chain() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_extract_outline());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(candle_image_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3477,7 +2921,7 @@ async fn test986_pdf_fanout_with_chain() {
     let route = load_scenario_route("test986_pdf_fanout_with_chain");
     eprintln!("[TEST052] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4, "3 fan-out + 1 chain");
@@ -3492,7 +2936,8 @@ async fn test986_pdf_fanout_with_chain() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3517,10 +2962,6 @@ async fn test986_pdf_fanout_with_chain() {
 async fn test987_multi_format_parallel_chains() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_generate_thumbnail());
-    registry.register(md_generate_thumbnail());
-    registry.register(candle_image_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3532,7 +2973,7 @@ async fn test987_multi_format_parallel_chains() {
     let route = load_scenario_route("test987_multi_format_parallel_chains");
     eprintln!("[TEST053] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 4, "2 parallel chains × 2 steps");
@@ -3551,7 +2992,8 @@ async fn test987_multi_format_parallel_chains() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3572,12 +3014,6 @@ async fn test987_multi_format_parallel_chains() {
 async fn test988_deep_chain_with_parallel() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(pdf_extract_metadata());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(candle_describe_image());
-    registry.register(candle_text_embeddings());
-    registry.register(candle_image_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3591,7 +3027,7 @@ async fn test988_deep_chain_with_parallel() {
     let route = load_scenario_route("test988_deep_chain_with_parallel");
     eprintln!("[TEST054] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 5, "Complex 5-edge graph");
@@ -3606,7 +3042,8 @@ async fn test988_deep_chain_with_parallel() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3633,12 +3070,6 @@ async fn test988_deep_chain_with_parallel() {
 async fn test989_five_cartridge_chain() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "candlecartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(model_availability());
-    registry.register(model_status());
-    registry.register(pdf_generate_thumbnail());
-    registry.register(candle_describe_image());
-    registry.register(candle_text_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3651,7 +3082,7 @@ async fn test989_five_cartridge_chain() {
     let route = load_scenario_route("test989_five_cartridge_chain");
     eprintln!("[TEST055] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 5, "5 edges in stress test");
@@ -3670,7 +3101,8 @@ async fn test989_five_cartridge_chain() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
@@ -3691,12 +3123,6 @@ async fn test989_five_cartridge_chain() {
 async fn test990_all_text_formats_to_image_embeds() {
     let dev_binaries = require_binaries(&["txtcartridge", "candlecartridge", "modelcartridge"]);
 
-    let mut registry = CartridgeRegistry::new();
-    registry.register(txt_generate_thumbnail());
-    registry.register(md_generate_thumbnail());
-    registry.register(rst_generate_thumbnail());
-    registry.register(log_generate_thumbnail());
-    registry.register(candle_image_embeddings());
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -3708,7 +3134,7 @@ async fn test990_all_text_formats_to_image_embeds() {
     let route = load_scenario_route("test990_all_text_formats_to_image_embeds");
     eprintln!("[TEST056] Route:\n{}", route);
 
-    let graph = parse_route_to_cap_dag(&route, &registry)
+    let graph = parse_route_to_cap_dag(&route, &*standard_registry())
         .await
         .expect("Parse failed");
     assert_eq!(graph.edges.len(), 8, "4 formats × 2 steps = 8 edges");
@@ -3738,7 +3164,8 @@ async fn test990_all_text_formats_to_image_embeds() {
         "https://machinefabric.com/api/plugins".to_string(),
         inputs,
         dev_bins,
-        create_cap_registry(&registry),
+        standard_registry(),
+        Some(&test_progress_fn()),
     )
     .await
     .expect("Execution failed");
