@@ -1,0 +1,37 @@
+/* edges */
+.edgePath path {
+  stroke: #415a77 !important;
+  stroke-width: 3px !important;
+}
+
+/* arrow heads */
+.marker path {
+  fill: #415a77 !important;
+}
+
+/* node boxes */
+.node rect,
+.node polygon,
+.node ellipse,
+.node circle {
+  stroke: #415a77 !important;
+  stroke-width: 2px !important;
+  fill: #1b263b !important;
+}
+
+/* text inside nodes */
+.nodeLabel {
+  color: #e0e1dd !important;
+  font-family: trebuchet ms, verdana, arial !important;
+  font-size: 16px !important;
+}
+
+/* increase padding around labels */
+.label {
+  padding: 12px !important;
+}
+
+/* diagram background */
+svg {
+  background: #0d1b2a;
+}

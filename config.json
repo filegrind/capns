@@ -1,0 +1,37 @@
+{
+  "securityLevel": "loose",
+  "deterministicIds": true,
+  "theme": "base",
+  "darkMode": true,
+  "htmlLabels": true,
+  "themeVariables": {
+    "background": "#0d1b2a",
+    "fontFamily": "Monaco",
+    "fontSize": "18px",
+    "primaryColor": "#1b263b",
+    "primaryTextColor": "#e0e1dd",
+    "primaryBorderColor": "#e0e1dd",
+    "secondaryColor": "#415a77",
+    "secondaryTextColor": "#e0e1dd",
+    "secondaryBorderColor": "#778da9",
+    "tertiaryColor": "#778da9",
+    "tertiaryTextColor": "#0d1b2a",
+    "tertiaryBorderColor": "#415a77",
+    "noteBkgColor": "#1b263b",
+    "noteTextColor": "#e0e1dd",
+    "noteBorderColor": "#e0e1dd",
+    "lineColor": "#778da9",
+    "textColor": "#e0e1dd",
+    "mainBkg": "#1b263b",
+    "errorBkgColor": "#415a77",
+    "errorTextColor": "#e0e1dd"
+  },
+  "flowchart": {
+    "defaultRenderer": "elk",
+    "nodeSpacing": 90,
+    "rankSpacing": 120,
+    "padding": 30,
+    "curve": "linear"
+  },
+  "themeCSS": ".edgePath .path{stroke:#778da9!important;stroke-width:4px!important;} .arrowheadPath{fill:#778da9!important;} .node rect,.node polygon,.node circle,.node ellipse{fill:#1b263b!important;stroke:#e0e1dd!important;stroke-width:3px!important;} .label,.nodeLabel,.edgeLabel{color:#e0e1dd!important;fill:#e0e1dd!important;font-family:Monaco!important;font-size:18px!important;} .edgeLabel rect{fill:#0d1b2a!important;opacity:1!important;}"
+}
