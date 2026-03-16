@@ -237,7 +237,7 @@ impl CapPlanBuilder {
 
                 CapChainStepType::ForEach { .. } => {
                     // If we're already inside a ForEach body, finalize the outer ForEach first.
-                    // This handles nested ForEach: e.g., disbind → ForEach → choose_bits → ForEach
+                    // This handles nested ForEach: e.g., disbind → ForEach → make_multiple_decisions → ForEach
                     // where the body cap produces a list and the path walks through a second ForEach
                     // to reach the scalar target.
                     if let Some((outer_foreach_idx, outer_foreach_node_id)) = inside_foreach_body.take() {
@@ -389,7 +389,7 @@ impl CapPlanBuilder {
             // the path walked through a ForEach edge to reach the scalar target type,
             // but there's nothing to execute per-item. This happens when a prior ForEach
             // body produces a list and the path traverses a second ForEach to the item type.
-            // E.g., path: disbind → ForEach(1) → choose_bits → ForEach(2)
+            // E.g., path: disbind → ForEach(1) → make_multiple_decisions → ForEach(2)
             // ForEach(1) is the real iteration; ForEach(2) just says "the body output is a list,
             // target is the item." We skip it — the executor handles body list output via
             // the unclosed ForEach mechanism.

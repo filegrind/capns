@@ -199,9 +199,9 @@ pub const MEDIA_DISBOUND_PAGE: &str = "media:disbound-page;list;textable";
 pub const MEDIA_IMAGE_DESCRIPTION: &str = "media:image-description;textable";
 /// Media URN for transcription output - has record marker
 pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:record;textable;transcription";
-/// Media URN for decision output (bit choice) - scalar by default
+/// Media URN for decision output (Make Decision) - scalar by default
 pub const MEDIA_DECISION: &str = "media:bool;decision;textable";
-/// Media URN for decision array output (bit choices) - has list marker
+/// Media URN for decision array output (Make Multiple Decisions) - has list marker
 pub const MEDIA_DECISION_ARRAY: &str = "media:bool;decision;list;textable";
 
 // =============================================================================

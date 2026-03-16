@@ -1294,7 +1294,7 @@ mod tests {
             "Disbind PDF"
         );
 
-        // Cap 2: textable → decision (like choose_bits, accepts singular textable)
+        // Cap 2: textable → decision (like make_multiple_decisions, accepts singular textable)
         let choose = make_test_cap(
             "media:textable",
             "media:decision;bool;textable",

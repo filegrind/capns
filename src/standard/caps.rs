@@ -380,7 +380,7 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
 /// Output uses MEDIA_DECISION per CATALOG: media:decision;bool;textable
 pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "choose_bit")
+        .tag("op", "make_decision")
         .tag("language", lang_code)
         .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
@@ -389,17 +389,17 @@ pub fn bit_choice_urn(lang_code: &str) -> CapUrn {
         .expect("Failed to build bit-choice cap URN")
 }
 
-/// Build URN for bit-choices capability
+/// Build URN for make-multiple-decisions capability
 /// Output uses MEDIA_DECISION_ARRAY per CATALOG: media:decision;bool;textable;list
-pub fn bit_choices_urn(lang_code: &str) -> CapUrn {
+pub fn make_multiple_decisions_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
-        .tag("op", "choose_bits")
+        .tag("op", "make_multiple_decisions")
         .tag("language", lang_code)
         .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
         .out_spec(MEDIA_DECISION_ARRAY)
         .build()
-        .expect("Failed to build bit-choices cap URN")
+        .expect("Failed to build make-multiple-decisions cap URN")
 }
 
 // -----------------------------------------------------------------------------
@@ -681,9 +681,9 @@ pub async fn bit_choice_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Resu
     registry.get_cap(&urn.to_string()).await
 }
 
-/// Get bit-choices cap from registry
-pub async fn bit_choices_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
-    let urn = bit_choices_urn(lang_code);
+/// Get make-multiple-decisions cap from registry
+pub async fn make_multiple_decisions_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+    let urn = make_multiple_decisions_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
 
