@@ -1,21 +1,21 @@
-//! Collection Input Types for Cap Chain Processing
+//! Collection Input Types for Machine Processing
 //!
-//! This module defines the capchain-facing collection structure for representing
+//! This module defines the machine-facing collection structure for representing
 //! folder hierarchies as structured input to caps.
 //!
-//! The collection structure is a capchain internal representation, separate from
+//! The collection structure is a machine internal representation, separate from
 //! database persistence. The database stores folder hierarchy via `parent_folder_id`
 //! and `folder_listings` junction table. The structure is constructed on-demand
-//! when a capchain needs collection input.
+//! when a machine needs collection input.
 
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use super::argument_binding::{CapInputFile, SourceEntityType};
 
-/// Media URN for a collection input structure (capchain internal)
+/// Media URN for a collection input structure (machine internal)
 const COLLECTION_MEDIA_URN: &str = "media:collection;record;textable";
 
-/// A collection as structured input for capchain processing.
+/// A collection as structured input for machine processing.
 ///
 /// This represents a folder hierarchy with files and nested subfolders,
 /// suitable for passing to caps that accept collection input.
