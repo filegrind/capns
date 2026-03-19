@@ -311,9 +311,10 @@ impl LiveCapGraph {
     /// available cap URN strings (from plugins), it looks up the Cap definitions
     /// from the registry and builds the graph.
     ///
-    /// Only caps that exist in the registry are added. Caps not found in the registry
-    /// are logged as errors - this indicates a mismatch between plugin capabilities
-    /// and registered cap definitions that must be fixed.
+    /// Caps are matched by equivalence (`is_equivalent`): the plugin's reported URN
+    /// must have an exact semantic match in the registry. Unmatched caps are rejected
+    /// with an error and excluded from the graph — a plugin advertising an unregistered
+    /// capability is a configuration bug that must be fixed.
     pub async fn sync_from_cap_urns(&mut self, cap_urns: &[String], registry: &Arc<CapRegistry>) {
         self.clear();
 
@@ -355,17 +356,14 @@ impl LiveCapGraph {
                 continue;
             }
 
-            // Find matching Cap in registry using is_dispatchable
-            // A registry cap matches if the plugin's cap can dispatch it
-            // IMPORTANT: Skip identity caps in registry - they match everything due to
-            // media: conforming to all media types, which causes wrong cap matching.
-            let identity_urn = crate::standard::caps::identity_urn();
+            // Find the exact matching Cap in registry using is_equivalent.
+            // The plugin reports the specific cap URN it implements — we need to find
+            // that same cap in the registry. Using is_dispatchable here was wrong because
+            // it would match a wildcard registry cap (e.g. in=media:) before reaching
+            // the specific one (e.g. in=media:txt;textable), since .find() returns the
+            // first match.
             let matching_cap = all_caps.iter().find(|registry_cap| {
-                // Skip identity caps - they would match everything
-                if registry_cap.urn.is_equivalent(&identity_urn) {
-                    return false;
-                }
-                cap_urn.is_dispatchable(&registry_cap.urn)
+                cap_urn.is_equivalent(&registry_cap.urn)
             });
 
             match matching_cap {
@@ -374,11 +372,13 @@ impl LiveCapGraph {
                     matched_count += 1;
                 }
                 None => {
-                    // Cap not in registry - this is an error condition.
-                    // All caps must be registered. Log and skip.
                     tracing::error!(
                         cap_urn = %cap_urn,
-                        "[LiveCapGraph] Cap URN not found in registry - plugin provides unregistered capability"
+                        "[LiveCapGraph] REJECTED: plugin reported cap URN has no equivalent \
+                        in the registry. Every cap a plugin provides must have a matching \
+                        registry definition. Either the plugin is advertising an unknown \
+                        capability or the registry is missing a cap definition for this URN. \
+                        This cap will NOT be added to the graph."
                     );
                 }
             }
