@@ -349,6 +349,33 @@ pub fn require_stream_str(streams: &[(String, Vec<u8>)], media_urn: &str) -> Res
 }
 
 
+/// Detached progress/log emitter that can be moved into `spawn_blocking`.
+///
+/// Holds an `Arc<dyn FrameSender>` and the request routing info needed to
+/// construct LOG frames. `Send + Sync + 'static` by construction.
+#[derive(Clone)]
+pub struct ProgressSender {
+    sender: Arc<dyn FrameSender>,
+    request_id: MessageId,
+    routing_id: Option<MessageId>,
+}
+
+impl ProgressSender {
+    /// Emit a progress update (0.0–1.0) with a human-readable status message.
+    pub fn progress(&self, progress: f32, message: &str) {
+        let mut frame = Frame::progress(self.request_id.clone(), progress, message);
+        frame.routing_id = self.routing_id.clone();
+        let _ = self.sender.send(&frame);
+    }
+
+    /// Emit a log message.
+    pub fn log(&self, level: &str, message: &str) {
+        let mut frame = Frame::log(self.request_id.clone(), level, message);
+        frame.routing_id = self.routing_id.clone();
+        let _ = self.sender.send(&frame);
+    }
+}
+
 /// Writable stream handle for handler output or peer call arguments.
 /// Manages STREAM_START/CHUNK/STREAM_END framing automatically.
 pub struct OutputStream {
@@ -553,6 +580,69 @@ impl OutputStream {
         let mut frame = Frame::progress(self.request_id.clone(), progress, message);
         frame.routing_id = self.routing_id.clone();
         let _ = self.sender.send(&frame);
+    }
+
+    /// Create a detached progress sender that can be moved into `spawn_blocking`.
+    ///
+    /// The returned `ProgressSender` is `Send + Sync + 'static` and can emit
+    /// progress and log frames from any thread without holding a reference to
+    /// this `OutputStream`. Use this when blocking work (FFI model loads, inference)
+    /// needs to emit per-token or keepalive progress from a dedicated thread.
+    pub fn progress_sender(&self) -> ProgressSender {
+        ProgressSender {
+            sender: Arc::clone(&self.sender),
+            request_id: self.request_id.clone(),
+            routing_id: self.routing_id.clone(),
+        }
+    }
+
+    /// Run a blocking closure on a dedicated thread while emitting keepalive progress
+    /// frames every 30 seconds.
+    ///
+    /// Model loading (GGUF, Candle, etc.) is synchronous FFI that can take minutes
+    /// for large models. The engine's 120s activity timeout kills the task if no
+    /// frames arrive.
+    ///
+    /// The closure runs on `tokio::task::spawn_blocking` (dedicated thread pool),
+    /// freeing the tokio worker thread so the frame writer task can flush keepalive
+    /// frames to stdout. Without this, blocking on the tokio worker prevents the
+    /// writer task from running, and frames queue up but never reach the engine.
+    ///
+    /// Keepalive frames are emitted every 30s via `tokio::time::interval` on the
+    /// async runtime.
+    pub async fn run_with_keepalive<T: Send + 'static>(
+        &self,
+        progress: f32,
+        message: &str,
+        f: impl FnOnce() -> T + Send + 'static,
+    ) -> T {
+        let sender = Arc::clone(&self.sender);
+        let request_id = self.request_id.clone();
+        let routing_id = self.routing_id.clone();
+        let msg = message.to_string();
+
+        // Spawn the blocking work on the dedicated blocking thread pool
+        let mut join_handle = tokio::task::spawn_blocking(f);
+
+        // Emit keepalive frames every 30s while blocking work runs
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.tick().await; // first tick is immediate — skip it
+
+        loop {
+            tokio::select! {
+                biased;
+                result = &mut join_handle => {
+                    // Blocking work completed — return its result
+                    return result.expect("spawn_blocking task panicked");
+                }
+                _ = interval.tick() => {
+                    // Emit keepalive progress frame
+                    let mut frame = Frame::progress(request_id.clone(), progress, &msg);
+                    frame.routing_id = routing_id.clone();
+                    let _ = sender.send(&frame);
+                }
+            }
+        }
     }
 
     /// Close the output stream (sends STREAM_END). Idempotent.
@@ -6229,5 +6319,102 @@ mod tests {
         // Empty string is not a valid media URN
         let found = super::find_stream(&streams, "");
         assert!(found.is_none(), "Invalid URN must return None, not panic");
+    }
+
+    // TEST684: run_with_keepalive returns closure result (fast operation, no keepalive frames)
+    #[tokio::test]
+    async fn test684_run_with_keepalive_returns_result() {
+        let (sender, frames) = MockFrameSender::new();
+        let stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:test".to_string(),
+            MessageId::new_uuid(),
+            None,
+            DEFAULT_MAX_CHUNK,
+        );
+
+        // Run a fast operation — no keepalive frame expected (interval is 30s)
+        let result: i32 = stream.run_with_keepalive(0.25, "Loading model", || {
+            42
+        }).await;
+        assert_eq!(result, 42, "Closure result must be returned");
+
+        // No keepalive frame should have been emitted (operation was instant)
+        let captured = frames.lock().unwrap();
+        let progress_frames: Vec<_> = captured.iter().filter(|f| f.frame_type == FrameType::Log).collect();
+        assert_eq!(progress_frames.len(), 0, "No keepalive frame for instant operation");
+    }
+
+    // TEST685: run_with_keepalive returns Ok/Err from closure
+    #[tokio::test]
+    async fn test685_run_with_keepalive_returns_result_type() {
+        let (sender, _frames) = MockFrameSender::new();
+        let stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:test".to_string(),
+            MessageId::new_uuid(),
+            None,
+            DEFAULT_MAX_CHUNK,
+        );
+
+        let result: Result<String, String> = stream.run_with_keepalive(0.5, "Loading", || {
+            Ok("model_loaded".to_string())
+        }).await;
+        assert_eq!(result.unwrap(), "model_loaded");
+    }
+
+    // TEST686: run_with_keepalive propagates errors from closure
+    #[tokio::test]
+    async fn test686_run_with_keepalive_propagates_error() {
+        let (sender, _frames) = MockFrameSender::new();
+        let stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:test".to_string(),
+            MessageId::new_uuid(),
+            None,
+            DEFAULT_MAX_CHUNK,
+        );
+
+        let result: Result<(), RuntimeError> = stream.run_with_keepalive(0.25, "Loading", || {
+            Err(RuntimeError::Handler("load failed".to_string()))
+        }).await;
+        assert!(result.is_err(), "Error from closure must propagate");
+        let err = result.unwrap_err();
+        match err {
+            RuntimeError::Handler(msg) => assert_eq!(msg, "load failed"),
+            other => panic!("Expected Handler error, got: {:?}", other),
+        }
+    }
+
+    // TEST687: ProgressSender emits progress and log frames independently of OutputStream
+    #[test]
+    fn test687_progress_sender_emits_frames() {
+        let (sender, frames) = MockFrameSender::new();
+        let stream = OutputStream::new(
+            Arc::new(sender),
+            "stream-1".to_string(),
+            "media:test".to_string(),
+            MessageId::new_uuid(),
+            None,
+            DEFAULT_MAX_CHUNK,
+        );
+
+        let ps = stream.progress_sender();
+        ps.progress(0.5, "halfway there");
+        ps.log("info", "loading complete");
+
+        let captured = frames.lock().unwrap();
+        assert_eq!(captured.len(), 2, "ProgressSender should emit 2 frames");
+        assert_eq!(captured[0].frame_type, FrameType::Log);
+        assert_eq!(captured[1].frame_type, FrameType::Log);
+        // Verify progress frame has correct progress value
+        assert_eq!(captured[0].log_progress(), Some(0.5));
+        assert_eq!(captured[0].log_message(), Some("halfway there"));
+        // Verify log frame
+        assert_eq!(captured[1].log_level(), Some("info"));
+        assert_eq!(captured[1].log_message(), Some("loading complete"));
     }
 }
