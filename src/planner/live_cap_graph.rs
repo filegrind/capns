@@ -336,6 +336,8 @@ impl LiveCapGraph {
         );
 
         let mut matched_count = 0;
+        let mut identity_count = 0;
+        let mut rejected_count = 0;
 
         for cap_urn_str in cap_urns.iter() {
             // Parse the cap URN
@@ -353,6 +355,7 @@ impl LiveCapGraph {
 
             // Skip identity caps - they don't contribute to path finding
             if cap_urn.is_equivalent(&crate::standard::caps::identity_urn()) {
+                identity_count += 1;
                 continue;
             }
 
@@ -372,8 +375,10 @@ impl LiveCapGraph {
                     matched_count += 1;
                 }
                 None => {
+                    rejected_count += 1;
                     tracing::error!(
                         cap_urn = %cap_urn,
+                        cap_urn_raw = cap_urn_str,
                         "[LiveCapGraph] REJECTED: plugin reported cap URN has no equivalent \
                         in the registry. Every cap a plugin provides must have a matching \
                         registry definition. Either the plugin is advertising an unknown \
@@ -391,6 +396,8 @@ impl LiveCapGraph {
             edge_count = self.edges.len(),
             node_count = self.nodes.len(),
             matched_count,
+            identity_count,
+            rejected_count,
             total_urns = cap_urns.len(),
             "[LiveCapGraph] Synced from cap URNs"
         );
@@ -766,25 +773,36 @@ impl LiveCapGraph {
             return vec![];
         }
 
-        let mut all_paths: Vec<Strand> = Vec::new();
-        let mut current_path: Vec<StrandStep> = Vec::new();
-        let mut visited: HashSet<String> = HashSet::new();
-
         tracing::info!(
             "find_paths_to_exact_target: source={} target={} max_depth={} max_paths={}",
             source, target, max_depth, max_paths
         );
 
-        self.dfs_find_paths(
-            source,
-            target,
-            source,
-            &mut current_path,
-            &mut visited,
-            &mut all_paths,
-            max_depth,
-            max_paths,
-        );
+        // Iterative deepening: find ALL paths at depth N before any at depth N+1.
+        // This guarantees completeness at each depth level regardless of edge order,
+        // preventing the old DFS bug where max_paths budget was exhausted by deep
+        // subtrees before shorter paths through later edges were discovered.
+        let mut all_paths: Vec<Strand> = Vec::new();
+
+        for depth_limit in 1..=max_depth {
+            if all_paths.len() >= max_paths {
+                break;
+            }
+
+            let mut current_path: Vec<StrandStep> = Vec::new();
+            let mut visited: HashSet<String> = HashSet::new();
+
+            self.iddfs_find_paths(
+                source,
+                target,
+                source,
+                &mut current_path,
+                &mut visited,
+                &mut all_paths,
+                depth_limit,
+                max_paths,
+            );
+        }
 
         tracing::info!(
             "find_paths_to_exact_target: found {} paths (max_paths was {})",
@@ -797,8 +815,11 @@ impl LiveCapGraph {
         all_paths
     }
 
-    /// DFS helper for path finding.
-    fn dfs_find_paths(
+    /// Depth-limited DFS helper for iterative deepening path finding.
+    ///
+    /// Only records paths whose length equals `depth_limit` exactly.
+    /// Paths shorter than `depth_limit` were already found in earlier iterations.
+    fn iddfs_find_paths(
         &self,
         source: &MediaUrn,
         target: &MediaUrn,
@@ -806,7 +827,7 @@ impl LiveCapGraph {
         current_path: &mut Vec<StrandStep>,
         visited: &mut HashSet<String>,
         all_paths: &mut Vec<Strand>,
-        max_depth: usize,
+        depth_limit: usize,
         max_paths: usize,
     ) {
         if all_paths.len() >= max_paths {
@@ -816,39 +837,42 @@ impl LiveCapGraph {
         // Check if we've reached the EXACT target using is_equivalent()
         // is_equivalent: same tag set, order-independent
         if current.is_equivalent(target).unwrap_or(false) {
-            let description = current_path
-                .iter()
-                .map(|s| s.title())
-                .collect::<Vec<_>>()
-                .join(" → ");
+            // Only record paths at exactly this depth limit.
+            // Shorter paths were recorded in earlier iterations.
+            if current_path.len() == depth_limit {
+                let description = current_path
+                    .iter()
+                    .map(|s| s.title())
+                    .collect::<Vec<_>>()
+                    .join(" → ");
 
-            // Count only cap steps (not ForEach/Collect/WrapInList) for sorting
-            let cap_step_count = current_path.iter().filter(|s| s.is_cap()).count() as i32;
+                let cap_step_count = current_path.iter().filter(|s| s.is_cap()).count() as i32;
 
-            all_paths.push(Strand {
-                steps: current_path.clone(),
-                source_spec: source.clone(),
-                target_spec: target.clone(),
-                total_steps: current_path.len() as i32,
-                cap_step_count,
-                description,
-            });
+                all_paths.push(Strand {
+                    steps: current_path.clone(),
+                    source_spec: source.clone(),
+                    target_spec: target.clone(),
+                    total_steps: current_path.len() as i32,
+                    cap_step_count,
+                    description,
+                });
+            }
+            // Don't explore past target regardless of depth
             return;
         }
 
-        if current_path.len() >= max_depth {
+        // Can't go deeper — haven't reached target at this depth
+        if current_path.len() >= depth_limit {
             return;
         }
 
         let current_canonical = current.to_string();
         visited.insert(current_canonical.clone());
 
-        // Explore outgoing edges
         for edge in self.get_outgoing_edges(current) {
             let next_canonical = edge.to_spec.to_string();
 
             if !visited.contains(&next_canonical) {
-                // Convert edge type to step type
                 let step_type = match &edge.edge_type {
                     LiveMachinePlanEdgeType::Cap { cap_urn, cap_title, specificity } => {
                         StrandStepType::Cap {
@@ -883,14 +907,14 @@ impl LiveCapGraph {
                     to_spec: edge.to_spec.clone(),
                 });
 
-                self.dfs_find_paths(
+                self.iddfs_find_paths(
                     source,
                     target,
                     &edge.to_spec,
                     current_path,
                     visited,
                     all_paths,
-                    max_depth,
+                    depth_limit,
                     max_paths,
                 );
 
