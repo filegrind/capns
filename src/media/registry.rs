@@ -873,4 +873,150 @@ mod tests {
         assert!(retrieved.is_some(), "Should find spec by URN");
         assert_eq!(retrieved.unwrap().title, "Test Spec");
     }
+
+    // TEST895: All cap output media specs must have file extensions defined.
+    // This is a regression guard: every media URN used as a cap output (out= in cap TOML)
+    // produces user-facing files. If a spec lacks extensions, save_cap_output and
+    // FinderImportService will fail at runtime.
+    #[tokio::test]
+    async fn test895_cap_output_media_specs_have_extensions() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+        registry.install_standard_specs_sync().unwrap();
+
+        // All media URNs used as cap outputs (from capgraph/src/caps/*.toml out= fields).
+        // If you add a new cap, add its output URN here.
+        let cap_output_urns = [
+            "media:textable",
+            "media:file-metadata;textable;record",
+            "media:document-outline;textable;record",
+            "media:image;png;thumbnail",
+            "media:embedding-vector;textable;record",
+            "media:image-description;textable",
+            "media:transcription;textable;record",
+            "media:decision;bool;textable",
+            "media:decision;bool;textable;list",
+            "media:disbound-page;list;textable",
+            "media:llm-text-stream;ndjson",
+            "media:generated-text;textable;record",
+            "media:llm-vocab-response;json;record",
+            "media:llm-model-info;json;record",
+            "media:model-dim;integer;textable;numeric",
+            "media:model-availability;textable;record",
+            "media:model-contents;textable;record",
+            "media:model-list;textable;record",
+            "media:model-path;textable;record",
+            "media:model-status;textable;record",
+            "media:download-result;textable;record",
+            "media:json;textable;record",
+        ];
+
+        let mut missing = Vec::new();
+        for urn in &cap_output_urns {
+            let normalized = normalize_media_urn(urn);
+            match registry.get_cached_spec(&normalized) {
+                Some(spec) => {
+                    if spec.extensions.is_empty() {
+                        missing.push(format!("{} (found spec but extensions is empty)", urn));
+                    }
+                }
+                None => {
+                    missing.push(format!("{} (spec not found in registry)", urn));
+                }
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "Cap output media specs missing file extensions — fix the TOML in capgraph/src/media/:\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
+    // TEST896: All cap input media specs that represent user files must have extensions.
+    // These are the entry points — the file types users can right-click on.
+    #[tokio::test]
+    async fn test896_cap_input_media_specs_have_extensions() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+        registry.install_standard_specs_sync().unwrap();
+
+        // Media URNs used as cap inputs (from capgraph/src/caps/*.toml in= fields)
+        // that represent user-facing file types. Excludes model-spec variants
+        // (internal engine types) and abstract types.
+        let cap_input_urns = [
+            "media:textable",
+            "media:txt;textable",
+            "media:md;textable",
+            "media:rst;textable",
+            "media:pdf",
+            "media:image;png",
+            "media:audio;wav;speech",
+            "media:frontmatter;textable",
+            "media:log;textable",
+            "media:json;json-schema;textable;record",
+            "media:llm-generation-request;json;record",
+            "media:model-repo;textable;record",
+            "media:model-spec;textable",
+        ];
+
+        let mut missing = Vec::new();
+        for urn in &cap_input_urns {
+            let normalized = normalize_media_urn(urn);
+            match registry.get_cached_spec(&normalized) {
+                Some(spec) => {
+                    if spec.extensions.is_empty() {
+                        missing.push(format!("{} (found spec but extensions is empty)", urn));
+                    }
+                }
+                None => {
+                    missing.push(format!("{} (spec not found in registry)", urn));
+                }
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "Cap input media specs missing file extensions — fix the TOML in capgraph/src/media/:\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
+    // TEST897: Verify that specific cap output URNs resolve to the correct extension.
+    // This catches misconfigurations where a spec exists but has the wrong extension.
+    #[tokio::test]
+    async fn test897_cap_output_extension_values_correct() {
+        let (registry, _temp_dir) = registry_with_temp_cache().await;
+        registry.install_standard_specs_sync().unwrap();
+
+        let expected = [
+            ("media:textable", "txt"),
+            ("media:file-metadata;textable;record", "json"),
+            ("media:document-outline;textable;record", "json"),
+            ("media:image;png;thumbnail", "png"),
+            ("media:embedding-vector;textable;record", "json"),
+            ("media:image-description;textable", "txt"),
+            ("media:transcription;textable;record", "json"),
+            ("media:decision;bool;textable", "txt"),
+            ("media:decision;bool;textable;list", "json"),
+            ("media:disbound-page;list;textable", "txt"),
+            ("media:llm-text-stream;ndjson", "ndjson"),
+            ("media:generated-text;textable;record", "json"),
+            ("media:llm-model-info;json;record", "json"),
+            ("media:download-result;textable;record", "json"),
+            ("media:model-dim;integer;textable;numeric", "txt"),
+            ("media:frontmatter;textable", "txt"),
+        ];
+
+        for (urn, expected_ext) in &expected {
+            let normalized = normalize_media_urn(urn);
+            let spec = registry.get_cached_spec(&normalized)
+                .unwrap_or_else(|| panic!("Spec not found for {}", urn));
+            let actual_ext = spec.extensions.first()
+                .unwrap_or_else(|| panic!("No extensions for {}", urn));
+            assert_eq!(
+                actual_ext, expected_ext,
+                "Wrong extension for {}: expected '{}', got '{}'",
+                urn, expected_ext, actual_ext
+            );
+        }
+    }
 }

@@ -66,10 +66,23 @@ pub struct PluginProcessInfo {
     pub memory_rss_mb: u64,
 }
 
+/// Why a plugin was killed. Determines whether pending requests get ERR frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShutdownReason {
+    /// App is exiting. No ERR frames — the relay connection is closing anyway
+    /// and there are no callers left to notify.
+    AppExit,
+    /// OOM watchdog killed the plugin while it was actively processing requests.
+    /// Pending requests MUST get ERR frames with code "OOM_KILLED" so callers
+    /// can fail fast instead of hanging forever.
+    OomKill,
+}
+
 /// Commands that can be sent to the host runtime from external code.
 pub enum HostCommand {
-    /// Kill a plugin process by PID. The host sets `ordered_shutdown = true`
-    /// before killing, so death handling treats it as intentional.
+    /// Kill a plugin process by PID for memory pressure. The host sets
+    /// `shutdown_reason = Some(OomKill)` before killing, so death handling
+    /// sends ERR frames with "OOM_KILLED" for all pending requests.
     KillPlugin { pid: u32 },
 }
 
@@ -270,10 +283,12 @@ struct ManagedPlugin {
     /// Last death error message (includes stderr if available). Used for ERR frames
     /// sent when attempting to write to a dead plugin.
     last_death_message: Option<String>,
-    /// Set to true before killing the process to signal that the death is
-    /// intentional. handle_plugin_death checks this to avoid treating ordered
-    /// shutdowns as unexpected crashes.
-    ordered_shutdown: bool,
+    /// Set before killing the process to signal why the death occurred.
+    /// `handle_plugin_death` checks this to determine ERR frame behavior:
+    /// - `None` → unexpected crash → ERR "PLUGIN_DIED"
+    /// - `Some(OomKill)` → OOM watchdog kill → ERR "OOM_KILLED"
+    /// - `Some(AppExit)` → clean shutdown → no ERR frames
+    shutdown_reason: Option<ShutdownReason>,
     /// Physical memory footprint in MB (self-reported via heartbeat response meta).
     /// Updated every 30s when the plugin echoes a heartbeat probe with its
     /// `ri_phys_footprint` from `proc_pid_rusage(getpid())`.
@@ -299,7 +314,7 @@ impl ManagedPlugin {
             pending_heartbeats: HashMap::new(),
             stderr_handle: None,
             last_death_message: None,
-            ordered_shutdown: false,
+            shutdown_reason: None,
             memory_footprint_mb: 0,
             memory_rss_mb: 0,
         }
@@ -324,7 +339,7 @@ impl ManagedPlugin {
             pending_heartbeats: HashMap::new(),
             stderr_handle: None,
             last_death_message: None,
-            ordered_shutdown: false,
+            shutdown_reason: None,
             memory_footprint_mb: 0,
             memory_rss_mb: 0,
         }
@@ -891,13 +906,14 @@ impl PluginHostRuntime {
 
     /// Handle a plugin death (reader loop exited).
     ///
-    /// Three cases:
-    /// 1. **Ordered shutdown** (`ordered_shutdown == true`): We asked for this.
-    ///    Clean up routing tables, no ERR frames, no error messages.
-    /// 2. **Unexpected death with pending outgoing work**: Genuine crash mid-flight.
-    ///    Send ERR for pending peer requests, store death message.
-    /// 3. **Unexpected death, idle**: Plugin exited on its own (OS jetsam,
-    ///    resource reclaim, natural exit). Clean up, no ERR — next request respawns.
+    /// Three cases based on `shutdown_reason`:
+    /// 1. **`None`** (unexpected death): Genuine crash. Send ERR "PLUGIN_DIED"
+    ///    for all pending requests, store death message.
+    /// 2. **`Some(OomKill)`**: OOM watchdog killed the plugin while it was
+    ///    actively processing. Send ERR "OOM_KILLED" for all pending requests
+    ///    so callers fail fast instead of hanging.
+    /// 3. **`Some(AppExit)`**: Clean shutdown. No ERR frames — the relay
+    ///    connection is closing anyway.
     async fn handle_plugin_death(
         &mut self,
         plugin_idx: usize,
@@ -906,15 +922,15 @@ impl PluginHostRuntime {
         use tokio::io::AsyncReadExt;
 
         // Scope the mutable borrow of the plugin so we can access self later.
-        let was_ordered;
+        let reason;
         let stderr_content;
         let exit_info: String;
         {
             let plugin = &mut self.plugins[plugin_idx];
             plugin.running = false;
             plugin.writer_tx = None;
-            was_ordered = plugin.ordered_shutdown;
-            plugin.ordered_shutdown = false; // Reset for potential respawn
+            reason = plugin.shutdown_reason;
+            plugin.shutdown_reason = None; // Reset for potential respawn
 
             // Capture stderr content BEFORE killing the process
             let mut captured = String::new();
@@ -1006,22 +1022,43 @@ impl PluginHostRuntime {
             .collect();
         self.incoming_rxids.retain(|(_, _), &mut idx| idx != plugin_idx);
 
-        // Unordered death is always an error — a plugin should only exit when
-        // orderedShutdown was set. Send PLUGIN_DIED for ALL pending work.
-        if !was_ordered {
-            let exit_suffix = if exit_info.is_empty() { String::new() } else { format!(" ({})", exit_info) };
-            let error_message = if stderr_content.is_empty() {
-                format!("Plugin {} exited unexpectedly{}. stderr:", self.plugins[plugin_idx].path.display(), exit_suffix)
-            } else {
-                format!("Plugin {} exited unexpectedly{}. stderr:\n{}", self.plugins[plugin_idx].path.display(), exit_suffix, stderr_content)
-            };
+        // Determine error code and message based on shutdown reason.
+        // Both unexpected deaths and OOM kills send ERR frames for pending work.
+        // Only AppExit suppresses ERR frames (relay is closing, no callers left).
+        let err_info: Option<(&str, String)> = match reason {
+            None => {
+                // Unexpected death — genuine crash mid-flight
+                let exit_suffix = if exit_info.is_empty() { String::new() } else { format!(" ({})", exit_info) };
+                let error_message = if stderr_content.is_empty() {
+                    format!("Plugin {} exited unexpectedly{}.", self.plugins[plugin_idx].path.display(), exit_suffix)
+                } else {
+                    format!("Plugin {} exited unexpectedly{}. stderr:\n{}", self.plugins[plugin_idx].path.display(), exit_suffix, stderr_content)
+                };
+                Some(("PLUGIN_DIED", error_message))
+            }
+            Some(ShutdownReason::OomKill) => {
+                // OOM watchdog killed the plugin — callers must be notified
+                let exit_suffix = if exit_info.is_empty() { String::new() } else { format!(" ({})", exit_info) };
+                let error_message = if stderr_content.is_empty() {
+                    format!("Plugin {} killed by OOM watchdog{}.", self.plugins[plugin_idx].path.display(), exit_suffix)
+                } else {
+                    format!("Plugin {} killed by OOM watchdog{}. stderr:\n{}", self.plugins[plugin_idx].path.display(), exit_suffix, stderr_content)
+                };
+                Some(("OOM_KILLED", error_message))
+            }
+            Some(ShutdownReason::AppExit) => {
+                // Clean shutdown — no ERR frames, relay is closing
+                None
+            }
+        };
 
+        if let Some((error_code, error_message)) = err_info {
             self.plugins[plugin_idx].last_death_message = Some(error_message.clone());
 
             for (rid, next_seq) in &failed_outgoing {
                 let mut err_frame = Frame::err(
                     rid.clone(),
-                    "PLUGIN_DIED",
+                    error_code,
                     &error_message,
                 );
                 err_frame.seq = *next_seq;
@@ -1030,7 +1067,7 @@ impl PluginHostRuntime {
             for (xid, rid, next_seq) in &failed_incoming {
                 let mut err_frame = Frame::err(
                     rid.clone(),
-                    "PLUGIN_DIED",
+                    error_code,
                     &error_message,
                 );
                 err_frame.routing_id = Some(xid.clone());
@@ -1068,7 +1105,7 @@ impl PluginHostRuntime {
                         plugin = %self.plugins[idx].path.display(),
                         "Killing plugin by external command (memory pressure)"
                     );
-                    self.plugins[idx].ordered_shutdown = true;
+                    self.plugins[idx].shutdown_reason = Some(ShutdownReason::OomKill);
                     if let Some(ref mut child) = self.plugins[idx].process {
                         let _ = child.kill().await;
                     }
@@ -1478,7 +1515,7 @@ impl PluginHostRuntime {
     /// blocks on the plugin's read().
     async fn kill_all_plugins(&mut self) {
         for plugin in &mut self.plugins {
-            plugin.ordered_shutdown = true;
+            plugin.shutdown_reason = Some(ShutdownReason::AppExit);
             if let Some(ref mut child) = plugin.process {
                 let _ = child.kill().await;
             }
@@ -3200,5 +3237,213 @@ mod tests {
         // Since run() hasn't been called, the command sits in the channel.
         let result = handle.kill_plugin(99999);
         assert!(result.is_ok(), "kill_plugin should succeed even if PID is unknown — command is async");
+    }
+
+    // OOM kill sends ERR frames with OOM_KILLED code for all pending requests.
+    // This is the core fix: prior to this change, ordered_shutdown=true suppressed
+    // ERR frames even when the plugin was actively processing requests, causing
+    // the conversation view and task system to hang indefinitely.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_oom_kill_sends_err_with_oom_killed_code() {
+        let manifest = r#"{"name":"OomPlugin","version":"1.0","description":"OOM test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=oom;out=\"media:void\"","title":"OOM","command":"oom","args":[]}]}"#;
+
+        // Plugin pipe pair
+        let (p_to_rt, rt_from_p) = UnixStream::pair().unwrap();
+        let (rt_to_p, p_from_rt) = UnixStream::pair().unwrap();
+
+        let (p_read, _) = rt_from_p.into_split();
+        let (_, p_write) = rt_to_p.into_split();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = tokio::spawn(async move {
+            let (mut r, w) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m).await;
+
+            // Read REQ and body END, then die (simulating OOM kill mid-flight)
+            let _req = r.read().await.unwrap().expect("Expected REQ");
+            loop {
+                match r.read().await {
+                    Ok(Some(f)) => { if f.frame_type == FrameType::End { break; } }
+                    _ => break,
+                }
+            }
+            // Die — OOM watchdog killed us
+            drop(w);
+            drop(r);
+        });
+
+        let mut runtime = PluginHostRuntime::new();
+        runtime.attach_plugin(p_read, p_write).await.unwrap();
+
+        // Set shutdown_reason to OomKill BEFORE the plugin dies.
+        // In production this is set by handle_command(KillPlugin) which runs
+        // in the event loop before child.kill(). For attached plugins (no child
+        // process), we set it directly.
+        runtime.plugins[0].shutdown_reason = Some(ShutdownReason::OomKill);
+
+        // Relay pipe pair
+        let (relay_rt_read, relay_eng_write) = UnixStream::pair().unwrap();
+        let (relay_eng_read, relay_rt_write) = UnixStream::pair().unwrap();
+
+        let (rt_read_half, _) = relay_rt_read.into_split();
+        let (_, rt_write_half) = relay_rt_write.into_split();
+        let (_, eng_write_half) = relay_eng_write.into_split();
+        let (eng_read_half, _) = relay_eng_read.into_split();
+
+        let req_id = MessageId::new_uuid();
+        let req_id_clone = req_id.clone();
+        let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
+            let mut w = FrameWriter::new(eng_write_half);
+            let mut r = FrameReader::new(eng_read_half);
+
+            let xid = MessageId::Uint(1);
+            // Send REQ
+            let mut req = Frame::req(req_id_clone.clone(), "cap:in=\"media:void\";op=oom;out=\"media:void\"", vec![], "text/plain");
+            req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
+            w.write(&req).await.unwrap();
+            let mut end = Frame::end(req_id_clone.clone(), None);
+            end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
+            w.write(&end).await.unwrap();
+            seq.remove(&FlowKey { rid: req_id_clone.clone(), xid: Some(xid) });
+
+            // Read frames from relay — should get ERR with OOM_KILLED
+            let mut got_oom_err = false;
+            loop {
+                match tokio::time::timeout(Duration::from_secs(5), r.read()).await {
+                    Ok(Ok(Some(frame))) => {
+                        if frame.frame_type == FrameType::Err {
+                            let code = frame.error_code().unwrap_or("");
+                            let msg = frame.error_message().unwrap_or("");
+                            assert_eq!(
+                                code, "OOM_KILLED",
+                                "ERR code must be OOM_KILLED, got: {:?}",
+                                code
+                            );
+                            assert!(
+                                msg.contains("OOM watchdog"),
+                                "ERR message must mention OOM watchdog, got: {}",
+                                msg
+                            );
+                            got_oom_err = true;
+                            break;
+                        }
+                        // Skip other frames (e.g. RelayNotify for cap rebuild)
+                    }
+                    Ok(Ok(None)) => break, // EOF
+                    Ok(Err(_)) => break,   // Read error
+                    Err(_) => panic!("Timed out waiting for OOM_KILLED ERR frame — this is the bug we're fixing"),
+                }
+            }
+            assert!(got_oom_err, "Must receive ERR frame with OOM_KILLED code after OOM kill");
+
+            drop(w); // Close relay to let runtime exit
+        });
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            runtime.run(rt_read_half, rt_write_half, || vec![]),
+        ).await;
+        assert!(result.is_ok(), "Runtime should exit cleanly");
+
+        engine_task.await.unwrap();
+        plugin_handle.await.unwrap();
+    }
+
+    // AppExit suppresses ERR frames — regression test to ensure clean shutdown
+    // does NOT generate spurious errors. The relay connection closes anyway
+    // during app exit, so ERR frames would be wasteful noise.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_app_exit_suppresses_err_frames() {
+        let manifest = r#"{"name":"ExitPlugin","version":"1.0","description":"Exit test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=exit;out=\"media:void\"","title":"Exit","command":"exit","args":[]}]}"#;
+
+        // Plugin pipe pair
+        let (p_to_rt, rt_from_p) = UnixStream::pair().unwrap();
+        let (rt_to_p, p_from_rt) = UnixStream::pair().unwrap();
+
+        let (p_read, _) = rt_from_p.into_split();
+        let (_, p_write) = rt_to_p.into_split();
+
+        let m = manifest.as_bytes().to_vec();
+        let plugin_handle = tokio::spawn(async move {
+            let (mut r, w) = plugin_handshake_with_identity(p_from_rt, p_to_rt, &m).await;
+
+            // Read REQ and body END, then die
+            let _req = r.read().await.unwrap().expect("Expected REQ");
+            loop {
+                match r.read().await {
+                    Ok(Some(f)) => { if f.frame_type == FrameType::End { break; } }
+                    _ => break,
+                }
+            }
+            drop(w);
+            drop(r);
+        });
+
+        let mut runtime = PluginHostRuntime::new();
+        runtime.attach_plugin(p_read, p_write).await.unwrap();
+
+        // Set AppExit — should suppress ERR frames
+        runtime.plugins[0].shutdown_reason = Some(ShutdownReason::AppExit);
+
+        // Relay pipe pair
+        let (relay_rt_read, relay_eng_write) = UnixStream::pair().unwrap();
+        let (relay_eng_read, relay_rt_write) = UnixStream::pair().unwrap();
+
+        let (rt_read_half, _) = relay_rt_read.into_split();
+        let (_, rt_write_half) = relay_rt_write.into_split();
+        let (_, eng_write_half) = relay_eng_write.into_split();
+        let (eng_read_half, _) = relay_eng_read.into_split();
+
+        let req_id = MessageId::new_uuid();
+        let req_id_clone = req_id.clone();
+        let engine_task = tokio::spawn(async move {
+            let mut seq = SeqAssigner::new();
+            let mut w = FrameWriter::new(eng_write_half);
+            let mut r = FrameReader::new(eng_read_half);
+
+            let xid = MessageId::Uint(1);
+            let mut req = Frame::req(req_id_clone.clone(), "cap:in=\"media:void\";op=exit;out=\"media:void\"", vec![], "text/plain");
+            req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
+            w.write(&req).await.unwrap();
+            let mut end = Frame::end(req_id_clone.clone(), None);
+            end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
+            w.write(&end).await.unwrap();
+            seq.remove(&FlowKey { rid: req_id_clone.clone(), xid: Some(xid) });
+
+            // Read frames — should NOT get any ERR frame.
+            // We expect only RelayNotify (cap table rebuild) and then EOF.
+            loop {
+                match tokio::time::timeout(Duration::from_secs(3), r.read()).await {
+                    Ok(Ok(Some(frame))) => {
+                        assert_ne!(
+                            frame.frame_type,
+                            FrameType::Err,
+                            "AppExit must suppress ERR frames, but got ERR with code={:?} msg={:?}",
+                            frame.error_code(),
+                            frame.error_message()
+                        );
+                        // Continue reading (might get RelayNotify)
+                    }
+                    Ok(Ok(None)) => break, // EOF — expected
+                    Ok(Err(_)) => break,   // Read error — relay closed
+                    Err(_) => break,       // Timeout — no more frames, good
+                }
+            }
+
+            drop(w);
+        });
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            runtime.run(rt_read_half, rt_write_half, || vec![]),
+        ).await;
+        assert!(result.is_ok(), "Runtime should exit cleanly");
+
+        engine_task.await.unwrap();
+        plugin_handle.await.unwrap();
     }
 }
