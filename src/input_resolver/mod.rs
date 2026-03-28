@@ -30,7 +30,7 @@
 
 mod types;
 mod os_filter;
-mod path_resolver;
+pub(crate) mod path_resolver;
 mod adapter;
 mod adapters;
 mod resolver;
@@ -56,9 +56,13 @@ pub use resolver::{
     resolve_inputs,
     resolve_paths,
     detect_file,
+    detect_file_with_media_registry,
 };
+
+pub use path_resolver::resolve_directory;
 
 // Re-export adapter registries for extensibility
 pub use adapters::MediaAdapterRegistry;
+pub use adapters::extract_base_urn;
 pub use value_adapter::{ValueAdapter, ValueAdapterResult};
 pub use value_adapter_registry::ValueAdapterRegistry;

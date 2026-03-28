@@ -183,7 +183,7 @@ impl MediaAdapterRegistry {
 
 /// Extract base URN without markers
 /// e.g., "media:json;textable;record" -> "media:json"
-fn extract_base_urn(urn: &str) -> String {
+pub fn extract_base_urn(urn: &str) -> String {
     if let Some(semicolon_pos) = urn.find(';') {
         urn[..semicolon_pos].to_string()
     } else {

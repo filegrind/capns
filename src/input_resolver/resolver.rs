@@ -399,4 +399,134 @@ mod tests {
         assert_eq!(result.files.len(), 2);
         // Both should be detected as JSON with correct structures
     }
+
+    // Content Analysis Tests (TEST_CA_1 through TEST_CA_4)
+    // These test detect_file_with_media_registry — the function used by the
+    // AnalyzeFileContent gRPC handler to determine precise media URNs.
+
+    // TEST_CA_1: JSON object file resolves to record URN
+    #[test]
+    fn test_ca_1_json_object_detection() {
+        let dir = create_test_dir();
+        let path = create_file(&dir, "data.json", br#"{"name": "test", "count": 42}"#);
+
+        let (registry, _temp) = create_test_media_registry();
+        let resolved = detect_file_with_media_registry(&path, registry).unwrap();
+
+        assert!(
+            resolved.media_urn.contains("record"),
+            "JSON object should be detected as record, got: {}",
+            resolved.media_urn
+        );
+        assert_eq!(
+            resolved.content_structure,
+            ContentStructure::ScalarRecord,
+            "JSON object should have ScalarRecord structure"
+        );
+    }
+
+    // TEST_CA_2: JSON array-of-objects resolves to list+record URN
+    #[test]
+    fn test_ca_2_json_array_detection() {
+        let dir = create_test_dir();
+        let path = create_file(&dir, "items.json", br#"[{"a":1},{"b":2},{"c":3}]"#);
+
+        let (registry, _temp) = create_test_media_registry();
+        let resolved = detect_file_with_media_registry(&path, registry).unwrap();
+
+        assert!(
+            resolved.media_urn.contains("list"),
+            "JSON array should be detected as list, got: {}",
+            resolved.media_urn
+        );
+        assert!(
+            resolved.media_urn.contains("record"),
+            "JSON array of objects should be detected as record, got: {}",
+            resolved.media_urn
+        );
+        assert_eq!(
+            resolved.content_structure,
+            ContentStructure::ListRecord,
+            "JSON array of objects should have ListRecord structure"
+        );
+    }
+
+    // TEST_CA_3: Directory of JSON object files → all resolve to record
+    #[test]
+    fn test_ca_3_directory_json_objects_lub() {
+        let dir = create_test_dir();
+        create_file(&dir, "a.json", br#"{"key": "alpha"}"#);
+        create_file(&dir, "b.json", br#"{"key": "beta"}"#);
+        create_file(&dir, "c.json", br#"{"key": "gamma"}"#);
+
+        let (registry, _temp) = create_test_media_registry();
+        let dir_files = super::path_resolver::resolve_directory(dir.path()).unwrap();
+        assert_eq!(dir_files.len(), 3);
+
+        let mut detected_urns = Vec::new();
+        for file_path in &dir_files {
+            let resolved = detect_file_with_media_registry(file_path, registry.clone()).unwrap();
+            let urn = crate::MediaUrn::from_string(&resolved.media_urn).unwrap();
+            detected_urns.push(urn);
+        }
+
+        let lub = crate::MediaUrn::least_upper_bound(&detected_urns);
+        let lub_str = lub.to_string();
+        assert!(
+            lub_str.contains("json"),
+            "LUB of all JSON files should contain json tag, got: {}",
+            lub_str
+        );
+        assert!(
+            lub_str.contains("record"),
+            "LUB of all JSON object files should contain record tag, got: {}",
+            lub_str
+        );
+    }
+
+    // TEST_CA_4: Directory with mixed JSON and CSV → LUB drops format-specific tags
+    #[test]
+    fn test_ca_4_directory_mixed_types_lub() {
+        let dir = create_test_dir();
+        create_file(&dir, "data.json", br#"{"key": "value"}"#);
+        create_file(&dir, "data.csv", b"a,b,c\n1,2,3\n4,5,6");
+
+        let (registry, _temp) = create_test_media_registry();
+        let dir_files = super::path_resolver::resolve_directory(dir.path()).unwrap();
+        assert_eq!(dir_files.len(), 2);
+
+        let mut detected_urns = Vec::new();
+        for file_path in &dir_files {
+            let resolved = detect_file_with_media_registry(file_path, registry.clone()).unwrap();
+            let urn = crate::MediaUrn::from_string(&resolved.media_urn).unwrap();
+            detected_urns.push(urn);
+        }
+
+        let lub = crate::MediaUrn::least_upper_bound(&detected_urns);
+        let lub_str = lub.to_string();
+        // JSON and CSV are both textable+record but have different base types
+        // LUB should drop json and csv tags, keeping only shared markers
+        assert!(
+            !lub_str.contains("json"),
+            "LUB of JSON+CSV should not contain json tag, got: {}",
+            lub_str
+        );
+        assert!(
+            !lub_str.contains("csv"),
+            "LUB of JSON+CSV should not contain csv tag, got: {}",
+            lub_str
+        );
+        assert!(
+            lub_str.contains("record") || lub_str.contains("textable"),
+            "LUB of JSON+CSV should contain shared markers (record or textable), got: {}",
+            lub_str
+        );
+    }
+
+    fn create_test_media_registry() -> (Arc<crate::media::registry::MediaUrnRegistry>, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().to_path_buf();
+        let registry = crate::media::registry::MediaUrnRegistry::new_for_test(cache_dir).unwrap();
+        (Arc::new(registry), temp_dir)
+    }
 }

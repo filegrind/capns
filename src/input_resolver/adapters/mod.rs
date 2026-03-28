@@ -23,6 +23,7 @@ pub(crate) mod data;
 pub(crate) mod text;
 
 pub use registry::MediaAdapterRegistry;
+pub use registry::extract_base_urn;
 
 // Re-export content inspection adapters for testing
 pub use data::{

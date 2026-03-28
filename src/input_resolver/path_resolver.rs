@@ -78,7 +78,7 @@ fn resolve_file(path: &Path) -> Result<Vec<PathBuf>, InputResolverError> {
 }
 
 /// Resolve a directory recursively
-fn resolve_directory(path: &Path) -> Result<Vec<PathBuf>, InputResolverError> {
+pub fn resolve_directory(path: &Path) -> Result<Vec<PathBuf>, InputResolverError> {
     let expanded = expand_tilde(path);
 
     if !expanded.exists() {
