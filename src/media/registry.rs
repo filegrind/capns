@@ -860,7 +860,7 @@ mod tests {
 
         // Add a spec and verify we can retrieve it
         let spec = StoredMediaSpec {
-            urn: "media:test-spec;textable".to_string(),
+            urn: "media:test;spec;textable".to_string(),
             media_type: "text/plain".to_string(),
             title: "Test Spec".to_string(),
             profile_uri: None, schema: None, description: None,
@@ -869,7 +869,7 @@ mod tests {
         let normalized = normalize_media_urn(&spec.urn);
         registry.cached_specs.lock().unwrap().insert(normalized.clone(), spec);
 
-        let retrieved = registry.get_cached_spec("media:test-spec;textable");
+        let retrieved = registry.get_cached_spec("media:test;spec;textable");
         assert!(retrieved.is_some(), "Should find spec by URN");
         assert_eq!(retrieved.unwrap().title, "Test Spec");
     }

@@ -742,7 +742,7 @@ mod json_parse_tests {
     fn test137_parse_registry_json() {
         // JSON without stdin args - means cap doesn't accept stdin
         // media_specs is now an array of media spec objects with urn field
-        let json = r#"{"urn":"cap:in=\"media:listing-id\";op=use_grinder;out=\"media:task-id\"","command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":[{"urn":"media:listing-id","media_type":"text/plain","title":"Listing ID","profile_uri":"https://machinefabric.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"MachineFabric listing UUID"}},{"urn":"media:task-id","media_type":"application/json","title":"Task ID","profile_uri":"https://capdag.com/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}],"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task-id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
+        let json = r#"{"urn":"cap:in=\"media:listing-id\";op=use_grinder;out=\"media:task;id\"","command":"grinder_task","title":"Create Grinder Tool Task","cap_description":"Create a task for initial document analysis - first glance phase","metadata":{},"media_specs":[{"urn":"media:listing-id","media_type":"text/plain","title":"Listing ID","profile_uri":"https://machinefabric.com/schema/listing-id","schema":{"type":"string","pattern":"[0-9a-f-]{36}","description":"MachineFabric listing UUID"}},{"urn":"media:task;id","media_type":"application/json","title":"Task ID","profile_uri":"https://capdag.com/schema/grinder_task-output","schema":{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string","description":"ID of the created task"},"task_type":{"type":"string","description":"Type of task created"}},"required":["task_id","task_type"]}}],"args":[{"media_urn":"media:listing-id","required":true,"sources":[{"cli_flag":"--listing-id"}],"arg_description":"ID of the listing to analyze"}],"output":{"media_urn":"media:task;id","output_description":"Created task information"},"registered_by":{"username":"joeharshamshiri","registered_at":"2026-01-15T00:44:29.851Z"}}"#;
 
         let cap: Cap = serde_json::from_str(json).expect("Failed to parse JSON");
         assert_eq!(cap.title, "Create Grinder Tool Task");
@@ -790,7 +790,7 @@ mod url_encoding_tests {
     fn test140_url_encodes_quoted_media_urns() {
         let config = RegistryConfig::default();
         // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
-        let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task-id"#;
+        let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task;id"#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
@@ -810,7 +810,7 @@ mod url_encoding_tests {
     fn test141_exact_url_format() {
         let config = RegistryConfig::default();
         // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
-        let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task-id"#;
+        let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task;id"#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
