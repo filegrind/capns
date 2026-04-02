@@ -15,6 +15,7 @@
 //! canonical ordering and `is_equivalent()` compares semantics, not characters.
 
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::urn::cap_urn::CapUrn;
 use crate::urn::media_urn::MediaUrn;
@@ -121,6 +122,33 @@ pub struct Machine {
     /// Edges in the graph, ordered for deterministic serialization.
     /// Comparison is order-independent (set semantics).
     edges: Vec<MachineEdge>,
+}
+
+/// A single execution attempt of a [`Machine`].
+#[derive(Debug, Clone)]
+pub struct MachineRun {
+    pub id: String,
+    pub machine_notation: String,
+    pub status: MachineRunStatus,
+    pub error_message: Option<String>,
+    pub created_at_unix: i64,
+    pub started_at_unix: Option<i64>,
+    pub completed_at_unix: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MachineRunStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock must be after UNIX_EPOCH")
+        .as_secs() as i64
 }
 
 impl Machine {
@@ -231,6 +259,37 @@ impl Machine {
             }
         }
         leaves
+    }
+}
+
+impl MachineRun {
+    pub fn new(id: String, machine_notation: String) -> Self {
+        Self {
+            id,
+            machine_notation,
+            status: MachineRunStatus::Pending,
+            error_message: None,
+            created_at_unix: unix_now(),
+            started_at_unix: None,
+            completed_at_unix: None,
+        }
+    }
+
+    pub fn start(&mut self) {
+        self.status = MachineRunStatus::Running;
+        self.started_at_unix = Some(unix_now());
+    }
+
+    pub fn complete(&mut self) {
+        self.status = MachineRunStatus::Completed;
+        self.completed_at_unix = Some(unix_now());
+        self.error_message = None;
+    }
+
+    pub fn fail(&mut self, error_message: String) {
+        self.status = MachineRunStatus::Failed;
+        self.completed_at_unix = Some(unix_now());
+        self.error_message = Some(error_message);
     }
 }
 

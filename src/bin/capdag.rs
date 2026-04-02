@@ -3,7 +3,7 @@
 //! A unified CLI for executing and validating machine notation pipelines.
 
 use capdag::orchestrator::{parse_machine_to_cap_dag, execute_dag, NodeData};
-use capdag::machine::Machine;
+use capdag::machine::{Machine, MachineRun};
 use capdag::{CapProgressFn, CapRegistry};
 use std::collections::HashMap;
 use std::env;
@@ -381,6 +381,9 @@ async fn main() {
 
     for file in &all_files {
         eprintln!("--- Processing: {} ---", file.display());
+        let mut machine_run = MachineRun::new(notation.clone());
+        machine_run.start();
+        eprintln!("Run: {}", machine_run.id);
 
         let mut initial_inputs = HashMap::new();
         initial_inputs.insert(input_node.clone(), NodeData::FilePath(file.clone()));
@@ -391,6 +394,7 @@ async fn main() {
 
         match execute_dag(&graph, plugin_dir.clone(), registry_url.clone(), initial_inputs, dev_binaries.clone(), registry.clone(), Some(&progress)).await {
             Ok(outputs) => {
+                machine_run.complete();
                 eprintln!("Results:");
                 for (node, data) in outputs {
                     match data {
@@ -405,10 +409,13 @@ async fn main() {
                 success_count += 1;
             }
             Err(e) => {
+                machine_run.fail(e.to_string());
                 eprintln!("{}", e);
                 error_count += 1;
             }
         }
+
+        eprintln!("Run status: {:?}", machine_run.status);
     }
 
     eprintln!("=== Summary ===");

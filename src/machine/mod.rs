@@ -30,5 +30,5 @@ pub mod parser;
 pub mod serializer;
 
 pub use error::MachineSyntaxError;
-pub use graph::{MachineEdge, Machine};
+pub use graph::{Machine, MachineEdge, MachineRun, MachineRunStatus};
 pub use parser::parse_machine;
