@@ -135,6 +135,19 @@ pub struct MasterHealthStatus {
     pub last_error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub struct InstalledPluginIdentity {
+    pub id: String,
+    pub version: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct RelayNotifyCapabilitiesPayload {
+    caps: Vec<String>,
+    installed_plugins: Vec<InstalledPluginIdentity>,
+}
+
 /// Connection to a single RelayMaster with its socket I/O.
 /// Interior mutability: writer and seq_assigner are behind Mutex.
 struct MasterConnection {
@@ -148,6 +161,8 @@ struct MasterConnection {
     limits: RwLock<Limits>,
     /// Parsed capability URNs from manifest
     caps: RwLock<Vec<String>>,
+    /// Installed plugin identities reported by this master
+    installed_plugins: RwLock<Vec<InstalledPluginIdentity>>,
     /// Connection health status
     healthy: AtomicBool,
     /// Reader task handle
@@ -191,6 +206,8 @@ pub struct RelaySwitch {
     external_response_channels: RwLock<HashMap<(MessageId, MessageId), mpsc::UnboundedSender<Frame>>>,
     /// Aggregate capabilities (union of all masters)
     aggregate_capabilities: RwLock<Vec<u8>>,
+    /// Aggregate installed plugin identities (union of all healthy masters)
+    aggregate_installed_plugins: RwLock<Vec<InstalledPluginIdentity>>,
     /// Negotiated limits (minimum across all masters)
     negotiated_limits: RwLock<Limits>,
     /// Channel receiver for frames from master reader tasks (Mutex for exclusive receive)
@@ -261,7 +278,8 @@ impl RelaySwitch {
                 ))?
                 .to_vec();
 
-            let mut caps = parse_caps_from_relay_notify(&caps_payload)?;
+            let mut payload = parse_relay_notify_payload(&caps_payload)?;
+            let mut caps = payload.caps.clone();
             let mut limits = notify_frame.relay_notify_limits().unwrap_or_default();
 
             // Verify identity through the relay chain.
@@ -331,7 +349,8 @@ impl RelaySwitch {
                             // through RelaySlave during identity verification. Update caps.
                             if let Some(manifest) = frame.relay_notify_manifest() {
                                 caps_payload = manifest.to_vec();
-                                caps = parse_caps_from_relay_notify(&caps_payload)?;
+                                payload = parse_relay_notify_payload(&caps_payload)?;
+                                caps = payload.caps.clone();
                             }
                             if let Some(l) = frame.relay_notify_limits() {
                                 limits = l;
@@ -379,6 +398,7 @@ impl RelaySwitch {
                 manifest: RwLock::new(caps_payload),
                 limits: RwLock::new(limits),
                 caps: RwLock::new(caps),
+                installed_plugins: RwLock::new(payload.installed_plugins),
                 healthy: AtomicBool::new(true),
                 reader_handle: None, // Spawned in phase 2
                 connected_at: Instant::now(),
@@ -426,6 +446,7 @@ impl RelaySwitch {
             origin_map: RwLock::new(HashMap::new()),
             external_response_channels: RwLock::new(HashMap::new()),
             aggregate_capabilities: RwLock::new(Vec::new()),
+            aggregate_installed_plugins: RwLock::new(Vec::new()),
             negotiated_limits: RwLock::new(Limits::default()),
             frame_rx: Mutex::new(frame_rx),
             frame_tx,
@@ -446,6 +467,11 @@ impl RelaySwitch {
     /// Get the aggregate capabilities of all healthy masters.
     pub async fn capabilities(&self) -> Vec<u8> {
         self.aggregate_capabilities.read().await.clone()
+    }
+
+    /// Get the aggregate installed plugins of all healthy masters.
+    pub async fn installed_plugins(&self) -> Vec<InstalledPluginIdentity> {
+        self.aggregate_installed_plugins.read().await.clone()
     }
 
     /// Get the negotiated limits (minimum across all masters).
@@ -685,7 +711,8 @@ impl RelaySwitch {
             ))?
             .to_vec();
 
-        let mut caps = parse_caps_from_relay_notify(&caps_payload)?;
+        let mut payload = parse_relay_notify_payload(&caps_payload)?;
+        let mut caps = payload.caps.clone();
         let mut limits = notify_frame.relay_notify_limits().unwrap_or_default();
 
         // Identity verification (same as in new())
@@ -751,7 +778,8 @@ impl RelaySwitch {
                     FrameType::RelayNotify => {
                         if let Some(manifest) = frame.relay_notify_manifest() {
                             caps_payload = manifest.to_vec();
-                            caps = parse_caps_from_relay_notify(&caps_payload)?;
+                            payload = parse_relay_notify_payload(&caps_payload)?;
+                            caps = payload.caps.clone();
                         }
                         if let Some(l) = frame.relay_notify_limits() {
                             limits = l;
@@ -827,6 +855,7 @@ impl RelaySwitch {
             manifest: RwLock::new(caps_payload),
             limits: RwLock::new(limits),
             caps: RwLock::new(caps),
+            installed_plugins: RwLock::new(payload.installed_plugins),
             healthy: AtomicBool::new(true),
             reader_handle: Some(reader_handle),
             connected_at: Instant::now(),
@@ -1387,13 +1416,15 @@ impl RelaySwitch {
                 let caps_payload = frame.relay_notify_manifest()
                     .ok_or_else(|| RelaySwitchError::Protocol("RelayNotify has no payload".to_string()))?;
 
-                let new_caps = parse_caps_from_relay_notify(caps_payload)?;
+                let payload = parse_relay_notify_payload(caps_payload)?;
+                let new_caps = payload.caps;
 
                 // Update master's caps and limits
                 {
                     let masters = self.masters.read().await;
                     if let Some(master) = masters.get(source_idx) {
                         *master.caps.write().await = new_caps;
+                        *master.installed_plugins.write().await = payload.installed_plugins;
                         *master.manifest.write().await = caps_payload.to_vec();
                         // Extract and update limits from RelayNotify
                         if let Some(new_limits) = frame.relay_notify_limits() {
@@ -1573,11 +1604,14 @@ impl RelaySwitch {
     async fn rebuild_capabilities(&self) {
         // Collect caps per master for detailed logging
         let mut caps_by_master: Vec<(usize, bool, Vec<String>)> = Vec::new();
+        let mut installed_plugins_by_master: Vec<(bool, Vec<InstalledPluginIdentity>)> = Vec::new();
         let masters = self.masters.read().await;
         for (idx, master) in masters.iter().enumerate() {
             let healthy = master.healthy.load(Ordering::SeqCst);
             let caps = master.caps.read().await.clone();
+            let installed_plugins = master.installed_plugins.read().await.clone();
             caps_by_master.push((idx, healthy, caps));
+            installed_plugins_by_master.push((healthy, installed_plugins));
         }
         drop(masters);
 
@@ -1603,6 +1637,22 @@ impl RelaySwitch {
 
         // Build manifest as JSON array (same format as RelayNotify payloads)
         *self.aggregate_capabilities.write().await = serde_json::to_vec(&all_caps).unwrap_or_default();
+        let mut all_installed_plugins: Vec<InstalledPluginIdentity> = Vec::new();
+        for (healthy, installed_plugins) in installed_plugins_by_master {
+            if healthy {
+                all_installed_plugins.extend(installed_plugins);
+            }
+        }
+        all_installed_plugins.sort();
+        all_installed_plugins.dedup_by(|left, right| {
+            left.id == right.id && left.version == right.version && left.sha256 == right.sha256
+        });
+        tracing::info!(
+            target: "relay_switch",
+            installed_plugins = ?all_installed_plugins,
+            "RelaySwitch rebuilt installed plugins"
+        );
+        *self.aggregate_installed_plugins.write().await = all_installed_plugins;
 
         // Log only if changed
         if changed {
@@ -1682,21 +1732,20 @@ impl RelaySwitch {
 // HELPER FUNCTIONS
 // =============================================================================
 
-/// Parse capability URNs from RelayNotify payload.
-/// RelayNotify contains a simple JSON array of URN strings: ["cap:...", "cap:...", ...]
+/// Parse capabilities payload from RelayNotify.
+/// RelayNotify contains a JSON object with capability URNs and installed plugin identities.
 /// Validates that CAP_IDENTITY is present — hard-fail if missing.
-fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, RelaySwitchError> {
+fn parse_relay_notify_payload(notify_payload: &[u8]) -> Result<RelayNotifyCapabilitiesPayload, RelaySwitchError> {
     use crate::urn::cap_urn::CapUrn;
     use crate::standard::caps::CAP_IDENTITY;
 
-    // Deserialize simple JSON array of URN strings
-    let cap_urns: Vec<String> = serde_json::from_slice(notify_payload)
-        .map_err(|e| RelaySwitchError::Protocol(format!("Invalid RelayNotify capability array: {}", e)))?;
+    let payload: RelayNotifyCapabilitiesPayload = serde_json::from_slice(notify_payload)
+        .map_err(|e| RelaySwitchError::Protocol(format!("Invalid RelayNotify payload: {}", e)))?;
 
     // Verify CAP_IDENTITY is present — mandatory for every host
     let identity_urn = CapUrn::from_string(CAP_IDENTITY)
         .expect("BUG: CAP_IDENTITY constant is invalid");
-    let has_identity = cap_urns.iter().any(|cap_str| {
+    let has_identity = payload.caps.iter().any(|cap_str| {
         CapUrn::from_string(cap_str)
             .map(|cap_urn| identity_urn.conforms_to(&cap_urn))
             .unwrap_or(false)
@@ -1707,7 +1756,7 @@ fn parse_caps_from_relay_notify(notify_payload: &[u8]) -> Result<Vec<String>, Re
         ));
     }
 
-    Ok(cap_urns)
+    Ok(payload)
 }
 
 // =============================================================================
@@ -1738,10 +1787,11 @@ mod tests {
         let mut writer = FrameWriter::new(BufWriter::new(write_half));
 
         // Send RelayNotify
-        let notify = Frame::relay_notify(
-            &serde_json::to_vec(caps_json).unwrap(),
-            limits,
-        );
+        let notify_payload = serde_json::json!({
+            "caps": caps_json,
+            "installed_plugins": [],
+        });
+        let notify = Frame::relay_notify(&serde_json::to_vec(&notify_payload).unwrap(), limits);
         writer.write(&notify).await.unwrap();
 
         // Handle identity verification REQ
@@ -2309,7 +2359,10 @@ mod tests {
             let mut writer = FrameWriter::new(BufWriter::new(write_half));
 
             // Send RelayNotify
-            let caps = serde_json::json!(["cap:in=media:;out=media:"]);
+            let caps = serde_json::json!({
+                "caps": ["cap:in=media:;out=media:"],
+                "installed_plugins": [],
+            });
             let notify = Frame::relay_notify(&serde_json::to_vec(&caps).unwrap(), &Limits::default());
             writer.write(&notify).await.unwrap();
 

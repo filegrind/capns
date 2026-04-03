@@ -27,6 +27,8 @@
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{handshake, verify_identity, FrameReader, FrameWriter, CborError};
+use crate::bifaci::relay_switch::InstalledPluginIdentity;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -34,6 +36,12 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct RelayNotifyCapabilitiesPayload {
+    caps: Vec<String>,
+    installed_plugins: Vec<InstalledPluginIdentity>,
+}
 
 /// Interval between heartbeat probes sent to each running plugin.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
@@ -268,6 +276,8 @@ struct ManagedPlugin {
     caps: Vec<crate::Cap>,
     /// Known caps from registration (before HELLO, used for routing).
     known_caps: Vec<String>,
+    /// Installed plugin identity derived from the registered binary path.
+    installed_identity: Option<InstalledPluginIdentity>,
     /// Whether the plugin is currently running and healthy.
     running: bool,
     /// Reader task handle.
@@ -299,6 +309,7 @@ struct ManagedPlugin {
 
 impl ManagedPlugin {
     fn new_registered(path: PathBuf, known_caps: Vec<String>) -> Self {
+        let installed_identity = installed_plugin_identity_from_path(&path);
         Self {
             path,
             process: None,
@@ -307,6 +318,7 @@ impl ManagedPlugin {
             limits: Limits::default(),
             caps: Vec::new(),
             known_caps,
+            installed_identity,
             running: false,
             reader_handle: None,
             writer_handle: None,
@@ -332,6 +344,7 @@ impl ManagedPlugin {
             limits,
             caps,
             known_caps,
+            installed_identity: None,
             running: true,
             reader_handle: None,
             writer_handle: None,
@@ -344,6 +357,34 @@ impl ManagedPlugin {
             memory_rss_mb: 0,
         }
     }
+
+    fn installed_plugin_identity(&self) -> Option<InstalledPluginIdentity> {
+        self.installed_identity.clone()
+    }
+}
+
+fn parse_installed_plugin_name(name: &str) -> Option<(String, String)> {
+    let lowercase = name.to_lowercase();
+    if let Some((candidate, suffix)) = lowercase.rsplit_once('-') {
+        if !candidate.is_empty()
+            && !suffix.is_empty()
+            && suffix.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+            && suffix.chars().any(|ch| ch.is_ascii_digit())
+        {
+            return Some((candidate.to_string(), suffix.to_string()));
+        }
+    }
+    None
+}
+
+fn installed_plugin_identity_from_path(path: &Path) -> Option<InstalledPluginIdentity> {
+    let name = path.file_stem()?.to_str()?;
+    let (id, version) = parse_installed_plugin_name(name)?;
+    let bytes = std::fs::read(path).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let sha256 = format!("{:x}", hasher.finalize());
+    Some(InstalledPluginIdentity { id, version, sha256 })
 }
 
 // =============================================================================
@@ -538,11 +579,17 @@ impl PluginHostRuntime {
         let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
         heartbeat_interval.tick().await; // skip initial tick
 
-        // Send discovery RelayNotify if plugins were pre-attached
-        // At this point all async tasks are spawned and running, so the frame will be delivered
-        // self.capabilities is already a JSON array of capability URN strings: ["cap:...", "cap:..."]
+        // Send discovery RelayNotify if plugins were pre-attached.
+        // At this point all async tasks are spawned and running, so the frame will be delivered.
         if !self.capabilities.is_empty() {
-            let notify_frame = Frame::relay_notify(&self.capabilities, &Limits::default());
+            let notify_payload = RelayNotifyCapabilitiesPayload {
+                caps: serde_json::from_slice(&self.capabilities)
+                    .expect("BUG: host runtime capabilities must be valid JSON cap array"),
+                installed_plugins: self.plugins.iter().filter_map(|plugin| plugin.installed_plugin_identity()).collect(),
+            };
+            let notify_bytes = serde_json::to_vec(&notify_payload)
+                .expect("Failed to serialize RelayNotify capabilities payload");
+            let notify_frame = Frame::relay_notify(&notify_bytes, &Limits::default());
             let _ = outbound_tx.send(notify_frame);
         }
 
@@ -1495,12 +1542,15 @@ impl PluginHostRuntime {
         self.capabilities = serde_json::to_vec(&cap_urns)
             .expect("Failed to serialize capability URNs");
 
-        // Send RelayNotify to relay if in relay mode
-        // RelayNotify contains just the capability URN strings, not a full manifest
+        // Send RelayNotify to relay if in relay mode.
         if let Some(tx) = outbound_tx {
-            let caps_bytes = serde_json::to_vec(&cap_urns)
-                .expect("Failed to serialize capability URNs for RelayNotify");
-            let notify_frame = Frame::relay_notify(&caps_bytes, &Limits::default());
+            let notify_payload = RelayNotifyCapabilitiesPayload {
+                caps: cap_urns.clone(),
+                installed_plugins: self.plugins.iter().filter_map(|plugin| plugin.installed_plugin_identity()).collect(),
+            };
+            let notify_bytes = serde_json::to_vec(&notify_payload)
+                .expect("Failed to serialize RelayNotify capabilities payload");
+            let notify_frame = Frame::relay_notify(&notify_bytes, &Limits::default());
             let _ = tx.send(notify_frame); // Ignore error if relay closed
         }
     }

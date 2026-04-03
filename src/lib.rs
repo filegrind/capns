@@ -98,7 +98,7 @@ pub use bifaci::host_runtime::{PluginProcessInfo, PluginProcessHandle, HostComma
 
 // Relay exports
 pub use bifaci::relay::{RelaySlave, RelayMaster};
-pub use bifaci::relay_switch::{RelaySwitch, RelaySwitchError, MasterHealthStatus};
+pub use bifaci::relay_switch::{InstalledPluginIdentity, RelaySwitch, RelaySwitchError, MasterHealthStatus};
 pub use bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter, accumulate_input};
 
 // Planner — planning, discovery, and execution for machines

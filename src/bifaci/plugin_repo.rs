@@ -182,6 +182,7 @@ pub struct PluginSuggestion {
     pub cap_urn: String,
     pub cap_title: String,
     pub latest_version: String,
+    pub binary_sha256: String,
     pub repo_url: String,
     pub page_url: String,
 }
@@ -336,6 +337,7 @@ impl PluginRepo {
                                 cap_urn: cap_urn.to_string(),
                                 cap_title: cap_info.title.clone(),
                                 latest_version: plugin.version.clone(),
+                                binary_sha256: plugin.binary_sha256.clone(),
                                 repo_url: cache.repo_url.clone(),
                                 page_url,
                             });
