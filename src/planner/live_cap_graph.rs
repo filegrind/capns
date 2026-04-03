@@ -145,7 +145,7 @@ impl LiveMachinePlanEdge {
 }
 
 /// Type of step in a capability chain path.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum StrandStepType {
     /// A real capability step
     Cap {
@@ -177,7 +177,7 @@ pub enum StrandStepType {
 }
 
 /// Information about a single step in a capability chain path.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StrandStep {
     /// Type of step (cap or cardinality transition)
     pub step_type: StrandStepType,
@@ -221,7 +221,7 @@ impl StrandStep {
 }
 
 /// Information about a complete capability chain path.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Strand {
     /// Steps in the path, in order
     pub steps: Vec<StrandStep>,
@@ -1486,5 +1486,47 @@ mod tests {
         assert!(paths.len() >= 2, "Should find at least 2 paths (got {})", paths.len());
         assert_eq!(paths[0].steps.len(), 1, "Shortest path should be first (1 step)");
         assert_eq!(paths[0].steps[0].title(), "Direct");
+    }
+
+    #[test]
+    fn test790_strand_round_trips_through_serde_without_losing_step_types() {
+        let strand = Strand {
+            steps: vec![
+                StrandStep {
+                    step_type: StrandStepType::Cap {
+                        cap_urn: CapUrn::from_string(
+                            r#"cap:in=media:pdf;op=disbind;out="media:list;page;textable""#,
+                        )
+                        .unwrap(),
+                        title: "Disbind PDF Into Pages".to_string(),
+                        specificity: 4,
+                    },
+                    from_spec: MediaUrn::from_string("media:pdf").unwrap(),
+                    to_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                },
+                StrandStep {
+                    step_type: StrandStepType::ForEach {
+                        list_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                        item_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                    },
+                    from_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                    to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                },
+            ],
+            source_spec: MediaUrn::from_string("media:pdf").unwrap(),
+            target_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+            total_steps: 2,
+            cap_step_count: 1,
+            description: "Transform PDF into text pages".to_string(),
+        };
+
+        let json = serde_json::to_string(&strand).expect("strand should serialize");
+        let recovered: Strand = serde_json::from_str(&json).expect("strand should deserialize");
+
+        assert_eq!(recovered.source_spec.to_string(), "media:pdf");
+        assert_eq!(recovered.target_spec.to_string(), "media:page;textable");
+        assert_eq!(recovered.steps.len(), 2);
+        assert!(matches!(recovered.steps[0].step_type, StrandStepType::Cap { .. }));
+        assert!(matches!(recovered.steps[1].step_type, StrandStepType::ForEach { .. }));
     }
 }
