@@ -17,6 +17,7 @@
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::planner::Strand;
 use crate::urn::cap_urn::CapUrn;
 use crate::urn::media_urn::MediaUrn;
 
@@ -129,6 +130,7 @@ pub struct Machine {
 pub struct MachineRun {
     pub id: String,
     pub machine_notation: String,
+    pub resolved_strand: Strand,
     pub status: MachineRunStatus,
     pub error_message: Option<String>,
     pub created_at_unix: i64,
@@ -263,10 +265,11 @@ impl Machine {
 }
 
 impl MachineRun {
-    pub fn new(id: String, machine_notation: String) -> Self {
+    pub fn new(id: String, resolved_strand: Strand) -> Self {
         Self {
             id,
-            machine_notation,
+            machine_notation: resolved_strand.to_machine_notation(),
+            resolved_strand,
             status: MachineRunStatus::Pending,
             error_message: None,
             created_at_unix: unix_now(),
@@ -322,6 +325,51 @@ impl fmt::Display for MachineEdge {
             self.cap_urn,
             self.target
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::planner::{StrandStep, StrandStepType};
+
+    #[test]
+    fn machine_run_derives_machine_notation_from_resolved_strand() {
+        let strand = Strand {
+            steps: vec![
+                StrandStep {
+                    step_type: StrandStepType::Cap {
+                        cap_urn: CapUrn::from_string(
+                            r#"cap:in=media:pdf;op=disbind;out="media:list;page;textable""#,
+                        )
+                        .unwrap(),
+                        title: "Disbind PDF Into Pages".to_string(),
+                        specificity: 4,
+                    },
+                    from_spec: MediaUrn::from_string("media:pdf").unwrap(),
+                    to_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                },
+                StrandStep {
+                    step_type: StrandStepType::ForEach {
+                        list_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                        item_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                    },
+                    from_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                    to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                },
+            ],
+            source_spec: MediaUrn::from_string("media:pdf").unwrap(),
+            target_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+            total_steps: 2,
+            cap_step_count: 1,
+            description: "PDF to text pages".to_string(),
+        };
+
+        let expected_notation = strand.to_machine_notation();
+        let run = MachineRun::new("run-1".to_string(), strand);
+
+        assert_eq!(run.machine_notation, expected_notation);
+        assert_eq!(run.resolved_strand.target_spec.to_string(), "media:page;textable");
     }
 }
 
