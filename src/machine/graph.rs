@@ -17,7 +17,7 @@
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::planner::Strand;
+use crate::planner::{Strand, StrandStep, StrandStepType};
 use crate::urn::cap_urn::CapUrn;
 use crate::urn::media_urn::MediaUrn;
 
@@ -123,6 +123,7 @@ pub struct Machine {
     /// Edges in the graph, ordered for deterministic serialization.
     /// Comparison is order-independent (set semantics).
     edges: Vec<MachineEdge>,
+    abstract_strand: Strand,
 }
 
 /// A single execution attempt of a [`Machine`].
@@ -156,12 +157,27 @@ fn unix_now() -> i64 {
 impl Machine {
     /// Create a new machine graph from a vector of edges.
     pub fn new(edges: Vec<MachineEdge>) -> Self {
-        Self { edges }
+        let abstract_strand = Self::build_abstract_strand(&edges);
+        Self { edges, abstract_strand }
+    }
+
+    pub(crate) fn with_abstract_strand(edges: Vec<MachineEdge>, abstract_strand: Strand) -> Self {
+        Self { edges, abstract_strand }
     }
 
     /// Create an empty machine graph.
     pub fn empty() -> Self {
-        Self { edges: Vec::new() }
+        Self {
+            edges: Vec::new(),
+            abstract_strand: Strand {
+                steps: Vec::new(),
+                source_spec: MediaUrn::from_string("media:").expect("wildcard media URN"),
+                target_spec: MediaUrn::from_string("media:").expect("wildcard media URN"),
+                total_steps: 0,
+                cap_step_count: 0,
+                description: String::new(),
+            },
+        }
     }
 
     /// Get the edges of this graph.
@@ -174,6 +190,10 @@ impl Machine {
         &mut self.edges
     }
 
+    pub fn abstract_strand(&self) -> &Strand {
+        &self.abstract_strand
+    }
+
     /// Number of edges in the graph.
     pub fn edge_count(&self) -> usize {
         self.edges.len()
@@ -182,6 +202,65 @@ impl Machine {
     /// Check if the graph has no edges.
     pub fn is_empty(&self) -> bool {
         self.edges.is_empty()
+    }
+
+    fn build_abstract_strand(edges: &[MachineEdge]) -> Strand {
+        let wildcard = || MediaUrn::from_string("media:").expect("wildcard media URN");
+
+        let steps: Vec<StrandStep> = edges.iter().map(|edge| {
+            let title = edge
+                .cap_urn
+                .get_tag("op")
+                .map(|op| {
+                    op.split(['_', '-'])
+                        .filter(|part| !part.is_empty())
+                        .map(|part| {
+                            let mut chars = part.chars();
+                            match chars.next() {
+                                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                                None => String::new(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .filter(|title| !title.is_empty())
+                .unwrap_or_else(|| edge.cap_urn.to_string());
+
+            StrandStep {
+                step_type: StrandStepType::Cap {
+                    cap_urn: edge.cap_urn.clone(),
+                    title,
+                    specificity: edge.cap_urn.specificity(),
+                },
+                from_spec: edge
+                    .sources
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(wildcard),
+                to_spec: edge.target.clone(),
+            }
+        }).collect();
+
+        Strand {
+            source_spec: edges
+                .first()
+                .and_then(|edge| edge.sources.first())
+                .cloned()
+                .unwrap_or_else(wildcard),
+            target_spec: edges
+                .last()
+                .map(|edge| edge.target.clone())
+                .unwrap_or_else(wildcard),
+            total_steps: steps.len() as i32,
+            cap_step_count: steps.len() as i32,
+            description: if steps.is_empty() {
+                String::new()
+            } else {
+                format!("{} step machine", steps.len())
+            },
+            steps,
+        }
     }
 
     /// Check if two machine graphs are semantically equivalent.
