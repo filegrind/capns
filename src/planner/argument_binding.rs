@@ -142,7 +142,10 @@ impl CapInputFile {
     }
 
     pub fn filename(&self) -> Option<&str> {
-        std::path::Path::new(&self.file_path)
+        // Use original_path (pre-container) when available — container paths
+        // have UUID prefixes that must never leak into user-facing output names.
+        let path = self.original_path.as_deref().unwrap_or(&self.file_path);
+        std::path::Path::new(path)
             .file_name()
             .and_then(|s| s.to_str())
     }
