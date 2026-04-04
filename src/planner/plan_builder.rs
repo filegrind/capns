@@ -16,7 +16,7 @@ use serde_json::json;
 use crate::{Cap, CapRegistry, MediaUrn, MediaUrnRegistry, MediaValidation};
 use super::argument_binding::{ArgumentBinding, ArgumentBindings};
 use super::cardinality::InputCardinality;
-use super::plan::{MachinePlanEdge, MachinePlan, MachineNode};
+use super::plan::{ExecutionNodeType, MachinePlanEdge, MachinePlan, MachineNode};
 use super::PlannerError;
 use super::live_cap_graph::Strand;
 
@@ -84,7 +84,7 @@ impl MachinePlanBuilder {
     /// Looks up cap definitions to find file-path argument names by media URN type.
     ///
     /// Takes a `Strand` from LiveCapGraph which uses typed URNs.
-    /// Handles both capability steps and cardinality transition steps (ForEach/Collect/WrapInList).
+    /// Handles both capability steps and cardinality transition steps (ForEach/Collect).
     ///
     /// ForEach/Collect pairs define iteration boundaries:
     /// - ForEach marks the start of iteration over a list
@@ -299,9 +299,9 @@ impl MachinePlanBuilder {
                     continue;
                 }
 
-                StrandStepType::Collect { .. } => {
-                    // We've reached the end of a ForEach body
+                StrandStepType::Collect { list_spec, .. } => {
                     if let Some((foreach_idx, foreach_node_id)) = inside_foreach_body.take() {
+                        // Collect after ForEach: close the iteration body
                         let entry = body_entry.take().unwrap_or_else(|| prev_node_id.clone());
                         let exit = body_exit.take().unwrap_or_else(|| prev_node_id.clone());
 
@@ -331,32 +331,28 @@ impl MachinePlanBuilder {
                         // Collection edge from body exit to Collect
                         plan.add_edge(MachinePlanEdge::collection(&exit, &node_id));
                     } else {
-                        return Err(PlannerError::InvalidPath(
-                            "Collect step without matching ForEach".to_string()
-                        ));
+                        // Standalone Collect: scalar → list-of-one (pass-through).
+                        // No ForEach body — this is a simple cardinality transition.
+                        // At execution time the data flows unchanged, only the type
+                        // annotation changes from scalar to list.
+                        tracing::info!(
+                            "  plan_builder: standalone Collect at step[{}], prev_node_id='{}'",
+                            i, prev_node_id
+                        );
+
+                        let mut collect_node = MachineNode::collect(
+                            &node_id,
+                            vec![prev_node_id.clone()],
+                        );
+                        // Set output_media_urn so plan_converter can register it
+                        collect_node.node_type = ExecutionNodeType::Collect {
+                            input_nodes: vec![prev_node_id.clone()],
+                            output_media_urn: Some(list_spec.to_string()),
+                        };
+                        collect_node.description = Some("Collect: scalar to list-of-one".to_string());
+                        plan.add_node(collect_node);
+                        plan.add_edge(MachinePlanEdge::direct(&prev_node_id, &node_id));
                     }
-                }
-
-                StrandStepType::WrapInList { item_spec, list_spec } => {
-                    // WrapInList wraps a scalar in a list-of-one. At execution time
-                    // this is a pass-through — the data flows unchanged.
-                    let is_inside_body = inside_foreach_body.is_some();
-                    tracing::info!(
-                        "  plan_builder: WrapInList at step[{}], inside_body={}, prev_node_id='{}'",
-                        i, is_inside_body, prev_node_id
-                    );
-
-                    let wrap_node = MachineNode::wrap_in_list(
-                        &node_id,
-                        &item_spec.to_string(),
-                        &list_spec.to_string(),
-                    );
-                    plan.add_node(wrap_node);
-                    plan.add_edge(MachinePlanEdge::direct(&prev_node_id, &node_id));
-
-                    // If inside a ForEach body, WrapInList is part of the body
-                    // but doesn't set body_entry/body_exit (only Cap nodes do).
-                    // The data still flows through it.
                 }
             }
 
@@ -572,7 +568,7 @@ impl MachinePlanBuilder {
     /// Takes the new typed `Strand` from `live_cap_graph` which uses
     /// typed `MediaUrn` and `CapUrn` values.
     ///
-    /// Only Cap steps have arguments to analyze. ForEach/Collect/WrapInList steps
+    /// Only Cap steps have arguments to analyze. ForEach/Collect steps
     /// are cardinality transitions with no user-configurable arguments.
     pub async fn analyze_path_arguments(
         &self,
@@ -589,7 +585,7 @@ impl MachinePlanBuilder {
             // Only analyze Cap steps - cardinality transitions have no arguments
             let cap_urn = match step.cap_urn() {
                 Some(urn) => urn,
-                None => continue, // Skip ForEach/Collect/WrapInList steps
+                None => continue, // Skip ForEach/Collect steps
             };
 
             let cap_urn_str = cap_urn.to_string();

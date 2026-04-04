@@ -36,7 +36,7 @@ impl Machine {
     /// The conversion:
     /// - Each `Cap` step becomes a `MachineEdge` with a single source
     /// - `ForEach` steps set `is_loop: true` on the next Cap edge
-    /// - `Collect` and `WrapInList` steps are elided (implicit in transitions)
+    /// - `Collect` steps are elided (implicit in transitions)
     pub fn from_path(path: &Strand) -> Result<Self, MachineAbstractionError> {
         let mut edges = Vec::new();
         let mut pending_loop = false;
@@ -55,7 +55,7 @@ impl Machine {
                 StrandStepType::ForEach { .. } => {
                     pending_loop = true;
                 }
-                StrandStepType::Collect { .. } | StrandStepType::WrapInList { .. } => {
+                StrandStepType::Collect { .. } => {
                     // Elided — cardinality transitions are implicit
                 }
             }
@@ -628,7 +628,7 @@ mod tests {
                     to_spec: media("media:txt;textable"),
                 },
                 StrandStep {
-                    step_type: StrandStepType::WrapInList {
+                    step_type: StrandStepType::Collect {
                         item_spec: media("media:txt;textable"),
                         list_spec: media("media:list;txt;textable"),
                     },
@@ -640,11 +640,11 @@ mod tests {
             target_spec: media("media:list;txt;textable"),
             total_steps: 2,
             cap_step_count: 1,
-            description: "Extract → WrapInList".to_string(),
+            description: "Extract → Collect".to_string(),
         };
 
         let graph = Machine::from_path(&path).unwrap();
-        // WrapInList is elided — only the Cap edge remains
+        // Collect is elided — only the Cap edge remains
         assert_eq!(graph.edge_count(), 1);
         assert!(!graph.edges()[0].is_loop);
     }

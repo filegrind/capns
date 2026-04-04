@@ -10,7 +10,8 @@
 //! - InputSlot nodes become source data nodes
 //! - Cap nodes become edges from their input source to their output target
 //! - Output nodes mark terminal data nodes
-//! - ForEach/Collect/Merge/Split nodes are rejected — the caller must decompose
+//! - Standalone Collect nodes (scalar→list, no ForEach) are pass-throughs
+//! - ForEach/Merge/Split nodes are rejected — the caller must decompose
 //!   ForEach plans into sub-plans before conversion (see MachinePlan::extract_*)
 
 use std::collections::HashMap;
@@ -58,26 +59,30 @@ pub async fn plan_to_resolved_graph(
                     }
                 }
             }
-            ExecutionNodeType::WrapInList { list_media_urn, .. } => {
-                // WrapInList is a pass-through at execution time — the data flows
-                // unchanged, only the type annotation changes. Register the node
-                // with the list media URN so downstream edges can find data at it.
-                nodes.insert(node_id.clone(), list_media_urn.clone());
+            ExecutionNodeType::Collect { output_media_urn, .. } => {
+                if let Some(media_urn) = output_media_urn {
+                    // Standalone Collect (scalar→list): pass-through at execution time.
+                    // The data flows unchanged, only the type annotation changes.
+                    // Register the node with the list media URN so downstream edges
+                    // can find data at it.
+                    nodes.insert(node_id.clone(), media_urn.clone());
+                } else {
+                    // ForEach-paired Collect without output_media_urn should not reach
+                    // plan_converter — the plan should have been decomposed first.
+                    return Err(ParseOrchestrationError::InvalidGraph {
+                        message: format!(
+                            "Plan contains ForEach-paired Collect node '{}'. Decompose the plan \
+                             using extract_prefix_to/extract_foreach_body/extract_suffix_from \
+                             before converting to ResolvedGraph.",
+                            node_id
+                        ),
+                    });
+                }
             }
             ExecutionNodeType::ForEach { .. } => {
                 return Err(ParseOrchestrationError::InvalidGraph {
                     message: format!(
                         "Plan contains ForEach node '{}'. Decompose the plan using \
-                         extract_prefix_to/extract_foreach_body/extract_suffix_from \
-                         before converting to ResolvedGraph.",
-                        node_id
-                    ),
-                });
-            }
-            ExecutionNodeType::Collect { .. } => {
-                return Err(ParseOrchestrationError::InvalidGraph {
-                    message: format!(
-                        "Plan contains Collect node '{}'. Decompose the plan using \
                          extract_prefix_to/extract_foreach_body/extract_suffix_from \
                          before converting to ResolvedGraph.",
                         node_id
@@ -103,14 +108,14 @@ pub async fn plan_to_resolved_graph(
         }
     }
 
-    // Build a map from WrapInList nodes to their input predecessors.
-    // WrapInList is a pass-through: data at the predecessor flows through unchanged.
-    // When an edge's from_node is a WrapInList, we resolve it to the actual data source.
-    let mut wrap_predecessors: HashMap<String, String> = HashMap::new();
+    // Build a map from standalone Collect nodes to their input predecessors.
+    // Standalone Collect is a pass-through: data at the predecessor flows through unchanged.
+    // When an edge's from_node is a standalone Collect, we resolve it to the actual data source.
+    let mut collect_predecessors: HashMap<String, String> = HashMap::new();
     for edge in &plan.edges {
         if let Some(to_node) = plan.nodes.get(&edge.to_node) {
-            if matches!(to_node.node_type, ExecutionNodeType::WrapInList { .. }) {
-                wrap_predecessors.insert(edge.to_node.clone(), edge.from_node.clone());
+            if let ExecutionNodeType::Collect { output_media_urn: Some(_), .. } = &to_node.node_type {
+                collect_predecessors.insert(edge.to_node.clone(), edge.from_node.clone());
             }
         }
     }
@@ -132,11 +137,11 @@ pub async fn plan_to_resolved_graph(
             let in_media = cap.urn.in_spec().to_string();
             let out_media = cap.urn.out_spec().to_string();
 
-            // If the source is a WrapInList node, resolve through to the actual
-            // data source. WrapInList is transparent — data at the predecessor
-            // flows unchanged through it.
-            let from = if wrap_predecessors.contains_key(&edge.from_node) {
-                wrap_predecessors[&edge.from_node].clone()
+            // If the source is a standalone Collect node, resolve through to the
+            // actual data source. Standalone Collect is transparent — data at the
+            // predecessor flows unchanged through it.
+            let from = if collect_predecessors.contains_key(&edge.from_node) {
+                collect_predecessors[&edge.from_node].clone()
             } else {
                 edge.from_node.clone()
             };
@@ -164,7 +169,7 @@ pub async fn plan_to_resolved_graph(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planner::{MachinePlan, MachineNode, MachinePlanEdge, InputCardinality};
+    use crate::planner::{ExecutionNodeType, MachinePlan, MachineNode, MachinePlanEdge, InputCardinality};
     use crate::{Cap, CapUrn};
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -309,33 +314,42 @@ mod tests {
         assert_eq!(result.unwrap().edges.len(), 1);
     }
 
-    // TEST954: WrapInList nodes are handled as pass-through
-    // Plan: input → cap_0 → WrapInList → cap_1 → output
-    // The WrapInList is transparent — the resolved edge from WrapInList to cap_1
+    // TEST954: Standalone Collect nodes are handled as pass-through
+    // Plan: input → cap_0 → Collect → cap_1 → output
+    // The standalone Collect is transparent — the resolved edge from Collect to cap_1
     // should be rewritten to go from cap_0 to cap_1 directly.
     #[tokio::test]
-    async fn test954_wrap_in_list_passthrough() {
+    async fn test954_standalone_collect_passthrough() {
         let registry = MockRegistry::new();
         registry.add_cap(r#"cap:in=media:pdf;op=extract;out="media:text;textable""#).await;
         registry.add_cap(r#"cap:in="media:list;text;textable";op=embed;out="media:embedding-vector;record;textable""#).await;
 
-        let mut plan = MachinePlan::new("wrap_plan");
+        let mut plan = MachinePlan::new("collect_plan");
         plan.add_node(MachineNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
         plan.add_node(MachineNode::cap("cap_0", r#"cap:in=media:pdf;op=extract;out="media:text;textable""#));
-        plan.add_node(MachineNode::wrap_in_list("wrap_0", "media:text;textable", "media:list;text;textable"));
+
+        // Standalone Collect: scalar→list with output_media_urn set
+        let mut collect_node = MachineNode::collect("collect_0", vec!["cap_0".to_string()]);
+        collect_node.node_type = ExecutionNodeType::Collect {
+            input_nodes: vec!["cap_0".to_string()],
+            output_media_urn: Some("media:list;text;textable".to_string()),
+        };
+        collect_node.description = Some("Collect: scalar to list-of-one".to_string());
+        plan.add_node(collect_node);
+
         plan.add_node(MachineNode::cap("cap_1", r#"cap:in="media:list;text;textable";op=embed;out="media:embedding-vector;record;textable""#));
         plan.add_node(MachineNode::output("output", "result", "cap_1"));
 
         plan.add_edge(MachinePlanEdge::direct("input", "cap_0"));
-        plan.add_edge(MachinePlanEdge::direct("cap_0", "wrap_0"));
-        plan.add_edge(MachinePlanEdge::direct("wrap_0", "cap_1"));
+        plan.add_edge(MachinePlanEdge::direct("cap_0", "collect_0"));
+        plan.add_edge(MachinePlanEdge::direct("collect_0", "cap_1"));
         plan.add_edge(MachinePlanEdge::direct("cap_1", "output"));
 
         let result = plan_to_resolved_graph(&plan, &registry).await;
-        assert!(result.is_ok(), "Plan with WrapInList should convert: {:?}", result.err());
+        assert!(result.is_ok(), "Plan with standalone Collect should convert: {:?}", result.err());
 
         let graph = result.unwrap();
-        // Two resolved edges: input→cap_0, cap_0→cap_1 (WrapInList resolved through)
+        // Two resolved edges: input→cap_0, cap_0→cap_1 (Collect resolved through)
         assert_eq!(graph.edges.len(), 2, "Expected 2 edges, got {}: {:?}",
             graph.edges.len(), graph.edges.iter().map(|e| format!("{}→{}", e.from, e.to)).collect::<Vec<_>>());
 
@@ -343,13 +357,13 @@ mod tests {
         assert_eq!(graph.edges[0].from, "input");
         assert_eq!(graph.edges[0].to, "cap_0");
 
-        // Second edge: cap_0 → cap_1 (NOT wrap_0 → cap_1)
+        // Second edge: cap_0 → cap_1 (NOT collect_0 → cap_1)
         assert_eq!(graph.edges[1].from, "cap_0",
-            "WrapInList should be resolved through — edge should come from cap_0, not wrap_0");
+            "Standalone Collect should be resolved through — edge should come from cap_0, not collect_0");
         assert_eq!(graph.edges[1].to, "cap_1");
 
-        // has_foreach_or_collect should be false (WrapInList is NOT ForEach/Collect)
-        assert!(!plan.has_foreach_or_collect(),
-            "Plan with only WrapInList should NOT trigger ForEach execution path");
+        // has_foreach should be false (standalone Collect does NOT trigger ForEach execution path)
+        assert!(!plan.has_foreach(),
+            "Plan with only standalone Collect should NOT trigger ForEach execution path");
     }
 }

@@ -19,10 +19,11 @@
 //! 4. **Deterministic ordering**: Results are sorted by (path_length, specificity, urn).
 //!
 //! 5. **Cardinality is not topology**: The `list` tag is a cardinality marker, not a
-//!    type identity tag. ForEach (list→item), WrapInList (item→list), and Collect
-//!    (item→list after iteration) are universal operations that apply to any media URN
-//!    based solely on whether it has the `list` tag. They are synthesized dynamically
-//!    during traversal, not stored as graph edges.
+//!    type identity tag. ForEach (list→item) and Collect (item→list) are universal
+//!    operations that apply to any media URN based solely on whether it has the `list`
+//!    tag. They are synthesized dynamically during traversal, not stored as graph edges.
+//!    Collect is the single scalar→list transition — whether wrapping 1 item or
+//!    gathering N ForEach results, it is the same concept.
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -40,9 +41,9 @@ use crate::Cap;
 
 /// Type of edge in the capability graph.
 ///
-/// Cap edges are stored in the graph. Cardinality transitions (ForEach, Collect,
-/// WrapInList) are synthesized dynamically by `get_outgoing_edges()` — they are
-/// universal operations derived from the `list` tag, not graph contents.
+/// Cap edges are stored in the graph. Cardinality transitions (ForEach, Collect)
+/// are synthesized dynamically by `get_outgoing_edges()` — they are universal
+/// operations derived from the `list` tag, not graph contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiveMachinePlanEdgeType {
     /// A real capability that transforms media
@@ -54,18 +55,17 @@ pub enum LiveMachinePlanEdgeType {
     /// Fan-out: iterate over list items (list → item, remove `list` tag)
     /// Synthesized for any list-typed source.
     ForEach,
-    /// Collect: gather iteration results back into a list (item → list, add `list` tag)
-    /// Must pair with a preceding ForEach. Synthesized for any scalar source.
+    /// Collect: scalar → list (item → list, add `list` tag)
+    /// The universal scalar-to-list transition. Synthesized for any scalar source.
+    /// Works in two contexts: standalone (wrap scalar in list-of-one) or after
+    /// ForEach (gather iteration results).
     Collect,
-    /// Wrap: wrap a single item into a one-element list (item → list, add `list` tag)
-    /// Independent operation, no ForEach pairing required. Synthesized for any scalar source.
-    WrapInList,
 }
 
 /// An edge in the live capability graph.
 ///
 /// Stored edges represent capabilities that transform one media type to another.
-/// Cardinality transitions (ForEach/Collect/WrapInList) are synthesized dynamically
+/// Cardinality transitions (ForEach/Collect) are synthesized dynamically
 /// and use the same struct for uniformity in path traversal.
 ///
 /// URNs are stored as typed values, not strings, for order-theoretic operations.
@@ -85,9 +85,9 @@ pub struct LiveMachinePlanEdge {
 
 /// Precomputed graph of capabilities for path finding.
 ///
-/// The graph stores only Cap edges. Cardinality transitions (ForEach, Collect,
-/// WrapInList) are universal operations derived from the `list` tag and are
-/// synthesized dynamically by `get_outgoing_edges()` during traversal.
+/// The graph stores only Cap edges. Cardinality transitions (ForEach, Collect)
+/// are universal operations derived from the `list` tag and are synthesized
+/// dynamically by `get_outgoing_edges()` during traversal.
 ///
 /// This graph is designed to be:
 /// - Updated incrementally when caps change
@@ -127,8 +127,7 @@ impl LiveMachinePlanEdge {
         match &self.edge_type {
             LiveMachinePlanEdgeType::Cap { cap_title, .. } => cap_title.clone(),
             LiveMachinePlanEdgeType::ForEach => "ForEach (iterate over list)".to_string(),
-            LiveMachinePlanEdgeType::Collect => "Collect (gather results)".to_string(),
-            LiveMachinePlanEdgeType::WrapInList => "WrapInList (create single-item list)".to_string(),
+            LiveMachinePlanEdgeType::Collect => "Collect (scalar to list)".to_string(),
         }
     }
 
@@ -137,7 +136,7 @@ impl LiveMachinePlanEdge {
         match &self.edge_type {
             LiveMachinePlanEdgeType::Cap { specificity, .. } => *specificity,
             // Cardinality transitions have no specificity preference
-            LiveMachinePlanEdgeType::ForEach | LiveMachinePlanEdgeType::Collect | LiveMachinePlanEdgeType::WrapInList => 0,
+            LiveMachinePlanEdgeType::ForEach | LiveMachinePlanEdgeType::Collect => 0,
         }
     }
 
@@ -171,18 +170,14 @@ pub enum StrandStepType {
         /// The item media type (list without ;list marker)
         item_spec: MediaUrn,
     },
-    /// Collect: gather iteration results
+    /// Collect: scalar → list (add `list` tag)
+    /// The universal scalar-to-list transition, used in two contexts:
+    /// - Standalone: wrap scalar in list-of-one (pass-through at execution time)
+    /// - After ForEach: gather iteration results back into a list
     Collect {
         /// The item media type being collected
         item_spec: MediaUrn,
         /// The list media type (item with ;list marker)
-        list_spec: MediaUrn,
-    },
-    /// Wrap single item in list
-    WrapInList {
-        /// The item media type
-        item_spec: MediaUrn,
-        /// The list media type
         list_spec: MediaUrn,
     },
 }
@@ -205,7 +200,6 @@ impl StrandStep {
             StrandStepType::Cap { title, .. } => title.clone(),
             StrandStepType::ForEach { .. } => "ForEach".to_string(),
             StrandStepType::Collect { .. } => "Collect".to_string(),
-            StrandStepType::WrapInList { .. } => "WrapInList".to_string(),
         }
     }
 
@@ -242,7 +236,7 @@ pub struct Strand {
     pub target_spec: MediaUrn,
     /// Total number of steps (including cardinality transitions)
     pub total_steps: i32,
-    /// Number of cap steps only (excluding ForEach/Collect/WrapInList)
+    /// Number of cap steps only (excluding ForEach/Collect)
     /// This is used for sorting - cardinality transitions don't count as "steps" for user display
     pub cap_step_count: i32,
     /// Human-readable description
@@ -253,7 +247,7 @@ impl Strand {
     /// Convert this resolved path to a machine graph.
     ///
     /// Cap steps become edges; ForEach sets `is_loop` on the next cap;
-    /// Collect and WrapInList are elided (implicit in transitions).
+    /// Collect is elided (implicit in transitions).
     pub fn knit(&self) -> crate::machine::Machine {
         self.try_knit().expect("resolved strand does not define a valid machine")
     }
@@ -306,7 +300,7 @@ impl LiveCapGraph {
     /// Call this when the set of available capabilities changes.
     ///
     /// Only Cap edges are stored in the graph. Cardinality transitions
-    /// (ForEach/Collect/WrapInList) are synthesized dynamically by
+    /// (ForEach/Collect) are synthesized dynamically by
     /// `get_outgoing_edges()` based on source cardinality.
     pub fn sync_from_caps(&mut self, caps: &[Cap]) {
         self.clear();
@@ -505,8 +499,7 @@ impl LiveCapGraph {
     ///
     /// Cardinality transitions are universal operations derived from the `list` tag:
     /// - **ForEach**: Any list source can iterate into its item type (remove `list` tag)
-    /// - **WrapInList**: Any scalar source can be wrapped into a list (add `list` tag)
-    /// - **Collect**: Any scalar source can be collected into a list (add `list` tag)
+    /// - **Collect**: Any scalar source can transition to list form (add `list` tag)
     ///
     /// These are not graph edges — they exist by definition of what `list` means.
     /// They are synthesized here on the fly based on the source's cardinality.
@@ -546,20 +539,11 @@ impl LiveCapGraph {
                 output_cardinality: InputCardinality::Single,
             });
         } else {
-            // WrapInList: scalar → list (add list tag)
-            let list_spec = source.with_list();
-            result.push(LiveMachinePlanEdge {
-                from_spec: source.clone(),
-                to_spec: list_spec.clone(),
-                edge_type: LiveMachinePlanEdgeType::WrapInList,
-                input_cardinality: InputCardinality::Single,
-                output_cardinality: InputCardinality::Sequence,
-            });
-
             // Collect: scalar → list (add list tag)
-            // Distinct from WrapInList — Collect gathers iteration results
-            // and must pair with a preceding ForEach. The plan_builder
-            // enforces this pairing; here we just make the edge available.
+            // The universal scalar-to-list transition. Whether wrapping a single
+            // scalar into a list-of-one or gathering N ForEach iteration results,
+            // it is the same operation — Collect.
+            let list_spec = source.with_list();
             result.push(LiveMachinePlanEdge {
                 from_spec: source.clone(),
                 to_spec: list_spec,
@@ -729,7 +713,7 @@ impl LiveCapGraph {
                 let cap_step_count = current_path.iter().filter(|s| s.is_cap()).count() as i32;
 
                 // A valid machine requires at least one capability step.
-                // Paths with only structural transitions (ForEach/Collect/WrapInList)
+                // Paths with only structural transitions (ForEach/Collect)
                 // are not executable — reject them.
                 if cap_step_count == 0 {
                     return;
@@ -786,12 +770,6 @@ impl LiveCapGraph {
                             list_spec: edge.to_spec.clone(),
                         }
                     }
-                    LiveMachinePlanEdgeType::WrapInList => {
-                        StrandStepType::WrapInList {
-                            item_spec: edge.from_spec.clone(),
-                            list_spec: edge.to_spec.clone(),
-                        }
-                    }
                 };
 
                 current_path.push(StrandStep {
@@ -822,7 +800,7 @@ impl LiveCapGraph {
     ///
     /// Sort by:
     /// 1. cap_step_count (ascending - fewer actual cap steps first)
-    ///    Note: ForEach/Collect/WrapInList don't count as "steps" for sorting
+    ///    Note: ForEach/Collect don't count as "steps" for sorting
     /// 2. total specificity (descending - more specific first)
     /// 3. cap URNs lexicographically (for tie-breaking stability)
     fn compare_paths(a: &Strand, b: &Strand) -> Ordering {
@@ -841,7 +819,6 @@ impl LiveCapGraph {
                         StrandStepType::Cap { cap_urn, .. } => cap_urn.to_string(),
                         StrandStepType::ForEach { .. } => "foreach".to_string(),
                         StrandStepType::Collect { .. } => "collect".to_string(),
-                        StrandStepType::WrapInList { .. } => "wrapinlist".to_string(),
                     }
                 };
                 let keys_a: Vec<String> = a.steps.iter().map(step_key).collect();
@@ -906,8 +883,8 @@ mod tests {
 
         // Reachable targets include:
         // - media:extracted-text (via cap, depth 1)
-        // - media:list;pdf (via WrapInList, depth 1)
-        // - media:extracted-text;list (via cap + WrapInList/Collect, depth 2)
+        // - media:list;pdf (via Collect, depth 1)
+        // - media:extracted-text;list (via cap + Collect, depth 2)
         // The cap target should be at min_path_length 1
         let cap_target = targets.iter().find(|t| {
             t.media_spec.is_equivalent(&MediaUrn::from_string("media:extracted-text").unwrap()).unwrap_or(false)
@@ -969,7 +946,7 @@ mod tests {
         // Query for EXACT target: result;list (plural)
         // Two valid paths exist:
         // 1. Direct: pdf → result;list (via analyze_multi) — 1 cap step
-        // 2. Indirect: pdf → result (via analyze) + WrapInList → result;list — 1 cap step + WrapInList
+        // 2. Indirect: pdf → result (via analyze) + Collect → result;list — 1 cap step + Collect
         // Both are valid. The direct path is shorter (fewer total steps).
         let target_plural = MediaUrn::from_string("media:analysis-result;list").unwrap();
         let paths_plural = graph.find_paths_to_exact_target(&source, &target_plural, 5, 10);
@@ -1104,7 +1081,7 @@ mod tests {
 
     // TEST774: Tests get_reachable_targets() returns all reachable targets
     // Verifies that reachable targets include direct cap targets and
-    // cardinality variants (list versions via WrapInList/Collect)
+    // cardinality variants (list versions via Collect)
     #[test]
     fn test774_get_reachable_targets_finds_all_targets() {
         let mut graph = LiveCapGraph::new();
@@ -1124,8 +1101,8 @@ mod tests {
         // Cap targets must be reachable
         assert!(target_specs.contains(&"media:b".to_string()), "B should be reachable");
         assert!(target_specs.contains(&"media:d".to_string()), "D should be reachable");
-        // Cardinality variants are also reachable (via WrapInList/Collect)
-        assert!(target_specs.contains(&"media:a;list".to_string()), "A;list should be reachable via WrapInList");
+        // Cardinality variants are also reachable (via Collect)
+        assert!(target_specs.contains(&"media:a;list".to_string()), "A;list should be reachable via Collect");
     }
 
     // TEST777: Tests type checking prevents using PDF-specific cap with PNG input
@@ -1501,9 +1478,9 @@ mod tests {
         }
     }
 
-    // TEST793: WrapInList enables scalar-to-list paths
+    // TEST793: Collect enables scalar-to-list paths
     #[test]
-    fn test793_wrap_in_list_scalar_to_list_path() {
+    fn test793_collect_scalar_to_list_path() {
         let mut graph = LiveCapGraph::new();
 
         // Cap: textable → summary (scalar output)
@@ -1520,22 +1497,22 @@ mod tests {
 
         let paths = graph.find_paths_to_exact_target(&source, &target, 10, 20);
 
-        // Expected path: summarize → WrapInList (summary;textable → list;summary;textable)
+        // Expected path: summarize → Collect (summary;textable → list;summary;textable)
         let path = paths.iter().find(|p| {
-            p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::WrapInList { .. }))
+            p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::Collect { .. }))
                 && p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::Cap { .. }))
         });
 
         assert!(
             path.is_some(),
-            "Should find path: summarize → WrapInList. Found {} paths",
+            "Should find path: summarize → Collect. Found {} paths",
             paths.len()
         );
     }
 
-    // TEST794: Collect enables ForEach → Cap → Collect paths
+    // TEST794: ForEach → Cap → Collect paths (scalar→list re-assembly)
     #[test]
-    fn test794_collect_after_foreach_cap_pattern() {
+    fn test794_foreach_cap_collect_pattern() {
         let mut graph = LiveCapGraph::new();
 
         // Cap: pdf → page;list (disbind)
@@ -1560,6 +1537,8 @@ mod tests {
         let paths = graph.find_paths_to_exact_target(&source, &target, 10, 20);
 
         // Expected path: disbind → ForEach → summarize → Collect
+        // Collect is the universal scalar→list transition — used both standalone
+        // and after ForEach bodies.
         let path = paths.iter().find(|p| {
             let has_foreach = p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }));
             let has_collect = p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::Collect { .. }));
@@ -1625,28 +1604,22 @@ mod tests {
         );
     }
 
-    // TEST797: Dynamic WrapInList and Collect produce correct from/to specs
+    // TEST797: Dynamic Collect produces correct from/to specs for scalar sources
     #[test]
-    fn test797_dynamic_wrap_and_collect_spec_correctness() {
+    fn test797_dynamic_collect_spec_correctness() {
         let graph = LiveCapGraph::new();
 
         // Scalar source
         let source = MediaUrn::from_string("media:page;textable").unwrap();
         let edges = graph.get_outgoing_edges(&source);
 
-        // Should have WrapInList and Collect (no cap edges — empty graph)
-        let wrap_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::WrapInList));
-        let collect_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
+        // Should have exactly one synthesized edge: Collect (no cap edges — empty graph)
+        assert_eq!(edges.len(), 1, "Scalar source in empty graph should have exactly 1 synthesized edge");
 
-        assert!(wrap_edge.is_some(), "Should synthesize WrapInList for scalar source");
+        let collect_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
         assert!(collect_edge.is_some(), "Should synthesize Collect for scalar source");
 
         let expected_list = source.with_list();
-
-        let w = wrap_edge.unwrap();
-        assert!(w.from_spec.is_equivalent(&source).unwrap());
-        assert!(w.to_spec.is_equivalent(&expected_list).unwrap(),
-            "WrapInList to_spec '{}' should equal source with list '{}'", w.to_spec, expected_list);
 
         let c = collect_edge.unwrap();
         assert!(c.from_spec.is_equivalent(&source).unwrap());
@@ -1666,17 +1639,15 @@ mod tests {
         assert!(foreach_edge.is_none(), "Should NOT synthesize ForEach for scalar source");
     }
 
-    // TEST799: WrapInList/Collect are NOT synthesized for list sources
+    // TEST799: Collect is NOT synthesized for list sources (only ForEach is)
     #[test]
-    fn test799_no_wrap_or_collect_for_list_source() {
+    fn test799_no_collect_for_list_source() {
         let graph = LiveCapGraph::new();
 
         let source = MediaUrn::from_string("media:list;textable").unwrap();
         let edges = graph.get_outgoing_edges(&source);
 
-        let wrap_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::WrapInList));
         let collect_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
-        assert!(wrap_edge.is_none(), "Should NOT synthesize WrapInList for list source");
         assert!(collect_edge.is_none(), "Should NOT synthesize Collect for list source");
     }
 }

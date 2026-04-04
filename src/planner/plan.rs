@@ -81,18 +81,6 @@ pub enum ExecutionNodeType {
         output_count: usize,
     },
 
-    /// WrapInList: wraps a single scalar value into a list-of-one.
-    ///
-    /// Auto-inserted when a scalar output feeds into a list-expecting cap.
-    /// At execution time this is a pass-through — the data flows unchanged,
-    /// only the type annotation changes from scalar to list.
-    WrapInList {
-        /// Media URN of the incoming scalar item
-        item_media_urn: String,
-        /// Media URN of the outgoing list (item + list tag)
-        list_media_urn: String,
-    },
-
     /// Input slot: entry point for user-provided files
     InputSlot {
         /// Name of this input slot
@@ -206,18 +194,6 @@ impl MachineNode {
                 output_media_urn: None,
             },
             description: Some("Fan-in: collect results into vector".to_string()),
-        }
-    }
-
-    /// Create a WrapInList node (1→n: wrap scalar in list-of-one)
-    pub fn wrap_in_list(id: &str, item_media_urn: &str, list_media_urn: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            node_type: ExecutionNodeType::WrapInList {
-                item_media_urn: item_media_urn.to_string(),
-                list_media_urn: list_media_urn.to_string(),
-            },
-            description: Some("WrapInList: wrap scalar in list-of-one".to_string()),
         }
     }
 
@@ -557,11 +533,26 @@ impl MachinePlan {
         None
     }
 
-    /// Check whether this plan contains any ForEach or Collect nodes.
-    pub fn has_foreach_or_collect(&self) -> bool {
+    /// Check whether this plan contains any ForEach nodes (requiring decomposition).
+    ///
+    /// ForEach nodes require special handling: the plan is decomposed into
+    /// prefix/body/suffix, and the body is executed per-item. Standalone Collect
+    /// nodes (scalar→list without ForEach) are pass-throughs handled by
+    /// plan_converter and do NOT require decomposition.
+    pub fn has_foreach(&self) -> bool {
         self.nodes.values().any(|n| {
-            matches!(n.node_type, ExecutionNodeType::ForEach { .. } | ExecutionNodeType::Collect { .. })
+            matches!(n.node_type, ExecutionNodeType::ForEach { .. })
         })
+    }
+
+    /// Check whether this plan contains any Collect nodes paired with ForEach.
+    ///
+    /// A Collect node following a ForEach marks the re-assembly point.
+    /// Standalone Collect nodes (no ForEach) are pass-throughs.
+    pub fn has_foreach_collect_pair(&self) -> bool {
+        let has_foreach = self.nodes.values().any(|n| matches!(n.node_type, ExecutionNodeType::ForEach { .. }));
+        let has_collect = self.nodes.values().any(|n| matches!(n.node_type, ExecutionNodeType::Collect { .. }));
+        has_foreach && has_collect
     }
 
     /// Extract a sub-plan containing all nodes from entry points up to (and including)
@@ -1557,11 +1548,11 @@ mod tests {
         assert_eq!(plan.find_first_foreach(), None);
     }
 
-    // TEST936: has_foreach_or_collect detects ForEach/Collect
+    // TEST936: has_foreach detects ForEach nodes
     #[test]
-    fn test936_has_foreach_or_collect() {
+    fn test936_has_foreach() {
         let foreach_plan = build_foreach_plan_with_collect();
-        assert!(foreach_plan.has_foreach_or_collect());
+        assert!(foreach_plan.has_foreach(), "Plan with ForEach+Collect should detect ForEach");
 
         let linear_plan = MachinePlan::linear_chain(
             &["cap:a"],
@@ -1569,7 +1560,21 @@ mod tests {
             "media:png",
             &["input_a"],
         );
-        assert!(!linear_plan.has_foreach_or_collect());
+        assert!(!linear_plan.has_foreach(), "Linear plan should not detect ForEach");
+
+        // Standalone Collect (no ForEach) should NOT trigger has_foreach
+        let mut standalone_collect_plan = MachinePlan::new("collect_only");
+        standalone_collect_plan.add_node(MachineNode::input_slot("input", "input", "media:textable", crate::planner::cardinality::InputCardinality::Single));
+        standalone_collect_plan.add_node(MachineNode::cap("cap_0", "cap:in=media:textable;op=summarize;out=media:summary"));
+        let mut collect_node = MachineNode::collect("collect_0", vec!["cap_0".to_string()]);
+        collect_node.node_type = ExecutionNodeType::Collect {
+            input_nodes: vec!["cap_0".to_string()],
+            output_media_urn: Some("media:list;summary".to_string()),
+        };
+        standalone_collect_plan.add_node(collect_node);
+        standalone_collect_plan.add_node(MachineNode::output("output", "result", "collect_0"));
+        assert!(!standalone_collect_plan.has_foreach(),
+            "Plan with standalone Collect (no ForEach) should NOT trigger has_foreach");
     }
 
     // TEST937: extract_prefix_to extracts input_slot -> cap_0 as a standalone plan
@@ -1620,7 +1625,7 @@ mod tests {
         assert!(body.validate().is_ok());
 
         // Verify it does NOT contain ForEach or Collect nodes
-        assert!(!body.has_foreach_or_collect());
+        assert!(!body.has_foreach());
 
         // Verify the synthetic InputSlot has the item media URN
         if let Some(input_node) = body.get_node("foreach_0_body_input") {
@@ -1651,7 +1656,7 @@ mod tests {
         assert!(body.get_node("body_cap_0").is_some());
         assert!(body.get_node("foreach_0_body_output").is_some());
         assert!(body.validate().is_ok());
-        assert!(!body.has_foreach_or_collect());
+        assert!(!body.has_foreach());
     }
 
     // TEST757: extract_foreach_body fails for non-ForEach node
@@ -1681,7 +1686,7 @@ mod tests {
         assert!(suffix.validate().is_ok());
 
         // Should not contain ForEach/Collect
-        assert!(!suffix.has_foreach_or_collect());
+        assert!(!suffix.has_foreach());
     }
 
     // TEST759: extract_suffix_from fails for nonexistent node

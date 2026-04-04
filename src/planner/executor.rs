@@ -226,34 +226,60 @@ impl<E: CapExecutor> MachineExecutor<E> {
                 ))
             }
 
-            ExecutionNodeType::Collect { input_nodes, .. } => {
-                let mut collected: Vec<serde_json::Value> = Vec::new();
-                for input_id in input_nodes {
-                    if let Some(output) = node_outputs.get(input_id) {
-                        if let Some(arr) = output.as_array() {
-                            collected.extend(arr.clone());
-                        } else {
-                            collected.push(output.clone());
+            ExecutionNodeType::Collect { input_nodes, output_media_urn } => {
+                // Collect works in two contexts:
+                // 1. After ForEach: input_nodes lists body exit nodes, collect their results
+                // 2. Standalone: pass-through, forward predecessor output unchanged
+                //    (scalar→list type annotation change only)
+
+                if output_media_urn.is_some() && input_nodes.len() == 1 {
+                    // Standalone Collect: pass-through — find predecessor output and forward
+                    let predecessor_output = self.plan.edges.iter()
+                        .find(|e| e.to_node == node.id)
+                        .and_then(|e| node_outputs.get(&e.from_node))
+                        .cloned();
+
+                    Ok((
+                        NodeExecutionResult {
+                            node_id: node.id.clone(),
+                            success: true,
+                            binary_output: None,
+                            text_output: predecessor_output.as_ref().map(|v| v.to_string()),
+                            error: None,
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        },
+                        predecessor_output,
+                    ))
+                } else {
+                    // ForEach-paired Collect: gather results from iteration body
+                    let mut collected: Vec<serde_json::Value> = Vec::new();
+                    for input_id in input_nodes {
+                        if let Some(output) = node_outputs.get(input_id) {
+                            if let Some(arr) = output.as_array() {
+                                collected.extend(arr.clone());
+                            } else {
+                                collected.push(output.clone());
+                            }
                         }
                     }
+
+                    let output = json!({
+                        "collected": collected,
+                        "count": collected.len(),
+                    });
+
+                    Ok((
+                        NodeExecutionResult {
+                            node_id: node.id.clone(),
+                            success: true,
+                            binary_output: None,
+                            text_output: Some(output.to_string()),
+                            error: None,
+                            duration_ms: start.elapsed().as_millis() as u64,
+                        },
+                        Some(output),
+                    ))
                 }
-
-                let output = json!({
-                    "collected": collected,
-                    "count": collected.len(),
-                });
-
-                Ok((
-                    NodeExecutionResult {
-                        node_id: node.id.clone(),
-                        success: true,
-                        binary_output: None,
-                        text_output: Some(output.to_string()),
-                        error: None,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                    },
-                    Some(output),
-                ))
             }
 
             ExecutionNodeType::Merge { input_nodes, merge_strategy } => {
@@ -302,27 +328,6 @@ impl<E: CapExecutor> MachineExecutor<E> {
                 ))
             }
 
-            ExecutionNodeType::WrapInList { .. } => {
-                // WrapInList is a pass-through — find the predecessor's output
-                // and forward it unchanged. At this level the data doesn't change,
-                // only the type annotation (scalar → list-of-one).
-                let predecessor_output = self.plan.edges.iter()
-                    .find(|e| e.to_node == node.id)
-                    .and_then(|e| node_outputs.get(&e.from_node))
-                    .cloned();
-
-                Ok((
-                    NodeExecutionResult {
-                        node_id: node.id.clone(),
-                        success: true,
-                        binary_output: None,
-                        text_output: predecessor_output.as_ref().map(|v| v.to_string()),
-                        error: None,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                    },
-                    predecessor_output,
-                ))
-            }
         }
     }
 
