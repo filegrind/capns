@@ -1112,11 +1112,11 @@ impl ExecutionContext {
         // Branch on list vs scalar output media URN.
         //
         // List outputs (media URN has `list` tag): response_chunks is an RFC 8742 CBOR
-        // sequence — concatenated self-delimiting CBOR values, one per list item.
-        // Store as-is; consumers use split_cbor_sequence() to iterate.
+        // sequence produced by emit_list_item() — concatenated self-delimiting CBOR
+        // values, one per list item. No transport unwrapping needed.
         //
-        // Scalar outputs: decode CBOR values, extract inner Bytes/Text, concatenate
-        // into a flat output buffer (existing behavior).
+        // Scalar outputs: response_chunks contains Bytes/Text transport wrappers
+        // from write(). Unwrap each to recover the provider's raw payload.
         let out_media_urn = crate::MediaUrn::from_string(&edges[0].out_media).ok();
         let is_list_output = out_media_urn.as_ref().map_or(false, |u| u.is_list());
 
@@ -1128,7 +1128,7 @@ impl ExecutionContext {
             );
             self.node_data.insert(to.clone(), response_chunks);
         } else {
-            // Scalar output: decode CBOR values, extract inner bytes, concatenate.
+            // Scalar output: decode CBOR Bytes/Text transport wrappers, concatenate.
             let mut output_bytes = Vec::new();
             let mut cursor = std::io::Cursor::new(&response_chunks);
             while (cursor.position() as usize) < response_chunks.len() {

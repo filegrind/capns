@@ -1290,9 +1290,6 @@ fn extract_effective_payload(
                         continue;
                     }
 
-                    // Determine if it's scalar or list using marker tags
-                    // No list marker = scalar (default), has list marker = list
-                    let is_list = arg_urn.is_list();
                     let is_scalar = arg_urn.is_scalar();
 
                     // Read file(s) and replace value

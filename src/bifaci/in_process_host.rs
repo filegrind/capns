@@ -160,6 +160,44 @@ impl ResponseWriter {
         self.send(Frame::end(MessageId::Uint(0), None));
     }
 
+    /// Send a list response: STREAM_START + one CHUNK per item + STREAM_END + END.
+    ///
+    /// Each item is CBOR-encoded and sent as a raw chunk payload (matching
+    /// `OutputStream::emit_list_item` semantics). The receiver concatenates
+    /// payloads to produce an RFC 8742 CBOR sequence — one self-delimiting
+    /// CBOR value per item.
+    ///
+    /// This differs from `emit_response`, which wraps each chunk in `Bytes()`.
+    /// `emit_list_response` is for list-typed cap outputs where the executor's
+    /// list path expects a CBOR sequence without transport wrapping.
+    pub fn emit_list_response(&self, media_urn: &str, items: &[ciborium::Value]) {
+        let stream_id = "result".to_string();
+
+        self.send(Frame::stream_start(
+            MessageId::Uint(0),
+            stream_id.clone(),
+            media_urn.to_string(),
+        ));
+
+        for (i, item) in items.iter().enumerate() {
+            let mut cbor_payload = Vec::new();
+            ciborium::into_writer(item, &mut cbor_payload)
+                .expect("BUG: CBOR encode list item");
+            let checksum = Frame::compute_checksum(&cbor_payload);
+            self.send(Frame::chunk(
+                MessageId::Uint(0),
+                stream_id.clone(),
+                0,
+                cbor_payload,
+                i as u64,
+                checksum,
+            ));
+        }
+
+        self.send(Frame::stream_end(MessageId::Uint(0), stream_id, items.len() as u64));
+        self.send(Frame::end(MessageId::Uint(0), None));
+    }
+
     /// Send an error response.
     pub fn emit_error(&self, code: &str, message: &str) {
         self.send(Frame::err(MessageId::Uint(0), code, message));

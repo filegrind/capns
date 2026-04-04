@@ -123,6 +123,24 @@ impl CapArgumentValue {
     }
 }
 
+/// Result from a cap execution.
+///
+/// Scalar outputs carry raw materialized bytes (e.g. UTF-8 text, raw binary).
+/// The bifaci transport wraps these in `Bytes()` chunks via `emit_response`.
+///
+/// List outputs carry individual CBOR values, one per list item. The bifaci
+/// transport sends each as a separate chunk via `emit_list_response`, producing
+/// an RFC 8742 CBOR sequence that `execute_fanin`'s list path stores directly.
+#[derive(Debug, Clone)]
+pub enum CapResult {
+    /// Raw materialized bytes (scalar output).
+    Scalar(Vec<u8>),
+    /// Individual CBOR values (list output). Each value represents one list item.
+    List(Vec<ciborium::Value>),
+    /// No output (void cap).
+    Empty,
+}
+
 /// Cap caller that executes via XPC service with strict validation
 pub struct CapCaller {
     cap: String,
@@ -139,7 +157,7 @@ pub trait CapSet: Send + Sync + std::fmt::Debug {
         &self,
         cap_urn: &str,
         arguments: &[CapArgumentValue],
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Option<Vec<u8>>, Option<String>)>> + Send + '_>>;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<CapResult>> + Send + '_>>;
 }
 
 impl CapCaller {
@@ -186,7 +204,7 @@ impl CapCaller {
         self.validate_arguments(&arguments)?;
 
         // Execute via cap host method
-        let (binary_output, text_output) = self.cap_set.execute_cap(
+        let cap_result = self.cap_set.execute_cap(
             &self.cap,
             &arguments,
         ).await?;
@@ -195,25 +213,28 @@ impl CapCaller {
         let output_spec = self.resolve_output_spec().await?;
 
         // Determine response type based on what was returned and resolved output spec
-        let response = if let Some(binary_data) = binary_output {
-            if !output_spec.is_binary() {
-                return Err(anyhow!("Cap {} returned binary data but output spec '{}' is not binary",
-                    self.cap, output_spec.media_urn));
+        let response = match cap_result {
+            CapResult::Scalar(data) => {
+                if output_spec.is_binary() {
+                    ResponseWrapper::from_binary(data)
+                } else if output_spec.is_structured() {
+                    ResponseWrapper::from_json(data)
+                } else {
+                    ResponseWrapper::from_text(data)
+                }
             }
-            ResponseWrapper::from_binary(binary_data)
-        } else if let Some(text_data) = text_output {
-            if output_spec.is_binary() {
-                return Err(anyhow!("Cap {} returned text data but output spec '{}' expects binary",
-                    self.cap, output_spec.media_urn));
+            CapResult::List(items) => {
+                // Assemble list items into a CBOR sequence for list-typed responses
+                let mut sequence = Vec::new();
+                for item in &items {
+                    ciborium::into_writer(item, &mut sequence)
+                        .map_err(|e| anyhow!("Failed to serialize list item: {}", e))?;
+                }
+                ResponseWrapper::from_binary(sequence)
             }
-            // Structured data (map/list) is serialized as JSON
-            if output_spec.is_structured() {
-                ResponseWrapper::from_json(text_data.into_bytes())
-            } else {
-                ResponseWrapper::from_text(text_data.into_bytes())
+            CapResult::Empty => {
+                return Err(anyhow!("Cap returned no output"));
             }
-        } else {
-            return Err(anyhow!("Cap returned no output"));
         };
 
         // Validate output against cap definition (basic type check)

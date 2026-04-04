@@ -48,7 +48,7 @@ pub use cap::definition::*;
 pub use cap::validation::*;
 pub use cap::schema_validation::{SchemaValidator as JsonSchemaValidator, SchemaValidationError, SchemaResolver, FileSchemaResolver};
 pub use cap::registry::*;
-pub use cap::caller::{CapArgumentValue, CapCaller, CapSet, StdinSource};
+pub use cap::caller::{CapArgumentValue, CapCaller, CapResult, CapSet, StdinSource};
 pub use cap::response::*;
 
 // Media types
