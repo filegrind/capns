@@ -382,9 +382,9 @@ impl ProgressSender {
 /// Like [`ProgressSender`], this is `Send + Sync + 'static` and does not
 /// borrow the parent `OutputStream`.
 ///
-/// **Important:** call [`OutputStream::ensure_started_public`] *before*
-/// moving the `StreamSender` into `spawn_blocking` so that the STREAM_START
-/// frame is sent while the async context is still available.
+/// **Important:** call [`OutputStream::start()`] *before* moving the
+/// `StreamSender` into `spawn_blocking` so that the STREAM_START frame is
+/// sent while the async context is still available.
 pub struct StreamSender {
     sender: Arc<dyn FrameSender>,
     request_id: MessageId,
@@ -458,7 +458,8 @@ pub struct OutputStream {
     request_id: MessageId,
     routing_id: Option<MessageId>,
     max_chunk: usize,
-    stream_started: AtomicBool,
+    /// None = not started, Some(false) = write mode, Some(true) = sequence mode
+    stream_mode: Mutex<Option<bool>>,
     chunk_index: Arc<Mutex<u64>>,
     chunk_count: Arc<Mutex<u64>>,
     closed: AtomicBool,
@@ -480,24 +481,30 @@ impl OutputStream {
             request_id,
             routing_id,
             max_chunk,
-            stream_started: AtomicBool::new(false),
+            stream_mode: Mutex::new(None),
             chunk_index: Arc::new(Mutex::new(0)),
             chunk_count: Arc::new(Mutex::new(0)),
             closed: AtomicBool::new(false),
         }
     }
 
-    fn ensure_started(&self) -> Result<(), RuntimeError> {
-        if !self.stream_started.swap(true, Ordering::SeqCst) {
-            let mut start_frame = Frame::stream_start(
-                self.request_id.clone(),
-                self.stream_id.clone(),
-                self.media_urn.clone(),
-            );
-            start_frame.routing_id = self.routing_id.clone();
-            self.sender.send(&start_frame)?;
+    fn check_mode(&self, is_sequence: bool) -> Result<(), RuntimeError> {
+        let mode = self.stream_mode.lock().unwrap();
+        match *mode {
+            None => {
+                Err(RuntimeError::Handler(
+                    "stream not started: call start() before write/emit_list_item".to_string(),
+                ))
+            }
+            Some(existing) if existing == is_sequence => Ok(()),
+            Some(existing) => {
+                Err(RuntimeError::Handler(format!(
+                    "stream mode conflict: started as {} but called with {}",
+                    if existing { "sequence" } else { "write" },
+                    if is_sequence { "sequence" } else { "write" },
+                )))
+            }
         }
-        Ok(())
     }
 
     fn send_chunk(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
@@ -530,9 +537,9 @@ impl OutputStream {
     }
 
     /// Write raw bytes. Splits into max_chunk pieces, each wrapped as CBOR Bytes.
-    /// Auto-sends STREAM_START before first chunk.
+    /// Requires `start(false)` to have been called first.
     pub fn write(&self, data: &[u8]) -> Result<(), RuntimeError> {
-        self.ensure_started()?;
+        self.check_mode(false)?;
         if data.is_empty() {
             return Ok(());
         }
@@ -557,7 +564,7 @@ impl OutputStream {
     /// Unlike `emit_cbor` (which re-wraps each piece as a separate CBOR value),
     /// this sends raw CBOR bytes as frame payloads directly.
     pub fn emit_list_item(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
-        self.ensure_started()?;
+        self.check_mode(true)?;
         let mut cbor_bytes = Vec::new();
         ciborium::into_writer(value, &mut cbor_bytes)
             .map_err(|e| RuntimeError::Handler(format!("Failed to encode CBOR: {}", e)))?;
@@ -595,8 +602,10 @@ impl OutputStream {
     }
 
     /// Emit a CBOR value. Handles Bytes/Text/Array/Map chunking.
+    /// Uses write mode (is_sequence=false) — each chunk is a complete CBOR value.
+    /// Requires `start(false)` to have been called first.
     pub fn emit_cbor(&self, value: &ciborium::Value) -> Result<(), RuntimeError> {
-        self.ensure_started()?;
+        self.check_mode(false)?;
         match value {
             ciborium::Value::Bytes(bytes) => {
                 let mut offset = 0;
@@ -675,7 +684,7 @@ impl OutputStream {
     /// Shares chunk counters with this `OutputStream` so that `close()` reports
     /// the correct total chunk count.
     ///
-    /// **Call `ensure_started()` before creating the `StreamSender`** so that
+    /// **Call `start()` before creating the `StreamSender`** so that
     /// STREAM_START is sent while the async context is still active.
     pub fn stream_sender(&self) -> StreamSender {
         StreamSender {
@@ -689,11 +698,26 @@ impl OutputStream {
         }
     }
 
-    /// Send STREAM_START if not already sent.  Public wrapper for handlers
-    /// that need to guarantee the stream is open before moving a
-    /// [`StreamSender`] into `spawn_blocking`.
-    pub fn start(&self) -> Result<(), RuntimeError> {
-        self.ensure_started()
+    /// Send STREAM_START with the given mode. Must be called exactly once
+    /// before any write/emit_list_item/emit_cbor calls.
+    ///
+    /// * `is_sequence = false` — write mode: each chunk is a complete CBOR value
+    /// * `is_sequence = true`  — sequence mode: chunks are CBOR fragments (RFC 8742)
+    pub fn start(&self, is_sequence: bool) -> Result<(), RuntimeError> {
+        let mut mode = self.stream_mode.lock().unwrap();
+        if mode.is_some() {
+            return Err(RuntimeError::Handler("stream already started".to_string()));
+        }
+        *mode = Some(is_sequence);
+        drop(mode);
+        let mut start_frame = Frame::stream_start(
+            self.request_id.clone(),
+            self.stream_id.clone(),
+            self.media_urn.clone(),
+            Some(is_sequence),
+        );
+        start_frame.routing_id = self.routing_id.clone();
+        self.sender.send(&start_frame)
     }
 
     /// Run a blocking closure on a dedicated thread while emitting keepalive progress
@@ -746,12 +770,18 @@ impl OutputStream {
     }
 
     /// Close the output stream (sends STREAM_END). Idempotent.
-    /// If stream was never started, sends STREAM_START first.
+    /// If `start()` was never called, this is a no-op (no STREAM_START was sent,
+    /// so no STREAM_END is needed — the handler produced no output).
     pub fn close(&self) -> Result<(), RuntimeError> {
         if self.closed.swap(true, Ordering::SeqCst) {
             return Ok(()); // Already closed
         }
-        self.ensure_started()?;
+        {
+            let mode = self.stream_mode.lock().unwrap();
+            if mode.is_none() {
+                return Ok(()); // Never started — no output produced, nothing to close
+            }
+        }
         let chunk_count = {
             let count_guard = self.chunk_count.lock().unwrap();
             *count_guard
@@ -841,6 +871,7 @@ pub trait PeerInvoker: Send + Sync {
         let call = self.call(cap_urn)?;
         for &(media_urn, data) in args {
             let arg = call.arg(media_urn);
+            arg.start(false)?;
             arg.write(data)?;
             arg.close()?;
         }
@@ -1119,6 +1150,8 @@ impl Op<()> for IdentityOp {
         let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
             .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
         let mut input = req.take_input()
+            .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+        req.output().start(false)
             .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
         while let Some(stream_result) = input.recv().await {
             let mut stream = stream_result
@@ -2275,7 +2308,7 @@ impl PluginRuntime {
                     let stream_id = uuid::Uuid::new_v4().to_string();
 
                     // Send STREAM_START
-                    let start_frame = Frame::stream_start(request_id.clone(), stream_id.clone(), urn.clone());
+                    let start_frame = Frame::stream_start(request_id.clone(), stream_id.clone(), urn.clone(), None);
                     tx.send(start_frame).map_err(|_| RuntimeError::Handler("Failed to send STREAM_START".to_string()))?;
 
                     // Send CHUNK frame(s)
@@ -3139,6 +3172,8 @@ mod tests {
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let _input = req.take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            req.output().start(false)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             Ok(())
@@ -3159,6 +3194,8 @@ mod tests {
             let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let mut input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            req.output().start(false)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let mut total = Vec::new();
             while let Some(stream) = input.recv().await {
@@ -3191,6 +3228,8 @@ mod tests {
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let mut input = req.take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            req.output().start(false)
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             while let Some(stream) = input.recv().await {
                 let mut stream = stream.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 while let Some(chunk) = stream.recv().await {
@@ -3216,6 +3255,8 @@ mod tests {
             let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let input = req.take_input()
+                .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+            req.output().start(false)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let bytes = input.collect_all_bytes().await
                 .map_err(|e| OpError::ExecutionFailed(format!("Stream error: {}", e)))?;
@@ -3273,7 +3314,7 @@ mod tests {
 
         for (media_urn, data) in streams {
             let stream_id = uuid::Uuid::new_v4().to_string();
-            raw_tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), media_urn.to_string())).ok();
+            raw_tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), media_urn.to_string(), None)).ok();
 
             // Encode data as CBOR Bytes and wrap in CHUNK
             let value = ciborium::Value::Bytes(data.to_vec());
@@ -6020,6 +6061,7 @@ mod tests {
             256_000,
         );
 
+        stream.start(false).expect("start must succeed");
         stream.emit_cbor(&Value::Bytes(b"test".to_vec())).expect("write must succeed");
 
         let captured = frames.lock().unwrap();
@@ -6043,6 +6085,7 @@ mod tests {
         );
 
         // Write 3 chunks
+        stream.start(false).unwrap();
         stream.emit_cbor(&Value::Bytes(b"chunk1".to_vec())).unwrap();
         stream.emit_cbor(&Value::Bytes(b"chunk2".to_vec())).unwrap();
         stream.emit_cbor(&Value::Bytes(b"chunk3".to_vec())).unwrap();
@@ -6071,6 +6114,7 @@ mod tests {
         );
 
         // Write 250 bytes (should create 3 chunks: 100, 100, 50)
+        stream.start(false).unwrap();
         let large_data = vec![0xAA; 250];
         stream.emit_cbor(&Value::Bytes(large_data)).unwrap();
         stream.close().unwrap();
@@ -6096,6 +6140,7 @@ mod tests {
             256_000,
         );
 
+        stream.start(false).expect("start must succeed");
         stream.close().expect("close must succeed");
 
         let captured = frames.lock().unwrap();

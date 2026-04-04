@@ -301,7 +301,7 @@ impl RelaySwitch {
                     "master {}: identity verification send failed: {}", master_idx, e
                 )))?;
 
-                let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string());
+                let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string(), None);
                 ss.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut ss);
                 socket_writer.write(&ss).await.map_err(|e| RelaySwitchError::Protocol(format!(
@@ -732,7 +732,7 @@ impl RelaySwitch {
                 "new master {}: identity send failed: {}", master_idx, e
             )))?;
 
-            let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string());
+            let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string(), None);
             ss.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut ss);
             socket_writer.write(&ss).await.map_err(|e| RelaySwitchError::Protocol(format!(
@@ -1813,7 +1813,7 @@ mod tests {
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string());
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string(), None);
         writer.write(&ss).await.unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);

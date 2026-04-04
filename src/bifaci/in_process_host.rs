@@ -118,6 +118,7 @@ impl ResponseWriter {
             MessageId::Uint(0),
             stream_id.clone(),
             media_urn.to_string(),
+            None,
         ));
 
         if data.is_empty() {
@@ -177,6 +178,7 @@ impl ResponseWriter {
             MessageId::Uint(0),
             stream_id.clone(),
             media_urn.to_string(),
+            None,
         ));
 
         for (i, item) in items.iter().enumerate() {
@@ -304,6 +306,7 @@ impl FrameHandler for IdentityHandler {
             MessageId::Uint(0),
             stream_id.clone(),
             "media:".to_string(),
+            None,
         ));
 
         let checksum = Frame::compute_checksum(&data);
@@ -721,6 +724,7 @@ mod tests {
             rid.clone(),
             "arg0".to_string(),
             "media:text".to_string(),
+            None,
         );
         writer.write(&ss).await.unwrap();
 
@@ -788,6 +792,7 @@ mod tests {
             rid.clone(),
             "identity-verify".to_string(),
             "media:".to_string(),
+            None,
         );
         writer.write(&ss).await.unwrap();
 

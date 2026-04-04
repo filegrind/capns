@@ -82,6 +82,7 @@ impl CapArgumentValue {
                 rid.clone(),
                 stream_id.clone(),
                 arg.media_urn.clone(),
+                None,
             ));
 
             // CHUNKs — payload must be CBOR-encoded (matching StreamEmitter::send_chunk)

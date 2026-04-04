@@ -1757,7 +1757,7 @@ mod tests {
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string());
+        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string(), None);
         writer.write(&ss).await.unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -2090,7 +2090,7 @@ mod tests {
             assert_eq!(frame.cap.as_deref(), Some("cap:in=\"media:void\";op=convert;out=\"media:void\""), "Plugin A should receive convert REQ");
             // Send END response
             let stream_id = "s1".to_string();
-            let mut ss = Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:".to_string());
+            let mut ss = Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"converted".to_vec();
@@ -2145,7 +2145,7 @@ mod tests {
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
+            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2297,7 +2297,7 @@ mod tests {
             seq.assign(&mut log);
             w.write(&log).await.unwrap();
             let sid = "rs".to_string();
-            let mut ss = Frame::stream_start(req_id_for_plugin.clone(), sid.clone(), "media:".to_string());
+            let mut ss = Frame::stream_start(req_id_for_plugin.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"result".to_vec();
@@ -2340,7 +2340,7 @@ mod tests {
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id_send.clone(), sid.clone(), "media:".to_string());
+            let mut stream_start = Frame::stream_start(req_id_send.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2430,7 +2430,7 @@ mod tests {
 
             // Send response
             let sid = "rs".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"ok".to_vec();
@@ -2473,7 +2473,7 @@ mod tests {
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
+            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2694,7 +2694,7 @@ mod tests {
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
             loop { let f = r.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "a".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"from-A".to_vec();
@@ -2720,7 +2720,7 @@ mod tests {
             assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
             loop { let f = r.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
             let sid = "b".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string());
+            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"from-B".to_vec();
@@ -2850,7 +2850,7 @@ mod tests {
                 let data = format!("response-{}", i).into_bytes();
                 let checksum = Frame::compute_checksum(&data);
                 let sid = format!("s{}", i);
-                let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string());
+                let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
                 seq.assign(&mut ss);
                 w.write(&ss).await.unwrap();
                 let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, data, 0, checksum);

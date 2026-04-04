@@ -398,6 +398,8 @@ fn get_req(wet: &mut WetContext) -> std::result::Result<Arc<Request>, OpError> {
 }
 
 fn emit(output: &OutputStream, value: &ciborium::Value) -> OpResult<()> {
+    output.start(false)
+        .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
     output.emit_cbor(value)
         .map_err(|e| OpError::ExecutionFailed(e.to_string()))
 }

@@ -927,6 +927,7 @@ impl ExecutionContext {
                 request_id.clone(),
                 stream_id.clone(),
                 in_media.clone(),
+                None,
             );
             self.switch
                 .send_to_master(ss, None)
@@ -1013,6 +1014,7 @@ impl ExecutionContext {
         // be processed while we wait for the response.
         let mut response_chunks: Vec<u8> = Vec::new();
         let mut got_end = false;
+        let mut is_sequence: Option<bool> = None;
         let wait_start = std::time::Instant::now();
         let mut last_activity = std::time::Instant::now();
         let mut last_warn_secs: u64 = 0;
@@ -1099,8 +1101,13 @@ impl ExecutionContext {
                                 tracing::info!("[plugin log:{}] cap='{}' {}", level, cap_urn, msg);
                             }
                         }
+                        FrameType::StreamStart => {
+                            if let Some(seq) = frame.is_sequence {
+                                is_sequence = Some(seq);
+                            }
+                        }
                         _ => {
-                            // STREAM_START, STREAM_END — structural, skip
+                            // STREAM_END and others — structural, skip
                         }
                     }
                 }
@@ -1109,26 +1116,24 @@ impl ExecutionContext {
 
         tracing::info!("[execute_fanin] got End for cap='{}' request_id={:?} response_len={}", cap_urn, request_id, response_chunks.len());
 
-        // Branch on list vs scalar output media URN.
+        // Branch on is_sequence flag from STREAM_START.
         //
-        // List outputs (media URN has `list` tag): response_chunks is an RFC 8742 CBOR
-        // sequence produced by emit_list_item() — concatenated self-delimiting CBOR
-        // values, one per list item. No transport unwrapping needed.
+        // is_sequence=true (emit_list_item): response_chunks is an RFC 8742 CBOR
+        // sequence — concatenated raw CBOR fragment payloads. Store as-is for
+        // CborListAdapter to split.
         //
-        // Scalar outputs: response_chunks contains Bytes/Text transport wrappers
-        // from write(). Unwrap each to recover the provider's raw payload.
-        let out_media_urn = crate::MediaUrn::from_string(&edges[0].out_media).ok();
-        let is_list_output = out_media_urn.as_ref().map_or(false, |u| u.is_list());
-
-        if is_list_output {
+        // is_sequence=false/None (write/emit_cbor): response_chunks contains
+        // CBOR Bytes/Text transport wrappers. Unwrap each to recover the
+        // provider's raw payload.
+        if is_sequence == Some(true) {
             tracing::debug!(
                 target: "execute_fanin",
-                "List output ({}): storing {} bytes as CBOR sequence",
+                "Sequence output ({}): storing {} bytes as CBOR sequence",
                 edges[0].out_media, response_chunks.len()
             );
             self.node_data.insert(to.clone(), response_chunks);
         } else {
-            // Scalar output: decode CBOR Bytes/Text transport wrappers, concatenate.
+            // Write mode: decode CBOR Bytes/Text transport wrappers, concatenate.
             let mut output_bytes = Vec::new();
             let mut cursor = std::io::Cursor::new(&response_chunks);
             while (cursor.position() as usize) < response_chunks.len() {
@@ -1140,7 +1145,7 @@ impl ExecutionContext {
                     ciborium::Value::Text(t) => output_bytes.extend(t.into_bytes()),
                     _ => {
                         return Err(ExecutionError::HostError(format!(
-                            "Expected Bytes or Text in scalar response, got {:?}",
+                            "Expected Bytes or Text in write-mode response, got {:?}",
                             value
                         )));
                     }
