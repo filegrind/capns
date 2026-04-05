@@ -673,44 +673,6 @@ mod tests {
         );
     }
 
-    // TEST_DISC_3: Short content eliminates frontmatter (min_length = 50).
-    #[test]
-    fn test_disc_3_short_content_eliminates_frontmatter() {
-        let (registry, _temp) = create_test_media_registry();
-        let all_txt_urns = txt_extension_urns(&registry);
-
-        // 30 bytes — below frontmatter's min_length of 50
-        let content = b"Short text, only thirty bytes.";
-        assert!(content.len() < 50);
-
-        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry);
-
-        assert!(
-            !survivors.iter().any(|u| u.contains("frontmatter")),
-            "frontmatter URN should have been eliminated — content ({} bytes) < min_length 50, survivors: {:?}",
-            content.len(), survivors
-        );
-    }
-
-    // TEST_DISC_4: Long content keeps frontmatter (min_length = 50).
-    #[test]
-    fn test_disc_4_long_content_keeps_frontmatter() {
-        let (registry, _temp) = create_test_media_registry();
-        let all_txt_urns = txt_extension_urns(&registry);
-
-        // 80 bytes — above frontmatter's min_length of 50
-        let content = b"This is a longer piece of text that is at least fifty bytes to pass the frontmatter minimum length check ok.";
-        assert!(content.len() >= 50);
-
-        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry);
-
-        assert!(
-            survivors.iter().any(|u| u.contains("frontmatter")),
-            "frontmatter URN should survive — content ({} bytes) >= min_length 50, survivors: {:?}",
-            content.len(), survivors
-        );
-    }
-
     // TEST_DISC_5: Empty candidate list → empty result.
     #[test]
     fn test_disc_5_empty_candidates() {

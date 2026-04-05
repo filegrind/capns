@@ -2057,10 +2057,12 @@ fn spawn_handler(
     pending_peer_requests: &Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
     manifest: &Option<CapManifest>,
     max_chunk: usize,
+    handler_done_tx: &tokio::sync::mpsc::UnboundedSender<()>,
 ) -> JoinHandle<()> {
     let output_tx_clone = output_tx.clone();
     let pending_clone = Arc::clone(pending_peer_requests);
     let manifest_clone = manifest.clone();
+    let done_tx = handler_done_tx.clone();
 
     tokio::spawn(async move {
         tracing::info!("[PluginRuntime] handler started: cap='{}' rid={:?}", cap_urn, request_id);
@@ -2106,6 +2108,8 @@ fn spawn_handler(
                 let _ = sender.send(&err_frame);
             }
         }
+        // Notify the main loop that a handler slot is free.
+        let _ = done_tx.send(());
     })
 }
 
@@ -3066,7 +3070,37 @@ impl PluginRuntime {
         // Number of currently running handlers (decremented when JoinHandles finish).
         let mut running_handler_count: usize = 0;
 
-        // Main loop: simple frame router. No accumulation.
+        // Notification channel: handlers send () when they finish so the main loop
+        // wakes up from frame_reader.read() and drains the queue.
+        let (handler_done_tx, mut handler_done_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        // Spawn a reader task that feeds frames into a channel.
+        // This decouples stdin reading from the main select loop so that
+        // handler-done signals can wake the loop even when no frames arrive.
+        let (frame_tx, mut frame_rx) = tokio::sync::mpsc::unbounded_channel::<Result<Frame, CborError>>();
+        let reader_handle = tokio::spawn(async move {
+            loop {
+                match frame_reader.read().await {
+                    Ok(Some(frame)) => {
+                        if frame_tx.send(Ok(frame)).is_err() {
+                            break; // Main loop dropped — shutting down
+                        }
+                    }
+                    Ok(None) => {
+                        break; // EOF — stdin closed
+                    }
+                    Err(e) => {
+                        let _ = frame_tx.send(Err(e));
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Main loop: select between incoming frames and handler completion signals.
+        // When a handler finishes it sends () on handler_done_tx, waking the loop
+        // so it can reap finished handlers and drain the queue immediately —
+        // without waiting for the next frame from stdin.
         loop {
             // Reap finished handlers and drain the queue into freed slots.
             let prev_count = active_handlers.len();
@@ -3094,14 +3128,25 @@ impl PluginRuntime {
                     &pending_peer_requests,
                     &self.manifest,
                     negotiated_limits.max_chunk,
+                    &handler_done_tx,
                 );
                 active_handlers.push(handle);
                 running_handler_count += 1;
             }
 
-            let frame = match frame_reader.read().await? {
-                Some(f) => f,
-                None => break,
+            // Select: either a frame arrives from stdin or a handler finishes.
+            let frame = tokio::select! {
+                biased;
+                // Handler done — loop back to reap and drain.
+                _ = handler_done_rx.recv() => continue,
+                // Frame from reader task.
+                result = frame_rx.recv() => {
+                    match result {
+                        Some(Ok(f)) => f,
+                        Some(Err(e)) => return Err(e.into()),
+                        None => break, // Reader task ended (EOF)
+                    }
+                }
             };
 
             match frame.frame_type {
@@ -3178,6 +3223,7 @@ impl PluginRuntime {
                             raw_rx, factory, cap_urn, request_id, routing_id,
                             &output_tx, &pending_peer_requests, &self.manifest,
                             negotiated_limits.max_chunk,
+                            &handler_done_tx,
                         );
                         active_handlers.push(handle);
                         running_handler_count += 1;
@@ -3268,6 +3314,8 @@ impl PluginRuntime {
         }
 
         // Graceful shutdown
+        reader_handle.abort();
+        let _ = reader_handle.await;
         drop(output_tx);
 
         let _ = writer_handle.await;

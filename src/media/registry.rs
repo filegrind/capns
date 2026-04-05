@@ -950,7 +950,6 @@ mod tests {
             "media:pdf",
             "media:image;png",
             "media:audio;wav;speech",
-            "media:frontmatter;textable",
             "media:log;textable",
             "media:json;json-schema;textable;record",
             "media:llm-generation-request;json;record",
@@ -1003,7 +1002,6 @@ mod tests {
             ("media:llm-model-info;json;record", "json"),
             ("media:download-result;textable;record", "json"),
             ("media:model-dim;integer;textable;numeric", "txt"),
-            ("media:frontmatter;textable", "txt"),
         ];
 
         for (urn, expected_ext) in &expected {

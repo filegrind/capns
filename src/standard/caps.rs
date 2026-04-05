@@ -15,7 +15,7 @@ use crate::urn::media_urn::{
     // Text format types
     MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG,
     // Semantic input types
-    MEDIA_FRONTMATTER_TEXT, MEDIA_MODEL_SPEC,
+    MEDIA_MODEL_SPEC,
     MEDIA_MODEL_REPO, MEDIA_JSON_SCHEMA,
     // Semantic output types
     MEDIA_TEXTABLE_PAGE_LIST,
@@ -328,18 +328,6 @@ pub fn disbind_urn(input_media: &str) -> CapUrn {
 // -----------------------------------------------------------------------------
 // TEXT PROCESSING URN BUILDERS
 // -----------------------------------------------------------------------------
-
-/// Build URN for frontmatter-summarization capability
-pub fn frontmatter_summarization_urn(lang_code: &str) -> CapUrn {
-    CapUrnBuilder::new()
-        .tag("op", "generate_frontmatter_summary")
-        .tag("language", lang_code)
-        .solo_tag("constrained")
-        .in_spec(MEDIA_FRONTMATTER_TEXT)
-        .out_spec(MEDIA_STRING)
-        .build()
-        .expect("Failed to build frontmatter-summarization cap URN")
-}
 
 /// Build URN for structured-query capability
 /// Input uses MEDIA_JSON_SCHEMA per CATALOG: media:json;json-schema;textable;record
@@ -670,12 +658,6 @@ pub async fn disbind_cap(registry: Arc<CapRegistry>, input_media: &str) -> Resul
 // -----------------------------------------------------------------------------
 // TEXT PROCESSING CAPABILITIES
 // -----------------------------------------------------------------------------
-
-/// Get frontmatter-summarization cap from registry
-pub async fn frontmatter_summarization_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
-    let urn = frontmatter_summarization_urn(lang_code);
-    registry.get_cap(&urn.to_string()).await
-}
 
 /// Get structured-query cap from registry
 pub async fn structured_query_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {

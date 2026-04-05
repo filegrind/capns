@@ -134,8 +134,6 @@ pub const MEDIA_FILE_PATH: &str = "media:file-path;textable";
 pub const MEDIA_FILE_PATH_ARRAY: &str = "media:file-path;list;textable";
 
 // Semantic text input types - distinguished by their purpose/context
-/// Media URN for frontmatter text (book metadata) - scalar by default
-pub const MEDIA_FRONTMATTER_TEXT: &str = "media:frontmatter;textable";
 /// Media URN for model spec (provider:model format, HuggingFace name, etc.) - scalar by default
 /// Generic, backend-agnostic — used by modelcartridge for download/status/path operations.
 pub const MEDIA_MODEL_SPEC: &str = "media:model-spec;textable";

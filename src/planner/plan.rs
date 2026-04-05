@@ -886,7 +886,7 @@ pub struct NodeExecutionResult {
 
     /// Individual output items when the terminal cap used emit_list_item (is_sequence=true).
     /// Each item is a raw unwrapped blob (CBOR transport stripped).
-    /// None for scalar output or when there's only one item.
+    /// None for scalar output (is_sequence=false).
     #[serde(default)]
     pub binary_items: Option<Vec<Vec<u8>>>,
 
