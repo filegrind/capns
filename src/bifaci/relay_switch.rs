@@ -984,27 +984,24 @@ impl RelaySwitch {
     /// Peer requests (plugin → plugin) are handled internally and not returned.
     pub async fn read_from_masters(&self) -> Result<Option<Frame>, RelaySwitchError> {
         loop {
-            // Await on channel - reader tasks send frames here
-            let frame_result = {
-                let mut rx = self.frame_rx.lock().await;
-                rx.recv().await
-            };
+            // Hold lock through handle_master_frame — see read_from_masters_timeout comment.
+            let mut rx = self.frame_rx.lock().await;
+            let frame_result = rx.recv().await;
 
             match frame_result {
                 Some((master_idx, Ok(frame))) => {
-                    // Got a frame from a master
-                    if let Some(result_frame) = self.handle_master_frame(master_idx, frame).await? {
+                    let handle_result = self.handle_master_frame(master_idx, frame).await;
+                    drop(rx);
+                    if let Some(result_frame) = handle_result? {
                         return Ok(Some(result_frame));
                     }
-                    // Peer request was handled internally, continue reading
                 }
                 Some((master_idx, Err(_e))) => {
-                    // Error reading from master
+                    drop(rx);
                     self.handle_master_death(master_idx).await?;
-                    // Continue reading from other masters
                 }
                 None => {
-                    // All reader tasks have exited (all senders dropped)
+                    drop(rx);
                     return Ok(None);
                 }
             }
@@ -1017,22 +1014,21 @@ impl RelaySwitch {
     /// Returns Ok(None) if no frame was available or the frame was handled internally.
     /// Use this in tokio::select! loops for concurrent frame processing.
     pub async fn pump_one(&self) -> Result<Option<Frame>, RelaySwitchError> {
-        let frame_result = {
-            let mut rx = self.frame_rx.lock().await;
-            rx.try_recv()
-        };
+        // Hold lock through handle_master_frame — see read_from_masters_timeout comment.
+        let mut rx = self.frame_rx.lock().await;
+        let frame_result = rx.try_recv();
 
         match frame_result {
             Ok((master_idx, Ok(frame))) => {
-                // Got a frame from a master
-                if let Some(result_frame) = self.handle_master_frame(master_idx, frame).await? {
+                let handle_result = self.handle_master_frame(master_idx, frame).await;
+                drop(rx);
+                if let Some(result_frame) = handle_result? {
                     return Ok(Some(result_frame));
                 }
-                // Peer request was handled internally
                 Ok(None)
             }
             Ok((master_idx, Err(_e))) => {
-                // Error reading from master
+                drop(rx);
                 self.handle_master_death(master_idx).await?;
                 Ok(None)
             }
@@ -1058,31 +1054,43 @@ impl RelaySwitch {
                 return Ok(None); // Timeout
             }
 
-            // Try to receive with timeout
-            let frame_result = {
-                let mut rx = self.frame_rx.lock().await;
-                tokio::time::timeout(remaining, rx.recv()).await
-            };
-
-            match frame_result {
-                Ok(Some((master_idx, Ok(frame)))) => {
-                    // Got a frame from a master
-                    if let Some(result_frame) = self.handle_master_frame(master_idx, frame).await? {
-                        return Ok(Some(result_frame));
-                    }
-                    // Peer request was handled internally, continue reading
-                }
-                Ok(Some((master_idx, Err(_e)))) => {
-                    // Error reading from master
-                    self.handle_master_death(master_idx).await?;
-                    // Continue reading from other masters
-                }
+            // Receive and process under the same lock. Multiple pump tasks
+            // call this method concurrently — the lock ensures that a REQ's
+            // routing table writes (rid_to_xid, request_routing) complete
+            // before the next frame is dequeued. Without this, a continuation
+            // frame can be dequeued by a second pump before the first pump
+            // finishes inserting the REQ's routing entries.
+            let mut rx = self.frame_rx.lock().await;
+            let frame_result = tokio::time::timeout(remaining, rx.recv()).await;
+            // Extract the frame data, then drop the lock before async I/O
+            let action = match frame_result {
+                Ok(Some((master_idx, Ok(frame)))) => Some((master_idx, Ok(frame))),
+                Ok(Some((master_idx, Err(e)))) => Some((master_idx, Err(e))),
                 Ok(None) => {
-                    // All reader tasks have exited (all senders dropped)
+                    drop(rx);
                     return Err(RelaySwitchError::Protocol("All masters disconnected".to_string()));
                 }
                 Err(_elapsed) => {
+                    drop(rx);
                     return Ok(None); // Timeout
+                }
+            };
+            // Process the frame while still holding the lock — this serializes
+            // handle_master_frame so routing table mutations from a REQ are
+            // visible before the next recv can return its continuation frames.
+            if let Some((master_idx, result)) = action {
+                match result {
+                    Ok(frame) => {
+                        let handle_result = self.handle_master_frame(master_idx, frame).await;
+                        drop(rx);
+                        if let Some(result_frame) = handle_result? {
+                            return Ok(Some(result_frame));
+                        }
+                    }
+                    Err(_e) => {
+                        drop(rx);
+                        self.handle_master_death(master_idx).await?;
+                    }
                 }
             }
         }
@@ -1092,10 +1100,10 @@ impl RelaySwitch {
     // FRAME OUTPUT (all writes to masters go through this)
     // =========================================================================
 
-    /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
-    /// Cleans up seq tracking on terminal frames (END/ERR).
-    async fn write_to_master_idx(&self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
-        tracing::debug!("[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}", master_idx, frame.frame_type, frame.id, frame.routing_id);
+    /// Low-level frame write that assigns seq and writes to the master transport.
+    /// This helper does not perform master retirement on failure.
+    async fn write_to_master_idx_raw(&self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
+        tracing::debug!("[RelaySwitch] write_to_master_idx_raw: master={} {:?} id={:?} xid={:?}", master_idx, frame.frame_type, frame.id, frame.routing_id);
 
         let masters = self.masters.read().await;
         let master = &masters[master_idx];
@@ -1106,17 +1114,41 @@ impl RelaySwitch {
             seq.assign(frame);
         }
 
-        {
+        let write_result = {
             let mut writer = master.socket_writer.lock().await;
-            writer.write(frame).await?;
-        }
+            writer.write(frame).await
+        };
 
         if matches!(frame.frame_type, FrameType::End | FrameType::Err) {
             let mut seq = master.seq_assigner.lock().await;
             seq.remove(&FlowKey::from_frame(frame));
         }
 
-        Ok(())
+        write_result
+    }
+
+    /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
+    /// Cleans up seq tracking on terminal frames (END/ERR).
+    async fn write_to_master_idx(&self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
+        tracing::debug!("[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}", master_idx, frame.frame_type, frame.id, frame.routing_id);
+
+        let write_result = self.write_to_master_idx_raw(master_idx, frame).await;
+
+        match write_result {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let reason = format!("Write to master {} failed: {}", master_idx, error);
+                if let Err(cleanup_error) = self.handle_master_death_with_reason(master_idx, &reason).await {
+                    tracing::error!(
+                        master_idx = master_idx,
+                        write_error = %error,
+                        cleanup_error = %cleanup_error,
+                        "[RelaySwitch] Failed to retire dead master after write failure"
+                    );
+                }
+                Err(error)
+            }
+        }
     }
 
     // =========================================================================
@@ -1550,7 +1582,7 @@ impl RelaySwitch {
                         masters[src_master_idx].healthy.load(Ordering::SeqCst)
                     };
                     if is_healthy {
-                        let _ = self.write_to_master_idx(src_master_idx, &mut err_frame).await;
+                        let _ = self.write_to_master_idx_raw(src_master_idx, &mut err_frame).await;
                     }
                 }
             }
@@ -2386,6 +2418,7 @@ mod tests {
     #[tokio::test]
     async fn test905_send_to_master_build_request_frames_roundtrip() {
         use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter, accumulate_input};
+        use crate::bifaci::plugin_runtime::PeerInvoker;
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::caller::CapArgumentValue;
         use crate::cap::definition::Cap;
@@ -2403,6 +2436,7 @@ mod tests {
                 _cap_urn: &str,
                 mut input: mpsc::UnboundedReceiver<Frame>,
                 output: ResponseWriter,
+                _peer: Arc<dyn PeerInvoker>,
             ) {
                 match accumulate_input(&mut input).await {
                     Ok(args) => {
@@ -2523,6 +2557,7 @@ mod tests {
     #[tokio::test]
     async fn test489_add_master_dynamic() {
         use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter};
+        use crate::bifaci::plugin_runtime::PeerInvoker;
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::caller::CapArgumentValue;
         use crate::cap::definition::Cap;
@@ -2540,6 +2575,7 @@ mod tests {
                 _cap_urn: &str,
                 mut input: mpsc::UnboundedReceiver<Frame>,
                 output: ResponseWriter,
+                _peer: Arc<dyn PeerInvoker>,
             ) {
                 // Drain input
                 while let Some(frame) = input.recv().await {
@@ -2674,6 +2710,7 @@ mod tests {
     #[tokio::test]
     async fn test666_preferred_cap_routing() {
         use crate::bifaci::in_process_host::{InProcessPluginHost, FrameHandler, ResponseWriter};
+        use crate::bifaci::plugin_runtime::PeerInvoker;
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::definition::Cap;
         use async_trait::async_trait;
@@ -2690,6 +2727,7 @@ mod tests {
                 _cap_urn: &str,
                 mut input: mpsc::UnboundedReceiver<Frame>,
                 output: ResponseWriter,
+                _peer: Arc<dyn PeerInvoker>,
             ) {
                 // Drain input
                 while let Some(frame) = input.recv().await {

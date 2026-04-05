@@ -23,6 +23,9 @@
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
+use crate::bifaci::plugin_runtime::{
+    ChannelFrameSender, FrameSender, PeerCall, PeerInvoker, RuntimeError,
+};
 use crate::bifaci::relay_switch::InstalledPluginIdentity;
 use crate::cap::caller::CapArgumentValue;
 use crate::cap::definition::Cap;
@@ -30,7 +33,7 @@ use crate::standard::caps::CAP_IDENTITY;
 use crate::CapUrn;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
@@ -50,6 +53,12 @@ struct RelayNotifyCapabilitiesPayload {
 /// channel and send response frames via a ResponseWriter. The host never
 /// accumulates — handlers decide how to process input (stream or accumulate).
 ///
+/// Handlers can invoke other caps via `peer` (a PeerInvoker). This mirrors the
+/// peer call mechanism in external plugins: the handler sends a REQ frame
+/// through the host, the relay routes it to the destination cap, and response
+/// frames (including LOG frames with queue/progress status) flow back to the
+/// handler through the PeerResponse.
+///
 /// For handlers that don't need streaming, use `accumulate_input()` to collect
 /// all input streams into `Vec<CapArgumentValue>`.
 #[async_trait]
@@ -58,6 +67,7 @@ pub trait FrameHandler: Send + Sync + std::fmt::Debug {
     ///
     /// Called in a dedicated task for each incoming request. The handler reads
     /// input frames from `input` and sends response frames via `output`.
+    /// The handler can invoke other caps via `peer`.
     ///
     /// The REQ frame has already been consumed by the host. `input` receives:
     /// STREAM_START, CHUNK, STREAM_END (per argument stream), then END.
@@ -69,6 +79,7 @@ pub trait FrameHandler: Send + Sync + std::fmt::Debug {
         cap_urn: &str,
         input: mpsc::UnboundedReceiver<Frame>,
         output: ResponseWriter,
+        peer: Arc<dyn PeerInvoker>,
     );
 }
 
@@ -207,6 +218,71 @@ impl ResponseWriter {
 }
 
 // =============================================================================
+// PEER INVOCATION FOR IN-PROCESS HANDLERS
+// =============================================================================
+
+/// Tracks a pending peer request from an in-process handler.
+/// The main read loop routes response frames to the sender channel.
+struct PendingPeerRequest {
+    sender: mpsc::UnboundedSender<Frame>,
+}
+
+/// PeerInvoker implementation for in-process handlers.
+///
+/// Sends REQ frames through the host's write channel (same channel used for
+/// handler responses). The host's main read loop routes response frames back
+/// to the PeerCall's receiver via the pending_peer_requests map.
+struct InProcessPeerInvoker {
+    write_tx: mpsc::UnboundedSender<Frame>,
+    pending_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>>,
+    max_chunk: usize,
+}
+
+#[async_trait]
+impl PeerInvoker for InProcessPeerInvoker {
+    fn call(&self, cap_urn: &str) -> Result<PeerCall, RuntimeError> {
+        let request_id = MessageId::new_uuid();
+        tracing::info!(
+            "[InProcessPluginHost] PEER_CALL: cap='{}' peer_rid={:?}",
+            cap_urn, request_id
+        );
+
+        // Create channel for response frames
+        let (sender, receiver) = mpsc::unbounded_channel();
+
+        // Register before sending REQ
+        {
+            let mut pending = self.pending_requests.lock().unwrap();
+            pending.insert(request_id.clone(), PendingPeerRequest { sender });
+        }
+
+        // Send REQ frame through the host's write channel
+        let req_frame = Frame::req(
+            request_id.clone(),
+            cap_urn,
+            vec![],
+            "application/cbor",
+        );
+        self.write_tx.send(req_frame).map_err(|_| {
+            self.pending_requests.lock().unwrap().remove(&request_id);
+            RuntimeError::PeerRequest("Host write channel closed".to_string())
+        })?;
+
+        // Create FrameSender for PeerCall's arg OutputStreams
+        let sender_arc: Arc<dyn FrameSender> = Arc::new(ChannelFrameSender {
+            tx: self.write_tx.clone(),
+        });
+
+        Ok(PeerCall {
+            sender: sender_arc,
+            request_id,
+            max_chunk: self.max_chunk,
+            response_rx: Some(receiver),
+        })
+    }
+}
+
+// =============================================================================
 // INPUT ACCUMULATION UTILITY
 // =============================================================================
 
@@ -285,6 +361,7 @@ impl FrameHandler for IdentityHandler {
         _cap_urn: &str,
         mut input: mpsc::UnboundedReceiver<Frame>,
         output: ResponseWriter,
+        _peer: Arc<dyn PeerInvoker>,
     ) {
         // Accumulate raw payload bytes (no CBOR decode — identity is raw passthrough)
         let mut data = Vec::new();
@@ -470,8 +547,11 @@ impl InProcessPluginHost {
             let mut seq_assigner = SeqAssigner::new();
 
             while let Some(mut frame) = write_rx.recv().await {
-                tracing::info!("[InProcessPluginHost] writer: sending frame type={:?} id={}", frame.frame_type, frame.id);
                 seq_assigner.assign(&mut frame);
+                tracing::debug!(
+                    "[InProcessPluginHost] writer: type={:?} id={} seq={}",
+                    frame.frame_type, frame.id, frame.seq
+                );
                 if let Err(e) = writer.write(&frame).await {
                     tracing::error!("[InProcessPluginHost] writer error: {}", e);
                     break;
@@ -498,10 +578,17 @@ impl InProcessPluginHost {
         // Active request channels: request_id → input_tx for forwarding frames to handler
         let mut active: HashMap<MessageId, mpsc::UnboundedSender<Frame>> = HashMap::new();
 
+        // Pending peer requests: peer_rid → sender for routing response frames back
+        // Shared with InProcessPeerInvoker instances (handlers insert, main loop routes)
+        let pending_peer_requests: Arc<Mutex<HashMap<MessageId, PendingPeerRequest>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
         // Built-in identity handler
         let identity_handler: Arc<dyn FrameHandler> = Arc::new(IdentityHandler);
 
-        // Main read loop — forward frames to handlers, no accumulation
+        let max_chunk = Limits::default().max_chunk;
+
+        // Main read loop — forward frames to handlers or peer response channels
         tracing::info!("[InProcessPluginHost] entering main read loop");
         loop {
             tracing::info!("[InProcessPluginHost] waiting for frame...");
@@ -569,45 +656,85 @@ impl InProcessPluginHost {
                     let (input_tx, input_rx) = mpsc::unbounded_channel::<Frame>();
                     active.insert(rid.clone(), input_tx);
 
-                    // Spawn handler task with logging
+                    // Create peer invoker for this handler
+                    let peer: Arc<dyn PeerInvoker> = Arc::new(InProcessPeerInvoker {
+                        write_tx: write_tx.clone(),
+                        pending_requests: pending_peer_requests.clone(),
+                        max_chunk,
+                    });
+
+                    // Spawn handler task
                     let output = ResponseWriter::new(
                         rid.clone(),
                         xid.clone(),
                         write_tx.clone(),
-                        Limits::default().max_chunk,
+                        max_chunk,
                     );
                     let cap_urn_owned = cap_urn.clone();
                     tokio::spawn(async move {
                         tracing::info!("[InProcessPluginHost] handler task starting for cap={}", cap_urn_owned);
-                        handler.handle_request(&cap_urn_owned, input_rx, output).await;
+                        handler.handle_request(&cap_urn_owned, input_rx, output, peer).await;
                         tracing::info!("[InProcessPluginHost] handler task completed for cap={}", cap_urn_owned);
                     });
                 }
 
-                // Continuation frames: forward to handler
-                FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd => {
+                // Continuation frames: forward to active request or peer response
+                FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd | FrameType::Log => {
+                    // Try active request first (incoming request continuation)
                     if let Some(tx) = active.get(&frame.id) {
                         let _ = tx.send(frame);
+                        continue;
                     }
+
+                    // Try peer response (response to handler's peer call)
+                    let pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pr) = pending.get(&frame.id) {
+                        tracing::debug!("[InProcessPluginHost] routing {:?} to peer_response rid={:?}", frame.frame_type, frame.id);
+                        let _ = pr.sender.send(frame);
+                    } else {
+                        tracing::warn!("[InProcessPluginHost] {:?} rid={:?} not found in active or pending_peer_requests", frame.frame_type, frame.id);
+                    }
+                    drop(pending);
                 }
 
                 FrameType::End => {
-                    // Forward END to handler, then remove from active
+                    // Try active request first — send END then remove
                     if let Some(tx) = active.remove(&frame.id) {
                         let _ = tx.send(frame);
-                        // tx dropped here — handler sees channel close after END
+                        continue;
                     }
+
+                    // Try peer response — send END then remove
+                    let mut pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pr) = pending.remove(&frame.id) {
+                        tracing::info!("[InProcessPluginHost] PEER_END received: peer_rid={:?}", frame.id);
+                        let _ = pr.sender.send(frame);
+                    }
+                    drop(pending);
+                }
+
+                FrameType::Err => {
+                    tracing::error!(
+                        "[InProcessPluginHost] ERR received: rid={:?} code={:?} msg={:?}",
+                        frame.id, frame.error_code(), frame.error_message()
+                    );
+                    // Try active request first — forward ERR then remove
+                    if let Some(tx) = active.remove(&frame.id) {
+                        let _ = tx.send(frame);
+                        continue;
+                    }
+
+                    // Try peer response
+                    let mut pending = pending_peer_requests.lock().unwrap();
+                    if let Some(pr) = pending.remove(&frame.id) {
+                        let _ = pr.sender.send(frame);
+                    }
+                    drop(pending);
                 }
 
                 FrameType::Heartbeat => {
                     let response = Frame::heartbeat(frame.id.clone());
                     let _ = write_tx.send(response);
-                }
-
-                FrameType::Err => {
-                    // Error from relay for a pending request — close handler's input
-                    active.remove(&frame.id);
-                    // input_tx dropped — handler sees channel close and should exit
                 }
 
                 _ => {
@@ -645,6 +772,7 @@ mod tests {
             _cap_urn: &str,
             mut input: mpsc::UnboundedReceiver<Frame>,
             output: ResponseWriter,
+            _peer: Arc<dyn PeerInvoker>,
         ) {
             match accumulate_input(&mut input).await {
                 Ok(args) => {
@@ -936,6 +1064,7 @@ mod tests {
                 _cap_urn: &str,
                 mut input: mpsc::UnboundedReceiver<Frame>,
                 output: ResponseWriter,
+                _peer: Arc<dyn PeerInvoker>,
             ) {
                 // Drain input
                 while let Some(frame) = input.recv().await {
@@ -1015,6 +1144,7 @@ mod tests {
                 _cap_urn: &str,
                 mut input: mpsc::UnboundedReceiver<Frame>,
                 output: ResponseWriter,
+                _peer: Arc<dyn PeerInvoker>,
             ) {
                 // Drain input
                 while let Some(frame) = input.recv().await {

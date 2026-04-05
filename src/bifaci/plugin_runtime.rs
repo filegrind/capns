@@ -800,10 +800,10 @@ impl OutputStream {
 /// Handler creates arg streams with `arg()`, writes data, then calls `finish()`
 /// to get a `PeerResponse` that yields both data and LOG frames.
 pub struct PeerCall {
-    sender: Arc<dyn FrameSender>,
-    request_id: MessageId,
-    max_chunk: usize,
-    response_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Frame>>,
+    pub(crate) sender: Arc<dyn FrameSender>,
+    pub(crate) request_id: MessageId,
+    pub(crate) max_chunk: usize,
+    pub(crate) response_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Frame>>,
 }
 
 impl PeerCall {
@@ -895,8 +895,8 @@ impl PeerInvoker for NoPeerInvoker {
 /// Channel-based frame sender for plugin output.
 /// ALL frames (peer requests AND responses) go through a single output channel.
 /// PluginRuntime has a writer task that drains this channel and writes to stdout.
-struct ChannelFrameSender {
-    tx: tokio::sync::mpsc::UnboundedSender<Frame>,
+pub(crate) struct ChannelFrameSender {
+    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<Frame>,
 }
 
 impl FrameSender for ChannelFrameSender {
@@ -3117,6 +3117,17 @@ impl PluginRuntime {
                     "[PluginRuntime] dequeuing request: cap='{}' rid={:?} remaining_queue={}",
                     queued.cap_urn, queued.request_id, request_queue.len()
                 );
+
+                // Notify the caller that this request has been dequeued and is
+                // starting. The "dequeued" level is the counterpart to "queued":
+                // on the pipeline side, ActivityTimer unpauses and resets the
+                // timeout clock, and the stall tracker is touched.
+                let mut dequeued_log = Frame::log(
+                    queued.request_id.clone(), "dequeued",
+                    "Request dequeued, handler starting",
+                );
+                dequeued_log.routing_id = queued.routing_id.clone();
+                let _ = output_tx.send(dequeued_log);
 
                 let handle = spawn_handler(
                     queued.raw_rx,
