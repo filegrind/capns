@@ -879,11 +879,16 @@ pub struct NodeExecutionResult {
     /// Whether execution succeeded
     pub success: bool,
 
-    /// Binary output data (if any)
+    /// Binary output data (if any).
+    /// For scalar output: the single output blob.
+    /// For sequence output (is_sequence=true): concatenation of all items.
     pub binary_output: Option<Vec<u8>>,
 
-    /// Text/JSON output (if any)
-    pub text_output: Option<String>,
+    /// Individual output items when the terminal cap used emit_list_item (is_sequence=true).
+    /// Each item is a raw unwrapped blob (CBOR transport stripped).
+    /// None for scalar output or when there's only one item.
+    #[serde(default)]
+    pub binary_items: Option<Vec<Vec<u8>>>,
 
     /// Error message if execution failed
     pub error: Option<String>,
@@ -1287,7 +1292,7 @@ mod tests {
             node_id: "node_0".to_string(),
             success: true,
             binary_output: Some(vec![1, 2, 3]),
-            text_output: Some("output".to_string()),
+            binary_items: None,
             error: None,
             duration_ms: 50,
         };
@@ -1305,7 +1310,7 @@ mod tests {
             node_id: "node_0".to_string(),
             success: false,
             binary_output: None,
-            text_output: None,
+            binary_items: None,
             error: Some("Cap execution failed".to_string()),
             duration_ms: 10,
         };

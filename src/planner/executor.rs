@@ -171,7 +171,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         node_id: node.id.clone(),
                         success: true,
                         binary_output: None,
-                        text_output: Some(output.to_string()),
+                        binary_items: None,
                         error: None,
                         duration_ms: start.elapsed().as_millis() as u64,
                     },
@@ -186,7 +186,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         node_id: node.id.clone(),
                         success: true,
                         binary_output: None,
-                        text_output: source_output.map(|o| o.to_string()),
+                        binary_items: None,
                         error: None,
                         duration_ms: start.elapsed().as_millis() as u64,
                     },
@@ -218,7 +218,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         node_id: node.id.clone(),
                         success: true,
                         binary_output: None,
-                        text_output: Some(output.to_string()),
+                        binary_items: None,
                         error: None,
                         duration_ms: start.elapsed().as_millis() as u64,
                     },
@@ -244,7 +244,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                             node_id: node.id.clone(),
                             success: true,
                             binary_output: None,
-                            text_output: predecessor_output.as_ref().map(|v| v.to_string()),
+                            binary_items: None,
                             error: None,
                             duration_ms: start.elapsed().as_millis() as u64,
                         },
@@ -273,7 +273,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                             node_id: node.id.clone(),
                             success: true,
                             binary_output: None,
-                            text_output: Some(output.to_string()),
+                            binary_items: None,
                             error: None,
                             duration_ms: start.elapsed().as_millis() as u64,
                         },
@@ -300,7 +300,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         node_id: node.id.clone(),
                         success: true,
                         binary_output: None,
-                        text_output: Some(output.to_string()),
+                        binary_items: None,
                         error: None,
                         duration_ms: start.elapsed().as_millis() as u64,
                     },
@@ -320,7 +320,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         node_id: node.id.clone(),
                         success: true,
                         binary_output: None,
-                        text_output: Some(output.to_string()),
+                        binary_items: None,
                         error: None,
                         duration_ms: start.elapsed().as_millis() as u64,
                     },
@@ -349,7 +349,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                     node_id: node_id.to_string(),
                     success: false,
                     binary_output: None,
-                    text_output: None,
+                    binary_items: None,
                     error: Some(format!("No capability available for '{}'", cap_urn)),
                     duration_ms: start.elapsed().as_millis() as u64,
                 },
@@ -459,22 +459,19 @@ impl<E: CapExecutor> MachineExecutor<E> {
 
         match result {
             Ok(response_bytes) => {
-                let text_output = String::from_utf8(response_bytes.clone()).ok();
                 let binary_output = Some(response_bytes.clone());
 
-                let output_json = text_output
-                    .as_ref()
-                    .and_then(|t| serde_json::from_str(t).ok())
-                    .unwrap_or_else(|| {
-                        json!({ "text": text_output })
-                    });
+                let output_json = String::from_utf8(response_bytes)
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .unwrap_or_else(|| json!(null));
 
                 Ok((
                     NodeExecutionResult {
                         node_id: node_id.to_string(),
                         success: true,
                         binary_output,
-                        text_output,
+                        binary_items: None,
                         error: None,
                         duration_ms,
                     },
@@ -486,7 +483,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                     node_id: node_id.to_string(),
                     success: false,
                     binary_output: None,
-                    text_output: None,
+                    binary_items: None,
                     error: Some(e.to_string()),
                     duration_ms,
                 },
