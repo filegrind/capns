@@ -46,7 +46,7 @@ pub use argument_binding::{
 };
 pub use collection_input::{CapInputCollection, CollectionFile};
 pub use plan::{
-    MachineResult, MachinePlanEdge, MachinePlan, MachineNode,
+    BodyOutcome, MachineResult, MachinePlanEdge, MachinePlan, MachineNode,
     EdgeType, ExecutionNodeType, MergeStrategy,
     NodeExecutionResult, NodeId,
 };

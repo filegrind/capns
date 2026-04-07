@@ -115,7 +115,7 @@ pub use planner::{
     CapInputCollection, CollectionFile,
     // Execution plan
     MachinePlan, MachineNode, MachinePlanEdge, EdgeType, ExecutionNodeType, MergeStrategy,
-    NodeExecutionResult, MachineResult, NodeId,
+    NodeExecutionResult, MachineResult, BodyOutcome, NodeId,
     // Plan builder
     MachinePlanBuilder,
     ArgumentResolution, ArgumentInfo, StepArgumentRequirements, PathArgumentRequirements,

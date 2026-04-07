@@ -171,7 +171,7 @@ impl ResponseWriter {
             self.send(Frame::stream_end(MessageId::Uint(0), stream_id, chunk_count));
         }
 
-        self.send(Frame::end(MessageId::Uint(0), None));
+        self.send(Frame::end_ok(MessageId::Uint(0), None));
     }
 
     /// Send a complete data response: STREAM_START + CBOR-encoded CHUNK(s) + STREAM_END + END.
@@ -215,7 +215,7 @@ impl ResponseWriter {
         }
 
         self.send(Frame::stream_end(MessageId::Uint(0), stream_id, items.len() as u64));
-        self.send(Frame::end(MessageId::Uint(0), None));
+        self.send(Frame::end_ok(MessageId::Uint(0), None));
     }
 
     /// Send an error response.
@@ -415,7 +415,7 @@ impl FrameHandler for IdentityHandler {
         ));
 
         output.send(Frame::stream_end(MessageId::Uint(0), stream_id, 1));
-        output.send(Frame::end(MessageId::Uint(0), None));
+        output.send(Frame::end_ok(MessageId::Uint(0), None));
     }
 }
 

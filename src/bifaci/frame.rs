@@ -375,12 +375,38 @@ impl Frame {
         frame
     }
 
-    /// Create an END frame to mark stream completion
+    /// Create an END frame to mark stream completion.
+    /// Does NOT set exit_code — absence of exit_code in meta means failure.
+    /// Use `end_ok` for successful completion (exit_code=0).
     pub fn end(id: MessageId, final_payload: Option<Vec<u8>>) -> Self {
         let mut frame = Self::new(FrameType::End, id);
         frame.payload = final_payload;
         frame.eof = Some(true);
         frame
+    }
+
+    /// Create an END frame with exit_code=0 (success).
+    /// Only exit_code=0 means success. Absence of exit_code or any non-zero value means failure.
+    pub fn end_ok(id: MessageId, final_payload: Option<Vec<u8>>) -> Self {
+        let mut meta = BTreeMap::new();
+        meta.insert("exit_code".to_string(), ciborium::Value::Integer(0.into()));
+        let mut frame = Self::new(FrameType::End, id);
+        frame.payload = final_payload;
+        frame.eof = Some(true);
+        frame.meta = Some(meta);
+        frame
+    }
+
+    /// Read exit_code from an END frame's meta. Returns None if absent.
+    pub fn exit_code(&self) -> Option<i64> {
+        self.meta.as_ref()?.get("exit_code").and_then(|v| {
+            if let ciborium::Value::Integer(i) = v {
+                let n: i128 = (*i).into();
+                Some(n as i64)
+            } else {
+                None
+            }
+        })
     }
 
     /// Create a LOG frame for progress/status

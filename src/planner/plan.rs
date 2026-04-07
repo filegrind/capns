@@ -916,6 +916,32 @@ pub struct NodeExecutionResult {
     pub duration_ms: u64,
 }
 
+/// Outcome of a single ForEach body execution.
+///
+/// Tracks what happened to each body: which caps were in the pathway,
+/// which one failed (if any), what output was produced, and timing.
+/// For linear (non-ForEach) pipelines, a single BodyOutcome with body_index=0
+/// represents the entire execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BodyOutcome {
+    /// Index of this body within the ForEach (0-based). 0 for linear pipelines.
+    pub body_index: usize,
+    /// Whether this body completed successfully.
+    pub success: bool,
+    /// Cap URNs in the body's execution pathway (in execution order).
+    pub cap_urns: Vec<String>,
+    /// The cap URN that was executing when the body failed (None if succeeded).
+    pub failed_cap: Option<String>,
+    /// Error message if the body failed.
+    pub error: Option<String>,
+    /// File paths saved by this body's IncrementalWriter.
+    pub saved_paths: Vec<String>,
+    /// Total bytes written by this body.
+    pub total_bytes: usize,
+    /// Execution duration in milliseconds.
+    pub duration_ms: u64,
+}
+
 /// Overall result of executing a machine
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MachineResult {
@@ -933,6 +959,11 @@ pub struct MachineResult {
 
     /// Total execution duration in milliseconds
     pub total_duration_ms: u64,
+
+    /// Per-body outcomes for ForEach pipelines, or single entry for linear.
+    /// Populated by the pipeline executor, empty for standalone executor.
+    #[serde(default)]
+    pub body_outcomes: Vec<BodyOutcome>,
 }
 
 impl MachineResult {
@@ -1123,6 +1154,7 @@ mod tests {
             outputs,
             error: None,
             total_duration_ms: 100,
+            body_outcomes: vec![],
         };
 
         assert!(result.success);
@@ -1357,6 +1389,7 @@ mod tests {
             outputs: HashMap::new(),
             error: Some("Chain failed".to_string()),
             total_duration_ms: 100,
+            body_outcomes: vec![],
         };
 
         assert!(!result.success);

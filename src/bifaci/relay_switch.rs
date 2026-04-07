@@ -1510,7 +1510,7 @@ impl RelaySwitch {
             }
             let master = &masters[master_idx];
             let was_healthy = master.healthy.load(Ordering::SeqCst);
-            let cap_count = master.caps.blocking_read().len();
+            let cap_count = master.caps.read().await.len();
             let connected_seconds = master.connected_at.elapsed().as_secs();
             (was_healthy, cap_count, connected_seconds)
         };

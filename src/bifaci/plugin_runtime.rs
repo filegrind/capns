@@ -2182,7 +2182,7 @@ fn spawn_handler(
         match result {
             Ok(()) => {
                 tracing::info!("[PluginRuntime] handler completed OK: cap='{}' rid={:?}", cap_urn, request_id);
-                let mut end_frame = Frame::end(request_id, None);
+                let mut end_frame = Frame::end_ok(request_id, None);
                 end_frame.routing_id = routing_id;
                 let _ = sender.send(&end_frame);
             }

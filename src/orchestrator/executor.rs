@@ -1104,6 +1104,18 @@ impl ExecutionContext {
                             }
                         }
                         FrameType::End => {
+                            // exit_code in END meta: 0 = success, absent or non-zero = failure
+                            let exit_code = frame.exit_code();
+                            if exit_code != Some(0) {
+                                let detail = match exit_code {
+                                    Some(code) => format!("exit_code={}", code),
+                                    None => "exit_code absent (plugin likely crashed)".to_string(),
+                                };
+                                return Err(ExecutionError::PluginExecutionFailed {
+                                    cap_urn: cap_urn.clone(),
+                                    details: format!("END without success: {}", detail),
+                                });
+                            }
                             if let Some(payload) = &frame.payload {
                                 response_chunks.extend_from_slice(payload);
                             }

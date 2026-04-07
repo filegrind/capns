@@ -94,6 +94,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                                 exec_result.error.as_deref().unwrap_or("unknown error")
                             )),
                             total_duration_ms: start.elapsed().as_millis() as u64,
+                            body_outcomes: vec![],
                         });
                     }
 
@@ -109,6 +110,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         outputs: HashMap::new(),
                         error: Some(format!("Node '{}' execution error: {}", node.id, e)),
                         total_duration_ms: start.elapsed().as_millis() as u64,
+                        body_outcomes: vec![],
                     });
                 }
             }
@@ -127,6 +129,7 @@ impl<E: CapExecutor> MachineExecutor<E> {
             outputs,
             error: None,
             total_duration_ms: start.elapsed().as_millis() as u64,
+            body_outcomes: vec![],
         })
     }
 
