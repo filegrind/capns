@@ -7,7 +7,7 @@
 //!
 //! ```ebnf
 //! program      = stmt*
-//! stmt         = "[" inner "]"
+//! stmt         = "[" inner "]" | inner
 //! inner        = wiring | header
 //! header       = alias cap_urn
 //! wiring       = source arrow loop_cap arrow alias
@@ -17,20 +17,25 @@
 //! loop_cap     = "LOOP" alias | alias
 //! alias        = (ALPHA | "_") (ALNUM | "_" | "-")*
 //! cap_urn      = "cap:" cap_urn_body*
-//! cap_urn_body = quoted_value | !"]" ANY
+//! cap_urn_body = quoted_value | !("]" | NEWLINE) ANY
 //! quoted_value = '"' ('\\"' | '\\\\' | !'"' ANY)* '"'
 //! ```
 //!
-//! Whitespace between tokens is handled implicitly by pest's `WHITESPACE`
-//! rule. The `alias` and `cap_urn` rules are atomic (`@{}`), so whitespace
-//! is not skipped inside them.
+//! Two equally valid statement forms:
+//!
+//! - **Bracketed**: `[alias cap:...]` / `[src -> alias -> dst]`
+//! - **Line-based**: `alias cap:...` / `src -> alias -> dst`
+//!
+//! Both can be freely mixed. Whitespace between tokens is handled
+//! implicitly by pest's `WHITESPACE` rule. The `alias` and `cap_urn`
+//! rules are atomic (`@{}`), so whitespace is not skipped inside them.
 //!
 //! ## Media URN Derivation
 //!
 //! Node media URNs are derived from the cap's `in=` and `out=` specs:
 //!
-//! - For `[src -> cap_alias -> dst]`: src gets cap's `in=`, dst gets cap's `out=`
-//! - For fan-in `[(primary, secondary) -> cap_alias -> dst]`:
+//! - For `src -> cap_alias -> dst`: src gets cap's `in=`, dst gets cap's `out=`
+//! - For fan-in `(primary, secondary) -> cap_alias -> dst`:
 //!   - First group member gets cap's `in=` spec
 //!   - Additional members must have types already assigned by prior wirings.
 //!     If unassigned, the parser fails — no guessing.
@@ -549,5 +554,96 @@ mod tests {
     fn unterminated_bracket_fails() {
         let result = parse_machine("[extract cap:in=media:pdf");
         assert!(matches!(result, Err(MachineSyntaxError::ParseError { .. })));
+    }
+
+    // =========================================================================
+    // Line-based mode (no brackets)
+    // =========================================================================
+
+    #[test]
+    fn line_based_simple_chain() {
+        let input = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+doc -> extract -> text"#;
+        let graph = Machine::from_string(input).unwrap();
+        assert_eq!(graph.edge_count(), 1);
+
+        let edge = &graph.edges()[0];
+        assert_eq!(edge.sources.len(), 1);
+        assert!(edge.sources[0].is_equivalent(&media("media:pdf")).unwrap());
+        assert!(edge.target.is_equivalent(&media("media:txt;textable")).unwrap());
+        assert!(!edge.is_loop);
+    }
+
+    #[test]
+    fn line_based_two_step_chain() {
+        let input = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+embed cap:in="media:txt;textable";op=embed;out="media:embedding-vector;record;textable"
+doc -> extract -> text
+text -> embed -> vectors"#;
+        let graph = Machine::from_string(input).unwrap();
+        assert_eq!(graph.edge_count(), 2);
+        assert!(graph.edges()[0].sources[0].is_equivalent(&media("media:pdf")).unwrap());
+        assert!(graph.edges()[1].target
+            .is_equivalent(&media("media:embedding-vector;record;textable"))
+            .unwrap());
+    }
+
+    #[test]
+    fn line_based_loop() {
+        let input = r#"p2t cap:in="media:disbound-page;textable";op=page_to_text;out="media:txt;textable"
+pages -> LOOP p2t -> texts"#;
+        let graph = Machine::from_string(input).unwrap();
+        assert_eq!(graph.edge_count(), 1);
+        assert!(graph.edges()[0].is_loop);
+    }
+
+    #[test]
+    fn line_based_fan_in() {
+        let input = r#"thumb cap:in="media:pdf";op=generate_thumbnail;out="media:image;png;thumbnail"
+model_dl cap:in="media:model-spec;textable";op=download;out="media:model-spec;textable"
+describe cap:in="media:image;png";op=describe_image;out="media:image-description;textable"
+doc -> thumb -> thumbnail
+spec_input -> model_dl -> model_spec
+(thumbnail, model_spec) -> describe -> description"#;
+        let graph = Machine::from_string(input).unwrap();
+        assert_eq!(graph.edge_count(), 3);
+        assert_eq!(graph.edges()[2].sources.len(), 2);
+    }
+
+    #[test]
+    fn line_based_fan_out() {
+        let input = r#"meta cap:in="media:pdf";op=extract_metadata;out="media:file-metadata;record;textable"
+outline cap:in="media:pdf";op=extract_outline;out="media:document-outline;record;textable"
+thumb cap:in="media:pdf";op=generate_thumbnail;out="media:image;png;thumbnail"
+doc -> meta -> metadata
+doc -> outline -> outline_data
+doc -> thumb -> thumbnail"#;
+        let graph = Machine::from_string(input).unwrap();
+        assert_eq!(graph.edge_count(), 3);
+        for edge in graph.edges() {
+            assert_eq!(edge.sources.len(), 1);
+            assert!(edge.sources[0].is_equivalent(&media("media:pdf")).unwrap());
+        }
+    }
+
+    #[test]
+    fn mixed_bracketed_and_line_based() {
+        let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
+doc -> extract -> text"#;
+        let graph = Machine::from_string(input).unwrap();
+        assert_eq!(graph.edge_count(), 1);
+    }
+
+    #[test]
+    fn line_based_equivalent_to_bracketed() {
+        let bracketed = concat!(
+            r#"[extract cap:in="media:pdf";op=extract;out="media:txt;textable"]"#,
+            "[doc -> extract -> text]"
+        );
+        let line_based = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+doc -> extract -> text"#;
+        let g1 = Machine::from_string(bracketed).unwrap();
+        let g2 = Machine::from_string(line_based).unwrap();
+        assert!(g1.is_equivalent(&g2));
     }
 }

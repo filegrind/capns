@@ -3,6 +3,8 @@
 //! Converts a `Machine` to its machine notation string representation.
 //! The output is deterministic: the same graph always produces the same string.
 //!
+//! The canonical form is line-based (one statement per line, no brackets).
+//!
 //! ## Alias Generation
 //!
 //! Aliases are derived from the cap URN's `op=` tag value. If no `op=` tag
@@ -29,6 +31,23 @@ use crate::urn::media_urn::MediaUrn;
 
 use super::error::MachineAbstractionError;
 use super::graph::{MachineEdge, Machine};
+
+/// Serialization format for machine notation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotationFormat {
+    /// Line-based: one statement per line, no brackets.
+    /// ```text
+    /// extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+    /// doc -> extract -> text
+    /// ```
+    LineBased,
+    /// Bracketed: each statement wrapped in `[...]`.
+    /// ```text
+    /// [extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
+    /// [doc -> extract -> text]
+    /// ```
+    Bracketed,
+}
 
 impl Machine {
     /// Convert a `Strand` (resolved linear path) into a `Machine`.
@@ -68,57 +87,18 @@ impl Machine {
         Ok(Self::new(edges))
     }
 
-    /// Serialize this machine graph to canonical one-line machine notation.
+    /// Serialize this machine graph to canonical bracketed machine notation.
     ///
     /// The output is deterministic: same graph → same string. This is the
     /// primary serialization format for accessibility identifiers and
-    /// comparison.
+    /// comparison. One-line, each statement wrapped in `[...]`.
     pub fn to_machine_notation(&self) -> String {
-        if self.edges().is_empty() {
-            return String::new();
-        }
-
-        let (aliases, node_names, edge_order) = self.build_serialization_maps();
-        let mut output = String::new();
-
-        // Emit headers in alias-sorted order
-        let mut sorted_aliases: Vec<(&String, &(usize, String))> = aliases.iter().collect();
-        sorted_aliases.sort_by_key(|(alias, _)| *alias);
-
-        for (alias, (edge_idx, _cap_str)) in &sorted_aliases {
-            let edge = &self.edges()[*edge_idx];
-            write!(output, "[{} {}]", alias, edge.cap_urn).unwrap();
-        }
-
-        // Emit wirings in edge order
-        for edge_idx in &edge_order {
-            let edge = &self.edges()[*edge_idx];
-            let (alias, _) = aliases.iter().find(|(_, (idx, _))| idx == edge_idx).unwrap();
-
-            // Source node name(s)
-            let sources: Vec<&String> = edge.sources.iter().map(|s| {
-                let key = s.to_string();
-                node_names.get(&key).unwrap()
-            }).collect();
-
-            // Target node name
-            let target_key = edge.target.to_string();
-            let target_name = node_names.get(&target_key).unwrap();
-
-            let loop_prefix = if edge.is_loop { "LOOP " } else { "" };
-
-            if sources.len() == 1 {
-                write!(output, "[{} -> {}{} -> {}]", sources[0], loop_prefix, alias, target_name).unwrap();
-            } else {
-                let group = sources.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
-                write!(output, "[({}) -> {}{} -> {}]", group, loop_prefix, alias, target_name).unwrap();
-            }
-        }
-
-        output
+        self.to_machine_notation_formatted(NotationFormat::Bracketed)
     }
 
     /// Serialize to multi-line machine notation (one statement per line).
+    /// Uses the same format as `to_machine_notation()` (bracketed) but
+    /// with newlines between statements.
     pub fn to_machine_notation_multiline(&self) -> String {
         if self.edges().is_empty() {
             return String::new();
@@ -127,7 +107,6 @@ impl Machine {
         let (aliases, node_names, edge_order) = self.build_serialization_maps();
         let mut output = String::new();
 
-        // Emit headers
         let mut sorted_aliases: Vec<(&String, &(usize, String))> = aliases.iter().collect();
         sorted_aliases.sort_by_key(|(alias, _)| *alias);
 
@@ -136,7 +115,6 @@ impl Machine {
             writeln!(output, "[{} {}]", alias, edge.cap_urn).unwrap();
         }
 
-        // Emit wirings
         for edge_idx in &edge_order {
             let edge = &self.edges()[*edge_idx];
             let (alias, _) = aliases.iter().find(|(_, (idx, _))| idx == edge_idx).unwrap();
@@ -159,8 +137,63 @@ impl Machine {
             }
         }
 
-        // Remove trailing newline
         if output.ends_with('\n') {
+            output.pop();
+        }
+
+        output
+    }
+
+    /// Serialize this machine graph to machine notation in the specified format.
+    ///
+    /// The output is deterministic: same graph + same format → same string.
+    pub fn to_machine_notation_formatted(&self, format: NotationFormat) -> String {
+        if self.edges().is_empty() {
+            return String::new();
+        }
+
+        let (aliases, node_names, edge_order) = self.build_serialization_maps();
+        let mut output = String::new();
+
+        let (open, close, sep) = match format {
+            NotationFormat::Bracketed => ("[", "]", ""),
+            NotationFormat::LineBased => ("", "", "\n"),
+        };
+
+        // Emit headers in alias-sorted order
+        let mut sorted_aliases: Vec<(&String, &(usize, String))> = aliases.iter().collect();
+        sorted_aliases.sort_by_key(|(alias, _)| *alias);
+
+        for (alias, (edge_idx, _cap_str)) in &sorted_aliases {
+            let edge = &self.edges()[*edge_idx];
+            write!(output, "{}{} {}{}{}", open, alias, edge.cap_urn, close, sep).unwrap();
+        }
+
+        // Emit wirings in edge order
+        for edge_idx in &edge_order {
+            let edge = &self.edges()[*edge_idx];
+            let (alias, _) = aliases.iter().find(|(_, (idx, _))| idx == edge_idx).unwrap();
+
+            let sources: Vec<&String> = edge.sources.iter().map(|s| {
+                let key = s.to_string();
+                node_names.get(&key).unwrap()
+            }).collect();
+
+            let target_key = edge.target.to_string();
+            let target_name = node_names.get(&target_key).unwrap();
+
+            let loop_prefix = if edge.is_loop { "LOOP " } else { "" };
+
+            if sources.len() == 1 {
+                write!(output, "{}{} -> {}{} -> {}{}{}", open, sources[0], loop_prefix, alias, target_name, close, sep).unwrap();
+            } else {
+                let group = sources.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                write!(output, "{}({}) -> {}{} -> {}{}{}", open, group, loop_prefix, alias, target_name, close, sep).unwrap();
+            }
+        }
+
+        // Remove trailing separator
+        if format == NotationFormat::LineBased && output.ends_with('\n') {
             output.pop();
         }
 
@@ -535,6 +568,131 @@ mod tests {
         // Should have "extract" and "extract_1"
         assert!(notation.contains("extract_1") || notation.contains("extract_2"),
             "Duplicate ops must be disambiguated: {}", notation);
+    }
+
+    // =========================================================================
+    // Line-based format
+    // =========================================================================
+
+    #[test]
+    fn line_based_format_single_edge() {
+        let g = Machine::new(vec![edge(
+            &["media:pdf"],
+            "cap:in=\"media:pdf\";op=extract;out=\"media:txt;textable\"",
+            "media:txt;textable",
+            false,
+        )]);
+        let notation = g.to_machine_notation_formatted(NotationFormat::LineBased);
+        // No brackets
+        assert!(!notation.contains('['), "Line-based format must not contain brackets: {}", notation);
+        assert!(!notation.contains(']'), "Line-based format must not contain brackets: {}", notation);
+        // Contains content
+        assert!(notation.contains("extract cap:"));
+        assert!(notation.contains("-> extract ->"));
+    }
+
+    #[test]
+    fn line_based_roundtrip_single_edge() {
+        let original = Machine::new(vec![edge(
+            &["media:pdf"],
+            "cap:in=\"media:pdf\";op=extract;out=\"media:txt;textable\"",
+            "media:txt;textable",
+            false,
+        )]);
+        let notation = original.to_machine_notation_formatted(NotationFormat::LineBased);
+        let reparsed = Machine::from_string(&notation).unwrap();
+        assert!(
+            original.is_equivalent(&reparsed),
+            "Line-based round-trip failed:\n  notation: {}\n  original: {:?}\n  reparsed: {:?}",
+            notation, original, reparsed
+        );
+    }
+
+    #[test]
+    fn line_based_roundtrip_two_edge_chain() {
+        let original = Machine::new(vec![
+            edge(
+                &["media:pdf"],
+                "cap:in=\"media:pdf\";op=extract;out=\"media:txt;textable\"",
+                "media:txt;textable",
+                false,
+            ),
+            edge(
+                &["media:txt;textable"],
+                "cap:in=\"media:txt;textable\";op=embed;out=\"media:embedding-vector;record;textable\"",
+                "media:embedding-vector;record;textable",
+                false,
+            ),
+        ]);
+        let notation = original.to_machine_notation_formatted(NotationFormat::LineBased);
+        let reparsed = Machine::from_string(&notation).unwrap();
+        assert!(
+            original.is_equivalent(&reparsed),
+            "Line-based round-trip failed:\n  notation: {}",
+            notation
+        );
+    }
+
+    #[test]
+    fn line_based_roundtrip_loop() {
+        let original = Machine::new(vec![edge(
+            &["media:disbound-page;textable"],
+            "cap:in=\"media:disbound-page;textable\";op=page_to_text;out=\"media:txt;textable\"",
+            "media:txt;textable",
+            true,
+        )]);
+        let notation = original.to_machine_notation_formatted(NotationFormat::LineBased);
+        let reparsed = Machine::from_string(&notation).unwrap();
+        assert!(original.is_equivalent(&reparsed));
+        assert!(reparsed.edges()[0].is_loop);
+    }
+
+    #[test]
+    fn line_based_deterministic() {
+        let g = Machine::new(vec![
+            edge(
+                &["media:pdf"],
+                "cap:in=\"media:pdf\";op=extract;out=\"media:txt;textable\"",
+                "media:txt;textable",
+                false,
+            ),
+            edge(
+                &["media:txt;textable"],
+                "cap:in=\"media:txt;textable\";op=embed;out=\"media:embedding-vector;record;textable\"",
+                "media:embedding-vector;record;textable",
+                false,
+            ),
+        ]);
+        let n1 = g.to_machine_notation_formatted(NotationFormat::LineBased);
+        let n2 = g.to_machine_notation_formatted(NotationFormat::LineBased);
+        assert_eq!(n1, n2);
+    }
+
+    #[test]
+    fn line_based_and_bracketed_parse_to_same_graph() {
+        let g = Machine::new(vec![
+            edge(
+                &["media:pdf"],
+                "cap:in=\"media:pdf\";op=extract;out=\"media:txt;textable\"",
+                "media:txt;textable",
+                false,
+            ),
+            edge(
+                &["media:txt;textable"],
+                "cap:in=\"media:txt;textable\";op=embed;out=\"media:embedding-vector;record;textable\"",
+                "media:embedding-vector;record;textable",
+                false,
+            ),
+        ]);
+        let bracketed = g.to_machine_notation_formatted(NotationFormat::Bracketed);
+        let line_based = g.to_machine_notation_formatted(NotationFormat::LineBased);
+
+        let g_bracketed = Machine::from_string(&bracketed).unwrap();
+        let g_line_based = Machine::from_string(&line_based).unwrap();
+        assert!(
+            g_bracketed.is_equivalent(&g_line_based),
+            "Bracketed and line-based must parse to equivalent graphs"
+        );
     }
 
     // =========================================================================

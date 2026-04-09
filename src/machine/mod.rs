@@ -9,20 +9,29 @@
 //!
 //! ## Format
 //!
+//! Two equally valid statement forms — bracketed and line-based:
+//!
 //! ```text
-//! [extract cap:in="media:pdf";op=extract_text;out="media:txt;textable"]
-//! [embed cap:in="media:textable";op=generate_embeddings;out="media:embedding-vector;record;textable"]
-//! [doc -> extract -> text]
-//! [text -> embed -> vectors]
+//! extract cap:in="media:pdf";op=extract_text;out="media:txt;textable"
+//! embed cap:in="media:textable";op=generate_embeddings;out="media:embedding-vector;record;textable"
+//! doc -> extract -> text
+//! text -> embed -> vectors
 //! ```
 //!
-//! Statements are enclosed in `[...]`. There are two kinds:
+//! Bracketed form wraps each statement in `[...]` and can be freely mixed:
 //!
-//! - **Headers**: `[alias cap:...]` — define a capability with an alias
-//! - **Wirings**: `[src -> alias -> dst]` — connect nodes through capabilities
+//! ```text
+//! [extract cap:in="media:pdf";op=extract_text;out="media:txt;textable"]
+//! [doc -> extract -> text]
+//! ```
 //!
-//! Fan-in groups: `[(a, b) -> alias -> dst]` — multiple sources feed one cap.
-//! Loop edges: `[src -> LOOP alias -> dst]` — ForEach iteration semantics.
+//! There are two kinds of statement:
+//!
+//! - **Headers**: `alias cap:...` — define a capability with an alias
+//! - **Wirings**: `src -> alias -> dst` — connect nodes through capabilities
+//!
+//! Fan-in groups: `(a, b) -> alias -> dst` — multiple sources feed one cap.
+//! Loop edges: `src -> LOOP alias -> dst` — ForEach iteration semantics.
 
 pub mod error;
 pub mod graph;
@@ -39,3 +48,4 @@ pub use notation_ast::{
     ParsedHeader, ParsedStatement, ParsedWiring, SemanticTokenInfo, SemanticTokenType,
 };
 pub use parser::parse_machine;
+pub use serializer::NotationFormat;

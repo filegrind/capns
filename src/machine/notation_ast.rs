@@ -238,30 +238,32 @@ pub fn parse_notation_ast(input: &str) -> NotationAST {
             continue; // skip EOI
         }
 
-        // Bracket spans: the stmt rule is `"[" ~ inner ~ "]"`.
-        // The pair's span covers the full `[...]` including brackets.
+        // Bracket spans: for bracketed statements `[inner]`, extract
+        // bracket positions. Line-based statements have no brackets.
         let stmt_span = pest_span_to_notation_span(&pair.as_span(), trimmed, trim_start);
+        let is_bracketed = pair.as_str().starts_with('[');
 
-        // Extract bracket positions from the statement span boundaries.
-        let open_bracket = NotationSpan {
-            start: stmt_span.start,
-            end: NotationPosition {
-                line: stmt_span.start.line,
-                character: stmt_span.start.character + 1,
-            },
-            start_byte: stmt_span.start_byte,
-            end_byte: stmt_span.start_byte + 1,
-        };
-        let close_bracket = NotationSpan {
-            start: NotationPosition {
-                line: stmt_span.end.line,
-                character: stmt_span.end.character.saturating_sub(1),
-            },
-            end: stmt_span.end,
-            start_byte: stmt_span.end_byte.saturating_sub(1),
-            end_byte: stmt_span.end_byte,
-        };
-        ast.bracket_spans.push((open_bracket, close_bracket));
+        if is_bracketed {
+            let open_bracket = NotationSpan {
+                start: stmt_span.start,
+                end: NotationPosition {
+                    line: stmt_span.start.line,
+                    character: stmt_span.start.character + 1,
+                },
+                start_byte: stmt_span.start_byte,
+                end_byte: stmt_span.start_byte + 1,
+            };
+            let close_bracket = NotationSpan {
+                start: NotationPosition {
+                    line: stmt_span.end.line,
+                    character: stmt_span.end.character.saturating_sub(1),
+                },
+                end: stmt_span.end,
+                start_byte: stmt_span.end_byte.saturating_sub(1),
+                end_byte: stmt_span.end_byte,
+            };
+            ast.bracket_spans.push((open_bracket, close_bracket));
+        }
 
         // Descend into inner → header | wiring
         let inner = match pair.into_inner().next() {
@@ -463,14 +465,19 @@ pub fn get_completion_context(text: &str, line: usize, character: usize) -> (Com
         None => return (CompletionContextType::Unknown, String::new()),
     };
 
-    // Find innermost unclosed `[`
-    let bracket_start = find_innermost_open_bracket(text, offset);
-    let bracket_start = match bracket_start {
-        Some(pos) => pos,
-        None => return (CompletionContextType::Unknown, String::new()),
+    // Find the start of the current statement context: either the
+    // innermost unclosed `[` (bracketed mode) or the start of the
+    // current line (line-based mode).
+    let (context_start, skip) = match find_innermost_open_bracket(text, offset) {
+        Some(pos) => (pos, 1), // skip the `[`
+        None => {
+            // Line-based mode: find start of current line
+            let line_start = text[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
+            (line_start, 0)
+        }
     };
 
-    let inside = &text[bracket_start + 1..offset];
+    let inside = &text[context_start + skip..offset];
 
     // Check if we're inside a cap URN (contains "cap:" prefix)
     if let Some(cap_pos) = inside.find("cap:") {
@@ -922,6 +929,7 @@ fn line_char_to_offset(text: &str, line: usize, character: usize) -> Option<usiz
 
 /// Scan raw text for `[...]` brackets and extract what we can from
 /// partial/malformed notation. Used when pest parse fails.
+/// Handles both bracketed and line-based statements.
 fn scan_brackets_for_partial_ast(text: &str, ast: &mut NotationAST) {
     let mut i = 0;
     let chars: Vec<char> = text.chars().collect();
@@ -996,7 +1004,13 @@ fn scan_brackets_for_partial_ast(text: &str, ast: &mut NotationAST) {
 
             i = j;
         } else {
-            i += 1;
+            // Line-based mode: skip non-bracket lines (no bracket spans to emit)
+            while i < chars.len() && chars[i] != '\n' && chars[i] != '[' {
+                i += 1;
+            }
+            if i < chars.len() && chars[i] == '\n' {
+                i += 1;
+            }
         }
     }
 }
@@ -1519,6 +1533,71 @@ mod tests {
         assert!(result.is_some(), "expected hover info for LOOP");
         let (md, _) = result.unwrap();
         assert!(md.contains("ForEach"), "hover should explain LOOP semantics");
+    }
+
+    // =========================================================================
+    // Line-based mode
+    // =========================================================================
+
+    #[test]
+    fn parse_line_based_header_and_wiring() {
+        let input = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+doc -> extract -> text"#;
+        let ast = parse_notation_ast(input);
+
+        assert!(ast.error.is_none(), "expected no error, got: {:?}", ast.error);
+        assert_eq!(ast.statements.len(), 2);
+        // Line-based statements have no bracket spans
+        assert_eq!(ast.bracket_spans.len(), 0);
+        assert!(ast.machine.is_some());
+        assert!(ast.alias_map.contains_key("extract"));
+    }
+
+    #[test]
+    fn parse_mixed_bracketed_and_line_based() {
+        let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
+doc -> extract -> text"#;
+        let ast = parse_notation_ast(input);
+
+        assert!(ast.error.is_none(), "expected no error, got: {:?}", ast.error);
+        assert_eq!(ast.statements.len(), 2);
+        // Only the bracketed statement has bracket spans
+        assert_eq!(ast.bracket_spans.len(), 1);
+        assert!(ast.machine.is_some());
+    }
+
+    #[test]
+    fn line_based_completion_context_header() {
+        let (ctx, _) = get_completion_context("extract cap:", 0, 12);
+        assert_eq!(ctx, CompletionContextType::CapUrn);
+    }
+
+    #[test]
+    fn line_based_completion_context_wiring() {
+        let (ctx, _) = get_completion_context("doc -> ", 0, 7);
+        assert_eq!(ctx, CompletionContextType::WiringTarget);
+    }
+
+    #[test]
+    fn line_based_completion_context_start() {
+        let (ctx, _) = get_completion_context("ex", 0, 2);
+        assert_eq!(ctx, CompletionContextType::HeaderStart);
+    }
+
+    #[test]
+    fn line_based_semantic_tokens_no_brackets() {
+        let input = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+doc -> extract -> text"#;
+        let ast = parse_notation_ast(input);
+        let tokens = emit_semantic_tokens(&ast, input);
+
+        // No bracket tokens for line-based statements
+        let bracket_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Bracket).count();
+        assert_eq!(bracket_count, 0);
+
+        // Should still have other tokens
+        let alias_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Alias).count();
+        assert!(alias_count >= 2, "expected at least 2 aliases, got {}", alias_count);
     }
 
     // =========================================================================

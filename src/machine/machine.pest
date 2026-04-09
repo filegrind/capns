@@ -1,10 +1,18 @@
-// Bracket-delimited machine notation grammar for pest.
+// Machine notation grammar for pest.
 //
-// Examples:
+// Two equally valid statement forms:
+//
+// Bracketed (one or more statements per line, any layout):
 //   [extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
 //   [doc -> extract -> text]
-//   [(thumbnail, model_spec) -> describe -> description]
-//   [pages -> LOOP p2t -> texts]
+//
+// Line-based (one statement per line, no brackets):
+//   extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+//   doc -> extract -> text
+//   (thumbnail, model_spec) -> describe -> description
+//   pages -> LOOP p2t -> texts
+//
+// Both forms can be freely mixed in the same program.
 //
 // WHITESPACE is defined as implicit — pest inserts optional whitespace
 // between `~` operands in non-atomic rules. Do NOT use explicit
@@ -15,7 +23,7 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 program = { SOI ~ stmt* ~ EOI }
 
-stmt = { "[" ~ inner ~ "]" }
+stmt = { "[" ~ inner ~ "]" | inner }
 
 inner = { wiring | header }
 
@@ -46,9 +54,12 @@ alias_continue = { ASCII_ALPHANUMERIC | "_" | "-" }
 
 cap_urn = @{ "cap:" ~ cap_urn_body* }
 
-// Read until the statement-closing `]`, except allow quoted strings
-// to contain arbitrary characters, including `]`.
-cap_urn_body = { quoted_value | !"]" ~ ANY }
+// Read until a statement terminator: `]` for bracketed mode, or a
+// newline for line-based mode. Quoted strings may contain any
+// character (including `]` and newlines).
+cap_urn_body = { quoted_value | !("]" | NEWLINE) ~ ANY }
+
+NEWLINE = { "\r\n" | "\n" | "\r" }
 
 // Supports escaped quotes inside quoted strings.
 quoted_value = { "\"" ~ ( "\\\"" | "\\\\" | !("\"") ~ ANY )* ~ "\"" }

@@ -49,11 +49,11 @@ fn check_structure_compatibility(
 
 /// Parse machine notation and produce a validated orchestration graph.
 ///
-/// Machine notation format:
+/// Machine notation format (both forms are equally valid):
 ///
 /// ```text
-/// [extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
-/// [doc -> extract -> text]
+/// extract cap:in="media:pdf";op=extract;out="media:txt;textable"
+/// doc -> extract -> text
 /// ```
 ///
 /// Each cap URN is resolved via the registry. Node media URNs are derived

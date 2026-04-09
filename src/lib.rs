@@ -126,7 +126,7 @@ pub use planner::{
 };
 
 // Machine notation — typed DAG path identifiers
-pub use machine::{Machine, MachineEdge, MachineRun, MachineRunStatus, MachineSyntaxError, parse_machine};
+pub use machine::{Machine, MachineEdge, MachineRun, MachineRunStatus, MachineSyntaxError, NotationFormat, parse_machine};
 
 // Orchestrator — machine notation parsing and DAG execution
 pub use orchestrator::{
