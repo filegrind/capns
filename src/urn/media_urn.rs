@@ -51,6 +51,10 @@ pub const MEDIA_OBJECT: &str = "media:record";
 pub const MEDIA_IDENTITY: &str = "media:";
 
 // Array types - URNs must match base.toml definitions
+/// Media URN for untyped list - ordered sequence of opaque byte sequences
+pub const MEDIA_LIST: &str = "media:list";
+/// Media URN for textable list - ordered sequence of textable values
+pub const MEDIA_TEXTABLE_LIST: &str = "media:list;textable";
 /// Media URN for string array type - textable with list marker
 pub const MEDIA_STRING_ARRAY: &str = "media:list;textable";
 /// Media URN for integer array type - textable, numeric with list marker

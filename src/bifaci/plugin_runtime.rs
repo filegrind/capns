@@ -255,22 +255,38 @@ impl PeerResponse {
     /// WARNING: Only call this if you know the stream is finite.
     pub async fn collect_bytes(mut self) -> Result<Vec<u8>, StreamError> {
         let mut result = Vec::new();
+        let mut chunk_count = 0u32;
         while let Some(item) = self.recv().await {
             match item {
-                PeerResponseItem::Data(Ok(value), _meta) => match value {
-                    ciborium::Value::Bytes(b) => result.extend(b),
-                    ciborium::Value::Text(s) => result.extend(s.into_bytes()),
-                    other => {
-                        let mut buf = Vec::new();
-                        ciborium::into_writer(&other, &mut buf)
-                            .map_err(|e| StreamError::Decode(format!("Failed to encode CBOR: {}", e)))?;
-                        result.extend(buf);
+                PeerResponseItem::Data(Ok(value), _meta) => {
+                    chunk_count += 1;
+                    match value {
+                        ciborium::Value::Bytes(b) => {
+                            tracing::info!("[collect_bytes] chunk {} Bytes({} bytes)", chunk_count, b.len());
+                            result.extend(b);
+                        }
+                        ciborium::Value::Text(s) => {
+                            tracing::info!("[collect_bytes] chunk {} Text({} bytes)", chunk_count, s.len());
+                            result.extend(s.into_bytes());
+                        }
+                        other => {
+                            let mut buf = Vec::new();
+                            ciborium::into_writer(&other, &mut buf)
+                                .map_err(|e| StreamError::Decode(format!("Failed to encode CBOR: {}", e)))?;
+                            tracing::info!("[collect_bytes] chunk {} Other({} bytes)", chunk_count, buf.len());
+                            result.extend(buf);
+                        }
                     }
                 },
                 PeerResponseItem::Data(Err(e), _) => return Err(e),
                 PeerResponseItem::Log(_) => {} // Discard LOG frames
             }
         }
+        tracing::info!(
+            "[collect_bytes] DONE: {} chunks, {} total bytes, preview={:?}",
+            chunk_count, result.len(),
+            String::from_utf8_lossy(&result[..result.len().min(100)])
+        );
         Ok(result)
     }
 

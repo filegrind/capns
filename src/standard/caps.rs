@@ -29,6 +29,8 @@ use crate::urn::media_urn::{
     MEDIA_JSON_VALUE, MEDIA_JSON_RECORD, MEDIA_JSON_LIST, MEDIA_JSON_LIST_RECORD,
     MEDIA_YAML_VALUE, MEDIA_YAML_RECORD, MEDIA_YAML_LIST, MEDIA_YAML_LIST_RECORD,
     MEDIA_CSV,
+    // Bare list types (no format tag)
+    MEDIA_TEXTABLE_LIST,
 };
 use std::sync::Arc;
 
@@ -458,7 +460,6 @@ pub fn coercion_urn(source_type: &str, target_type: &str) -> CapUrn {
     let out_spec = media_urn_for_type(target_type);
     CapUrnBuilder::new()
         .tag("op", "coerce")
-        .tag("target", target_type)
         .in_spec(in_spec)
         .out_spec(out_spec)
         .build()
@@ -512,28 +513,62 @@ pub fn format_conversion_urn(in_media: &str, out_media: &str) -> CapUrn {
         .expect("Failed to build format conversion cap URN")
 }
 
-/// All valid format conversion paths between JSON, YAML, and CSV.
-/// Returns (input_media_urn, output_media_urn) pairs.
-pub fn all_format_conversion_paths() -> Vec<(&'static str, &'static str)> {
+/// A format conversion path with authoritative title and description.
+pub struct FormatConversionPath {
+    pub in_media: &'static str,
+    pub out_media: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+}
+
+/// All valid format conversion paths between JSON, YAML, CSV, and textable lists.
+pub fn all_format_conversion_paths() -> Vec<FormatConversionPath> {
     vec![
         // JSON <-> YAML value
-        (MEDIA_JSON_VALUE,       MEDIA_YAML_VALUE),
-        (MEDIA_YAML_VALUE,       MEDIA_JSON_VALUE),
+        FormatConversionPath { in_media: MEDIA_JSON_VALUE, out_media: MEDIA_YAML_VALUE,
+            title: "Convert JSON Value to YAML", description: "Convert a JSON scalar value to YAML format" },
+        FormatConversionPath { in_media: MEDIA_YAML_VALUE, out_media: MEDIA_JSON_VALUE,
+            title: "Convert YAML Value to JSON", description: "Convert a YAML scalar value to JSON format" },
         // JSON <-> YAML record
-        (MEDIA_JSON_RECORD,      MEDIA_YAML_RECORD),
-        (MEDIA_YAML_RECORD,      MEDIA_JSON_RECORD),
+        FormatConversionPath { in_media: MEDIA_JSON_RECORD, out_media: MEDIA_YAML_RECORD,
+            title: "Convert JSON Object to YAML Mapping", description: "Convert a JSON object to a YAML mapping" },
+        FormatConversionPath { in_media: MEDIA_YAML_RECORD, out_media: MEDIA_JSON_RECORD,
+            title: "Convert YAML Mapping to JSON Object", description: "Convert a YAML mapping to a JSON object" },
         // JSON <-> YAML list
-        (MEDIA_JSON_LIST,        MEDIA_YAML_LIST),
-        (MEDIA_YAML_LIST,        MEDIA_JSON_LIST),
+        FormatConversionPath { in_media: MEDIA_JSON_LIST, out_media: MEDIA_YAML_LIST,
+            title: "Convert JSON Array to YAML Sequence", description: "Convert a JSON array to a YAML sequence" },
+        FormatConversionPath { in_media: MEDIA_YAML_LIST, out_media: MEDIA_JSON_LIST,
+            title: "Convert YAML Sequence to JSON Array", description: "Convert a YAML sequence to a JSON array" },
         // JSON <-> YAML list of records
-        (MEDIA_JSON_LIST_RECORD, MEDIA_YAML_LIST_RECORD),
-        (MEDIA_YAML_LIST_RECORD, MEDIA_JSON_LIST_RECORD),
+        FormatConversionPath { in_media: MEDIA_JSON_LIST_RECORD, out_media: MEDIA_YAML_LIST_RECORD,
+            title: "Convert JSON Array of Objects to YAML List of Mappings", description: "Convert a JSON array of objects to a YAML list of mappings" },
+        FormatConversionPath { in_media: MEDIA_YAML_LIST_RECORD, out_media: MEDIA_JSON_LIST_RECORD,
+            title: "Convert YAML List of Mappings to JSON Array of Objects", description: "Convert a YAML list of mappings to a JSON array of objects" },
         // JSON list of records <-> CSV
-        (MEDIA_JSON_LIST_RECORD, MEDIA_CSV),
-        (MEDIA_CSV,              MEDIA_JSON_LIST_RECORD),
+        FormatConversionPath { in_media: MEDIA_JSON_LIST_RECORD, out_media: MEDIA_CSV,
+            title: "Convert JSON Array of Objects to CSV", description: "Convert a JSON array of objects to CSV format" },
+        FormatConversionPath { in_media: MEDIA_CSV, out_media: MEDIA_JSON_LIST_RECORD,
+            title: "Convert CSV to JSON Array of Objects", description: "Convert CSV data to a JSON array of objects" },
         // YAML list of records <-> CSV
-        (MEDIA_YAML_LIST_RECORD, MEDIA_CSV),
-        (MEDIA_CSV,              MEDIA_YAML_LIST_RECORD),
+        FormatConversionPath { in_media: MEDIA_YAML_LIST_RECORD, out_media: MEDIA_CSV,
+            title: "Convert YAML List of Mappings to CSV", description: "Convert a YAML list of mappings to CSV format" },
+        FormatConversionPath { in_media: MEDIA_CSV, out_media: MEDIA_YAML_LIST_RECORD,
+            title: "Convert CSV to YAML List of Mappings", description: "Convert CSV data to a YAML list of mappings" },
+        // Textable list <-> JSON list
+        FormatConversionPath { in_media: MEDIA_TEXTABLE_LIST, out_media: MEDIA_JSON_LIST,
+            title: "Convert Text List to JSON Array", description: "Convert a list of textable values to a JSON array" },
+        FormatConversionPath { in_media: MEDIA_JSON_LIST, out_media: MEDIA_TEXTABLE_LIST,
+            title: "Convert JSON Array to Text List", description: "Convert a JSON array to a list of textable values" },
+        // Textable list <-> YAML list
+        FormatConversionPath { in_media: MEDIA_TEXTABLE_LIST, out_media: MEDIA_YAML_LIST,
+            title: "Convert Text List to YAML Sequence", description: "Convert a list of textable values to a YAML sequence" },
+        FormatConversionPath { in_media: MEDIA_YAML_LIST, out_media: MEDIA_TEXTABLE_LIST,
+            title: "Convert YAML Sequence to Text List", description: "Convert a YAML sequence to a list of textable values" },
+        // Textable list <-> CSV
+        FormatConversionPath { in_media: MEDIA_TEXTABLE_LIST, out_media: MEDIA_CSV,
+            title: "Convert Text List to CSV", description: "Convert a list of textable values to CSV format" },
+        FormatConversionPath { in_media: MEDIA_CSV, out_media: MEDIA_TEXTABLE_LIST,
+            title: "Convert CSV to Text List", description: "Convert CSV data to a list of textable values" },
     ]
 }
 
@@ -720,9 +755,9 @@ pub async fn all_format_conversion_caps(
     registry: Arc<CapRegistry>,
 ) -> Result<Vec<(&'static str, &'static str, Cap)>, RegistryError> {
     let mut caps = Vec::new();
-    for (in_media, out_media) in all_format_conversion_paths() {
-        let cap = format_conversion_cap(registry.clone(), in_media, out_media).await?;
-        caps.push((in_media, out_media, cap));
+    for path in all_format_conversion_paths() {
+        let cap = format_conversion_cap(registry.clone(), path.in_media, path.out_media).await?;
+        caps.push((path.in_media, path.out_media, cap));
     }
     Ok(caps)
 }
@@ -841,8 +876,6 @@ mod tests {
             let urn = coercion_urn(source, target);
             assert!(urn.has_tag("op", "coerce"),
                 "Coercion URN for {}→{} must have op=coerce", source, target);
-            assert!(urn.has_tag("target", target),
-                "Coercion URN for {}→{} must have target={}", source, target, target);
 
             // Verify roundtrip through string parsing
             let urn_str = urn.to_string();
@@ -876,19 +909,19 @@ mod tests {
     #[test]
     fn test850_all_format_conversion_paths_build_valid_urns() {
         let paths = all_format_conversion_paths();
-        assert_eq!(paths.len(), 12, "Expected 12 format conversion paths");
+        assert_eq!(paths.len(), 18, "Expected 18 format conversion paths");
 
-        for (in_media, out_media) in &paths {
-            let urn = format_conversion_urn(in_media, out_media);
+        for path in &paths {
+            let urn = format_conversion_urn(path.in_media, path.out_media);
             assert!(urn.has_tag("op", "convert_format"),
-                "Format conversion URN for {}→{} must have op=convert_format", in_media, out_media);
+                "Format conversion URN for {}→{} must have op=convert_format", path.in_media, path.out_media);
 
             // Verify roundtrip through string parsing
             let urn_str = urn.to_string();
             let reparsed = crate::urn::cap_urn::CapUrn::from_string(&urn_str);
             assert!(reparsed.is_ok(),
                 "Format conversion URN for {}→{} must roundtrip through parsing: {:?}",
-                in_media, out_media, reparsed.err());
+                path.in_media, path.out_media, reparsed.err());
         }
     }
 

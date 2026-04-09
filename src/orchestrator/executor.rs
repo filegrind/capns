@@ -644,6 +644,11 @@ pub struct ExecutionContext {
     /// Per-node stream metadata. Carries provenance context (e.g. {"title": "page_3"})
     /// through ForEach splits so body caps receive the upstream item's metadata.
     node_meta: HashMap<String, crate::StreamMeta>,
+    /// Tracks which nodes hold sequence data (CBOR sequence of items).
+    /// When true, the node's data is an RFC 8742 CBOR sequence that should be
+    /// sent with is_sequence=true on STREAM_START so the receiver gets
+    /// properly framed per-item chunks.
+    node_is_sequence: HashMap<String, bool>,
     /// Cached max chunk size from the relay.
     max_chunk: usize,
     /// Cleanup handles for masters added via add_plugin_host.
@@ -670,6 +675,7 @@ impl ExecutionContext {
             switch: Arc::new(switch),
             node_data: HashMap::new(),
             node_meta: HashMap::new(),
+            node_is_sequence: HashMap::new(),
             max_chunk,
             cleanup_handles: Vec::new(),
         })
@@ -687,6 +693,7 @@ impl ExecutionContext {
             switch,
             node_data: HashMap::new(),
             node_meta: HashMap::new(),
+            node_is_sequence: HashMap::new(),
             max_chunk,
             cleanup_handles: Vec::new(),
         })
@@ -834,6 +841,21 @@ impl ExecutionContext {
     /// Get mutable reference to node_meta map.
     pub fn node_meta_mut(&mut self) -> &mut HashMap<String, crate::StreamMeta> {
         &mut self.node_meta
+    }
+
+    /// Mark a node as holding sequence data.
+    pub fn set_node_is_sequence(&mut self, node: String, is_sequence: bool) {
+        self.node_is_sequence.insert(node, is_sequence);
+    }
+
+    /// Check if a node holds sequence data.
+    pub fn is_node_sequence(&self, node: &str) -> bool {
+        self.node_is_sequence.get(node).copied().unwrap_or(false)
+    }
+
+    /// Get the full node_is_sequence map.
+    pub fn node_is_sequence(&self) -> &HashMap<String, bool> {
+        &self.node_is_sequence
     }
 
     /// Get data for a node.
