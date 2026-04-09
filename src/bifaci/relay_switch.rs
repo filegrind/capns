@@ -491,28 +491,27 @@ impl RelaySwitch {
     pub async fn get_reachable_targets(
         &self,
         source: &MediaUrn,
+        is_sequence: bool,
         max_depth: usize,
     ) -> Vec<ReachableTargetInfo> {
         let graph = self.live_cap_graph.read().await;
-        graph.get_reachable_targets(source, max_depth)
+        graph.get_reachable_targets(source, is_sequence, max_depth)
     }
 
     /// Find all paths from source to an exact target media URN.
     ///
-    /// Uses `is_equivalent()` for target matching - "media:X" will NOT match
-    /// paths ending in "media:X;list". This ensures the Transform menu and
-    /// Path Selection dialog show consistent results.
-    ///
+    /// `is_sequence` is the initial cardinality state from context.
     /// Results are sorted by (total_steps, specificity desc, cap_urns).
     pub async fn find_paths_to_exact_target(
         &self,
         source: &MediaUrn,
         target: &MediaUrn,
+        is_sequence: bool,
         max_depth: usize,
         max_paths: usize,
     ) -> Vec<Strand> {
         let graph = self.live_cap_graph.read().await;
-        graph.find_paths_to_exact_target(source, target, max_depth, max_paths)
+        graph.find_paths_to_exact_target(source, target, is_sequence, max_depth, max_paths)
     }
 
     /// Get the cap registry used by this switch.

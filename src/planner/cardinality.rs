@@ -44,26 +44,6 @@ impl Default for InputCardinality {
 }
 
 impl InputCardinality {
-    /// Parse cardinality from a media URN string.
-    ///
-    /// Uses the `list` marker tag to determine if this represents an array.
-    /// No list marker = scalar (default), list marker = sequence.
-    pub fn from_media_urn(urn: &str) -> Self {
-        match MediaUrn::from_string(urn) {
-            Ok(media_urn) => {
-                if media_urn.is_list() {
-                    InputCardinality::Sequence
-                } else {
-                    InputCardinality::Single
-                }
-            }
-            Err(_) => {
-                // Invalid URN - fail hard, don't hide the issue
-                panic!("Invalid media URN in cardinality detection: {}", urn);
-            }
-        }
-    }
-
     /// Check if this cardinality accepts multiple items
     pub fn is_multiple(&self) -> bool {
         matches!(self, Self::Sequence | Self::AtLeastOne)
@@ -98,32 +78,18 @@ impl InputCardinality {
         }
     }
 
-    /// Create a media URN with this cardinality from a base URN
+    /// Create a media URN with this cardinality from a base URN.
+    ///
+    /// DEPRECATED: Cardinality is tracked by is_sequence on the wire protocol,
+    /// not by URN tags. This method is a no-op that returns the URN unchanged.
+    /// Callers should stop using this and track cardinality separately.
     pub fn apply_to_urn(&self, base_urn: &str) -> String {
-        let media_urn = MediaUrn::from_string(base_urn)
+        // Validate the URN is parseable
+        let _media_urn = MediaUrn::from_string(base_urn)
             .unwrap_or_else(|e| panic!("Invalid media URN in apply_to_urn: {} - {}", base_urn, e));
-        let has_list = media_urn.is_list();
 
-        match self {
-            InputCardinality::Single | InputCardinality::AtLeastOne => {
-                if has_list {
-                    // Remove list marker
-                    media_urn.without_tag("list").to_string()
-                } else {
-                    base_urn.to_string()
-                }
-            }
-            InputCardinality::Sequence => {
-                if has_list {
-                    base_urn.to_string()
-                } else {
-                    // Add list marker (wildcard value)
-                    media_urn.with_tag("list", "*")
-                        .unwrap_or_else(|e| panic!("Failed to add list marker: {}", e))
-                        .to_string()
-                }
-            }
-        }
+        // Cardinality does not change the URN — shape is tracked by is_sequence
+        base_urn.to_string()
     }
 }
 
@@ -269,10 +235,13 @@ impl Default for MediaShape {
 }
 
 impl MediaShape {
-    /// Parse complete shape from a media URN string
+    /// Parse structure from a media URN string.
+    ///
+    /// Cardinality defaults to Single — it comes from context (is_sequence),
+    /// not from the URN. Only structure (Opaque vs Record) is derived from the URN.
     pub fn from_media_urn(urn: &str) -> Self {
         Self {
-            cardinality: InputCardinality::from_media_urn(urn),
+            cardinality: InputCardinality::Single,
             structure: InputStructure::from_media_urn(urn),
         }
     }
@@ -533,45 +502,8 @@ mod tests {
     use super::*;
 
     // ==================== InputCardinality Tests ====================
-
-    // TEST684: Tests InputCardinality correctly identifies single-value media URNs
-    // Verifies that URNs without list marker are parsed as Single cardinality
-    #[test]
-    fn test684_from_media_urn_single() {
-        assert_eq!(InputCardinality::from_media_urn("media:pdf"), InputCardinality::Single);
-        assert_eq!(InputCardinality::from_media_urn("media:textable"), InputCardinality::Single);
-        assert_eq!(InputCardinality::from_media_urn("media:integer"), InputCardinality::Single);
-        // Record marker doesn't affect cardinality
-        assert_eq!(InputCardinality::from_media_urn("media:record;textable"), InputCardinality::Single);
-    }
-
-    // TEST685: Tests InputCardinality correctly identifies list/vector media URNs
-    // Verifies that URNs with list marker tag are parsed as Sequence cardinality
-    #[test]
-    fn test685_from_media_urn_vector() {
-        assert_eq!(InputCardinality::from_media_urn("media:pdf;list"), InputCardinality::Sequence);
-        assert_eq!(InputCardinality::from_media_urn("media:list;png"), InputCardinality::Sequence);
-        assert_eq!(InputCardinality::from_media_urn("media:disbound-pages;list;textable"), InputCardinality::Sequence);
-        // List of records
-        assert_eq!(InputCardinality::from_media_urn("media:json;list;record;textable"), InputCardinality::Sequence);
-    }
-
-    // TEST686: Tests that list marker tag position doesn't affect vector detection
-    // Verifies cardinality parsing is independent of tag order in URN
-    #[test]
-    fn test686_from_media_urn_vector_tag_position() {
-        assert_eq!(InputCardinality::from_media_urn("media:pdf;list"), InputCardinality::Sequence);
-        assert_eq!(InputCardinality::from_media_urn("media:list;pdf"), InputCardinality::Sequence);
-    }
-
-    // TEST687: Tests that URN content doesn't cause false positive vector detection
-    // Verifies that "list" in media type name doesn't trigger Sequence cardinality
-    #[test]
-    fn test687_from_media_urn_no_false_positives() {
-        // "list-data" is a tag with value "data", not a marker
-        assert_eq!(InputCardinality::from_media_urn("media:list-data=something"), InputCardinality::Single);
-        assert_eq!(InputCardinality::from_media_urn("media:sequence-data"), InputCardinality::Single);
-    }
+    // NOTE: InputCardinality::from_media_urn was removed — cardinality comes from
+    // context (is_sequence on the wire), not from URN tags.
 
     // TEST688: Tests is_multiple method correctly identifies multi-value cardinalities
     // Verifies Single returns false while Sequence and AtLeastOne return true
@@ -621,35 +553,6 @@ mod tests {
         assert_eq!(InputCardinality::Sequence.is_compatible_with(InputCardinality::Sequence), CardinalityCompatibility::Direct);
     }
 
-    // ==================== URN Manipulation Tests ====================
-
-    // TEST694: Tests applying Sequence cardinality adds list marker to URN
-    // Verifies that apply_to_urn correctly modifies URN to indicate list
-    #[test]
-    fn test694_apply_to_urn_add_vector() {
-        let result = InputCardinality::Sequence.apply_to_urn("media:pdf");
-        // URN tags are alphabetized, so list comes first
-        assert_eq!(result, "media:list;pdf");
-    }
-
-    // TEST695: Tests applying Single cardinality removes list marker from URN
-    // Verifies that apply_to_urn correctly strips list marker
-    #[test]
-    fn test695_apply_to_urn_remove_vector() {
-        let result = InputCardinality::Single.apply_to_urn("media:list;pdf");
-        assert_eq!(result, "media:pdf");
-    }
-
-    // TEST696: Tests apply_to_urn is idempotent when URN already matches cardinality
-    // Verifies that URN remains unchanged when cardinality already matches desired
-    #[test]
-    fn test696_apply_to_urn_no_change_needed() {
-        let urn = "media:pdf";
-        assert_eq!(InputCardinality::Single.apply_to_urn(urn), urn);
-        let urn_seq = "media:list;pdf";
-        assert_eq!(InputCardinality::Sequence.apply_to_urn(urn_seq), urn_seq);
-    }
-
     // ==================== CapShapeInfo Cardinality Pattern Tests ====================
 
     // TEST697: Tests CapShapeInfo correctly identifies one-to-one pattern
@@ -662,22 +565,22 @@ mod tests {
         assert_eq!(info.cardinality_pattern(), CardinalityPattern::OneToOne);
     }
 
-    // TEST698: Tests CapShapeInfo correctly identifies one-to-many pattern
-    // Verifies Single input and Sequence output result in OneToMany pattern
+    // TEST698: CapShapeInfo cardinality is always Single when derived from URN
+    // Cardinality comes from context (is_sequence), not from URN tags.
+    // The list tag is a semantic type property, not a cardinality indicator.
     #[test]
-    fn test698_cap_shape_info_one_to_many() {
+    fn test698_cap_shape_info_cardinality_always_single_from_urn() {
         let info = CapShapeInfo::from_cap_specs("cap:pdf-to-pages", "media:pdf", "media:list;png");
         assert_eq!(info.input.cardinality, InputCardinality::Single);
-        assert_eq!(info.output.cardinality, InputCardinality::Sequence);
-        assert_eq!(info.cardinality_pattern(), CardinalityPattern::OneToMany);
+        assert_eq!(info.output.cardinality, InputCardinality::Single);
+        assert_eq!(info.cardinality_pattern(), CardinalityPattern::OneToOne);
     }
 
-    // TEST699: Tests CapShapeInfo correctly identifies many-to-one pattern
-    // Verifies Sequence input and Single output result in ManyToOne pattern
+    // TEST699: CapShapeInfo cardinality is Single even for list-typed URNs
     #[test]
-    fn test699_cap_shape_info_many_to_one() {
+    fn test699_cap_shape_info_list_urn_still_single_cardinality() {
         let info = CapShapeInfo::from_cap_specs("cap:merge-pdfs", "media:list;pdf", "media:pdf");
-        assert_eq!(info.input.cardinality, InputCardinality::Sequence);
+        assert_eq!(info.input.cardinality, InputCardinality::Single);
         assert_eq!(info.output.cardinality, InputCardinality::Single);
         assert_eq!(info.cardinality_pattern(), CardinalityPattern::ManyToOne);
     }
@@ -854,14 +757,14 @@ mod tests {
         assert_eq!(shape.cardinality, InputCardinality::Single);
         assert_eq!(shape.structure, InputStructure::Record);
 
-        // List opaque
+        // List opaque — cardinality is always Single from URN (shape comes from context)
         let shape = MediaShape::from_media_urn("media:file-path;list");
-        assert_eq!(shape.cardinality, InputCardinality::Sequence);
+        assert_eq!(shape.cardinality, InputCardinality::Single);
         assert_eq!(shape.structure, InputStructure::Opaque);
 
-        // List record
+        // List record — cardinality is always Single from URN (shape comes from context)
         let shape = MediaShape::from_media_urn("media:json;list;record");
-        assert_eq!(shape.cardinality, InputCardinality::Sequence);
+        assert_eq!(shape.cardinality, InputCardinality::Single);
         assert_eq!(shape.structure, InputStructure::Record);
     }
 

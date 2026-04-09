@@ -18,13 +18,13 @@ use crate::urn::media_urn::{
     MEDIA_MODEL_SPEC,
     MEDIA_MODEL_REPO, MEDIA_JSON_SCHEMA,
     // Semantic output types
-    MEDIA_TEXTABLE_PAGE_LIST,
+    MEDIA_TEXTABLE_PAGE,
     // CAPDAG output types
     MEDIA_MODEL_DIM, MEDIA_DOWNLOAD_OUTPUT,
     MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
     MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
     MEDIA_EMBEDDING_VECTOR, MEDIA_JSON, MEDIA_LLM_INFERENCE_OUTPUT,
-    MEDIA_DECISION, MEDIA_DECISION_ARRAY, MEDIA_VOID,
+    MEDIA_DECISION, MEDIA_VOID,
     // Format conversion types (JSON, YAML, CSV variants)
     MEDIA_JSON_VALUE, MEDIA_JSON_RECORD, MEDIA_JSON_LIST, MEDIA_JSON_LIST_RECORD,
     MEDIA_YAML_VALUE, MEDIA_YAML_RECORD, MEDIA_YAML_LIST, MEDIA_YAML_LIST_RECORD,
@@ -322,7 +322,7 @@ pub fn disbind_urn(input_media: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "disbind")
         .in_spec(input_media)
-        .out_spec(MEDIA_TEXTABLE_PAGE_LIST)
+        .out_spec(MEDIA_TEXTABLE_PAGE)
         .build()
         .expect("Failed to build disbind cap URN")
 }
@@ -345,7 +345,7 @@ pub fn structured_query_urn(lang_code: &str) -> CapUrn {
 }
 
 /// Build URN for make-decision capability
-/// Output uses MEDIA_DECISION per CATALOG: media:decision;bool;textable
+/// Output is MEDIA_DECISION: media:decision;json;record;textable
 pub fn make_decision_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "make_decision")
@@ -358,14 +358,14 @@ pub fn make_decision_urn(lang_code: &str) -> CapUrn {
 }
 
 /// Build URN for make-multiple-decisions capability
-/// Output uses MEDIA_DECISION_ARRAY per CATALOG: media:decision;bool;textable;list
+/// Output is MEDIA_DECISION with is_sequence=true (one decision per question).
 pub fn make_multiple_decisions_urn(lang_code: &str) -> CapUrn {
     CapUrnBuilder::new()
         .tag("op", "make_multiple_decisions")
         .tag("language", lang_code)
         .solo_tag("constrained")
         .in_spec(MEDIA_STRING)
-        .out_spec(MEDIA_DECISION_ARRAY)
+        .out_spec(MEDIA_DECISION)
         .build()
         .expect("Failed to build make-multiple-decisions cap URN")
 }
@@ -444,11 +444,11 @@ pub fn media_urn_for_type(type_name: &str) -> &'static str {
         "number" => crate::urn::media_urn::MEDIA_NUMBER,
         "boolean" => MEDIA_BOOLEAN,
         "object" => MEDIA_OBJECT,
-        "string-array" => crate::urn::media_urn::MEDIA_STRING_ARRAY,
-        "integer-array" => crate::urn::media_urn::MEDIA_INTEGER_ARRAY,
-        "number-array" => crate::urn::media_urn::MEDIA_NUMBER_ARRAY,
-        "boolean-array" => crate::urn::media_urn::MEDIA_BOOLEAN_ARRAY,
-        "object-array" => crate::urn::media_urn::MEDIA_OBJECT_ARRAY,
+        "string-array" => crate::urn::media_urn::MEDIA_STRING_LIST,
+        "integer-array" => crate::urn::media_urn::MEDIA_INTEGER_LIST,
+        "number-array" => crate::urn::media_urn::MEDIA_NUMBER_LIST,
+        "boolean-array" => crate::urn::media_urn::MEDIA_BOOLEAN_LIST,
+        "object-array" => crate::urn::media_urn::MEDIA_OBJECT_LIST,
         other => panic!("Unknown media type: {}. Valid types are: string, integer, number, boolean, object, string-array, integer-array, number-array, boolean-array, object-array", other),
     }
 }

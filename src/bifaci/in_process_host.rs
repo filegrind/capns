@@ -191,13 +191,25 @@ impl ResponseWriter {
     /// `emit_list_response` is for list-typed cap outputs where the executor's
     /// list path expects a CBOR sequence without transport wrapping.
     pub fn emit_list_response(&self, media_urn: &str, items: &[ciborium::Value]) {
+        self.emit_list_response_with_metas(media_urn, items, &[]);
+    }
+
+    /// Emit a sequence response with optional per-item metadata.
+    /// Each item in `item_metas` corresponds to the item at the same index.
+    /// If `item_metas` is shorter than `items`, remaining items get no meta.
+    pub fn emit_list_response_with_metas(
+        &self,
+        media_urn: &str,
+        items: &[ciborium::Value],
+        item_metas: &[Option<crate::StreamMeta>],
+    ) {
         let stream_id = "result".to_string();
 
         self.send(Frame::stream_start(
             MessageId::Uint(0),
             stream_id.clone(),
             media_urn.to_string(),
-            None,
+            Some(true),
         ));
 
         for (i, item) in items.iter().enumerate() {
@@ -205,14 +217,18 @@ impl ResponseWriter {
             ciborium::into_writer(item, &mut cbor_payload)
                 .expect("BUG: CBOR encode list item");
             let checksum = Frame::compute_checksum(&cbor_payload);
-            self.send(Frame::chunk(
+            let mut chunk = Frame::chunk(
                 MessageId::Uint(0),
                 stream_id.clone(),
                 0,
                 cbor_payload,
                 i as u64,
                 checksum,
-            ));
+            );
+            if let Some(Some(meta)) = item_metas.get(i) {
+                chunk.meta = Some(meta.clone());
+            }
+            self.send(chunk);
         }
 
         self.send(Frame::stream_end(MessageId::Uint(0), stream_id, items.len() as u64));

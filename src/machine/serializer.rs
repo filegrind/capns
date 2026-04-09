@@ -575,10 +575,9 @@ mod tests {
             steps: vec![
                 StrandStep {
                     step_type: StrandStepType::ForEach {
-                        list_spec: media("media:disbound-page;list;textable"),
-                        item_spec: media("media:disbound-page;textable"),
+                        media_spec: media("media:disbound-page;textable"),
                     },
-                    from_spec: media("media:disbound-page;list;textable"),
+                    from_spec: media("media:disbound-page;textable"),
                     to_spec: media("media:disbound-page;textable"),
                 },
                 StrandStep {
@@ -592,15 +591,14 @@ mod tests {
                 },
                 StrandStep {
                     step_type: StrandStepType::Collect {
-                        item_spec: media("media:txt;textable"),
-                        list_spec: media("media:list;txt;textable"),
+                        media_spec: media("media:txt;textable"),
                     },
                     from_spec: media("media:txt;textable"),
-                    to_spec: media("media:list;txt;textable"),
+                    to_spec: media("media:txt;textable"),
                 },
             ],
-            source_spec: media("media:disbound-page;list;textable"),
-            target_spec: media("media:list;txt;textable"),
+            source_spec: media("media:disbound-page;textable"),
+            target_spec: media("media:txt;textable"),
             total_steps: 3,
             cap_step_count: 1,
             description: "ForEach → Page to Text → Collect".to_string(),
@@ -629,15 +627,14 @@ mod tests {
                 },
                 StrandStep {
                     step_type: StrandStepType::Collect {
-                        item_spec: media("media:txt;textable"),
-                        list_spec: media("media:list;txt;textable"),
+                        media_spec: media("media:txt;textable"),
                     },
                     from_spec: media("media:txt;textable"),
-                    to_spec: media("media:list;txt;textable"),
+                    to_spec: media("media:txt;textable"),
                 },
             ],
             source_spec: media("media:pdf"),
-            target_spec: media("media:list;txt;textable"),
+            target_spec: media("media:txt;textable"),
             total_steps: 2,
             cap_step_count: 1,
             description: "Extract → Collect".to_string(),
@@ -656,14 +653,13 @@ mod tests {
         let path = Strand {
             steps: vec![StrandStep {
                 step_type: StrandStepType::ForEach {
-                    list_spec: media("media:bool;decision;list;textable"),
-                    item_spec: media("media:bool;decision;textable"),
+                    media_spec: media("media:decision;json;record;textable"),
                 },
-                from_spec: media("media:bool;decision;list;textable"),
-                to_spec: media("media:bool;decision;textable"),
+                from_spec: media("media:decision;json;record;textable"),
+                to_spec: media("media:decision;json;record;textable"),
             }],
-            source_spec: media("media:bool;decision;list;textable"),
-            target_spec: media("media:bool;decision;textable"),
+            source_spec: media("media:decision;json;record;textable"),
+            target_spec: media("media:decision;json;record;textable"),
             total_steps: 1,
             cap_step_count: 0,
             description: "ForEach".to_string(),

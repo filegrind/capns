@@ -56,16 +56,16 @@ pub const MEDIA_LIST: &str = "media:list";
 /// Media URN for textable list - ordered sequence of textable values
 pub const MEDIA_TEXTABLE_LIST: &str = "media:list;textable";
 /// Media URN for string array type - textable with list marker
-pub const MEDIA_STRING_ARRAY: &str = "media:list;textable";
+pub const MEDIA_STRING_LIST: &str = "media:list;textable";
 /// Media URN for integer array type - textable, numeric with list marker
-pub const MEDIA_INTEGER_ARRAY: &str = "media:integer;list;textable;numeric";
-/// Media URN for number array type - textable, numeric with list marker
-pub const MEDIA_NUMBER_ARRAY: &str = "media:list;textable;numeric";
-/// Media URN for boolean array type - uses "bool" with list marker
-pub const MEDIA_BOOLEAN_ARRAY: &str = "media:bool;list;textable";
+pub const MEDIA_INTEGER_LIST: &str = "media:integer;list;textable;numeric";
+/// Media URN for number list type - text file with one number per line
+pub const MEDIA_NUMBER_LIST: &str = "media:list;numeric;textable";
+/// Media URN for boolean list type - text file with one boolean per line
+pub const MEDIA_BOOLEAN_LIST: &str = "media:bool;list;textable";
 /// Media URN for object array type - list of records (NOT textable)
 /// Use a specific format like JSON array for textable object arrays.
-pub const MEDIA_OBJECT_ARRAY: &str = "media:list;record";
+pub const MEDIA_OBJECT_LIST: &str = "media:list;record";
 
 // Semantic media types for specialized content
 /// Media URN for PNG image data
@@ -80,8 +80,6 @@ pub const MEDIA_VIDEO: &str = "media:video";
 pub const MEDIA_AUDIO_SPEECH: &str = "media:audio;wav;speech";
 /// Media URN for extracted page text
 pub const MEDIA_TEXTABLE_PAGE: &str = "media:textable;page";
-/// Media URN for list of extracted page texts
-pub const MEDIA_TEXTABLE_PAGE_LIST: &str = "media:textable;page;list";
 
 // Document types (PRIMARY naming - type IS the format)
 /// Media URN for PDF documents
@@ -225,10 +223,8 @@ pub const MEDIA_LLM_INFERENCE_OUTPUT: &str = "media:generated-text;record;textab
 pub const MEDIA_IMAGE_DESCRIPTION: &str = "media:image-description;textable";
 /// Media URN for transcription output - has record marker
 pub const MEDIA_TRANSCRIPTION_OUTPUT: &str = "media:record;textable;transcription";
-/// Media URN for decision output (Make Decision) - scalar by default
-pub const MEDIA_DECISION: &str = "media:bool;decision;textable";
-/// Media URN for decision array output (Make Multiple Decisions) - has list marker
-pub const MEDIA_DECISION_ARRAY: &str = "media:bool;decision;list;textable";
+/// Media URN for decision output — JSON object with identifier and boolean value
+pub const MEDIA_DECISION: &str = "media:decision;json;record;textable";
 
 // =============================================================================
 // MEDIA URN TYPE
@@ -301,18 +297,6 @@ impl MediaUrn {
         Self(self.0.clone().without_tag(key))
     }
 
-    /// Create a new MediaUrn with the `list` marker tag added.
-    /// Returns a new URN representing a list of this media type.
-    pub fn with_list(&self) -> Self {
-        // with_tag cannot fail for marker value "*"
-        self.with_tag("list", "*").unwrap_or_else(|_| self.clone())
-    }
-
-    /// Create a new MediaUrn with the `list` marker tag removed.
-    /// Returns a new URN representing a scalar of this media type.
-    pub fn without_list(&self) -> Self {
-        self.without_tag("list")
-    }
 
     /// Compute the least upper bound (most specific common type) of a set of MediaUrns.
     ///
@@ -414,17 +398,21 @@ impl MediaUrn {
     }
 
     // =========================================================================
-    // CARDINALITY (list marker)
+    // SEMANTIC TYPE CHECKS (list, record markers)
     // =========================================================================
 
-    /// Returns true if this media is a list (has `list` marker tag).
-    /// Returns false if scalar (no `list` marker = default).
+    /// Returns true if this media URN describes list-type data (has `list` marker tag).
+    ///
+    /// This is a **semantic type** check — it means "the data format IS a list/array"
+    /// (e.g., `media:json;list;textable` is a JSON array).
+    ///
+    /// This does NOT indicate input cardinality/shape (single vs multiple items).
+    /// Cardinality is tracked by `is_sequence` on the wire protocol, not by URN tags.
     pub fn is_list(&self) -> bool {
         self.has_marker_tag("list")
     }
 
-    /// Returns true if this media is a scalar (no `list` marker).
-    /// Scalar is the default cardinality.
+    /// Returns true if this media URN describes scalar (non-list) data.
     pub fn is_scalar(&self) -> bool {
         !self.has_marker_tag("list")
     }
@@ -661,7 +649,7 @@ mod tests {
         // Without record marker, is_record is false
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_record());
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_record()); // scalar, no record marker
-        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_record()); // list, no record marker
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_record()); // list, no record marker
     }
 
     // TEST063: Test is_scalar returns true when list marker tag is absent (scalar is default)
@@ -675,17 +663,17 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_scalar()); // record but scalar
         assert!(MediaUrn::from_string("media:textable").unwrap().is_scalar()); // plain textable is scalar
         // With list marker, is_scalar is false
-        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_scalar()); // has list marker
-        assert!(!MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_scalar()); // has list marker
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_scalar()); // has list marker
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT_LIST).unwrap().is_scalar()); // has list marker
     }
 
     // TEST064: Test is_list returns true when list marker tag is present indicating ordered collection
     #[test]
     fn test064_is_list() {
         // is_list returns true if list marker tag is present (ordered collection)
-        assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_list()); // "media:list;textable"
-        assert!(MediaUrn::from_string(MEDIA_INTEGER_ARRAY).unwrap().is_list()); // has list marker
-        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_list()); // "media:list;record;textable"
+        assert!(MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_list()); // "media:list;textable"
+        assert!(MediaUrn::from_string(MEDIA_INTEGER_LIST).unwrap().is_list()); // has list marker
+        assert!(MediaUrn::from_string(MEDIA_OBJECT_LIST).unwrap().is_list()); // "media:list;record;textable"
         assert!(MediaUrn::from_string("media:custom;list").unwrap().is_list());
         // Without list marker, is_list is false
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_list()); // no list marker
@@ -697,13 +685,13 @@ mod tests {
     fn test065_is_opaque() {
         // is_opaque returns true if NO record marker (opaque is default structure)
         assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_opaque()); // no record marker
-        assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_opaque()); // list but no record
+        assert!(MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_opaque()); // list but no record
         assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_opaque()); // binary, no record
         assert!(MediaUrn::from_string("media:textable").unwrap().is_opaque()); // no record marker
         // With record marker, is_opaque is false
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_opaque()); // has record marker
         assert!(!MediaUrn::from_string(MEDIA_JSON).unwrap().is_opaque()); // has record marker
-        assert!(!MediaUrn::from_string(MEDIA_OBJECT_ARRAY).unwrap().is_opaque()); // has record marker
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT_LIST).unwrap().is_opaque()); // has record marker
     }
 
     // TEST066: Test is_json returns true only when json marker tag is present for JSON representation
@@ -758,11 +746,11 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_BOOLEAN).is_ok());
         assert!(MediaUrn::from_string(MEDIA_OBJECT).is_ok());
         assert!(MediaUrn::from_string(MEDIA_IDENTITY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_STRING_ARRAY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_INTEGER_ARRAY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_NUMBER_ARRAY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_BOOLEAN_ARRAY).is_ok());
-        assert!(MediaUrn::from_string(MEDIA_OBJECT_ARRAY).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_STRING_LIST).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_INTEGER_LIST).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_NUMBER_LIST).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_BOOLEAN_LIST).is_ok());
+        assert!(MediaUrn::from_string(MEDIA_OBJECT_LIST).is_ok());
         // Semantic types
         assert!(MediaUrn::from_string(MEDIA_PNG).is_ok());
         assert!(MediaUrn::from_string(MEDIA_AUDIO).is_ok());
@@ -960,8 +948,8 @@ mod debug_tests {
     fn test549_is_numeric() {
         assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_numeric());
         assert!(MediaUrn::from_string(MEDIA_NUMBER).unwrap().is_numeric());
-        assert!(MediaUrn::from_string(MEDIA_INTEGER_ARRAY).unwrap().is_numeric());
-        assert!(MediaUrn::from_string(MEDIA_NUMBER_ARRAY).unwrap().is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_INTEGER_LIST).unwrap().is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_NUMBER_LIST).unwrap().is_numeric());
         // Non-numeric types
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_numeric());
         assert!(!MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_numeric());
@@ -972,9 +960,9 @@ mod debug_tests {
     #[test]
     fn test550_is_bool() {
         assert!(MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_bool());
-        assert!(MediaUrn::from_string(MEDIA_BOOLEAN_ARRAY).unwrap().is_bool());
-        assert!(MediaUrn::from_string(MEDIA_DECISION).unwrap().is_bool());
-        assert!(MediaUrn::from_string(MEDIA_DECISION_ARRAY).unwrap().is_bool());
+        assert!(MediaUrn::from_string(MEDIA_BOOLEAN_LIST).unwrap().is_bool());
+        // MEDIA_DECISION is now a JSON record, not a bool type
+        assert!(!MediaUrn::from_string(MEDIA_DECISION).unwrap().is_bool());
         // Non-bool types
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_bool());
         assert!(!MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_bool());
@@ -999,7 +987,7 @@ mod debug_tests {
         // Scalar file-path is NOT is_file_path_array
         assert!(!MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_file_path_array());
         // Non-file-path types
-        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_file_path_array());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_file_path_array());
     }
 
     // TEST553: is_any_file_path returns true for both scalar and array file-path
@@ -1009,7 +997,7 @@ mod debug_tests {
         assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_any_file_path());
         // Non-file-path types
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_any_file_path());
-        assert!(!MediaUrn::from_string(MEDIA_STRING_ARRAY).unwrap().is_any_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_any_file_path());
     }
 
     // TEST555: with_tag adds a tag and without_tag removes it
@@ -1084,35 +1072,6 @@ mod debug_tests {
         assert!(!void.is_text());
         assert!(void.is_binary(), "void has no textable tag, so is_binary is true");
         assert!(!void.is_numeric());
-    }
-
-    // TEST850: with_list adds list marker, without_list removes it
-    #[test]
-    fn test850_with_list_without_list() {
-        let pdf = MediaUrn::from_string("media:pdf").unwrap();
-        assert!(pdf.is_scalar());
-        assert!(!pdf.is_list());
-
-        let pdf_list = pdf.with_list();
-        assert!(pdf_list.is_list());
-        assert!(!pdf_list.is_scalar());
-        // The list URN should contain all original tags plus list
-        assert!(pdf_list.conforms_to(&pdf).unwrap(), "list version should still conform to scalar pattern");
-
-        let back_to_scalar = pdf_list.without_list();
-        assert!(back_to_scalar.is_scalar());
-        assert!(back_to_scalar.is_equivalent(&pdf).unwrap(), "removing list should restore original");
-    }
-
-    // TEST851: with_list is idempotent
-    #[test]
-    fn test851_with_list_idempotent() {
-        let list_urn = MediaUrn::from_string("media:json;list;textable").unwrap();
-        assert!(list_urn.is_list());
-
-        let double_list = list_urn.with_list();
-        assert!(double_list.is_list());
-        assert!(double_list.is_equivalent(&list_urn).unwrap(), "adding list to already-list should be no-op");
     }
 
     // TEST852: LUB of identical URNs returns the same URN

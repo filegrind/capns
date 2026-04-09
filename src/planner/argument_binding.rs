@@ -839,7 +839,7 @@ mod tests {
     #[test]
     fn test1105_two_steps_same_cap_urn_different_slot_values() {
         let cap_urn = "cap:in=\"media:pdf\";op=make_decision;out=\"media:bool;textable\"";
-        let slot_name = "media:question;textable;list";
+        let slot_name = "media:list;question;textable";
         let files = vec![];
         let prev_outputs = HashMap::new();
         let mut slot_values: HashMap<String, Vec<u8>> = HashMap::new();

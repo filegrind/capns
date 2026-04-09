@@ -102,6 +102,14 @@ pub struct CapArg {
     /// Whether this argument is required
     pub required: bool,
 
+    /// Whether this argument carries a sequence of items (is_sequence=true)
+    /// or a single item (is_sequence=false, the default).
+    /// When true, the argument data is a sequence of values of the media type,
+    /// not a single value. This is independent of the media type — e.g.,
+    /// media:question;textable with is_sequence=true means "multiple questions".
+    #[serde(default)]
+    pub is_sequence: bool,
+
     /// How this argument can be provided
     pub sources: Vec<ArgSource>,
 
@@ -124,6 +132,7 @@ impl CapArg {
         Self {
             media_urn: media_urn.into(),
             required,
+            is_sequence: false,
             sources,
             arg_description: None,
             default_value: None,
@@ -141,6 +150,7 @@ impl CapArg {
         Self {
             media_urn: media_urn.into(),
             required,
+            is_sequence: false,
             sources,
             arg_description: Some(description.into()),
             default_value: None,
@@ -152,6 +162,7 @@ impl CapArg {
     pub fn with_full_definition(
         media_urn: impl Into<String>,
         required: bool,
+        is_sequence: bool,
         sources: Vec<ArgSource>,
         description: Option<String>,
         default: Option<serde_json::Value>,
@@ -160,6 +171,7 @@ impl CapArg {
         Self {
             media_urn: media_urn.into(),
             required,
+            is_sequence,
             sources,
             arg_description: description,
             default_value: default,
@@ -278,6 +290,11 @@ pub struct CapOutput {
 
     pub output_description: String,
 
+    /// Whether this output produces a sequence of items (is_sequence=true)
+    /// or a single item (is_sequence=false, the default).
+    #[serde(default)]
+    pub is_sequence: bool,
+
     /// Arbitrary metadata as JSON object
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -293,6 +310,7 @@ impl CapOutput {
         Self {
             media_urn: media_urn.into(),
             output_description: description.into(),
+            is_sequence: false,
             metadata: None,
         }
     }
@@ -301,11 +319,13 @@ impl CapOutput {
     pub fn with_full_definition(
         media_urn: impl Into<String>,
         description: impl Into<String>,
+        is_sequence: bool,
         metadata: Option<serde_json::Value>,
     ) -> Self {
         Self {
             media_urn: media_urn.into(),
             output_description: description.into(),
+            is_sequence,
             metadata,
         }
     }
@@ -1190,7 +1210,7 @@ mod tests {
         let meta = serde_json::json!({"hint": "enter name"});
 
         let arg = CapArg::with_full_definition(
-            "media:string", true,
+            "media:string", true, false,
             vec![ArgSource::CliFlag { cli_flag: "--name".to_string() }],
             Some("User name".to_string()),
             Some(default_val.clone()),
@@ -1232,7 +1252,7 @@ mod tests {
 
         // CapOutput with_full_definition
         let output2 = CapOutput::with_full_definition(
-            "media:json", "JSON output", Some(serde_json::json!({"v": 2})),
+            "media:json", "JSON output", false, Some(serde_json::json!({"v": 2})),
         );
         assert_eq!(output2.get_media_urn(), "media:json");
         assert!(output2.get_metadata().is_some());

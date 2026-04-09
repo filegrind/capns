@@ -1563,9 +1563,9 @@ mod tests {
         plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;out=media:pdf-page;list"));  // disbind
         plan.add_node(MachineNode::for_each("foreach_0", "cap_0", "body_cap_0", "body_cap_1"));
         plan.add_node(MachineNode::cap("body_cap_0", "cap:in=media:pdf-page;out=media:text;textable"));
-        plan.add_node(MachineNode::cap("body_cap_1", "cap:in=media:text;textable;out=media:bool;decision;textable"));
+        plan.add_node(MachineNode::cap("body_cap_1", "cap:in=media:text;textable;out=media:decision;json;record;textable"));
         plan.add_node(MachineNode::collect("collect_0", vec!["body_cap_1".to_string()]));
-        plan.add_node(MachineNode::cap("cap_post", "cap:in=media:bool;decision;list;textable;out=media:json;textable"));
+        plan.add_node(MachineNode::cap("cap_post", "cap:in=media:decision;json;record;textable;out=media:json;textable"));
         plan.add_node(MachineNode::output("output", "result", "cap_post"));
 
         plan.add_edge(MachinePlanEdge::direct("input_slot", "cap_0"));
@@ -1587,7 +1587,7 @@ mod tests {
         plan.add_node(MachineNode::input_slot("input_slot", "input", "media:pdf", InputCardinality::Single));
         plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;out=media:pdf-page;list"));
         plan.add_node(MachineNode::for_each("foreach_0", "cap_0", "body_cap_0", "body_cap_0"));
-        plan.add_node(MachineNode::cap("body_cap_0", "cap:in=media:pdf-page;out=media:bool;decision;textable"));
+        plan.add_node(MachineNode::cap("body_cap_0", "cap:in=media:pdf-page;out=media:decision;json;record;textable"));
         plan.add_node(MachineNode::output("output", "result", "body_cap_0"));
 
         plan.add_edge(MachinePlanEdge::direct("input_slot", "cap_0"));
@@ -1744,7 +1744,7 @@ mod tests {
     fn test758_extract_suffix_from() {
         let plan = build_foreach_plan_with_collect();
 
-        let suffix = plan.extract_suffix_from("collect_0", "media:bool;decision;list;textable").unwrap();
+        let suffix = plan.extract_suffix_from("collect_0", "media:decision;json;record;textable").unwrap();
 
         // Should have: synthetic input, cap_post, output
         assert_eq!(suffix.nodes.len(), 3);
@@ -1781,7 +1781,7 @@ mod tests {
 
         let prefix = plan.extract_prefix_to("cap_0").unwrap();
         let body = plan.extract_foreach_body("foreach_0", "media:pdf-page").unwrap();
-        let suffix = plan.extract_suffix_from("collect_0", "media:bool;decision;list;textable").unwrap();
+        let suffix = plan.extract_suffix_from("collect_0", "media:decision;json;record;textable").unwrap();
 
         // Collect cap nodes from each sub-plan
         let prefix_caps: std::collections::HashSet<String> = prefix.nodes.values()
@@ -1826,7 +1826,7 @@ mod tests {
     #[test]
     fn test763_suffix_is_dag() {
         let plan = build_foreach_plan_with_collect();
-        let suffix = plan.extract_suffix_from("collect_0", "media:bool;decision;list;textable").unwrap();
+        let suffix = plan.extract_suffix_from("collect_0", "media:decision;json;record;textable").unwrap();
         assert!(suffix.topological_order().is_ok());
     }
 

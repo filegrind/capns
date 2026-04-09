@@ -51,6 +51,10 @@ pub enum LiveMachinePlanEdgeType {
         cap_urn: CapUrn,
         cap_title: String,
         specificity: usize,
+        /// Whether the cap's main input expects a sequence of items
+        input_is_sequence: bool,
+        /// Whether the cap's output produces a sequence of items
+        output_is_sequence: bool,
     },
     /// Fan-out: iterate over list items (list → item, remove `list` tag)
     /// Synthesized for any list-typed source.
@@ -69,6 +73,10 @@ pub enum LiveMachinePlanEdgeType {
 /// and use the same struct for uniformity in path traversal.
 ///
 /// URNs are stored as typed values, not strings, for order-theoretic operations.
+///
+/// Cardinality (single vs sequence) is NOT stored on edges. It is a property
+/// of the data flow tracked by `is_sequence` on the wire protocol, determined
+/// by context (how many input files), not by URN tags.
 #[derive(Debug, Clone)]
 pub struct LiveMachinePlanEdge {
     /// Input media type (what this edge consumes)
@@ -77,17 +85,13 @@ pub struct LiveMachinePlanEdge {
     pub to_spec: MediaUrn,
     /// Type of edge (cap or cardinality transition)
     pub edge_type: LiveMachinePlanEdgeType,
-    /// Input cardinality (derived from from_spec)
-    pub input_cardinality: InputCardinality,
-    /// Output cardinality (derived from to_spec)
-    pub output_cardinality: InputCardinality,
 }
 
 /// Precomputed graph of capabilities for path finding.
 ///
 /// The graph stores only Cap edges. Cardinality transitions (ForEach, Collect)
-/// are universal operations derived from the `list` tag and are synthesized
-/// dynamically by `get_outgoing_edges()` during traversal.
+/// are universal shape transitions synthesized dynamically by
+/// `get_outgoing_edges()` during traversal based on the `is_sequence` state.
 ///
 /// This graph is designed to be:
 /// - Updated incrementally when caps change
@@ -163,22 +167,17 @@ pub enum StrandStepType {
         title: String,
         specificity: usize,
     },
-    /// Fan-out: iterate over list items
+    /// Fan-out: iterate over sequence items (is_sequence flips true → false).
+    /// The media URN does not change — ForEach is a shape transition, not a type transition.
     ForEach {
-        /// The list media type being split
-        list_spec: MediaUrn,
-        /// The item media type (list without ;list marker)
-        item_spec: MediaUrn,
+        /// The media type being iterated over
+        media_spec: MediaUrn,
     },
-    /// Collect: scalar → list (add `list` tag)
-    /// The universal scalar-to-list transition, used in two contexts:
-    /// - Standalone: wrap scalar in list-of-one (pass-through at execution time)
-    /// - After ForEach: gather iteration results back into a list
+    /// Collect: gather items into a sequence (is_sequence flips false → true).
+    /// The media URN does not change — Collect is a shape transition, not a type transition.
     Collect {
-        /// The item media type being collected
-        item_spec: MediaUrn,
-        /// The list media type (item with ;list marker)
-        list_spec: MediaUrn,
+        /// The media type being collected
+        media_spec: MediaUrn,
     },
 }
 
@@ -465,12 +464,14 @@ impl LiveCapGraph {
         let to_canonical = to_spec.to_string();
         let cap_canonical = cap.urn.to_string();
 
-        // Determine cardinality from media URNs
-        let input_cardinality = InputCardinality::from_media_urn(&from_canonical);
-        let output_cardinality = InputCardinality::from_media_urn(&to_canonical);
-
         // Create edge
         let edge_idx = self.edges.len();
+        // Main input arg: the one with a stdin source
+        let input_is_sequence = cap.args.iter()
+            .find(|arg| arg.sources.iter().any(|s| matches!(s, crate::cap::definition::ArgSource::Stdin { .. })))
+            .map_or(false, |arg| arg.is_sequence);
+        let output_is_sequence = cap.output.as_ref().map_or(false, |o| o.is_sequence);
+
         let edge = LiveMachinePlanEdge {
             from_spec,
             to_spec,
@@ -478,9 +479,9 @@ impl LiveCapGraph {
                 cap_urn: cap.urn.clone(),
                 cap_title: cap.title.clone(),
                 specificity: cap.urn.specificity(),
+                input_is_sequence,
+                output_is_sequence,
             },
-            input_cardinality,
-            output_cardinality,
         };
         self.edges.push(edge);
 
@@ -497,61 +498,78 @@ impl LiveCapGraph {
     /// Returns Cap edges where the source conforms to the edge's input requirement
     /// (with matching cardinality), plus synthesized cardinality transitions.
     ///
-    /// Cardinality transitions are universal operations derived from the `list` tag:
-    /// - **ForEach**: Any list source can iterate into its item type (remove `list` tag)
-    /// - **Collect**: Any scalar source can transition to list form (add `list` tag)
+    /// Get outgoing edges from a source media URN at a given `is_sequence` state.
     ///
-    /// These are not graph edges — they exist by definition of what `list` means.
-    /// They are synthesized here on the fly based on the source's cardinality.
-    fn get_outgoing_edges(&self, source: &MediaUrn) -> Vec<LiveMachinePlanEdge> {
-        let source_is_list = source.is_list();
-
-        // Collect matching Cap edges (cardinality must match exactly)
-        let mut result: Vec<LiveMachinePlanEdge> = self.edges
+    /// Cap edges are matched purely on `conforms_to` — cardinality is irrelevant
+    /// to type matching. Cardinality transitions (ForEach/Collect) are synthesized
+    /// based on the current `is_sequence` state:
+    ///
+    /// - **ForEach** (is_sequence=true → false): iterate over sequence items.
+    ///   The media URN does not change — ForEach is a shape transition, not a type transition.
+    /// - **Collect** (is_sequence=false → true): gather items into a sequence.
+    ///   The media URN does not change — Collect is a shape transition, not a type transition.
+    fn get_outgoing_edges(&self, source: &MediaUrn, is_sequence: bool) -> Vec<(LiveMachinePlanEdge, bool)> {
+        let mut result: Vec<(LiveMachinePlanEdge, bool)> = self.edges
             .iter()
             .filter(|edge| {
-                // Only Cap edges are stored in the graph now
                 debug_assert!(
                     edge.is_cap(),
                     "Non-cap edge found in graph storage: {:?}",
                     edge.edge_type
                 );
-
-                let edge_expects_list = edge.from_spec.is_list();
-                if edge_expects_list != source_is_list {
+                if !source.conforms_to(&edge.from_spec).unwrap_or(false) {
                     return false;
                 }
-
-                source.conforms_to(&edge.from_spec).unwrap_or(false)
+                // Check cardinality compatibility:
+                // - sequence data can only go to caps that expect sequences
+                // - scalar data can go to scalar or sequence caps (single item wraps into 1-item sequence)
+                match &edge.edge_type {
+                    LiveMachinePlanEdgeType::Cap { input_is_sequence, .. } => {
+                        if is_sequence && !input_is_sequence {
+                            // Sequence data → scalar cap: needs ForEach first, skip direct match
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    _ => true,
+                }
             })
-            .cloned()
+            .map(|edge| {
+                // Determine outgoing is_sequence from the cap's output flag
+                let out_is_seq = match &edge.edge_type {
+                    LiveMachinePlanEdgeType::Cap { output_is_sequence, .. } => {
+                        *output_is_sequence
+                    }
+                    _ => is_sequence,
+                };
+                (edge.clone(), out_is_seq)
+            })
             .collect();
 
-        // Synthesize cardinality transitions based on source type
-        if source_is_list {
-            // ForEach: list → item (remove list tag)
-            let item_spec = source.without_list();
-            result.push(LiveMachinePlanEdge {
-                from_spec: source.clone(),
-                to_spec: item_spec,
-                edge_type: LiveMachinePlanEdgeType::ForEach,
-                input_cardinality: InputCardinality::Sequence,
-                output_cardinality: InputCardinality::Single,
+        // Synthesize ForEach when data is a sequence
+        if is_sequence {
+            // ForEach: sequence → scalar (same media URN, is_sequence flips to false)
+            // Check if any scalar cap could consume items after ForEach
+            let has_scalar_consumers = self.edges.iter().any(|edge| {
+                if let LiveMachinePlanEdgeType::Cap { input_is_sequence, .. } = &edge.edge_type {
+                    !input_is_sequence && source.conforms_to(&edge.from_spec).unwrap_or(false)
+                } else {
+                    false
+                }
             });
-        } else {
-            // Collect: scalar → list (add list tag)
-            // The universal scalar-to-list transition. Whether wrapping a single
-            // scalar into a list-of-one or gathering N ForEach iteration results,
-            // it is the same operation — Collect.
-            let list_spec = source.with_list();
-            result.push(LiveMachinePlanEdge {
-                from_spec: source.clone(),
-                to_spec: list_spec,
-                edge_type: LiveMachinePlanEdgeType::Collect,
-                input_cardinality: InputCardinality::Single,
-                output_cardinality: InputCardinality::Sequence,
-            });
+            if has_scalar_consumers {
+                result.push((LiveMachinePlanEdge {
+                    from_spec: source.clone(),
+                    to_spec: source.clone(),
+                    edge_type: LiveMachinePlanEdgeType::ForEach,
+                }, false));
+            }
         }
+        // Collect is NOT synthesized during path finding. It pairs with ForEach
+        // implicitly at execution time — the plan builder handles it.
+        // Synthesizing Collect here creates ForEach↔Collect cycles that cause
+        // infinite loops in the DFS.
 
         result
     }
@@ -569,26 +587,29 @@ impl LiveCapGraph {
     /// Find all reachable targets from a source media URN.
     ///
     /// Uses BFS to explore the graph up to max_depth steps.
+    /// `is_sequence` is the initial cardinality state of the input (from context).
     /// Returns targets sorted by (min_path_length, display_name).
     pub fn get_reachable_targets(
         &self,
         source: &MediaUrn,
+        is_sequence: bool,
         max_depth: usize,
     ) -> Vec<ReachableTargetInfo> {
         let mut results: HashMap<String, ReachableTargetInfo> = HashMap::new();
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut queue: VecDeque<(MediaUrn, usize)> = VecDeque::new();
+        // Track visited states as (canonical_urn, is_sequence) to avoid cycles
+        let mut visited: HashSet<(String, bool)> = HashSet::new();
+        let mut queue: VecDeque<(MediaUrn, bool, usize)> = VecDeque::new();
 
         let source_canonical = source.to_string();
-        queue.push_back((source.clone(), 0));
-        visited.insert(source_canonical);
+        queue.push_back((source.clone(), is_sequence, 0));
+        visited.insert((source_canonical, is_sequence));
 
-        while let Some((current, depth)) = queue.pop_front() {
+        while let Some((current, current_is_seq, depth)) = queue.pop_front() {
             if depth >= max_depth {
                 continue;
             }
 
-            for edge in self.get_outgoing_edges(&current) {
+            for (edge, next_is_seq) in self.get_outgoing_edges(&current, current_is_seq) {
                 let new_depth = depth + 1;
                 let output_canonical = edge.to_spec.to_string();
 
@@ -596,17 +617,18 @@ impl LiveCapGraph {
                 let entry = results.entry(output_canonical.clone()).or_insert_with(|| {
                     ReachableTargetInfo {
                         media_spec: edge.to_spec.clone(),
-                        display_name: output_canonical.clone(), // Will be enriched by caller
+                        display_name: output_canonical.clone(),
                         min_path_length: new_depth as i32,
                         path_count: 0,
                     }
                 });
                 entry.path_count += 1;
 
-                // Continue BFS if not visited
-                if !visited.contains(&output_canonical) {
-                    visited.insert(output_canonical);
-                    queue.push_back((edge.to_spec.clone(), new_depth));
+                // Continue BFS if not visited at this is_sequence state
+                let visit_key = (output_canonical, next_is_seq);
+                if !visited.contains(&visit_key) {
+                    visited.insert(visit_key);
+                    queue.push_back((edge.to_spec.clone(), next_is_seq, new_depth));
                 }
             }
         }
@@ -628,13 +650,14 @@ impl LiveCapGraph {
     /// Find all paths from source to target media URN.
     ///
     /// **Critical**: Uses `is_equivalent()` for target matching, NOT `conforms_to()`.
-    /// This ensures exact matching: "media:X" will NOT match "media:X;list".
+    /// `is_sequence` is the initial cardinality state (from input context).
     ///
     /// Returns paths sorted by (total_steps, total_specificity desc, cap_urns).
     pub fn find_paths_to_exact_target(
         &self,
         source: &MediaUrn,
         target: &MediaUrn,
+        is_sequence: bool,
         max_depth: usize,
         max_paths: usize,
     ) -> Vec<Strand> {
@@ -643,16 +666,27 @@ impl LiveCapGraph {
             return vec![];
         }
 
+        // Log outgoing edges from source to understand branching
+        let source_edges = self.get_outgoing_edges(source, is_sequence);
         tracing::info!(
-            "find_paths_to_exact_target: source={} target={} max_depth={} max_paths={}",
-            source, target, max_depth, max_paths
+            "find_paths_to_exact_target: source={} target={} is_sequence={} max_depth={} max_paths={} source_outgoing={}",
+            source, target, is_sequence, max_depth, max_paths, source_edges.len()
         );
+        for (edge, _) in &source_edges {
+            tracing::info!(
+                "  outgoing: {} -> {} ({})",
+                edge.from_spec, edge.to_spec,
+                match &edge.edge_type {
+                    LiveMachinePlanEdgeType::Cap { cap_title, .. } => cap_title.as_str(),
+                    LiveMachinePlanEdgeType::ForEach => "ForEach",
+                    LiveMachinePlanEdgeType::Collect => "Collect",
+                }
+            );
+        }
 
         // Iterative deepening: find ALL paths at depth N before any at depth N+1.
-        // This guarantees completeness at each depth level regardless of edge order,
-        // preventing the old DFS bug where max_paths budget was exhausted by deep
-        // subtrees before shorter paths through later edges were discovered.
         let mut all_paths: Vec<Strand> = Vec::new();
+        let mut total_nodes_explored: u64 = 0;
 
         for depth_limit in 1..=max_depth {
             if all_paths.len() >= max_paths {
@@ -660,23 +694,52 @@ impl LiveCapGraph {
             }
 
             let mut current_path: Vec<StrandStep> = Vec::new();
-            let mut visited: HashSet<String> = HashSet::new();
+            let mut visited: HashSet<(String, bool)> = HashSet::new();
+            let paths_before = all_paths.len();
+            let mut nodes_this_depth: u64 = 0;
 
             self.iddfs_find_paths(
                 source,
                 target,
                 source,
+                is_sequence,
                 &mut current_path,
                 &mut visited,
                 &mut all_paths,
                 depth_limit,
                 max_paths,
+                &mut nodes_this_depth,
             );
+
+            total_nodes_explored += nodes_this_depth;
+            let new_paths = all_paths.len() - paths_before;
+            if new_paths > 0 || nodes_this_depth > 1000 {
+                tracing::info!(
+                    "  IDDFS depth={}: explored {} nodes, found {} new paths (total {})",
+                    depth_limit, nodes_this_depth, new_paths, all_paths.len()
+                );
+            }
+
+            // If we found paths at this depth, deeper paths are strictly longer
+            // (worse). Stop searching — we have the shortest paths.
+            if new_paths > 0 {
+                break;
+            }
+
+            // Safety: abort if exploring too many nodes (combinatorial explosion)
+            if total_nodes_explored > 100_000 {
+                tracing::warn!(
+                    "find_paths_to_exact_target: aborting after {} nodes explored. \
+                     Returning {} paths found so far.",
+                    total_nodes_explored, all_paths.len()
+                );
+                break;
+            }
         }
 
         tracing::info!(
-            "find_paths_to_exact_target: found {} paths (max_paths was {})",
-            all_paths.len(), max_paths
+            "find_paths_to_exact_target: found {} paths, explored {} total nodes (max_paths was {})",
+            all_paths.len(), total_nodes_explored, max_paths
         );
 
         // Sort paths deterministically
@@ -687,34 +750,36 @@ impl LiveCapGraph {
 
     /// Depth-limited DFS helper for iterative deepening path finding.
     ///
+    /// `is_sequence` tracks the current cardinality state through the path.
     /// Only records paths whose length equals `depth_limit` exactly.
-    /// Paths shorter than `depth_limit` were already found in earlier iterations.
     fn iddfs_find_paths(
         &self,
         source: &MediaUrn,
         target: &MediaUrn,
         current: &MediaUrn,
+        is_sequence: bool,
         current_path: &mut Vec<StrandStep>,
-        visited: &mut HashSet<String>,
+        visited: &mut HashSet<(String, bool)>,
         all_paths: &mut Vec<Strand>,
         depth_limit: usize,
         max_paths: usize,
+        nodes_explored: &mut u64,
     ) {
+        *nodes_explored += 1;
         if all_paths.len() >= max_paths {
+            return;
+        }
+        // Safety: bail out if exploring too many nodes
+        if *nodes_explored > 100_000 {
             return;
         }
 
         // Check if we've reached the EXACT target using is_equivalent()
-        // is_equivalent: same tag set, order-independent
         if current.is_equivalent(target).unwrap_or(false) {
-            // Only record paths at exactly this depth limit.
-            // Shorter paths were recorded in earlier iterations.
             if current_path.len() == depth_limit {
                 let cap_step_count = current_path.iter().filter(|s| s.is_cap()).count() as i32;
 
                 // A valid machine requires at least one capability step.
-                // Paths with only structural transitions (ForEach/Collect)
-                // are not executable — reject them.
                 if cap_step_count == 0 {
                     return;
                 }
@@ -734,24 +799,24 @@ impl LiveCapGraph {
                     description,
                 });
             }
-            // Don't explore past target regardless of depth
             return;
         }
 
-        // Can't go deeper — haven't reached target at this depth
         if current_path.len() >= depth_limit {
             return;
         }
 
         let current_canonical = current.to_string();
-        visited.insert(current_canonical.clone());
+        let visit_key = (current_canonical.clone(), is_sequence);
+        visited.insert(visit_key.clone());
 
-        for edge in self.get_outgoing_edges(current) {
+        for (edge, next_is_seq) in self.get_outgoing_edges(current, is_sequence) {
             let next_canonical = edge.to_spec.to_string();
+            let next_visit_key = (next_canonical, next_is_seq);
 
-            if !visited.contains(&next_canonical) {
+            if !visited.contains(&next_visit_key) {
                 let step_type = match &edge.edge_type {
-                    LiveMachinePlanEdgeType::Cap { cap_urn, cap_title, specificity } => {
+                    LiveMachinePlanEdgeType::Cap { cap_urn, cap_title, specificity, .. } => {
                         StrandStepType::Cap {
                             cap_urn: cap_urn.clone(),
                             title: cap_title.clone(),
@@ -760,14 +825,12 @@ impl LiveCapGraph {
                     }
                     LiveMachinePlanEdgeType::ForEach => {
                         StrandStepType::ForEach {
-                            list_spec: edge.from_spec.clone(),
-                            item_spec: edge.to_spec.clone(),
+                            media_spec: edge.from_spec.clone(),
                         }
                     }
                     LiveMachinePlanEdgeType::Collect => {
                         StrandStepType::Collect {
-                            item_spec: edge.from_spec.clone(),
-                            list_spec: edge.to_spec.clone(),
+                            media_spec: edge.from_spec.clone(),
                         }
                     }
                 };
@@ -782,18 +845,20 @@ impl LiveCapGraph {
                     source,
                     target,
                     &edge.to_spec,
+                    next_is_seq,
                     current_path,
                     visited,
                     all_paths,
                     depth_limit,
                     max_paths,
+                    nodes_explored,
                 );
 
                 current_path.pop();
             }
         }
 
-        visited.remove(&current_canonical);
+        visited.remove(&visit_key);
     }
 
     /// Compare two paths for deterministic ordering.
@@ -879,7 +944,7 @@ mod tests {
         assert_eq!(graph.nodes.len(), 2);
 
         let source = MediaUrn::from_string("media:pdf").unwrap();
-        let targets = graph.get_reachable_targets(&source, 5);
+        let targets = graph.get_reachable_targets(&source, false, 5);
 
         // Reachable targets include:
         // - media:extracted-text (via cap, depth 1)
@@ -937,7 +1002,7 @@ mod tests {
         // 2. Indirect: pdf → result;list (via analyze_multi) → ForEach → result — 1 cap step, 2 total steps
         // Both are valid. Path 1 ranks first (fewer total steps at same cap count).
         let target_singular = MediaUrn::from_string("media:analysis-result").unwrap();
-        let paths_singular = graph.find_paths_to_exact_target(&source, &target_singular, 5, 10);
+        let paths_singular = graph.find_paths_to_exact_target(&source, &target_singular, false, 5, 10);
 
         assert!(paths_singular.len() >= 1, "singular query should find at least 1 path");
         assert_eq!(paths_singular[0].steps[0].title(), "Analyze PDF",
@@ -949,7 +1014,7 @@ mod tests {
         // 2. Indirect: pdf → result (via analyze) + Collect → result;list — 1 cap step + Collect
         // Both are valid. The direct path is shorter (fewer total steps).
         let target_plural = MediaUrn::from_string("media:analysis-result;list").unwrap();
-        let paths_plural = graph.find_paths_to_exact_target(&source, &target_plural, 5, 10);
+        let paths_plural = graph.find_paths_to_exact_target(&source, &target_plural, false, 5, 10);
 
         assert!(paths_plural.len() >= 1, "list query should find at least 1 path");
         // The shortest path (fewest cap steps, then fewest total steps) should be the direct one
@@ -972,7 +1037,7 @@ mod tests {
         let source = MediaUrn::from_string("media:pdf").unwrap();
         let target = MediaUrn::from_string("media:summary-text").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].total_steps, 2);
@@ -995,8 +1060,8 @@ mod tests {
         let target = MediaUrn::from_string("media:extracted-text").unwrap();
 
         // Run multiple times - should always get the same order
-        let paths1 = graph.find_paths_to_exact_target(&source, &target, 5, 10);
-        let paths2 = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths1 = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
+        let paths2 = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert_eq!(paths1.len(), paths2.len());
         for (p1, p2) in paths1.iter().zip(paths2.iter()) {
@@ -1053,7 +1118,7 @@ mod tests {
         let source = MediaUrn::from_string("media:a").unwrap();
         let target = MediaUrn::from_string("media:c").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert_eq!(paths.len(), 1, "Should find one path through intermediate node");
         assert_eq!(paths[0].steps.len(), 2, "Path should have 2 steps (A->B, B->C)");
@@ -1074,7 +1139,7 @@ mod tests {
         let source = MediaUrn::from_string("media:a").unwrap();
         let target = MediaUrn::from_string("media:c").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert!(paths.is_empty(), "Should find no paths when target is unreachable");
     }
@@ -1093,7 +1158,7 @@ mod tests {
         graph.add_cap(&cap2);
 
         let source = MediaUrn::from_string("media:a").unwrap();
-        let targets = graph.get_reachable_targets(&source, 5);
+        let targets = graph.get_reachable_targets(&source, false, 5);
 
         let target_specs: Vec<String> = targets.iter()
             .map(|t| t.media_spec.to_string())
@@ -1119,7 +1184,7 @@ mod tests {
         let source = MediaUrn::from_string("media:png").unwrap();
         let target = MediaUrn::from_string("media:textable").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert!(paths.is_empty(), "Should NOT find path from PNG to text via PDF cap");
     }
@@ -1138,7 +1203,7 @@ mod tests {
         let source = MediaUrn::from_string("media:pdf").unwrap();
         let target = MediaUrn::from_string("media:thumbnail").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert!(paths.is_empty(), "Should NOT find path from PDF to thumbnail via PNG cap");
     }
@@ -1199,63 +1264,49 @@ mod tests {
         assert!(pdf_paths.is_empty(), "Should find NO paths from PDF to thumbnail (type mismatch)");
     }
 
-    // TEST788: Tests that ForEach transitions enable list→singular paths
-    // Cardinality transitions are synthesized dynamically — no pre-computed edges.
-    // This is crucial for paths like: pdf → disbind → page;list → ForEach → page → analyze
+    // TEST788: ForEach is only synthesized when is_sequence=true
+    // With scalar input (is_sequence=false), disbind output goes directly to choose
+    // since media:page;textable conforms to media:textable.
+    // With sequence input (is_sequence=true), ForEach splits the sequence so each
+    // item can be processed by disbind individually, then choose.
     #[test]
-    fn test788_foreach_enables_list_to_singular_paths() {
+    fn test788_foreach_only_with_sequence_input() {
         let mut graph = LiveCapGraph::new();
 
-        // Cap 1: pdf → page;list (like disbind)
         let disbind = make_test_cap(
             "media:pdf",
-            "media:page;textable;list",
+            "media:page;textable",
             "disbind",
             "Disbind PDF"
         );
 
-        // Cap 2: textable → decision (like make_multiple_decisions, accepts singular textable)
         let choose = make_test_cap(
             "media:textable",
-            "media:decision;bool;textable",
+            "media:decision;json;record;textable",
             "choose",
             "Make a Decision"
         );
 
-        // Only Cap edges are stored — no pre-computed ForEach/Collect edges
         graph.sync_from_caps(&[disbind, choose]);
-        assert_eq!(
-            graph.edges.len(), 2,
-            "Graph should contain exactly 2 Cap edges, no pre-computed cardinality edges"
-        );
-        assert!(
-            graph.edges.iter().all(|e| e.is_cap()),
-            "All stored edges should be Cap edges"
-        );
+        assert_eq!(graph.edges.len(), 2, "Graph should contain exactly 2 Cap edges");
 
-        // Verify the full path can be found via dynamically synthesized ForEach
         let source = MediaUrn::from_string("media:pdf").unwrap();
-        let target = MediaUrn::from_string("media:decision;bool;textable").unwrap();
+        let target = MediaUrn::from_string("media:decision;json;record;textable").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 10, 20);
-
-        // Should find at least one path: disbind → ForEach → choose
-        let path_with_foreach = paths.iter().find(|p| {
+        // Scalar input: no ForEach, direct path disbind → choose
+        let scalar_paths = graph.find_paths_to_exact_target(&source, &target, false, 10, 20);
+        let has_foreach_scalar = scalar_paths.iter().any(|p| {
             p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }))
         });
+        assert!(!has_foreach_scalar, "Scalar input should NOT produce ForEach");
+        assert!(!scalar_paths.is_empty(), "Should find direct path disbind → choose");
 
-        assert!(
-            path_with_foreach.is_some(),
-            "Should find path from pdf to decision (via disbind → ForEach → choose). Found {} paths",
-            paths.len()
-        );
-
-        // Verify the path structure: disbind (Cap) → ForEach → choose (Cap)
-        let path = path_with_foreach.unwrap();
-        assert_eq!(path.cap_step_count, 2, "Path should have 2 cap steps (disbind + choose)");
-        assert_eq!(path.steps[0].title(), "Disbind PDF");
-        assert!(matches!(path.steps[1].step_type, StrandStepType::ForEach { .. }));
-        assert_eq!(path.steps[2].title(), "Make a Decision");
+        // Sequence input: ForEach should appear
+        let seq_paths = graph.find_paths_to_exact_target(&source, &target, true, 10, 20);
+        let has_foreach_seq = seq_paths.iter().any(|p| {
+            p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }))
+        });
+        assert!(has_foreach_seq, "Sequence input should produce ForEach step");
     }
 
     // TEST791: Tests sync_from_cap_urns actually adds edges
@@ -1268,13 +1319,13 @@ mod tests {
         let registry = CapRegistry::new_for_test();
         let disbind = make_test_cap(
             "media:pdf",
-            "media:page;textable;list",
+            "media:page;textable",
             "disbind",
             "Disbind PDF"
         );
         let choose = make_test_cap(
             "media:textable",
-            "media:decision;bool;textable",
+            "media:decision;json;record;textable",
             "choose",
             "Make a Decision"
         );
@@ -1317,7 +1368,7 @@ mod tests {
 
         // A specific cap should NOT be equivalent to identity
         let specific_cap = crate::CapUrn::from_string(
-            r#"cap:in=media:pdf;op=disbind;out="media:disbound-page;list;textable""#
+            r#"cap:in=media:pdf;op=disbind;out="media:disbound-page;textable""#
         ).unwrap();
 
         eprintln!("Specific cap: {}", specific_cap);
@@ -1335,7 +1386,7 @@ mod tests {
     #[test]
     fn test789_cap_from_json_has_valid_specs() {
         let json = r#"{
-            "urn": "cap:in=media:pdf;op=disbind;out=\"media:disbound-page;textable;list\"",
+            "urn": "cap:in=media:pdf;op=disbind;out=\"media:disbound-page;textable\"",
             "command": "disbind",
             "title": "Disbind PDF",
             "args": [],
@@ -1376,7 +1427,7 @@ mod tests {
         let source = MediaUrn::from_string("media:format-a").unwrap();
         let target = MediaUrn::from_string("media:format-c").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 5, 10);
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
         assert!(paths.len() >= 2, "Should find at least 2 paths (got {})", paths.len());
         assert_eq!(paths[0].steps.len(), 1, "Shortest path should be first (1 step)");
@@ -1390,21 +1441,20 @@ mod tests {
                 StrandStep {
                     step_type: StrandStepType::Cap {
                         cap_urn: CapUrn::from_string(
-                            r#"cap:in=media:pdf;op=disbind;out="media:list;page;textable""#,
+                            r#"cap:in=media:pdf;op=disbind;out="media:page;textable""#,
                         )
                         .unwrap(),
                         title: "Disbind PDF Into Pages".to_string(),
                         specificity: 4,
                     },
                     from_spec: MediaUrn::from_string("media:pdf").unwrap(),
-                    to_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                    to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                 },
                 StrandStep {
                     step_type: StrandStepType::ForEach {
-                        list_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
-                        item_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                        media_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                     },
-                    from_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                    from_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                     to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                 },
             ],
@@ -1437,7 +1487,7 @@ mod tests {
         // Cap: textable → decision (accepts singular textable)
         let make_decision = make_test_cap(
             "media:textable",
-            "media:bool;decision;textable",
+            "media:decision;json;record;textable",
             "make_decision",
             "Make Decision"
         );
@@ -1445,12 +1495,13 @@ mod tests {
 
         // Source is a user-provided list that no cap outputs
         let source = MediaUrn::from_string("media:list;textable;txt").unwrap();
-        let target = MediaUrn::from_string("media:bool;decision;textable").unwrap();
+        let target = MediaUrn::from_string("media:decision;json;record;textable").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 10, 20);
+        // User provides multiple files → is_sequence=true
+        let paths = graph.find_paths_to_exact_target(&source, &target, true, 10, 20);
 
-        // Expected path: ForEach (list;textable;txt → textable;txt) → make_decision
-        // make_decision accepts media:textable, and media:textable;txt conforms to it
+        // Expected path: ForEach → make_decision
+        // ForEach iterates over items, make_decision accepts media:textable
         let path = paths.iter().find(|p| {
             p.steps.len() == 2
                 && matches!(p.steps[0].step_type, StrandStepType::ForEach { .. })
@@ -1468,22 +1519,21 @@ mod tests {
 
         let path = path.unwrap();
         // Verify the ForEach step correctly derives item type from list source
-        if let StrandStepType::ForEach { list_spec, item_spec } = &path.steps[0].step_type {
-            assert!(list_spec.is_list(), "ForEach list_spec should be a list");
-            assert!(item_spec.is_scalar(), "ForEach item_spec should be scalar");
+        if let StrandStepType::ForEach { media_spec } = &path.steps[0].step_type {
+            // ForEach doesn't change the media URN — same type, different shape (is_sequence)
             assert!(
-                item_spec.is_equivalent(&source.without_list()).unwrap(),
-                "ForEach item_spec should be source without list tag"
+                media_spec.is_equivalent(&source).unwrap(),
+                "ForEach media_spec should be the same as source"
             );
         }
     }
 
-    // TEST793: Collect enables scalar-to-list paths
+    // TEST793: Collect is not synthesized during path finding.
+    // Reaching a list target type requires the cap itself to output a list type.
     #[test]
-    fn test793_collect_scalar_to_list_path() {
+    fn test793_no_collect_in_path_finding() {
         let mut graph = LiveCapGraph::new();
 
-        // Cap: textable → summary (scalar output)
         let summarize = make_test_cap(
             "media:textable",
             "media:summary;textable",
@@ -1493,36 +1543,25 @@ mod tests {
         graph.sync_from_caps(&[summarize]);
 
         let source = MediaUrn::from_string("media:textable").unwrap();
+        // list;summary;textable is a different semantic type — can't reach it
+        // without a cap that outputs it or a Collect step (not synthesized)
         let target = MediaUrn::from_string("media:list;summary;textable").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 10, 20);
-
-        // Expected path: summarize → Collect (summary;textable → list;summary;textable)
-        let path = paths.iter().find(|p| {
-            p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::Collect { .. }))
-                && p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::Cap { .. }))
-        });
-
-        assert!(
-            path.is_some(),
-            "Should find path: summarize → Collect. Found {} paths",
-            paths.len()
-        );
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 10, 20);
+        assert!(paths.is_empty(), "Should NOT find path to list type without a cap that produces it");
     }
 
-    // TEST794: ForEach → Cap → Collect paths (scalar→list re-assembly)
+    // TEST794: Multi-cap path without Collect — Collect is not synthesized
     #[test]
-    fn test794_foreach_cap_collect_pattern() {
+    fn test794_multi_cap_path_no_collect() {
         let mut graph = LiveCapGraph::new();
 
-        // Cap: pdf → page;list (disbind)
         let disbind = make_test_cap(
             "media:pdf",
-            "media:list;page;textable",
+            "media:page;textable",
             "disbind",
             "Disbind PDF"
         );
-        // Cap: page;textable → summary;textable (per-page summarization)
         let summarize = make_test_cap(
             "media:page;textable",
             "media:summary;textable",
@@ -1531,27 +1570,13 @@ mod tests {
         );
         graph.sync_from_caps(&[disbind, summarize]);
 
+        // Scalar path: pdf → disbind → page;textable → summarize → summary;textable
         let source = MediaUrn::from_string("media:pdf").unwrap();
-        let target = MediaUrn::from_string("media:list;summary;textable").unwrap();
+        let target = MediaUrn::from_string("media:summary;textable").unwrap();
 
-        let paths = graph.find_paths_to_exact_target(&source, &target, 10, 20);
-
-        // Expected path: disbind → ForEach → summarize → Collect
-        // Collect is the universal scalar→list transition — used both standalone
-        // and after ForEach bodies.
-        let path = paths.iter().find(|p| {
-            let has_foreach = p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }));
-            let has_collect = p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::Collect { .. }));
-            let cap_count = p.steps.iter().filter(|s| s.is_cap()).count();
-            has_foreach && has_collect && cap_count == 2
-        });
-
-        assert!(
-            path.is_some(),
-            "Should find path: disbind → ForEach → summarize → Collect. Found {} paths: {:?}",
-            paths.len(),
-            paths.iter().map(|p| &p.description).collect::<Vec<_>>()
-        );
+        let paths = graph.find_paths_to_exact_target(&source, &target, false, 10, 20);
+        assert!(!paths.is_empty(), "Should find direct cap path");
+        assert_eq!(paths[0].cap_step_count, 2, "Should have 2 cap steps");
     }
 
     // TEST795: Graph stores only Cap edges after sync
@@ -1560,9 +1585,9 @@ mod tests {
         let mut graph = LiveCapGraph::new();
 
         let caps = vec![
-            make_test_cap("media:pdf", "media:list;page;textable", "disbind", "Disbind"),
+            make_test_cap("media:pdf", "media:page;textable", "disbind", "Disbind"),
             make_test_cap("media:page;textable", "media:summary;textable", "summarize", "Summarize"),
-            make_test_cap("media:textable", "media:bool;decision;textable", "decide", "Decide"),
+            make_test_cap("media:textable", "media:decision;json;record;textable", "decide", "Decide"),
         ];
 
         graph.sync_from_caps(&caps);
@@ -1578,76 +1603,70 @@ mod tests {
         }
     }
 
-    // TEST796: Dynamic ForEach produces correct from/to specs
+    // TEST796: ForEach is synthesized when is_sequence=true AND caps can consume items
     #[test]
-    fn test796_dynamic_foreach_spec_correctness() {
-        let graph = LiveCapGraph::new();
+    fn test796_dynamic_foreach_with_is_sequence() {
+        let mut graph = LiveCapGraph::new();
 
-        // List source with multiple tags
-        let source = MediaUrn::from_string("media:json;list;record;textable").unwrap();
-        let edges = graph.get_outgoing_edges(&source);
+        // Need a cap that accepts the source type for ForEach to be synthesized
+        let cap = make_test_cap("media:textable", "media:summary;textable", "summarize", "Summarize");
+        graph.sync_from_caps(&[cap]);
 
-        // Should have exactly 1 edge: ForEach (no cap edges match, no stored edges)
-        let foreach_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
-        assert!(foreach_edge.is_some(), "Should synthesize ForEach for list source");
+        let source = MediaUrn::from_string("media:textable").unwrap();
+        let edges = graph.get_outgoing_edges(&source, true);
 
-        let fe = foreach_edge.unwrap();
+        let foreach_edge = edges.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
+        assert!(foreach_edge.is_some(), "Should synthesize ForEach when is_sequence=true and caps exist");
+
+        let (fe, next_is_seq) = foreach_edge.unwrap();
+        assert!(!next_is_seq, "ForEach should flip is_sequence to false");
         assert!(fe.from_spec.is_equivalent(&source).unwrap(), "ForEach from_spec should be the source");
-        assert!(fe.to_spec.is_scalar(), "ForEach to_spec should be scalar");
-
-        // to_spec should be source without list tag
-        let expected_item = source.without_list();
-        assert!(
-            fe.to_spec.is_equivalent(&expected_item).unwrap(),
-            "ForEach to_spec '{}' should equal source without list '{}' ",
-            fe.to_spec, expected_item
-        );
+        assert!(fe.to_spec.is_equivalent(&source).unwrap(), "ForEach to_spec should be the same URN");
     }
 
-    // TEST797: Dynamic Collect produces correct from/to specs for scalar sources
+    // TEST797: Collect is never synthesized during path finding
     #[test]
-    fn test797_dynamic_collect_spec_correctness() {
+    fn test797_collect_never_synthesized() {
         let graph = LiveCapGraph::new();
 
-        // Scalar source
         let source = MediaUrn::from_string("media:page;textable").unwrap();
-        let edges = graph.get_outgoing_edges(&source);
 
-        // Should have exactly one synthesized edge: Collect (no cap edges — empty graph)
-        assert_eq!(edges.len(), 1, "Scalar source in empty graph should have exactly 1 synthesized edge");
+        // Neither scalar nor sequence should produce Collect
+        let edges_scalar = graph.get_outgoing_edges(&source, false);
+        let collect_scalar = edges_scalar.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
+        assert!(collect_scalar.is_none(), "Should NOT synthesize Collect for scalar");
 
-        let collect_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
-        assert!(collect_edge.is_some(), "Should synthesize Collect for scalar source");
-
-        let expected_list = source.with_list();
-
-        let c = collect_edge.unwrap();
-        assert!(c.from_spec.is_equivalent(&source).unwrap());
-        assert!(c.to_spec.is_equivalent(&expected_list).unwrap(),
-            "Collect to_spec '{}' should equal source with list '{}'", c.to_spec, expected_list);
+        let edges_seq = graph.get_outgoing_edges(&source, true);
+        let collect_seq = edges_seq.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
+        assert!(collect_seq.is_none(), "Should NOT synthesize Collect for sequence");
     }
 
-    // TEST798: ForEach is NOT synthesized for scalar sources
+    // TEST798: ForEach is NOT synthesized when is_sequence=false
     #[test]
-    fn test798_no_foreach_for_scalar_source() {
+    fn test798_no_foreach_when_not_sequence() {
+        let mut graph = LiveCapGraph::new();
+
+        // Even with caps that could consume, ForEach requires is_sequence=true
+        let cap = make_test_cap("media:textable", "media:summary;textable", "summarize", "Summarize");
+        graph.sync_from_caps(&[cap]);
+
+        let source = MediaUrn::from_string("media:textable").unwrap();
+        let edges = graph.get_outgoing_edges(&source, false);
+
+        let foreach_edge = edges.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
+        assert!(foreach_edge.is_none(), "Should NOT synthesize ForEach when is_sequence=false");
+    }
+
+    // TEST799: ForEach not synthesized without cap consumers even with is_sequence=true
+    #[test]
+    fn test799_no_foreach_without_cap_consumers() {
         let graph = LiveCapGraph::new();
 
         let source = MediaUrn::from_string("media:textable").unwrap();
-        let edges = graph.get_outgoing_edges(&source);
+        // Empty graph — no caps to consume items
+        let edges = graph.get_outgoing_edges(&source, true);
 
-        let foreach_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
-        assert!(foreach_edge.is_none(), "Should NOT synthesize ForEach for scalar source");
-    }
-
-    // TEST799: Collect is NOT synthesized for list sources (only ForEach is)
-    #[test]
-    fn test799_no_collect_for_list_source() {
-        let graph = LiveCapGraph::new();
-
-        let source = MediaUrn::from_string("media:list;textable").unwrap();
-        let edges = graph.get_outgoing_edges(&source);
-
-        let collect_edge = edges.iter().find(|e| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
-        assert!(collect_edge.is_none(), "Should NOT synthesize Collect for list source");
+        let foreach_edge = edges.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
+        assert!(foreach_edge.is_none(), "Should NOT synthesize ForEach without cap consumers");
     }
 }

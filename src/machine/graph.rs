@@ -431,14 +431,13 @@ mod tests {
                         specificity: 4,
                     },
                     from_spec: MediaUrn::from_string("media:pdf").unwrap(),
-                    to_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                    to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                 },
                 StrandStep {
                     step_type: StrandStepType::ForEach {
-                        list_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
-                        item_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                        media_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                     },
-                    from_spec: MediaUrn::from_string("media:list;page;textable").unwrap(),
+                    from_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                     to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                 },
             ],

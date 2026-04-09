@@ -2183,10 +2183,13 @@ fn spawn_handler(
             tx: output_tx_clone.clone(),
         });
         let stream_id = uuid::Uuid::new_v4().to_string();
+        let out_media = crate::CapUrn::from_string(&cap_urn)
+            .map(|u| u.out_spec().to_string())
+            .unwrap_or_else(|_| "media:".to_string());
         let output = OutputStream::new(
             Arc::clone(&sender),
             stream_id,
-            "*".to_string(),
+            out_media,
             request_id.clone(),
             routing_id.clone(),
             max_chunk,

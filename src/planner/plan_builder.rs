@@ -299,7 +299,7 @@ impl MachinePlanBuilder {
                     continue;
                 }
 
-                StrandStepType::Collect { list_spec, .. } => {
+                StrandStepType::Collect { media_spec, .. } => {
                     if let Some((foreach_idx, foreach_node_id)) = inside_foreach_body.take() {
                         // Collect after ForEach: close the iteration body
                         let entry = body_entry.take().unwrap_or_else(|| prev_node_id.clone());
@@ -347,7 +347,7 @@ impl MachinePlanBuilder {
                         // Set output_media_urn so plan_converter can register it
                         collect_node.node_type = ExecutionNodeType::Collect {
                             input_nodes: vec![prev_node_id.clone()],
-                            output_media_urn: Some(list_spec.to_string()),
+                            output_media_urn: Some(media_spec.to_string()),
                         };
                         collect_node.description = Some("Collect: scalar to list-of-one".to_string());
                         plan.add_node(collect_node);
@@ -530,6 +530,8 @@ pub struct ArgumentInfo {
     pub default_value: Option<serde_json::Value>,
     /// Whether this is a required argument
     pub is_required: bool,
+    /// Whether this argument carries a sequence of items
+    pub is_sequence: bool,
     /// Validation rules if any
     pub validation: Option<serde_json::Value>,
 }
@@ -625,6 +627,7 @@ impl MachinePlanBuilder {
                     resolution: resolution.clone(),
                     default_value: arg.default_value.clone(),
                     is_required: arg.required,
+                    is_sequence: arg.is_sequence,
                     validation: Self::validation_to_json(validation.as_ref()),
                 };
 
@@ -1021,6 +1024,7 @@ mod tests {
             resolution: ArgumentResolution::HasDefault,
             default_value: Some(serde_json::json!(200)),
             is_required: false,
+            is_sequence: false,
             validation: Some(serde_json::json!({"min": 50, "max": 2000})),
         };
 
@@ -1050,6 +1054,7 @@ mod tests {
                             resolution: ArgumentResolution::FromInputFile,
                             default_value: None,
                             is_required: true,
+                            is_sequence: false,
                             validation: None,
                         },
                     ],
@@ -1085,6 +1090,7 @@ mod tests {
                             resolution: ArgumentResolution::FromInputFile,
                             default_value: None,
                             is_required: true,
+                            is_sequence: false,
                             validation: None,
                         },
                         ArgumentInfo {
@@ -1094,6 +1100,7 @@ mod tests {
                             resolution: ArgumentResolution::RequiresUserInput,
                             default_value: None,
                             is_required: true,
+                            is_sequence: false,
                             validation: None,
                         },
                     ],
@@ -1105,6 +1112,7 @@ mod tests {
                             resolution: ArgumentResolution::RequiresUserInput,
                             default_value: None,
                             is_required: true,
+                            is_sequence: false,
                             validation: None,
                         },
                     ],
