@@ -889,6 +889,7 @@ mod tests {
             urn: CapUrn::from_string(urn_str).unwrap(),
             title: "test".to_string(),
             cap_description: None,
+            documentation: None,
             metadata: HashMap::new(),
             command: String::new(),
             args: Vec::new(),

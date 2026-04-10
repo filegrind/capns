@@ -294,6 +294,7 @@ mod tests {
                 urn: cap_urn,
                 title: "Test Cap".to_string(),
                 cap_description: None,
+                documentation: None,
                 metadata: HashMap::new(),
                 command: "test".to_string(),
                 media_specs: vec![],

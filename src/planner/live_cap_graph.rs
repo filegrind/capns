@@ -1032,6 +1032,7 @@ mod tests {
             urn: cap_urn,
             title: title.to_string(),
             cap_description: None,
+            documentation: None,
             metadata: Default::default(),
             command: "test".to_string(),
             media_specs: vec![],

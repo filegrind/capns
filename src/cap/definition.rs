@@ -464,8 +464,18 @@ pub struct Cap {
     /// Human-readable title of the capability (required)
     pub title: String,
 
-    /// Optional description
+    /// Optional short plain-text description
     pub cap_description: Option<String>,
+
+    /// Optional long-form markdown documentation.
+    ///
+    /// Rendered in capability info panels, the cap navigator,
+    /// capdag-dot-com, and anywhere else a rich-text explanation of
+    /// the cap is useful. Authored in TOML sources as a triple-quoted
+    /// literal string (`'''...'''`) so markdown punctuation and
+    /// newlines pass through unchanged; the JSON generator escapes
+    /// newlines per JSON rules on output.
+    pub documentation: Option<String>,
 
     /// Optional metadata as key-value pairs
     pub metadata: HashMap<String, String>,
@@ -497,7 +507,7 @@ impl Serialize for Cap {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("Cap", 10)?;
+        let mut state = serializer.serialize_struct("Cap", 11)?;
 
         // Serialize urn as canonical string format
         state.serialize_field("urn", &self.urn.to_string())?;
@@ -507,6 +517,10 @@ impl Serialize for Cap {
 
         if self.cap_description.is_some() {
             state.serialize_field("cap_description", &self.cap_description)?;
+        }
+
+        if self.documentation.is_some() {
+            state.serialize_field("documentation", &self.documentation)?;
         }
 
         if !self.metadata.is_empty() {
@@ -547,6 +561,7 @@ impl<'de> Deserialize<'de> for Cap {
             urn: serde_json::Value,
             title: String,
             cap_description: Option<String>,
+            documentation: Option<String>,
             #[serde(default)]
             metadata: HashMap<String, String>,
             command: String,
@@ -573,6 +588,7 @@ impl<'de> Deserialize<'de> for Cap {
             urn,
             title: registry_cap.title,
             cap_description: registry_cap.cap_description,
+            documentation: registry_cap.documentation,
             metadata: registry_cap.metadata,
             command: registry_cap.command,
             media_specs: registry_cap.media_specs,
@@ -591,6 +607,7 @@ impl Cap {
             urn,
             title,
             cap_description: None,
+            documentation: None,
             metadata: HashMap::new(),
             command,
             media_specs: Vec::new(),
@@ -607,6 +624,7 @@ impl Cap {
             urn,
             title,
             cap_description: Some(description),
+            documentation: None,
             metadata: HashMap::new(),
             command,
             media_specs: Vec::new(),
@@ -628,6 +646,7 @@ impl Cap {
             urn,
             title,
             cap_description: None,
+            documentation: None,
             metadata,
             command,
             media_specs: Vec::new(),
@@ -650,6 +669,7 @@ impl Cap {
             urn,
             title,
             cap_description: Some(description),
+            documentation: None,
             metadata,
             command,
             media_specs: Vec::new(),
@@ -671,6 +691,7 @@ impl Cap {
             urn,
             title,
             cap_description: None,
+            documentation: None,
             metadata: HashMap::new(),
             command,
             media_specs: Vec::new(),
@@ -697,6 +718,7 @@ impl Cap {
             urn,
             title,
             cap_description: description,
+            documentation: None,
             metadata,
             command,
             media_specs,
@@ -705,6 +727,21 @@ impl Cap {
             metadata_json,
             registered_by: None,
         }
+    }
+
+    /// Get the long-form markdown documentation, if any.
+    pub fn get_documentation(&self) -> Option<&str> {
+        self.documentation.as_deref()
+    }
+
+    /// Set the long-form markdown documentation.
+    pub fn set_documentation(&mut self, documentation: impl Into<String>) {
+        self.documentation = Some(documentation.into());
+    }
+
+    /// Clear the long-form markdown documentation.
+    pub fn clear_documentation(&mut self) {
+        self.documentation = None;
     }
 
     /// Get the stdin media URN from args (first stdin source found)
@@ -1261,5 +1298,117 @@ mod tests {
         let mut output3 = output2.clone();
         output3.clear_metadata();
         assert!(output3.get_metadata().is_none());
+    }
+
+    // TEST920: Documentation field round-trips through JSON serialize/deserialize.
+    //
+    // The documentation field carries an arbitrary markdown body authored
+    // in the source TOML via the triple-quoted literal string syntax. The
+    // round-trip must preserve every character — including newlines,
+    // backticks, double quotes, and Unicode — because consumers (info
+    // panels, capdag.com, etc.) render it directly. JSON.stringify on the
+    // capgraph side and the Rust serializer on this side must agree on
+    // escaping; this test fails hard if they don't.
+    #[test]
+    fn test920_cap_documentation_round_trip_with_markdown_body() {
+        let urn = CapUrn::from_string(&test_urn("op=documented")).unwrap();
+        let mut cap = Cap::new(urn, "Documented Cap".to_string(), "documented".to_string());
+
+        // A non-trivial markdown body — multi-line, headings, code blocks,
+        // backticks, embedded quotes, and a literal CRLF and Unicode dingbat
+        // (★) — to make sure escaping is end-to-end correct.
+        let body = "# Documented Cap\r\n\nDoes the thing.\n\n```bash\necho \"hi\"\n```\n\nSee also: ★\n";
+        cap.set_documentation(body);
+        assert_eq!(cap.get_documentation(), Some(body));
+
+        let serialized = serde_json::to_string(&cap).unwrap();
+        // The serializer must emit the documentation field; if it doesn't,
+        // the JSON regression test for the absent case will mask this.
+        assert!(serialized.contains("\"documentation\""), "documentation field absent in JSON output: {}", serialized);
+
+        let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(
+            deserialized.get_documentation(),
+            Some(body),
+            "documentation body mutated during round-trip"
+        );
+
+        // Identity through clone/equality
+        let cloned = deserialized.clone();
+        assert_eq!(cloned, deserialized);
+    }
+
+    // TEST921: When documentation is None, the serializer must skip the
+    // field entirely. This matches the behaviour of the JS toJSON, the
+    // ObjC toDictionary, and the schema's "if present" semantics — there
+    // is no null sentinel, only absence. A bug here would silently start
+    // emitting `"documentation":null` and break consumers that distinguish
+    // between absent and explicit null.
+    #[test]
+    fn test921_cap_documentation_omitted_when_none() {
+        let urn = CapUrn::from_string(&test_urn("op=undocumented")).unwrap();
+        let cap = Cap::new(urn, "Undocumented Cap".to_string(), "undocumented".to_string());
+        assert!(cap.get_documentation().is_none());
+
+        let serialized = serde_json::to_string(&cap).unwrap();
+        assert!(
+            !serialized.contains("documentation"),
+            "documentation field must be omitted when None, got: {}",
+            serialized
+        );
+
+        // Round-trip through deserialize: should still be None.
+        let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
+        assert!(deserialized.get_documentation().is_none());
+    }
+
+    // TEST922: A JSON document produced by capgraph (the canonical source)
+    // with a `documentation` field must deserialize into a Cap with the
+    // body intact. Models the actual on-disk shape — not a synthetic
+    // round-trip — to catch a mismatch between the JSON schema and the
+    // Rust struct field naming.
+    #[test]
+    fn test922_cap_documentation_parses_from_capgraph_json() {
+        // Build JSON via serde_json::json! so we don't have to fight raw
+        // string escaping rules — the URN value contains both backslashes
+        // and embedded double quotes.
+        let json = serde_json::json!({
+            "urn": "cap:in=\"media:textable\";op=docparse;out=\"media:textable\"",
+            "title": "Doc Parse",
+            "command": "docparse",
+            "cap_description": "short",
+            "documentation": "## Heading\n\nbody text",
+            "metadata": {}
+        }).to_string();
+        let cap: Cap = serde_json::from_str(&json).expect("must parse capgraph-shaped JSON");
+        assert_eq!(cap.get_documentation(), Some("## Heading\n\nbody text"));
+        assert_eq!(cap.cap_description.as_deref(), Some("short"));
+    }
+
+    // TEST923: documentation set/clear lifecycle parallels cap_description.
+    // Catches a regression where the setter or clearer is wired to the wrong
+    // field — for example, set_documentation accidentally writing to
+    // cap_description.
+    #[test]
+    fn test923_cap_documentation_set_and_clear_lifecycle() {
+        let urn = CapUrn::from_string(&test_urn("op=lifecycle")).unwrap();
+        let mut cap = Cap::with_description(
+            urn,
+            "Lifecycle".to_string(),
+            "lifecycle".to_string(),
+            "short".to_string(),
+        );
+        assert_eq!(cap.cap_description.as_deref(), Some("short"));
+        assert!(cap.get_documentation().is_none());
+
+        cap.set_documentation("long body");
+        assert_eq!(cap.get_documentation(), Some("long body"));
+        // setter must not touch cap_description
+        assert_eq!(cap.cap_description.as_deref(), Some("short"));
+
+        cap.clear_documentation();
+        assert!(cap.get_documentation().is_none());
+        // clearer must not touch cap_description
+        assert_eq!(cap.cap_description.as_deref(), Some("short"));
     }
 }

@@ -270,9 +270,19 @@ pub struct MediaSpecDef {
     /// Optional local JSON Schema for validation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
-    /// Optional description of the media type
+    /// Optional short plain-text description of the media type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Optional long-form markdown documentation.
+    ///
+    /// Rendered in media info panels, the cap navigator,
+    /// capdag-dot-com, and anywhere else a rich-text explanation of
+    /// the media spec is useful. Authored in TOML sources as a
+    /// triple-quoted literal string (`'''...'''`) so markdown
+    /// punctuation and newlines pass through unchanged; the JSON
+    /// generator escapes newlines per JSON rules on output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     /// Optional validation rules for this media type
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validation: Option<MediaValidation>,
@@ -298,6 +308,7 @@ impl MediaSpecDef {
             profile_uri: None,
             schema: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -318,6 +329,7 @@ impl MediaSpecDef {
             profile_uri: Some(profile_uri.into()),
             schema: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -339,6 +351,7 @@ impl MediaSpecDef {
             profile_uri: Some(profile_uri.into()),
             schema: Some(schema),
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -359,10 +372,26 @@ impl MediaSpecDef {
             profile_uri: None,
             schema: None,
             description: None,
+            documentation: None,
             validation: Some(validation),
             metadata: None,
             extensions: Vec::new(),
         }
+    }
+
+    /// Get the long-form markdown documentation, if any.
+    pub fn get_documentation(&self) -> Option<&str> {
+        self.documentation.as_deref()
+    }
+
+    /// Set the long-form markdown documentation.
+    pub fn set_documentation(&mut self, documentation: impl Into<String>) {
+        self.documentation = Some(documentation.into());
+    }
+
+    /// Clear the long-form markdown documentation.
+    pub fn clear_documentation(&mut self) {
+        self.documentation = None;
     }
 }
 
@@ -386,8 +415,14 @@ pub struct ResolvedMediaSpec {
     pub schema: Option<serde_json::Value>,
     /// Display-friendly title for the media type
     pub title: Option<String>,
-    /// Optional description of the media type
+    /// Optional short plain-text description of the media type
     pub description: Option<String>,
+    /// Optional long-form markdown documentation.
+    ///
+    /// Rendered in media info panels, the cap navigator,
+    /// capdag-dot-com, and anywhere else a rich-text explanation of
+    /// the media spec is useful.
+    pub documentation: Option<String>,
     /// Optional validation rules from the media spec definition
     pub validation: Option<MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
@@ -516,6 +551,7 @@ pub async fn resolve_media_urn(
                 schema: def.schema.clone(),
                 title: Some(def.title.clone()),
                 description: def.description.clone(),
+                documentation: def.documentation.clone(),
                 validation: def.validation.clone(),
                 metadata: def.metadata.clone(),
                 extensions: def.extensions.clone(),
@@ -533,6 +569,7 @@ pub async fn resolve_media_urn(
                 schema: stored_spec.schema,
                 title: Some(stored_spec.title),
                 description: stored_spec.description,
+                documentation: stored_spec.documentation,
                 validation: stored_spec.validation,
                 metadata: stored_spec.metadata,
                 extensions: stored_spec.extensions,
@@ -663,6 +700,7 @@ mod tests {
                 profile_uri: None,
                 schema: None,
                 description: None,
+                documentation: None,
                 validation: None,
                 metadata: None,
                 extensions: Vec::new(),
@@ -685,6 +723,7 @@ mod tests {
                 profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: None,
+                documentation: None,
                 validation: None,
                 metadata: None,
                 extensions: Vec::new(),
@@ -720,6 +759,7 @@ mod tests {
                 profile_uri: Some("https://example.com/schema/output".to_string()),
                 schema: Some(schema.clone()),
                 description: None,
+                documentation: None,
                 validation: None,
                 metadata: None,
                 extensions: Vec::new(),
@@ -763,6 +803,7 @@ mod tests {
                 profile_uri: Some("https://custom.example.com/str".to_string()),
                 schema: None,
                 description: None,
+                documentation: None,
                 validation: None,
                 metadata: None,
                 extensions: Vec::new(),
@@ -792,6 +833,7 @@ mod tests {
             profile_uri: Some("https://example.com/profile".to_string()),
             schema: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -863,6 +905,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -882,6 +925,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -902,6 +946,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -921,6 +966,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -940,6 +986,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -959,6 +1006,7 @@ mod tests {
             schema: None,
             title: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: Vec::new(),
@@ -984,6 +1032,7 @@ mod tests {
                 profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: Some("A custom setting".to_string()),
+                documentation: None,
                 validation: None,
                 metadata: Some(serde_json::json!({
                     "category_key": "interface",
@@ -1012,6 +1061,7 @@ mod tests {
                 profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: None,
+                documentation: None,
                 validation: Some(MediaValidation {
                     min: Some(0.0),
                     max: Some(100.0),
@@ -1058,6 +1108,7 @@ mod tests {
                 profile_uri: Some("https://capdag.com/schema/pdf".to_string()),
                 schema: None,
                 description: Some("A PDF document".to_string()),
+                documentation: None,
                 validation: None,
                 metadata: None,
                 extensions: vec!["pdf".to_string()],
@@ -1078,6 +1129,7 @@ mod tests {
             profile_uri: Some("https://example.com/profile".to_string()),
             schema: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: vec!["json".to_string()],
@@ -1102,6 +1154,7 @@ mod tests {
                 profile_uri: Some("https://example.com/schema".to_string()),
                 schema: None,
                 description: None,
+                documentation: None,
                 validation: Some(MediaValidation {
                     min: None,
                     max: None,
@@ -1137,6 +1190,7 @@ mod tests {
                 profile_uri: Some("https://capdag.com/schema/jpeg".to_string()),
                 schema: None,
                 description: Some("JPEG image data".to_string()),
+                documentation: None,
                 validation: None,
                 metadata: None,
                 extensions: vec!["jpg".to_string(), "jpeg".to_string()],
@@ -1146,5 +1200,116 @@ mod tests {
         let resolved = resolve_media_urn("media:image;jpeg", Some(&media_specs), &registry).await.unwrap();
         assert_eq!(resolved.extensions, vec!["jpg".to_string(), "jpeg".to_string()]);
         assert_eq!(resolved.extensions.len(), 2);
+    }
+
+    // TEST924: Documentation propagates from MediaSpecDef through resolve_media_urn
+    // into ResolvedMediaSpec.
+    //
+    // This is the resolution path used by every consumer that asks the
+    // registry for a media spec — info panels, the cap navigator, the UI
+    // — so a regression here makes the new field invisible everywhere.
+    #[tokio::test]
+    async fn test924_media_documentation_propagates_through_resolve() {
+        let registry = test_registry().await;
+        let body = "## Markdown body\n\nWith `code` and a [link](https://example.com).";
+        let media_specs = create_media_specs(vec![
+            MediaSpecDef {
+                urn: "media:doc-test;textable".to_string(),
+                media_type: "text/plain".to_string(),
+                title: "Documented".to_string(),
+                profile_uri: None,
+                schema: None,
+                description: Some("short desc".to_string()),
+                documentation: Some(body.to_string()),
+                validation: None,
+                metadata: None,
+                extensions: Vec::new(),
+            },
+        ]);
+
+        let resolved = resolve_media_urn("media:doc-test;textable", Some(&media_specs), &registry).await.unwrap();
+        assert_eq!(
+            resolved.documentation.as_deref(),
+            Some(body),
+            "documentation must propagate from MediaSpecDef into ResolvedMediaSpec"
+        );
+        // The short description must remain distinct from the long
+        // documentation body — they are different fields with different
+        // semantics, and the resolver must not collapse one into the other.
+        assert_eq!(resolved.description.as_deref(), Some("short desc"));
+    }
+
+    // TEST925: MediaSpecDef serializes documentation only when present and
+    // round-trips losslessly. Mirrors TEST920/921 for the cap side.
+    #[test]
+    fn test925_media_spec_def_documentation_round_trip() {
+        let body = "Body with newline\nand backslash \\";
+        let with_doc = MediaSpecDef {
+            urn: "media:rt-test".to_string(),
+            media_type: "text/plain".to_string(),
+            title: "Round Trip".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: Some(body.to_string()),
+            validation: None,
+            metadata: None,
+            extensions: Vec::new(),
+        };
+        let json = serde_json::to_string(&with_doc).unwrap();
+        assert!(json.contains("\"documentation\""));
+        let parsed: MediaSpecDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.documentation.as_deref(), Some(body));
+
+        let without_doc = MediaSpecDef {
+            urn: "media:rt-test-2".to_string(),
+            media_type: "text/plain".to_string(),
+            title: "No Doc".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: None,
+            validation: None,
+            metadata: None,
+            extensions: Vec::new(),
+        };
+        let json2 = serde_json::to_string(&without_doc).unwrap();
+        assert!(
+            !json2.contains("documentation"),
+            "documentation must be omitted from MediaSpecDef JSON when None, got: {}",
+            json2
+        );
+    }
+
+    // TEST926: MediaSpecDef set/clear lifecycle for documentation. Catches a
+    // regression where the setter or clearer accidentally writes to or reads
+    // from `description` (the short field) instead of `documentation` (the
+    // long markdown body).
+    #[test]
+    fn test926_media_spec_def_documentation_lifecycle() {
+        let mut spec = MediaSpecDef {
+            urn: "media:doc-test".to_string(),
+            media_type: "text/plain".to_string(),
+            title: "Doc Test".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: Some("short".to_string()),
+            documentation: None,
+            validation: None,
+            metadata: None,
+            extensions: Vec::new(),
+        };
+        assert!(spec.get_documentation().is_none());
+        assert_eq!(spec.description.as_deref(), Some("short"));
+
+        spec.set_documentation("body");
+        assert_eq!(spec.get_documentation(), Some("body"));
+        // setter must not touch description
+        assert_eq!(spec.description.as_deref(), Some("short"));
+
+        spec.clear_documentation();
+        assert!(spec.get_documentation().is_none());
+        // clearer must not touch description
+        assert_eq!(spec.description.as_deref(), Some("short"));
     }
 }

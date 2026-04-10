@@ -49,9 +49,16 @@ pub struct StoredMediaSpec {
     /// Optional JSON Schema
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<serde_json::Value>,
-    /// Optional description
+    /// Optional short plain-text description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Optional long-form markdown documentation.
+    ///
+    /// Rendered in media info panels, the cap navigator,
+    /// capdag-dot-com, and anywhere else a rich-text explanation of
+    /// the media spec is useful.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
     /// Optional validation rules
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validation: Option<crate::MediaValidation>,
@@ -73,6 +80,7 @@ impl StoredMediaSpec {
             profile_uri: self.profile_uri.clone(),
             schema: self.schema.clone(),
             description: self.description.clone(),
+            documentation: self.documentation.clone(),
             validation: self.validation.clone(),
             metadata: self.metadata.clone(),
             extensions: self.extensions.clone(),
@@ -752,6 +760,7 @@ mod tests {
             profile_uri: Some("https://capdag.com/schema/pdf".to_string()),
             schema: None,
             description: Some("PDF document data".to_string()),
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: vec!["pdf".to_string()],
@@ -804,6 +813,7 @@ mod tests {
             profile_uri: None,
             schema: None,
             description: None,
+            documentation: None,
             validation: None,
             metadata: None,
             extensions: vec!["pdf".to_string()],
@@ -837,6 +847,7 @@ mod tests {
                 media_type: "application/octet-stream".to_string(),
                 title: "Test".to_string(),
                 profile_uri: None, schema: None, description: None,
+                documentation: None,
                 validation: None, metadata: None,
                 extensions: vec![ext.to_string()],
             };
@@ -864,6 +875,7 @@ mod tests {
             media_type: "text/plain".to_string(),
             title: "Test Spec".to_string(),
             profile_uri: None, schema: None, description: None,
+            documentation: None,
             validation: None, metadata: None, extensions: vec![],
         };
         let normalized = normalize_media_urn(&spec.urn);
