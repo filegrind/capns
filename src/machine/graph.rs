@@ -207,25 +207,16 @@ impl Machine {
     fn build_abstract_strand(edges: &[MachineEdge]) -> Strand {
         let wildcard = || MediaUrn::from_string("media:").expect("wildcard media URN");
 
+        // Step titles inside a machine-derived strand have no
+        // authoritative source — the `Machine` carries only
+        // `CapUrn`s, not the `Cap` definitions that own the
+        // human-readable titles. The title field is filled
+        // with the cap URN's canonical form as a fallback
+        // debug display. No cap URN tag (including `op`) is
+        // privileged here; only `in` / `out` have functional
+        // meaning in a cap URN, and the rest is arbitrary.
         let steps: Vec<StrandStep> = edges.iter().map(|edge| {
-            let title = edge
-                .cap_urn
-                .get_tag("op")
-                .map(|op| {
-                    op.split(['_', '-'])
-                        .filter(|part| !part.is_empty())
-                        .map(|part| {
-                            let mut chars = part.chars();
-                            match chars.next() {
-                                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                                None => String::new(),
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .filter(|title| !title.is_empty())
-                .unwrap_or_else(|| edge.cap_urn.to_string());
+            let title = edge.cap_urn.to_string();
 
             StrandStep {
                 step_type: StrandStepType::Cap {
@@ -346,13 +337,24 @@ impl Machine {
 }
 
 impl MachineRun {
-    pub fn new(id: String, machine: &Machine, resolved_strand: Strand) -> Self {
-        let machine_notation = machine.to_machine_notation();
-        assert!(
-            !machine_notation.is_empty(),
-            "MachineRun requires a non-empty machine notation"
-        );
-        Self {
+    /// Construct a new `MachineRun` bound to a machine and its
+    /// resolved strand. The machine's canonical notation is
+    /// computed and stored as the run's stable identifier.
+    ///
+    /// Fails hard with `MachineAbstractionError` if the machine
+    /// has no edges or the machine's data-flow cannot be
+    /// serialized. A machine with no edges is not a valid run
+    /// target — reject it with `NoCapabilitySteps`.
+    pub fn new(
+        id: String,
+        machine: &Machine,
+        resolved_strand: Strand,
+    ) -> Result<Self, crate::machine::error::MachineAbstractionError> {
+        let machine_notation = machine.to_machine_notation()?;
+        if machine_notation.is_empty() {
+            return Err(crate::machine::error::MachineAbstractionError::NoCapabilitySteps);
+        }
+        Ok(Self {
             id,
             machine_notation,
             resolved_strand,
@@ -361,7 +363,7 @@ impl MachineRun {
             created_at_unix: unix_now(),
             started_at_unix: None,
             completed_at_unix: None,
-        }
+        })
     }
 
     pub fn start(&mut self) {
@@ -452,12 +454,22 @@ mod tests {
             description: "PDF to text pages".to_string(),
         };
 
-        let machine = strand.knit();
-        let expected_notation = machine.to_machine_notation();
-        let run = MachineRun::new("run-1".to_string(), &machine, strand);
+        let machine = strand.knit().expect("strand knits into a valid machine");
+        let expected_notation = machine
+            .to_machine_notation()
+            .expect("machine serializes to notation");
+        let expected_target = strand.target_spec.clone();
+        let run = MachineRun::new("run-1".to_string(), &machine, strand)
+            .expect("machine run is constructible");
 
         assert_eq!(run.machine_notation, expected_notation);
-        assert_eq!(run.resolved_strand.target_spec.to_string(), "media:page;textable");
+        assert!(
+            run.resolved_strand
+                .target_spec
+                .is_equivalent(&expected_target)
+                .expect("target URN equivalence check"),
+            "strand target must round-trip through MachineRun unchanged"
+        );
     }
 }
 

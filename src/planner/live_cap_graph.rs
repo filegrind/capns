@@ -116,19 +116,23 @@ pub struct LiveMachinePlanEdge {
 /// - Updated incrementally when caps change
 /// - Queried efficiently for reachability and path finding
 /// - Deterministic in its results
+///
+/// The graph's indexes are keyed on `MediaUrn` / `CapUrn`
+/// directly via their derived `Hash`/`Eq` impls (which route
+/// to `TaggedUrn`'s structural `(prefix, tags-BTreeMap)`
+/// identity). No index key is ever a flat URN string.
 #[derive(Debug)]
 pub struct LiveCapGraph {
     /// Cap edges only — cardinality transitions are synthesized during traversal
     edges: Vec<LiveMachinePlanEdge>,
-    /// Index: from_spec (canonical string) → edge indices
-    /// Uses canonical string as key because MediaUrn doesn't implement Hash
-    outgoing: HashMap<String, Vec<usize>>,
-    /// Index: to_spec (canonical string) → edge indices
-    incoming: HashMap<String, Vec<usize>>,
-    /// All unique media URN nodes (canonical strings)
-    nodes: HashSet<String>,
-    /// Cap URN (canonical string) → edge indices for removal
-    cap_to_edges: HashMap<String, Vec<usize>>,
+    /// Index: from_spec → edge indices.
+    outgoing: HashMap<MediaUrn, Vec<usize>>,
+    /// Index: to_spec → edge indices.
+    incoming: HashMap<MediaUrn, Vec<usize>>,
+    /// All unique media URN nodes reachable in the graph.
+    nodes: HashSet<MediaUrn>,
+    /// Cap URN → edge indices for removal.
+    cap_to_edges: HashMap<CapUrn, Vec<usize>>,
 }
 
 /// Information about a reachable target from a source media type.
@@ -270,24 +274,22 @@ impl Strand {
     ///
     /// Cap steps become edges; ForEach sets `is_loop` on the next cap;
     /// Collect is elided (implicit in transitions).
-    pub fn knit(&self) -> crate::machine::Machine {
-        self.try_knit().expect("resolved strand does not define a valid machine")
-    }
-
-    pub fn try_knit(&self) -> Result<crate::machine::Machine, crate::machine::MachineAbstractionError> {
+    /// Convert this resolved strand into a `Machine`.
+    ///
+    /// Fails if the strand contains no capability steps.
+    pub fn knit(&self) -> Result<crate::machine::Machine, crate::machine::MachineAbstractionError> {
         crate::machine::Machine::from_path(self)
     }
 
-    /// Serialize this resolved path to canonical one-line machine notation.
+    /// Serialize this resolved path to canonical one-line
+    /// machine notation. This is the primary identifier for
+    /// accessibility and comparison.
     ///
-    /// This is the primary identifier for accessibility and comparison.
-    pub fn to_machine_notation(&self) -> String {
-        self.try_to_machine_notation()
-            .expect("resolved strand does not define a valid machine")
-    }
-
-    pub fn try_to_machine_notation(&self) -> Result<String, crate::machine::MachineAbstractionError> {
-        Ok(self.try_knit()?.to_machine_notation())
+    /// Fails if the strand cannot be converted to a machine or
+    /// the resulting machine's data-flow cannot be serialized
+    /// (cycles, ambiguous fan-in).
+    pub fn to_machine_notation(&self) -> Result<String, crate::machine::MachineAbstractionError> {
+        self.knit()?.to_machine_notation()
     }
 }
 
@@ -483,10 +485,6 @@ impl LiveCapGraph {
             }
         };
 
-        let from_canonical = from_spec.to_string();
-        let to_canonical = to_spec.to_string();
-        let cap_canonical = cap.urn.to_string();
-
         // Create edge
         let edge_idx = self.edges.len();
         // Main input arg: the one with a stdin source
@@ -494,6 +492,15 @@ impl LiveCapGraph {
             .find(|arg| arg.sources.iter().any(|s| matches!(s, crate::cap::definition::ArgSource::Stdin { .. })))
             .map_or(false, |arg| arg.is_sequence);
         let output_is_sequence = cap.output.as_ref().map_or(false, |o| o.is_sequence);
+
+        // Update indices with URN clones — MediaUrn and CapUrn
+        // are the HashMap keys directly via their derived
+        // `Hash`/`Eq` impls; no string intermediaries.
+        self.outgoing.entry(from_spec.clone()).or_default().push(edge_idx);
+        self.incoming.entry(to_spec.clone()).or_default().push(edge_idx);
+        self.nodes.insert(from_spec.clone());
+        self.nodes.insert(to_spec.clone());
+        self.cap_to_edges.entry(cap.urn.clone()).or_default().push(edge_idx);
 
         let edge = LiveMachinePlanEdge {
             from_spec,
@@ -507,13 +514,6 @@ impl LiveCapGraph {
             },
         };
         self.edges.push(edge);
-
-        // Update indices
-        self.outgoing.entry(from_canonical.clone()).or_default().push(edge_idx);
-        self.incoming.entry(to_canonical.clone()).or_default().push(edge_idx);
-        self.nodes.insert(from_canonical);
-        self.nodes.insert(to_canonical);
-        self.cap_to_edges.entry(cap_canonical).or_default().push(edge_idx);
     }
 
     /// Get all edges reachable from a source media URN.
@@ -618,14 +618,15 @@ impl LiveCapGraph {
         is_sequence: bool,
         max_depth: usize,
     ) -> Vec<ReachableTargetInfo> {
-        let mut results: HashMap<String, ReachableTargetInfo> = HashMap::new();
-        // Track visited states as (canonical_urn, is_sequence) to avoid cycles
-        let mut visited: HashSet<(String, bool)> = HashSet::new();
+        // `results` and `visited` are keyed on `MediaUrn`
+        // directly — their derived `Hash`/`Eq` go through
+        // `TaggedUrn`'s structural tag-set identity.
+        let mut results: HashMap<MediaUrn, ReachableTargetInfo> = HashMap::new();
+        let mut visited: HashSet<(MediaUrn, bool)> = HashSet::new();
         let mut queue: VecDeque<(MediaUrn, bool, usize)> = VecDeque::new();
 
-        let source_canonical = source.to_string();
         queue.push_back((source.clone(), is_sequence, 0));
-        visited.insert((source_canonical, is_sequence));
+        visited.insert((source.clone(), is_sequence));
 
         while let Some((current, current_is_seq, depth)) = queue.pop_front() {
             if depth >= max_depth {
@@ -634,21 +635,27 @@ impl LiveCapGraph {
 
             for (edge, next_is_seq) in self.get_outgoing_edges(&current, current_is_seq) {
                 let new_depth = depth + 1;
-                let output_canonical = edge.to_spec.to_string();
 
-                // Record this target
-                let entry = results.entry(output_canonical.clone()).or_insert_with(|| {
-                    ReachableTargetInfo {
+                // Record this target — the `MediaUrn` entry
+                // key collapses tag-set-equal URNs
+                // automatically via the structural `Hash`/`Eq`.
+                let entry = results
+                    .entry(edge.to_spec.clone())
+                    .or_insert_with(|| ReachableTargetInfo {
                         media_spec: edge.to_spec.clone(),
-                        display_name: output_canonical.clone(),
+                        // display_name is a fallback the caller
+                        // may override via the registry; here
+                        // we just serialize the URN for
+                        // presentation. This is **not** used
+                        // for identity, only for display.
+                        display_name: edge.to_spec.to_string(),
                         min_path_length: new_depth as i32,
                         path_count: 0,
-                    }
-                });
+                    });
                 entry.path_count += 1;
 
                 // Continue BFS if not visited at this is_sequence state
-                let visit_key = (output_canonical, next_is_seq);
+                let visit_key = (edge.to_spec.clone(), next_is_seq);
                 if !visited.contains(&visit_key) {
                     visited.insert(visit_key);
                     queue.push_back((edge.to_spec.clone(), next_is_seq, new_depth));
@@ -656,10 +663,16 @@ impl LiveCapGraph {
             }
         }
 
-        // Sort by (min_path_length, display_name)
+        // Sort by (min_path_length, display_name).
+        //
+        // `display_name` is a presentation string (not an
+        // identity key), so lex-comparing it as a String is
+        // the correct semantics — this is user-visible
+        // alphabetical sort, not URN equivalence.
         let mut targets: Vec<_> = results.into_values().collect();
         targets.sort_by(|a, b| {
-            a.min_path_length.cmp(&b.min_path_length)
+            a.min_path_length
+                .cmp(&b.min_path_length)
                 .then_with(|| a.display_name.cmp(&b.display_name))
         });
 
@@ -718,7 +731,7 @@ impl LiveCapGraph {
             }
 
             let mut current_path: Vec<StrandStep> = Vec::new();
-            let mut visited: HashSet<(String, bool)> = HashSet::new();
+            let mut visited: HashSet<(MediaUrn, bool)> = HashSet::new();
             let paths_before = all_paths.len();
             let mut nodes_this_depth: u64 = 0;
 
@@ -804,7 +817,7 @@ impl LiveCapGraph {
             }
 
             let mut current_path: Vec<StrandStep> = Vec::new();
-            let mut visited: HashSet<(String, bool)> = HashSet::new();
+            let mut visited: HashSet<(MediaUrn, bool)> = HashSet::new();
             let paths_before = all_paths.len();
             let mut nodes_this_depth: u64 = 0;
 
@@ -861,7 +874,7 @@ impl LiveCapGraph {
         current: &MediaUrn,
         is_sequence: bool,
         current_path: &mut Vec<StrandStep>,
-        visited: &mut HashSet<(String, bool)>,
+        visited: &mut HashSet<(MediaUrn, bool)>,
         all_paths: &mut Vec<Strand>,
         depth_limit: usize,
         max_paths: usize,
@@ -912,13 +925,11 @@ impl LiveCapGraph {
             return;
         }
 
-        let current_canonical = current.to_string();
-        let visit_key = (current_canonical.clone(), is_sequence);
+        let visit_key = (current.clone(), is_sequence);
         visited.insert(visit_key.clone());
 
         for (edge, next_is_seq) in self.get_outgoing_edges(current, is_sequence) {
-            let next_canonical = edge.to_spec.to_string();
-            let next_visit_key = (next_canonical, next_is_seq);
+            let next_visit_key = (edge.to_spec.clone(), next_is_seq);
 
             if !visited.contains(&next_visit_key) {
                 let step_type = match &edge.edge_type {
@@ -973,32 +984,95 @@ impl LiveCapGraph {
     /// Compare two paths for deterministic ordering.
     ///
     /// Sort by:
-    /// 1. cap_step_count (ascending - fewer actual cap steps first)
-    ///    Note: ForEach/Collect don't count as "steps" for sorting
-    /// 2. total specificity (descending - more specific first)
-    /// 3. cap URNs lexicographically (for tie-breaking stability)
+    /// 1. `cap_step_count` (ascending — fewer actual cap
+    ///    steps first; ForEach/Collect don't count)
+    /// 2. total specificity (descending — more specific first)
+    /// 3. structural step-sequence ordering (for tie-breaking
+    ///    stability)
+    ///
+    /// The step-sequence comparison routes cap steps through
+    /// the `CapUrn` structural `Ord` impl, cardinality steps
+    /// through a fixed discriminator (Cap < ForEach < Collect),
+    /// and falls through to the step's `from_spec` / `to_spec`
+    /// via `MediaUrn`'s structural `Ord`. No URN is ever
+    /// compared as a flat string.
     fn compare_paths(a: &Strand, b: &Strand) -> Ordering {
         a.cap_step_count.cmp(&b.cap_step_count)
             .then_with(|| {
-                // Higher specificity first
+                // Higher specificity first.
                 let spec_a: usize = a.steps.iter().map(|s| s.specificity()).sum();
                 let spec_b: usize = b.steps.iter().map(|s| s.specificity()).sum();
                 spec_b.cmp(&spec_a)
             })
-            .then_with(|| {
-                // Lexicographic by step type (only for tie-breaking)
-                // For cap steps, use cap URN; for cardinality steps, use type name
-                let step_key = |s: &StrandStep| -> String {
-                    match &s.step_type {
-                        StrandStepType::Cap { cap_urn, .. } => cap_urn.to_string(),
-                        StrandStepType::ForEach { .. } => "foreach".to_string(),
-                        StrandStepType::Collect { .. } => "collect".to_string(),
-                    }
-                };
-                let keys_a: Vec<String> = a.steps.iter().map(step_key).collect();
-                let keys_b: Vec<String> = b.steps.iter().map(step_key).collect();
-                keys_a.cmp(&keys_b)
-            })
+            .then_with(|| Self::compare_step_sequences(&a.steps, &b.steps))
+    }
+
+    /// Lexicographic comparison over step sequences using the
+    /// structural step ordering. Stable and deterministic
+    /// because every component routes through `MediaUrn` /
+    /// `CapUrn` structural `Ord` — never flat-string
+    /// comparison.
+    fn compare_step_sequences(a: &[StrandStep], b: &[StrandStep]) -> Ordering {
+        for (step_a, step_b) in a.iter().zip(b.iter()) {
+            match Self::compare_steps(step_a, step_b) {
+                Ordering::Equal => continue,
+                ord => return ord,
+            }
+        }
+        a.len().cmp(&b.len())
+    }
+
+    /// Structural comparison of two strand steps. Routes
+    /// through the structural `Ord` of `CapUrn` / `MediaUrn`;
+    /// cardinality step discriminators use fixed integer
+    /// ranks (Cap = 0, ForEach = 1, Collect = 2).
+    fn compare_steps(a: &StrandStep, b: &StrandStep) -> Ordering {
+        const RANK_CAP: u8 = 0;
+        const RANK_FOREACH: u8 = 1;
+        const RANK_COLLECT: u8 = 2;
+
+        let rank = |s: &StrandStep| -> u8 {
+            match &s.step_type {
+                StrandStepType::Cap { .. } => RANK_CAP,
+                StrandStepType::ForEach { .. } => RANK_FOREACH,
+                StrandStepType::Collect { .. } => RANK_COLLECT,
+            }
+        };
+
+        match rank(a).cmp(&rank(b)) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+
+        // Same rank — compare structural details.
+        match (&a.step_type, &b.step_type) {
+            (
+                StrandStepType::Cap { cap_urn: ca, .. },
+                StrandStepType::Cap { cap_urn: cb, .. },
+            ) => match ca.cmp(cb) {
+                Ordering::Equal => {}
+                ord => return ord,
+            },
+            (
+                StrandStepType::ForEach { media_spec: ma },
+                StrandStepType::ForEach { media_spec: mb },
+            )
+            | (
+                StrandStepType::Collect { media_spec: ma },
+                StrandStepType::Collect { media_spec: mb },
+            ) => match ma.cmp(mb) {
+                Ordering::Equal => {}
+                ord => return ord,
+            },
+            _ => unreachable!("rank comparison already discriminated mismatched step types"),
+        }
+
+        // Final tiebreaker: structural from_spec / to_spec.
+        match a.from_spec.cmp(&b.from_spec) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+        a.to_spec.cmp(&b.to_spec)
     }
 }
 
@@ -1056,14 +1130,14 @@ mod tests {
         let source = MediaUrn::from_string("media:pdf").unwrap();
         let targets = graph.get_reachable_targets(&source, false, 5);
 
-        // Reachable targets include:
-        // - media:extracted-text (via cap, depth 1)
-        // - media:list;pdf (via Collect, depth 1)
-        // - media:extracted-text;list (via cap + Collect, depth 2)
-        // The cap target should be at min_path_length 1
-        let cap_target = targets.iter().find(|t| {
-            t.media_spec.is_equivalent(&MediaUrn::from_string("media:extracted-text").unwrap()).unwrap_or(false)
-        });
+        // Reachable targets include only media:extracted-text
+        // (via the cap, depth 1). Collect is not synthesized
+        // during reachability traversal — cardinality variants
+        // are handled by the plan builder at execution time.
+        let extracted_text = MediaUrn::from_string("media:extracted-text").unwrap();
+        let cap_target = targets
+            .iter()
+            .find(|t| t.media_spec.is_equivalent(&extracted_text).unwrap_or(false));
         assert!(cap_target.is_some(), "extracted-text should be reachable");
         assert_eq!(cap_target.unwrap().min_path_length, 1);
     }
@@ -1175,10 +1249,18 @@ mod tests {
 
         assert_eq!(paths1.len(), paths2.len());
         for (p1, p2) in paths1.iter().zip(paths2.iter()) {
-            // Compare cap URNs for cap steps
-            let urn1 = p1.steps[0].cap_urn().map(|u| u.to_string());
-            let urn2 = p2.steps[0].cap_urn().map(|u| u.to_string());
-            assert_eq!(urn1, urn2);
+            // Determinism: two runs of find_paths_to_exact_target
+            // over the same input must produce paths in the
+            // same order with the same cap URNs at each step.
+            // CapUrn equivalence is checked structurally via
+            // `is_equivalent`, not via string comparison.
+            let u1 = p1.steps[0].cap_urn().expect("first step is a cap");
+            let u2 = p2.steps[0].cap_urn().expect("first step is a cap");
+            assert!(
+                u1.is_equivalent(u2),
+                "determinism: first cap URN differs across runs: {} vs {}",
+                u1, u2
+            );
         }
     }
 
@@ -1270,14 +1352,20 @@ mod tests {
         let source = MediaUrn::from_string("media:a").unwrap();
         let targets = graph.get_reachable_targets(&source, false, 5);
 
-        let target_specs: Vec<String> = targets.iter()
-            .map(|t| t.media_spec.to_string())
-            .collect();
-        // Cap targets must be reachable
-        assert!(target_specs.contains(&"media:b".to_string()), "B should be reachable");
-        assert!(target_specs.contains(&"media:d".to_string()), "D should be reachable");
-        // Cardinality variants are also reachable (via Collect)
-        assert!(target_specs.contains(&"media:a;list".to_string()), "A;list should be reachable via Collect");
+        let media_b = MediaUrn::from_string("media:b").unwrap();
+        let media_d = MediaUrn::from_string("media:d").unwrap();
+        let reaches = |needle: &MediaUrn| -> bool {
+            targets
+                .iter()
+                .any(|t| t.media_spec.is_equivalent(needle).unwrap_or(false))
+        };
+        assert!(reaches(&media_b), "B should be reachable");
+        assert!(reaches(&media_d), "D should be reachable");
+        // Collect is not synthesized during reachability
+        // traversal — see `get_outgoing_edges`. Cardinality
+        // variants (e.g. `media:a;list`) therefore are NOT in
+        // the reachability graph. The plan builder pairs
+        // Collect with ForEach implicitly at execution time.
     }
 
     // TEST777: Tests type checking prevents using PDF-specific cap with PNG input
@@ -1332,21 +1420,41 @@ mod tests {
 
         // PNG should reach thumbnail (cap target) but NOT textable (PDF-only cap)
         let png_source = MediaUrn::from_string("media:png").unwrap();
-        let png_targets = graph.get_reachable_targets(&png_source, 5);
-        let png_target_specs: Vec<String> = png_targets.iter()
-            .map(|t| t.media_spec.to_string())
-            .collect();
-        assert!(png_target_specs.contains(&"media:thumbnail".to_string()), "PNG should reach thumbnail");
-        assert!(!png_target_specs.contains(&"media:textable".to_string()), "PNG should NOT reach textable");
+        let png_targets = graph.get_reachable_targets(&png_source, false, 5);
+        let media_thumbnail = MediaUrn::from_string("media:thumbnail").unwrap();
+        let media_textable = MediaUrn::from_string("media:textable").unwrap();
+        assert!(
+            png_targets.iter().any(|t| t
+                .media_spec
+                .is_equivalent(&media_thumbnail)
+                .unwrap_or(false)),
+            "PNG should reach thumbnail"
+        );
+        assert!(
+            !png_targets.iter().any(|t| t
+                .media_spec
+                .is_equivalent(&media_textable)
+                .unwrap_or(false)),
+            "PNG should NOT reach textable"
+        );
 
         // PDF should reach textable (cap target) but NOT thumbnail (PNG-only cap)
         let pdf_source = MediaUrn::from_string("media:pdf").unwrap();
-        let pdf_targets = graph.get_reachable_targets(&pdf_source, 5);
-        let pdf_target_specs: Vec<String> = pdf_targets.iter()
-            .map(|t| t.media_spec.to_string())
-            .collect();
-        assert!(pdf_target_specs.contains(&"media:textable".to_string()), "PDF should reach textable");
-        assert!(!pdf_target_specs.contains(&"media:thumbnail".to_string()), "PDF should NOT reach thumbnail");
+        let pdf_targets = graph.get_reachable_targets(&pdf_source, false, 5);
+        assert!(
+            pdf_targets.iter().any(|t| t
+                .media_spec
+                .is_equivalent(&media_textable)
+                .unwrap_or(false)),
+            "PDF should reach textable"
+        );
+        assert!(
+            !pdf_targets.iter().any(|t| t
+                .media_spec
+                .is_equivalent(&media_thumbnail)
+                .unwrap_or(false)),
+            "PDF should NOT reach thumbnail"
+        );
     }
 
     // TEST781: Tests find_paths_to_exact_target() enforces type compatibility across multi-step chains
@@ -1364,13 +1472,13 @@ mod tests {
         // PNG should find path through resized-png to thumbnail
         let png_source = MediaUrn::from_string("media:png").unwrap();
         let thumb_target = MediaUrn::from_string("media:thumbnail").unwrap();
-        let png_paths = graph.find_paths_to_exact_target(&png_source, &thumb_target, 5, 10);
+        let png_paths = graph.find_paths_to_exact_target(&png_source, &thumb_target, false, 5, 10);
         assert_eq!(png_paths.len(), 1, "Should find 1 path from PNG to thumbnail");
         assert_eq!(png_paths[0].steps.len(), 2, "Path should have 2 steps");
 
         // PDF should NOT find path to thumbnail (no PDF->resized-png cap)
         let pdf_source = MediaUrn::from_string("media:pdf").unwrap();
-        let pdf_paths = graph.find_paths_to_exact_target(&pdf_source, &thumb_target, 5, 10);
+        let pdf_paths = graph.find_paths_to_exact_target(&pdf_source, &thumb_target, false, 5, 10);
         assert!(pdf_paths.is_empty(), "Should find NO paths from PDF to thumbnail (type mismatch)");
     }
 
@@ -1580,8 +1688,22 @@ mod tests {
         let json = serde_json::to_string(&strand).expect("strand should serialize");
         let recovered: Strand = serde_json::from_str(&json).expect("strand should deserialize");
 
-        assert_eq!(recovered.source_spec.to_string(), "media:pdf");
-        assert_eq!(recovered.target_spec.to_string(), "media:page;textable");
+        let expected_source = MediaUrn::from_string("media:pdf").unwrap();
+        let expected_target = MediaUrn::from_string("media:page;textable").unwrap();
+        assert!(
+            recovered
+                .source_spec
+                .is_equivalent(&expected_source)
+                .expect("URN equivalence check"),
+            "source_spec must round-trip structurally as media:pdf"
+        );
+        assert!(
+            recovered
+                .target_spec
+                .is_equivalent(&expected_target)
+                .expect("URN equivalence check"),
+            "target_spec must round-trip structurally as media:page;textable"
+        );
         assert_eq!(recovered.steps.len(), 2);
         assert!(matches!(recovered.steps[0].step_type, StrandStepType::Cap { .. }));
         assert!(matches!(recovered.steps[1].step_type, StrandStepType::ForEach { .. }));

@@ -2,12 +2,27 @@
 
 use thiserror::Error;
 
-/// Errors that can occur when abstracting a resolved strand into a machine.
+/// Errors that can occur when abstracting a resolved strand into a machine
+/// or serializing an already-built machine.
 #[derive(Debug, Error)]
 pub enum MachineAbstractionError {
     /// The strand contains no capability steps and therefore does not define a machine.
     #[error("resolved strand does not contain any capability steps")]
     NoCapabilitySteps,
+
+    /// A secondary (non-primary) source in a fan-in edge could not be
+    /// matched against any earlier output via `is_equivalent`. Secondary
+    /// sources carry concrete URNs set by prior wirings; an unmatched
+    /// secondary means the machine's edge sequence is structurally
+    /// broken (the parser couldn't have produced this Machine, and any
+    /// other constructor that did is buggy).
+    #[error(
+        "unmatched secondary fan-in source at edge {edge_index}, source index {source_index}: no earlier output produces an equivalent URN"
+    )]
+    UnmatchedSecondaryFanInSource {
+        edge_index: usize,
+        source_index: usize,
+    },
 }
 
 /// Errors that can occur during machine notation parsing

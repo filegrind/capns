@@ -1410,19 +1410,33 @@ fn parse_loop_cap_with_spans(
 // Helper: Hover formatting
 // =============================================================================
 
+/// Render a cap URN's `in` / `out` direction specs followed
+/// by every non-direction tag as rows in a property table.
+/// Only `in` and `out` have functional meaning on a cap URN;
+/// every other tag is arbitrary user-attached data and is
+/// enumerated generically here for display without any tag
+/// being privileged.
+fn push_cap_urn_properties(md: &mut String, cap_urn: &CapUrn) {
+    md.push_str("| Property | Value |\n|----------|-------|\n");
+    md.push_str(&format!("| in | `{}` |\n", cap_urn.in_spec()));
+    md.push_str(&format!("| out | `{}` |\n", cap_urn.out_spec()));
+    // `cap_urn.tags` is a `BTreeMap<String, String>` — the
+    // iteration order is alphabetical by key, which is
+    // stable and reader-friendly. These are the non-
+    // direction cap tags (the `CapUrn` parser strips `in` /
+    // `out` out of `tags` and into separate fields).
+    for (key, value) in &cap_urn.tags {
+        md.push_str(&format!("| {} | `{}` |\n", key, value));
+    }
+}
+
 fn format_alias_hover(header: &ParsedHeader, cap_details: &HashMap<String, (String, String, Option<String>)>) -> String {
     let mut md = format!("**{}** — capability alias\n\n", header.alias);
 
     md.push_str(&format!("`{}`\n\n", header.cap_urn_str));
 
     if let Some(ref cap_urn) = header.cap_urn {
-        md.push_str("| Property | Value |\n|----------|-------|\n");
-
-        if let Some(op) = cap_urn.get_tag("op") {
-            md.push_str(&format!("| op | `{}` |\n", op));
-        }
-        md.push_str(&format!("| in | `{}` |\n", cap_urn.in_spec()));
-        md.push_str(&format!("| out | `{}` |\n", cap_urn.out_spec()));
+        push_cap_urn_properties(&mut md, cap_urn);
     }
 
     // Registry enrichment
@@ -1453,13 +1467,7 @@ fn format_cap_urn_hover(
     let mut md = format!("**Cap URN**\n\n`{}`\n\n", cap_urn_str);
 
     if let Some(ref cap_urn) = cap_urn {
-        md.push_str("| Property | Value |\n|----------|-------|\n");
-
-        if let Some(op) = cap_urn.get_tag("op") {
-            md.push_str(&format!("| op | `{}` |\n", op));
-        }
-        md.push_str(&format!("| in | `{}` |\n", cap_urn.in_spec()));
-        md.push_str(&format!("| out | `{}` |\n", cap_urn.out_spec()));
+        push_cap_urn_properties(&mut md, cap_urn);
     }
 
     if let Some((title, description, documentation)) = cap_details.get(cap_urn_str) {

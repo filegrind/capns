@@ -439,8 +439,20 @@ mod tests {
         assert_eq!(graph.edges().len(), 1);
         // Secondary source gets wildcard media:
         assert_eq!(graph.edges()[0].sources.len(), 2);
-        assert_eq!(graph.edges()[0].sources[0].to_string(), "media:image;png");
-        assert_eq!(graph.edges()[0].sources[1].to_string(), "media:");
+        let expected_primary = media("media:image;png");
+        let expected_wildcard = media("media:");
+        assert!(
+            graph.edges()[0].sources[0]
+                .is_equivalent(&expected_primary)
+                .expect("URN equivalence check"),
+            "primary source must equal media:image;png"
+        );
+        assert!(
+            graph.edges()[0].sources[1]
+                .is_equivalent(&expected_wildcard)
+                .expect("URN equivalence check"),
+            "unassigned secondary source must equal the wildcard media:"
+        );
     }
 
     // =========================================================================

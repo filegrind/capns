@@ -362,6 +362,24 @@ impl CapRegistry {
         Ok(cached_caps.values().cloned().collect())
     }
 
+    /// Look up a single cap in the in-memory cache (synchronous, no network).
+    ///
+    /// Returns `Some(cap)` if the cap is currently cached, `None` otherwise.
+    /// The URN is normalized through `normalize_cap_urn` so the lookup
+    /// matches the same canonical-form keying that `get_cap` uses on
+    /// insertion. There is no fallback to the network or the on-disk
+    /// cache loader — this is a pure in-memory probe suitable for hot
+    /// paths (FinderSync extension, gRPC handlers building per-request
+    /// title maps) where blocking on I/O is not acceptable.
+    ///
+    /// Mirrors `MediaUrnRegistry::get_cached_spec` in shape so both
+    /// registries expose the same sync cache-only access pattern.
+    pub fn get_cached_cap(&self, urn: &str) -> Option<Cap> {
+        let normalized_urn = normalize_cap_urn(urn);
+        let cached_caps = self.cached_caps.lock().ok()?;
+        cached_caps.get(&normalized_urn).cloned()
+    }
+
     fn get_cache_dir() -> Result<PathBuf, RegistryError> {
         let mut cache_dir = dirs::cache_dir().ok_or_else(|| {
             RegistryError::CacheError("Could not determine cache directory".to_string())

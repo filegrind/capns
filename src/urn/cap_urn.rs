@@ -765,6 +765,59 @@ impl fmt::Display for CapUrn {
     }
 }
 
+/// Structural total order over `CapUrn`.
+///
+/// The comparison routes through the parsed `MediaUrn` values
+/// of `in` / `out` (which use `TaggedUrn`'s structural
+/// `(prefix, tags-BTreeMap)` `Ord`) and then the non-direction
+/// `tags` `BTreeMap<String, String>` (whose `Ord` is the
+/// natural lexicographic order over canonicalized tag keys and
+/// values).
+///
+/// This explicitly avoids flat-string comparison of the
+/// whole canonical form — per the URN rules in
+/// `docs/02-PREDICATES.md`, URNs must never be compared as
+/// opaque strings, only via their structural components.
+///
+/// `CapUrn::new` / `CapUrn::from_string` guarantee that the
+/// stored `in_urn` / `out_urn` are valid canonical `MediaUrn`
+/// serializations, so the `.expect()` on parse here is a
+/// hard-fail on a broken invariant, not a runtime recovery
+/// path.
+impl Ord for CapUrn {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let self_in = self
+            .in_media_urn()
+            .expect("CapUrn invariant: in_urn parses as MediaUrn");
+        let other_in = other
+            .in_media_urn()
+            .expect("CapUrn invariant: in_urn parses as MediaUrn");
+        match self_in.cmp(&other_in) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+
+        let self_out = self
+            .out_media_urn()
+            .expect("CapUrn invariant: out_urn parses as MediaUrn");
+        let other_out = other
+            .out_media_urn()
+            .expect("CapUrn invariant: out_urn parses as MediaUrn");
+        match self_out.cmp(&other_out) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+
+        self.tags.cmp(&other.tags)
+    }
+}
+
+impl PartialOrd for CapUrn {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 // Serde serialization support
 impl Serialize for CapUrn {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
