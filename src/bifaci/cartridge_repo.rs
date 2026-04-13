@@ -50,17 +50,6 @@ pub struct CartridgePackageInfo {
     pub size: u64,
 }
 
-/// A cartridge version entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CartridgeVersionInfo {
-    pub release_date: String,
-    #[serde(default)]
-    pub changelog: Vec<String>,
-    pub platform: String,
-    pub package: CartridgePackageInfo,
-}
-
 /// A cartridge entry from the registry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,18 +77,8 @@ pub struct CartridgeInfo {
     #[serde(default)]
     pub tags: Vec<String>,
     pub caps: Vec<CartridgeCapSummary>,
-    // Distribution fields - required for cartridge installation
-    #[serde(default, deserialize_with = "null_as_empty_string")]
-    pub platform: String,
-    #[serde(default, deserialize_with = "null_as_empty_string")]
-    pub package_name: String,
-    #[serde(default, deserialize_with = "null_as_empty_string")]
-    pub package_sha256: String,
-    #[serde(default)]
-    pub package_size: u64,
-    /// Changelog entries keyed by version
-    #[serde(default)]
-    pub changelog: HashMap<String, Vec<String>>,
+    /// All versions with their builds (platform-specific packages).
+    pub versions: HashMap<String, CartridgeVersionData>,
     /// All available versions (newest first)
     #[serde(default)]
     pub available_versions: Vec<String>,
@@ -112,7 +91,15 @@ pub struct CartridgeRegistryResponse {
     pub cartridges: Vec<CartridgeInfo>,
 }
 
-/// A cartridge version's distribution data (v3.0 schema)
+/// A platform-specific build within a version.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CartridgeBuild {
+    pub platform: String,
+    pub package: CartridgeDistributionInfo,
+}
+
+/// A cartridge version's data (v4.0 schema).
+/// Each version has one or more platform-specific builds.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CartridgeVersionData {
@@ -121,8 +108,7 @@ pub struct CartridgeVersionData {
     pub changelog: Vec<String>,
     #[serde(default)]
     pub min_app_version: String,
-    pub platform: String,
-    pub package: CartridgeDistributionInfo,
+    pub builds: Vec<CartridgeBuild>,
 }
 
 /// Distribution file info (package)
@@ -133,7 +119,7 @@ pub struct CartridgeDistributionInfo {
     pub size: u64,
 }
 
-/// A cartridge entry in the v3.0 registry (nested format)
+/// A cartridge entry in the v4.0 registry (nested format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CartridgeRegistryEntry {
@@ -155,10 +141,10 @@ pub struct CartridgeRegistryEntry {
     pub versions: HashMap<String, CartridgeVersionData>,
 }
 
-/// The v3.0 cartridge registry (nested schema)
+/// The v4.0 cartridge registry (nested schema)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CartridgeRegistryV3 {
+pub struct CartridgeRegistry {
     pub schema_version: String,
     pub last_updated: String,
     pub cartridges: HashMap<String, CartridgeRegistryEntry>,
@@ -173,7 +159,6 @@ pub struct CartridgeSuggestion {
     pub cap_urn: String,
     pub cap_title: String,
     pub latest_version: String,
-    pub package_sha256: String,
     pub repo_url: String,
     pub page_url: String,
 }
@@ -206,9 +191,21 @@ impl CartridgeInfo {
         !self.team_id.is_empty() && !self.signed_at.is_empty()
     }
 
-    /// Check if package download info is available
-    pub fn has_package(&self) -> bool {
-        !self.package_name.is_empty() && !self.package_sha256.is_empty()
+    /// Get the build for a specific platform from the latest version.
+    pub fn build_for_platform(&self, platform: &str) -> Option<&CartridgeBuild> {
+        self.versions.get(&self.version)
+            .and_then(|v| v.builds.iter().find(|b| b.platform == platform))
+    }
+
+    /// Get all platforms available across all versions.
+    pub fn available_platforms(&self) -> Vec<String> {
+        let mut platforms: Vec<String> = self.versions.values()
+            .flat_map(|v| v.builds.iter().map(|b| b.platform.clone()))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        platforms.sort();
+        platforms
     }
 }
 
@@ -328,7 +325,6 @@ impl CartridgeRepo {
                                 cap_urn: cap_urn.to_string(),
                                 cap_title: cap_info.title.clone(),
                                 latest_version: cartridge.version.clone(),
-                                package_sha256: cartridge.package_sha256.clone(),
                                 repo_url: cache.repo_url.clone(),
                                 page_url,
                             });
@@ -420,14 +416,14 @@ impl CartridgeRepo {
 /// Transforms v3.0 nested registry schema to flat API response format
 #[derive(Debug)]
 pub struct CartridgeRepoServer {
-    registry: CartridgeRegistryV3,
+    registry: CartridgeRegistry,
 }
 
 impl CartridgeRepoServer {
     /// Create a new server instance from v3.0 registry
-    pub fn new(registry: CartridgeRegistryV3) -> Result<Self> {
+    pub fn new(registry: CartridgeRegistry) -> Result<Self> {
         // Validate schema version - fail hard
-        if registry.schema_version != "3.0" {
+        if registry.schema_version != "4.0" {
             return Err(CartridgeRepoError::ParseError(format!(
                 "Unsupported registry schema version: {}. Required: 3.0",
                 registry.schema_version
@@ -439,17 +435,25 @@ impl CartridgeRepoServer {
 
     /// Validate version data has all required fields
     fn validate_version_data(id: &str, version: &str, version_data: &CartridgeVersionData) -> Result<()> {
-        if version_data.platform.is_empty() {
+        if version_data.builds.is_empty() {
             return Err(CartridgeRepoError::ParseError(format!(
-                "Cartridge {} v{}: missing required field 'platform'",
+                "Cartridge {} v{}: no builds",
                 id, version
             )));
         }
-        if version_data.package.name.is_empty() {
-            return Err(CartridgeRepoError::ParseError(format!(
-                "Cartridge {} v{}: missing required field 'package.name'",
-                id, version
-            )));
+        for (i, build) in version_data.builds.iter().enumerate() {
+            if build.platform.is_empty() {
+                return Err(CartridgeRepoError::ParseError(format!(
+                    "Cartridge {} v{}: build[{}] missing platform",
+                    id, version, i
+                )));
+            }
+            if build.package.name.is_empty() {
+                return Err(CartridgeRepoError::ParseError(format!(
+                    "Cartridge {} v{}: build[{}] ({}) missing package.name",
+                    id, version, i, build.platform
+                )));
+            }
         }
         Ok(())
     }
@@ -504,8 +508,6 @@ impl CartridgeRepoServer {
             let mut available_versions: Vec<String> = entry.versions.keys().cloned().collect();
             available_versions.sort_by(|a, b| Self::compare_versions(b, a));
 
-            // Build flat cartridge object
-            let package_url = format!("https://machinefabric.com/cartridges/packages/{}", version_data.package.name);
             result.push(CartridgeInfo {
                 id: id.clone(),
                 name: entry.name.clone(),
@@ -520,20 +522,11 @@ impl CartridgeRepoServer {
                 } else {
                     entry.min_app_version.clone()
                 },
-                page_url: if !entry.page_url.is_empty() {
-                    entry.page_url.clone()
-                } else {
-                    package_url
-                },
+                page_url: entry.page_url.clone(),
                 categories: entry.categories.clone(),
                 tags: entry.tags.clone(),
                 caps: entry.caps.clone(),
-                // Distribution fields
-                platform: version_data.platform.clone(),
-                package_name: version_data.package.name.clone(),
-                package_sha256: version_data.package.sha256.clone(),
-                package_size: version_data.package.size,
-                changelog: Self::build_changelog_map(&entry.versions),
+                versions: entry.versions.clone(),
                 available_versions,
             });
         }
@@ -638,7 +631,8 @@ mod tests {
             "author": null,
             "caps": [
                 {"urn": "media:text;llm;gen", "title": "Generate Text", "description": null}
-            ]
+            ],
+            "versions": {}
         }"#;
         let cartridge: CartridgeInfo = serde_json::from_str(json).unwrap();
         assert_eq!(cartridge.id, "mlxcartridge");
@@ -661,10 +655,11 @@ mod tests {
                 "caps": [
                     {"urn": "media:text;llm;gen", "title": "Gen Text", "description": null},
                     {"urn": "media:image;vision", "title": "Vision", "description": "Analyze images"}
-                ]
+                ],
+                "versions": {}
             }],
             "total": 1,
-            "registryVersion": "3.0"
+            "registryVersion": "4.0"
         }"#;
         let registry: CartridgeRegistryResponse = serde_json::from_str(json).unwrap();
         assert_eq!(registry.cartridges.len(), 1);
@@ -694,11 +689,22 @@ mod tests {
             ],
             "categories": [],
             "tags": [],
-            "changelog": {},
-            "platform": "darwin-arm64",
-            "packageName": "pdfcartridge-0.81.5325.pkg",
-            "packageSha256": "9b68724eb9220ecf01e8ed4f5f80c594fbac2239bc5bf675005ec882ecc5eba0",
-            "packageSize": 5187485,
+            "versions": {
+                "0.81.5325": {
+                    "releaseDate": "2026-02-07T16:40:28Z",
+                    "changelog": [],
+                    "builds": [
+                        {
+                            "platform": "darwin-arm64",
+                            "package": {
+                                "name": "pdfcartridge-0.81.5325.pkg",
+                                "sha256": "9b68724eb9220ecf01e8ed4f5f80c594fbac2239bc5bf675005ec882ecc5eba0",
+                                "size": 5187485
+                            }
+                        }
+                    ]
+                }
+            },
             "availableVersions": ["0.81.5325"]
         }"#;
 
@@ -729,11 +735,19 @@ mod tests {
             categories: vec!["test".to_string()],
             tags: vec!["testing".to_string()],
             caps: vec![],
-            platform: "darwin-arm64".to_string(),
-            package_name: "test-1.0.0.pkg".to_string(),
-            package_sha256: "abc123".to_string(),
-            package_size: 1000,
-            changelog: HashMap::new(),
+            versions: HashMap::from([("1.0.0".to_string(), CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: "1.0.0".to_string(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            })]),
             available_versions: vec!["1.0.0".to_string()],
         };
 
@@ -759,11 +773,7 @@ mod tests {
             categories: vec![],
             tags: vec![],
             caps: vec![],
-            platform: String::new(),
-            package_name: String::new(),
-            package_sha256: String::new(),
-            package_size: 0,
-            changelog: HashMap::new(),
+            versions: HashMap::new(),
             available_versions: vec![],
         };
 
@@ -778,9 +788,9 @@ mod tests {
     }
 
     #[test]
-    fn test322_cartridge_info_has_package() {
-        // TEST322: Verify has_package() method
-        let mut cartridge = CartridgeInfo {
+    fn test322_cartridge_info_build_for_platform() {
+        // TEST322: Verify build_for_platform() method
+        let cartridge = CartridgeInfo {
             id: "testcartridge".to_string(),
             name: "Test".to_string(),
             version: "1.0.0".to_string(),
@@ -794,29 +804,57 @@ mod tests {
             categories: vec![],
             tags: vec![],
             caps: vec![],
-            platform: String::new(),
-            package_name: "test-1.0.0.pkg".to_string(),
-            package_sha256: "abc123".to_string(),
-            package_size: 0,
-            changelog: HashMap::new(),
-            available_versions: vec![],
+            versions: HashMap::from([("1.0.0".to_string(), CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            })]),
+            available_versions: vec!["1.0.0".to_string()],
         };
 
-        assert!(cartridge.has_package());
+        // Should find build for matching platform
+        let build = cartridge.build_for_platform("darwin-arm64");
+        assert!(build.is_some());
+        assert_eq!(build.unwrap().package.name, "test-1.0.0.pkg");
 
-        cartridge.package_name = String::new();
-        assert!(!cartridge.has_package());
+        // Should return None for non-matching platform
+        let no_build = cartridge.build_for_platform("linux-x86_64");
+        assert!(no_build.is_none());
 
-        cartridge.package_name = "test-1.0.0.pkg".to_string();
-        cartridge.package_sha256 = String::new();
-        assert!(!cartridge.has_package());
+        // Cartridge with no versions should return None
+        let empty_cartridge = CartridgeInfo {
+            id: "empty".to_string(),
+            name: "Empty".to_string(),
+            version: "1.0.0".to_string(),
+            description: String::new(),
+            author: String::new(),
+            homepage: String::new(),
+            team_id: String::new(),
+            signed_at: String::new(),
+            min_app_version: String::new(),
+            page_url: String::new(),
+            categories: vec![],
+            tags: vec![],
+            caps: vec![],
+            versions: HashMap::new(),
+            available_versions: vec![],
+        };
+        assert!(empty_cartridge.build_for_platform("darwin-arm64").is_none());
     }
 
     #[test]
     fn test323_cartridge_repo_server_validate_registry() {
         // TEST323: Validate registry schema version
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: HashMap::new(),
         };
@@ -825,7 +863,7 @@ mod tests {
         assert!(server.is_ok());
 
         // Test v2.0 schema rejection
-        let old_registry = CartridgeRegistryV3 {
+        let old_registry = CartridgeRegistry {
             schema_version: "2.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: HashMap::new(),
@@ -833,7 +871,7 @@ mod tests {
 
         let result = CartridgeRepoServer::new(old_registry);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("3.0"));
+        assert!(result.unwrap_err().to_string().contains("4.0"));
     }
 
     #[test]
@@ -846,12 +884,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec!["Initial release".to_string()],
             min_app_version: "1.0.0".to_string(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "test-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "test-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
@@ -868,8 +908,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -895,12 +935,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec![],
             min_app_version: String::new(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "test-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "test-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
@@ -917,8 +959,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -939,12 +981,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec![],
             min_app_version: String::new(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "test-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "test-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
@@ -961,8 +1005,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -986,12 +1030,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec![],
             min_app_version: String::new(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "pdf-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "pdf-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         cartridges_map.insert("pdfcartridge".to_string(), CartridgeRegistryEntry {
@@ -1008,8 +1054,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -1033,12 +1079,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec![],
             min_app_version: String::new(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "test-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "test-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         cartridges_map.insert("doccartridge".to_string(), CartridgeRegistryEntry {
@@ -1055,8 +1103,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -1080,12 +1128,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec![],
             min_app_version: String::new(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "test-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "test-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         let cap_urn = r#"cap:in="media:pdf";op=disbind;out="media:disbound-page;textable;list""#;
@@ -1107,8 +1157,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -1144,11 +1194,7 @@ mod tests {
                     categories: vec![],
                     tags: vec![],
                     caps: vec![],
-                    platform: String::new(),
-                    package_name: String::new(),
-                    package_sha256: String::new(),
-                    package_size: 0,
-                    changelog: HashMap::new(),
+                    versions: HashMap::new(),
                     available_versions: vec![],
                 }
             ],
@@ -1191,11 +1237,7 @@ mod tests {
                         title: "Disbind PDF".to_string(),
                         description: "Extract pages".to_string(),
                     }],
-                    platform: String::new(),
-                    package_name: String::new(),
-                    package_sha256: String::new(),
-                    package_size: 0,
-                    changelog: HashMap::new(),
+                    versions: HashMap::new(),
                     available_versions: vec![],
                 }
             ],
@@ -1232,11 +1274,7 @@ mod tests {
                     categories: vec![],
                     tags: vec![],
                     caps: vec![],
-                    platform: String::new(),
-                    package_name: String::new(),
-                    package_sha256: String::new(),
-                    package_size: 0,
-                    changelog: HashMap::new(),
+                    versions: HashMap::new(),
                     available_versions: vec![],
                 }
             ],
@@ -1282,11 +1320,7 @@ mod tests {
                         title: "Cap 1".to_string(),
                         description: String::new(),
                     }],
-                    platform: String::new(),
-                    package_name: String::new(),
-                    package_sha256: String::new(),
-                    package_size: 0,
-                    changelog: HashMap::new(),
+                    versions: HashMap::new(),
                     available_versions: vec![],
                 },
                 CartridgeInfo {
@@ -1307,11 +1341,7 @@ mod tests {
                         title: "Cap 2".to_string(),
                         description: String::new(),
                     }],
-                    platform: String::new(),
-                    package_name: String::new(),
-                    package_sha256: String::new(),
-                    package_size: 0,
-                    changelog: HashMap::new(),
+                    versions: HashMap::new(),
                     available_versions: vec![],
                 }
             ],
@@ -1356,12 +1386,14 @@ mod tests {
             release_date: "2026-02-07".to_string(),
             changelog: vec![],
             min_app_version: String::new(),
-            platform: "darwin-arm64".to_string(),
-            package: CartridgeDistributionInfo {
-                name: "test-1.0.0.pkg".to_string(),
-                sha256: "abc123".to_string(),
-                size: 1000,
-            },
+            builds: vec![CartridgeBuild {
+                platform: "darwin-arm64".to_string(),
+                package: CartridgeDistributionInfo {
+                    name: "test-1.0.0.pkg".to_string(),
+                    sha256: "abc123".to_string(),
+                    size: 1000,
+                },
+            }],
         });
 
         let cap_urn = "cap:in=\"media:test\";op=test;out=\"media:result\"";
@@ -1383,8 +1415,8 @@ mod tests {
             versions,
         });
 
-        let registry = CartridgeRegistryV3 {
-            schema_version: "3.0".to_string(),
+        let registry = CartridgeRegistry {
+            schema_version: "4.0".to_string(),
             last_updated: "2026-02-07".to_string(),
             cartridges: cartridges_map,
         };
@@ -1399,7 +1431,7 @@ mod tests {
         assert_eq!(cartridge.id, "testcartridge");
         assert_eq!(cartridge.name, "Test Cartridge");
         assert!(cartridge.is_signed());
-        assert!(cartridge.has_package());
+        assert!(!cartridge.versions.is_empty());
         assert_eq!(cartridge.caps.len(), 1);
         assert_eq!(cartridge.caps[0].urn, cap_urn);
     }

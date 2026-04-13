@@ -32,6 +32,27 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
+/// Detect the current platform in the format used by the registry (e.g., "darwin-arm64").
+fn detect_platform() -> String {
+    let os = if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        std::env::consts::OS
+    };
+
+    let arch = std::env::consts::ARCH; // "aarch64", "x86_64", etc.
+    let arch_normalized = match arch {
+        "aarch64" => "arm64",
+        other => other,
+    };
+
+    format!("{}-{}", os, arch_normalized)
+}
+
 /// Default cap-level activity timeout in seconds.
 /// If a cartridge sends no frames (Chunk, Log, progress, peer requests) for this
 /// duration, the executor aborts with `ExecutionError::ActivityTimeout`.
@@ -610,33 +631,27 @@ impl CartridgeManager {
             )));
         }
 
-        if cartridge_info.package_name.is_empty() {
-            return Err(ExecutionError::CartridgeDownloadFailed(format!(
-                "Cartridge {} has no package available",
-                cartridge_id
-            )));
-        }
+        // Find the build for this platform
+        let platform = detect_platform();
+        let build = cartridge_info.build_for_platform(&platform).ok_or_else(|| {
+            ExecutionError::CartridgeDownloadFailed(format!(
+                "Cartridge {} v{} has no build for platform '{}'. Available: {:?}",
+                cartridge_id, cartridge_info.version, platform,
+                cartridge_info.available_platforms()
+            ))
+        })?;
 
-        if cartridge_info.package_sha256.is_empty() {
-            return Err(ExecutionError::CartridgeDownloadFailed(format!(
-                "SECURITY: Cartridge {} has no package SHA256 hash.",
-                cartridge_id
-            )));
-        }
+        let package = &build.package;
 
-        // Download the raw binary from the package URL.
-        // The package_name field contains the .pkg name, but the underlying binary
-        // can also be fetched directly. For automated installs (CI/test), we download
-        // the binary and create the versioned directory layout ourselves.
         let base_url = self
             .registry_url
             .trim_end_matches("/api/cartridges")
             .trim_end_matches('/');
-        let download_url = format!("{}/cartridges/packages/{}", base_url, cartridge_info.package_name);
+        let download_url = format!("{}/cartridges/packages/{}", base_url, package.name);
 
         tracing::info!(
-            "Downloading cartridge {} v{} from {}",
-            cartridge_id, cartridge_info.version, download_url
+            "Downloading cartridge {} v{} ({}) from {}",
+            cartridge_id, cartridge_info.version, platform, download_url
         );
 
         let response = reqwest::get(&download_url)
@@ -662,10 +677,10 @@ impl CartridgeManager {
         hasher.update(&bytes);
         let computed = format!("{:x}", hasher.finalize());
 
-        if computed != cartridge_info.package_sha256 {
+        if computed != package.sha256 {
             return Err(ExecutionError::CartridgeDownloadFailed(format!(
                 "SECURITY: SHA256 mismatch for {}!\n  Expected: {}\n  Computed: {}",
-                cartridge_id, cartridge_info.package_sha256, computed
+                cartridge_id, package.sha256, computed
             )));
         }
 
@@ -675,9 +690,6 @@ impl CartridgeManager {
             .join(&cartridge_info.version);
         fs::create_dir_all(&version_dir)?;
 
-        // The .pkg is a macOS installer package. For automated installs, write
-        // the package bytes and extract. For now, write the binary directly.
-        // The binary name inside the package matches the cartridge_id.
         let binary_name = cartridge_id;
         let binary_path = version_dir.join(binary_name);
         fs::write(&binary_path, &bytes)?;
@@ -700,16 +712,16 @@ impl CartridgeManager {
             },
             installed_from: crate::CartridgeInstallSource::Registry,
             source_url: download_url,
-            package_sha256: cartridge_info.package_sha256.clone(),
-            package_size: cartridge_info.package_size,
+            package_sha256: package.sha256.clone(),
+            package_size: package.size,
         };
         cj.write_to_dir(&version_dir).map_err(|e| {
             ExecutionError::CartridgeDownloadFailed(format!("Failed to write cartridge.json: {}", e))
         })?;
 
         tracing::info!(
-            "Installed cartridge {} v{} to {:?}",
-            cartridge_id, cartridge_info.version, version_dir
+            "Installed cartridge {} v{} ({}) to {:?}",
+            cartridge_id, cartridge_info.version, platform, version_dir
         );
 
         Ok(binary_path)

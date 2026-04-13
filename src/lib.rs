@@ -77,7 +77,8 @@ pub use async_trait::async_trait;
 pub use bifaci::cartridge_repo::{
     CartridgeRepo, CartridgeRepoError,
     CartridgeCapSummary, CartridgeInfo, CartridgeSuggestion, CartridgeRegistryResponse,
-    CartridgePackageInfo, CartridgeVersionInfo,
+    CartridgePackageInfo, CartridgeBuild, CartridgeVersionData, CartridgeDistributionInfo,
+    CartridgeRegistry, CartridgeRegistryEntry,
 };
 
 // CartridgeHost is the primary API for host-side cartridge communication (async/tokio-native)
