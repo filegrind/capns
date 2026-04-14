@@ -9,7 +9,7 @@
 //! testcartridge provides simple, predictable test caps without heavy dependencies
 //! The testcartridge binary will be auto-built if missing or outdated
 
-use capdag::orchestrator::{parse_machine_to_cap_dag, execute_dag, NodeData};
+use capdag::orchestrator::{parse_machine_to_cap_dag, execute_dag, NodeData, ParseOrchestrationError};
 use capdag::cap::definition::{ArgSource, CapArg, CapOutput};
 use capdag::{Cap, CapUrn, CapRegistry};
 use std::collections::HashMap;

@@ -145,7 +145,7 @@ impl MachinePlanBuilder {
 
         // First pass: identify ForEach/Collect ranges to determine body boundaries
         // A ForEach at index i with Collect at index j means steps [i+1, j-1] are the body
-        let foreach_collect_ranges = Self::find_foreach_collect_ranges(&path.steps);
+        let _foreach_collect_ranges = Self::find_foreach_collect_ranges(&path.steps);
 
         let mut prev_node_id = input_slot_id.to_string();
         // Track how many cap steps we've seen (outside of ForEach bodies) for determining first cap

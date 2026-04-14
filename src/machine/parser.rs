@@ -530,13 +530,13 @@ mod tests {
 
     fn pdf_extract_embed_registry() -> CapRegistry {
         let extract = build_cap(
-            "cap:in=media:pdf;op=extract;out=media:txt;textable",
+            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
             "extract",
             &["media:pdf"],
             "media:txt;textable",
         );
         let embed = build_cap(
-            "cap:in=media:textable;op=embed;out=media:vec;record",
+            "cap:in=media:textable;op=embed;out=\"media:vec;record\"",
             "embed",
             &["media:textable"],
             "media:vec;record",
@@ -548,8 +548,8 @@ mod tests {
     fn parse_single_strand_two_caps_connected_via_shared_node() {
         let registry = pdf_extract_embed_registry();
         let notation = "\
-[extract cap:in=media:pdf;op=extract;out=media:txt;textable]\
-[embed cap:in=media:textable;op=embed;out=media:vec;record]\
+[extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
+[embed cap:in=media:textable;op=embed;out=\"media:vec;record\"]\
 [doc -> extract -> txt]\
 [txt -> embed -> vec]";
         let machine = parse_machine(notation, &registry).expect("must parse");
@@ -614,7 +614,7 @@ mod tests {
     fn parse_unknown_cap_in_registry_fails_hard() {
         let registry = registry_with(vec![]);
         let notation = "\
-[ghost cap:in=media:pdf;op=ghost;out=media:txt;textable]\
+[ghost cap:in=media:pdf;op=ghost;out=\"media:txt;textable\"]\
 [a -> ghost -> b]";
         let err = parse_machine(notation, &registry).unwrap_err();
         match err {
@@ -629,8 +629,8 @@ mod tests {
     fn parse_duplicate_alias_is_syntax_error() {
         let registry = pdf_extract_embed_registry();
         let notation = "\
-[extract cap:in=media:pdf;op=extract;out=media:txt;textable]\
-[extract cap:in=media:textable;op=embed;out=media:vec;record]\
+[extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
+[extract cap:in=media:textable;op=embed;out=\"media:vec;record\"]\
 [a -> extract -> b]";
         let err = parse_machine(notation, &registry).unwrap_err();
         assert!(matches!(
@@ -643,7 +643,7 @@ mod tests {
     fn parse_undefined_alias_is_syntax_error() {
         let registry = pdf_extract_embed_registry();
         let notation = "\
-[extract cap:in=media:pdf;op=extract;out=media:txt;textable]\
+[extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
 [a -> notDefined -> b]";
         let err = parse_machine(notation, &registry).unwrap_err();
         assert!(matches!(
@@ -660,7 +660,7 @@ mod tests {
         // node? The parser must reject it.
         let registry = pdf_extract_embed_registry();
         let notation = "\
-[extract cap:in=media:pdf;op=extract;out=media:txt;textable]\
+[extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
 [extract -> extract -> b]";
         let err = parse_machine(notation, &registry).unwrap_err();
         assert!(matches!(
@@ -697,8 +697,8 @@ mod tests {
         // serialize is a fixed point.
         let registry = pdf_extract_embed_registry();
         let user_input = "\
-[user_extract cap:in=media:pdf;op=extract;out=media:txt;textable]\
-[user_embed cap:in=media:textable;op=embed;out=media:vec;record]\
+[user_extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
+[user_embed cap:in=media:textable;op=embed;out=\"media:vec;record\"]\
 [doc -> user_extract -> txt]\
 [txt -> user_embed -> vec]";
         let m1 = parse_machine(user_input, &registry).expect("must parse");

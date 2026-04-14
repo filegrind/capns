@@ -610,7 +610,7 @@ mod tests {
 
     fn extract_cap_def() -> crate::cap::definition::Cap {
         build_cap(
-            "cap:in=media:pdf;op=extract;out=media:txt;textable",
+            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
             "extract",
             &["media:pdf"],
             "media:txt;textable",
@@ -619,7 +619,7 @@ mod tests {
 
     fn embed_cap_def() -> crate::cap::definition::Cap {
         build_cap(
-            "cap:in=media:textable;op=embed;out=media:vec;record",
+            "cap:in=media:textable;op=embed;out=\"media:vec;record\"",
             "embed",
             &["media:textable"],
             "media:vec;record",
@@ -629,7 +629,7 @@ mod tests {
     fn pdf_to_txt_strand() -> crate::planner::Strand {
         strand_from_steps(
             vec![cap_step(
-                "cap:in=media:pdf;op=extract;out=media:txt;textable",
+                "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
                 "extract",
                 "media:pdf",
                 "media:txt;textable",
@@ -641,7 +641,7 @@ mod tests {
     fn txt_to_vec_strand() -> crate::planner::Strand {
         strand_from_steps(
             vec![cap_step(
-                "cap:in=media:textable;op=embed;out=media:vec;record",
+                "cap:in=media:textable;op=embed;out=\"media:vec;record\"",
                 "embed",
                 "media:txt;textable",
                 "media:vec;record",

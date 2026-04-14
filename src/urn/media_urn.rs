@@ -911,7 +911,7 @@ mod debug_tests {
     #[test]
     fn test546_is_image() {
         assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_image());
-        assert!(MediaUrn::from_string(MEDIA_IMAGE_THUMBNAIL).unwrap().is_image());
+        assert!(MediaUrn::from_string("media:image;thumbnail").unwrap().is_image());
         assert!(MediaUrn::from_string("media:image;jpg").unwrap().is_image());
         // Non-image types
         assert!(!MediaUrn::from_string(MEDIA_PDF).unwrap().is_image());

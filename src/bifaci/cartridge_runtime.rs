@@ -3589,6 +3589,7 @@ fn get_own_memory_mb() -> Option<(u64, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bifaci::frame::DEFAULT_MAX_CHUNK;
 
     // =========================================================================
     // Reusable test Op structs
@@ -4014,6 +4015,8 @@ mod tests {
                     .map_err(|e| OpError::ExecutionFailed(format!("Bad JSON: {}", e)))?;
                 let value = json.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
                 let bytes = value.as_bytes();
+                req.output().start(false, None)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 req.output().emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 *self.received.lock().unwrap() = bytes.to_vec();
@@ -4100,6 +4103,8 @@ mod tests {
                 let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 let _input = req.take_input()
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                req.output().start(false, None)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
@@ -4406,6 +4411,8 @@ mod tests {
                         let _ = chunk.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                     }
                 }
+                req.output().start(false, None)
+                    .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 *self.received.lock().unwrap() = self.data.clone();
@@ -6868,7 +6875,7 @@ mod tests {
     #[test]
     fn test678_find_stream_equivalent_urn_different_tag_order() {
         let streams = vec![
-            ("media:json;record;llm-generation-request".to_string(), b"data".to_vec()),
+            ("media:json;record;llm-generation-request".to_string(), b"data".to_vec(), None),
         ];
         // Tags in different order — is_equivalent is order-independent
         let found = super::find_stream(&streams, "media:llm-generation-request;json;record");
@@ -6883,7 +6890,7 @@ mod tests {
     #[test]
     fn test679_find_stream_base_urn_does_not_match_full_urn() {
         let streams = vec![
-            ("media:llm-generation-request".to_string(), b"data".to_vec()),
+            ("media:llm-generation-request".to_string(), b"data".to_vec(), None),
         ];
         let found = super::find_stream(&streams, "media:llm-generation-request;json;record");
         assert!(
@@ -6896,7 +6903,7 @@ mod tests {
     #[test]
     fn test680_require_stream_missing_urn_returns_error() {
         let streams = vec![
-            ("media:model-spec;textable".to_string(), b"gpt-4".to_vec()),
+            ("media:model-spec;textable".to_string(), b"gpt-4".to_vec(), None),
         ];
         let result = super::require_stream(&streams, "media:llm-generation-request;json;record");
         assert!(result.is_err(), "Missing stream must fail hard");
@@ -6912,9 +6919,9 @@ mod tests {
     #[test]
     fn test681_find_stream_multiple_streams_returns_correct() {
         let streams = vec![
-            ("media:model-spec;textable".to_string(), b"gpt-4".to_vec()),
-            ("media:llm-generation-request;json;record".to_string(), b"{\"prompt\":\"test\"}".to_vec()),
-            ("media:temperature;textable;numeric".to_string(), b"0.7".to_vec()),
+            ("media:model-spec;textable".to_string(), b"gpt-4".to_vec(), None),
+            ("media:llm-generation-request;json;record".to_string(), b"{\"prompt\":\"test\"}".to_vec(), None),
+            ("media:temperature;textable;numeric".to_string(), b"0.7".to_vec(), None),
         ];
         let found = super::find_stream(&streams, "media:llm-generation-request;json;record");
         assert!(found.is_some());
@@ -6925,7 +6932,7 @@ mod tests {
     #[test]
     fn test682_require_stream_str_returns_utf8() {
         let streams = vec![
-            ("media:textable".to_string(), b"hello world".to_vec()),
+            ("media:textable".to_string(), b"hello world".to_vec(), None),
         ];
         let result = super::require_stream_str(&streams, "media:textable");
         assert_eq!(result.unwrap(), "hello world");
@@ -6935,7 +6942,7 @@ mod tests {
     #[test]
     fn test683_find_stream_invalid_urn_returns_none() {
         let streams = vec![
-            ("media:valid".to_string(), b"data".to_vec()),
+            ("media:valid".to_string(), b"data".to_vec(), None),
         ];
         // Empty string is not a valid media URN
         let found = super::find_stream(&streams, "");

@@ -1973,7 +1973,7 @@ mod tests {
         registry.add_caps_to_cache(vec![cap]);
 
         let cap_urn = CapUrn::from_string(
-            "cap:in=media:pdf;op=extract;out=media:txt;textable",
+            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
         )
         .unwrap();
         let strand = Strand {
@@ -2019,7 +2019,7 @@ mod tests {
         // Note: no caps added to the registry.
 
         let cap_urn = CapUrn::from_string(
-            "cap:in=media:pdf;op=ghost;out=media:txt;textable",
+            "cap:in=media:pdf;op=ghost;out=\"media:txt;textable\"",
         )
         .unwrap();
         let strand = Strand {

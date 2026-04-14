@@ -1231,8 +1231,8 @@ mod tests {
 
         // Simulate cartridge attaching memory info to heartbeat response
         let mut meta = std::collections::BTreeMap::new();
-        meta.insert("footprint_mb".to_string(), ciborium::Value::Integer(4096i128));
-        meta.insert("rss_mb".to_string(), ciborium::Value::Integer(5120i128));
+        meta.insert("footprint_mb".to_string(), ciborium::Value::Integer((4096i64).into()));
+        meta.insert("rss_mb".to_string(), ciborium::Value::Integer((5120i64).into()));
         frame.meta = Some(meta);
 
         assert_eq!(frame.frame_type, FrameType::Heartbeat);
@@ -1503,10 +1503,11 @@ mod tests {
         assert!(frame.meta.is_none(), "RelayState carries data in payload, not meta");
     }
 
-    // TEST403: Verify from_u8 returns None for value 12 (one past RelayState)
+    // TEST403: Verify from_u8 returns None for values past the last valid frame type
     #[test]
-    fn test403_invalid_frame_type_past_relay_state() {
-        assert!(FrameType::from_u8(12).is_none(), "12 is past the last valid frame type");
+    fn test403_invalid_frame_type_past_cancel() {
+        assert_eq!(FrameType::from_u8(12), Some(FrameType::Cancel), "12 is Cancel");
+        assert!(FrameType::from_u8(13).is_none(), "13 is past the last valid frame type");
         assert!(FrameType::from_u8(2).is_none(), "2 (old Res) is still invalid");
     }
 

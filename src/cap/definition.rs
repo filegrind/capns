@@ -1004,6 +1004,7 @@ mod tests {
         let stdin_arg = CapArg {
             media_urn: "media:textable".to_string(),
             required: true,
+            is_sequence: false,
             sources: vec![ArgSource::Stdin { stdin: "media:textable".to_string() }],
             arg_description: Some("Input text".to_string()),
             default_value: None,
@@ -1054,6 +1055,7 @@ mod tests {
         let arg = CapArg {
             media_urn: "media:string".to_string(),
             required: true,
+            is_sequence: false,
             sources: vec![
                 ArgSource::CliFlag { cli_flag: "--name".to_string() },
                 ArgSource::Position { position: 0 },

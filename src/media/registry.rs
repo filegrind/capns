@@ -899,14 +899,10 @@ mod tests {
         // If you add a new cap, add its output URN here.
         let cap_output_urns = [
             "media:textable",
-            "media:file-metadata;textable;record",
-            "media:document-outline;textable;record",
-            "media:image;png;thumbnail",
             "media:embedding-vector;textable;record",
             "media:image-description;textable",
             "media:transcription;textable;record",
             "media:decision;json;record;textable",
-            "media:disbound-page;textable",
             "media:llm-text-stream;ndjson",
             "media:generated-text;textable;record",
             "media:llm-vocab-response;json;record",
@@ -999,14 +995,10 @@ mod tests {
 
         let expected = [
             ("media:textable", "txt"),
-            ("media:file-metadata;textable;record", "json"),
-            ("media:document-outline;textable;record", "json"),
-            ("media:image;png;thumbnail", "png"),
             ("media:embedding-vector;textable;record", "json"),
             ("media:image-description;textable", "txt"),
             ("media:transcription;textable;record", "json"),
             ("media:decision;json;record;textable", "json"),
-            ("media:disbound-page;textable", "txt"),
             ("media:llm-text-stream;ndjson", "ndjson"),
             ("media:generated-text;textable;record", "json"),
             ("media:llm-model-info;json;record", "json"),

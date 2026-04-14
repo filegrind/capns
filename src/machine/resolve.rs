@@ -755,7 +755,7 @@ mod tests {
         // single pair.
         let sources = vec![media("media:pdf")];
         let args = vec![media("media:pdf")];
-        let cap_urn = cap("cap:in=media:pdf;op=extract;out=media:txt;textable");
+        let cap_urn = cap("cap:in=media:pdf;op=extract;out=\"media:txt;textable\"");
         let pairs = match_sources_to_args(&sources, &args, &cap_urn, 0)
             .expect("trivial single-source match must succeed");
         assert_eq!(pairs.len(), 1);
@@ -771,7 +771,7 @@ mod tests {
         // assigned to that arg with distance > 0.
         let sources = vec![media("media:page;textable")];
         let args = vec![media("media:textable")];
-        let cap_urn = cap("cap:in=media:textable;op=make_decision;out=media:decision;textable");
+        let cap_urn = cap("cap:in=media:textable;op=make_decision;out=\"media:decision;textable\"");
         let pairs = match_sources_to_args(&sources, &args, &cap_urn, 0)
             .expect("more-specific source must be matched to its arg");
         assert!(pairs[0].0.is_equivalent(&media("media:textable")).unwrap());
@@ -818,7 +818,7 @@ mod tests {
         // Unique optimum: (image;png → image;png), (model-spec;textable → textable)
         let sources = vec![media("media:image;png"), media("media:model-spec;textable")];
         let args = vec![media("media:image;png"), media("media:textable")];
-        let cap_urn = cap("cap:in=media:image;png;op=describe;out=media:image-description;textable");
+        let cap_urn = cap("cap:in=\"media:image;png\";op=describe;out=\"media:image-description;textable\"");
         let pairs = match_sources_to_args(&sources, &args, &cap_urn, 0).unwrap();
         assert_eq!(pairs.len(), 2);
         // Pairs are sorted by cap_arg_media_urn structurally.
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn resolve_strand_single_cap_produces_one_edge() {
         let extract_cap = build_cap(
-            "cap:in=media:pdf;op=extract;out=media:txt;textable",
+            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
             "extract",
             &["media:pdf"],
             "media:txt;textable",
@@ -885,7 +885,7 @@ mod tests {
         let registry = registry_with(vec![extract_cap]);
         let strand = strand_from_steps(
             vec![cap_step(
-                "cap:in=media:pdf;op=extract;out=media:txt;textable",
+                "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
                 "extract",
                 "media:pdf",
                 "media:txt;textable",
@@ -921,13 +921,13 @@ mod tests {
         // intern these as the SAME NodeId, so the strand has
         // exactly three node positions, not four.
         let extract = build_cap(
-            "cap:in=media:pdf;op=extract;out=media:txt;textable",
+            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
             "extract",
             &["media:pdf"],
             "media:txt;textable",
         );
         let embed = build_cap(
-            "cap:in=media:textable;op=embed;out=media:vec;record",
+            "cap:in=media:textable;op=embed;out=\"media:vec;record\"",
             "embed",
             &["media:textable"],
             "media:vec;record",
@@ -937,13 +937,13 @@ mod tests {
         let strand = strand_from_steps(
             vec![
                 cap_step(
-                    "cap:in=media:pdf;op=extract;out=media:txt;textable",
+                    "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
                     "extract",
                     "media:pdf",
                     "media:txt;textable",
                 ),
                 cap_step(
-                    "cap:in=media:textable;op=embed;out=media:vec;record",
+                    "cap:in=media:textable;op=embed;out=\"media:vec;record\"",
                     "embed",
                     "media:txt;textable",
                     "media:vec;record",
@@ -983,13 +983,13 @@ mod tests {
         // ForEach immediately followed by a cap. The cap's edge
         // must have is_loop=true. Collect at the end is elided.
         let disbind = build_cap(
-            "cap:in=media:pdf;op=disbind;out=media:page;textable",
+            "cap:in=media:pdf;op=disbind;out=\"media:page;textable\"",
             "disbind",
             &["media:pdf"],
             "media:page;textable",
         );
         let make_decision = build_cap(
-            "cap:in=media:textable;op=make_decision;out=media:decision;json;record;textable",
+            "cap:in=media:textable;op=make_decision;out=\"media:decision;json;record;textable\"",
             "make_decision",
             &["media:textable"],
             "media:decision;json;record;textable",
@@ -999,14 +999,14 @@ mod tests {
         let strand = strand_from_steps(
             vec![
                 cap_step(
-                    "cap:in=media:pdf;op=disbind;out=media:page;textable",
+                    "cap:in=media:pdf;op=disbind;out=\"media:page;textable\"",
                     "disbind",
                     "media:pdf",
                     "media:page;textable",
                 ),
                 for_each_step("media:page;textable"),
                 cap_step(
-                    "cap:in=media:textable;op=make_decision;out=media:decision;json;record;textable",
+                    "cap:in=media:textable;op=make_decision;out=\"media:decision;json;record;textable\"",
                     "make_decision",
                     "media:textable",
                     "media:decision;json;record;textable",
@@ -1063,7 +1063,7 @@ mod tests {
         let registry = registry_with(vec![]);
         let strand = strand_from_steps(
             vec![cap_step(
-                "cap:in=media:pdf;op=extract;out=media:txt;textable",
+                "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
                 "extract",
                 "media:pdf",
                 "media:txt;textable",
@@ -1091,7 +1091,7 @@ mod tests {
         // positions must produce byte-identical canonical
         // anchor URN order. This pins the structural sort.
         let extract = build_cap(
-            "cap:in=media:pdf;op=extract;out=media:txt;textable",
+            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
             "extract",
             &["media:pdf"],
             "media:txt;textable",
@@ -1099,7 +1099,7 @@ mod tests {
         let registry = registry_with(vec![extract]);
         let strand = strand_from_steps(
             vec![cap_step(
-                "cap:in=media:pdf;op=extract;out=media:txt;textable",
+                "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
                 "extract",
                 "media:pdf",
                 "media:txt;textable",
@@ -1132,13 +1132,13 @@ mod tests {
         // strand construction can produce it, and the resolver
         // must handle it correctly.
         let to_int = build_cap(
-            "cap:in=media:numeric;textable;op=coerce_int;out=media:integer;numeric;textable",
+            "cap:in=\"media:numeric;textable\";op=coerce_int;out=\"media:integer;numeric;textable\"",
             "coerce_int",
             &["media:numeric;textable"],
             "media:integer;numeric;textable",
         );
         let to_num = build_cap(
-            "cap:in=media:integer;numeric;textable;op=coerce_num;out=media:numeric;textable",
+            "cap:in=\"media:integer;numeric;textable\";op=coerce_num;out=\"media:numeric;textable\"",
             "coerce_num",
             &["media:integer;numeric;textable"],
             "media:numeric;textable",
@@ -1147,13 +1147,13 @@ mod tests {
         let strand = strand_from_steps(
             vec![
                 cap_step(
-                    "cap:in=media:numeric;textable;op=coerce_int;out=media:integer;numeric;textable",
+                    "cap:in=\"media:numeric;textable\";op=coerce_int;out=\"media:integer;numeric;textable\"",
                     "coerce_int",
                     "media:numeric;textable",
                     "media:integer;numeric;textable",
                 ),
                 cap_step(
-                    "cap:in=media:integer;numeric;textable;op=coerce_num;out=media:numeric;textable",
+                    "cap:in=\"media:integer;numeric;textable\";op=coerce_num;out=\"media:numeric;textable\"",
                     "coerce_num",
                     "media:integer;numeric;textable",
                     "media:numeric;textable",
