@@ -1,108 +1,97 @@
 //! Plain text content inspection adapter
 //!
-//! Only PlainTextAdapter requires content inspection to determine
-//! if text is single-line (scalar) or multi-line (list).
-//! Other text formats (Markdown, Log, etc.) have fixed structures
-//! defined in their TOML specs.
+//! PlainTextAdapter inspects content to determine if text is
+//! single-line (scalar) or multi-line (list). It selects from
+//! candidate URNs provided by the media spec registry.
 
 use std::path::Path;
 
-use crate::input_resolver::adapter::{AdapterResult, MediaAdapter};
-use crate::input_resolver::ContentStructure;
+use crate::input_resolver::adapter::{AdapterSelection, MediaAdapter, select_by_structure};
+use crate::urn::media_urn::MediaUrn;
 
 /// Plain text adapter — inspects content for structure
 ///
 /// Determines if a .txt file is:
-/// - Single line → ScalarOpaque (media:txt;textable)
-/// - Multi-line → ListOpaque (media:txt;list;textable)
+/// - Single line → ScalarOpaque
+/// - Multi-line → ListOpaque
 pub struct PlainTextAdapter;
 
 impl MediaAdapter for PlainTextAdapter {
-    fn name(&self) -> &'static str {
-        "txt"
-    }
+    fn name(&self) -> &'static str { "txt" }
+    fn pattern_urn(&self) -> &'static str { "media:txt" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        // Empty - extensions handled by MediaUrnRegistry
-        &[]
-    }
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let text = match std::str::from_utf8(content) {
+            Ok(s) => s,
+            Err(_) => return None, // Not valid UTF-8 — not a text file
+        };
 
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
+        let line_count = text.lines().count();
+        let is_list = line_count > 1;
 
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        detect_plain_text_structure(content)
-    }
-}
-
-/// Detect plain text structure from content
-fn detect_plain_text_structure(content: &[u8]) -> AdapterResult {
-    let text = match std::str::from_utf8(content) {
-        Ok(s) => s,
-        Err(_) => {
-            // Not valid UTF-8, treat as binary
-            return AdapterResult::scalar_opaque("media:");
-        }
-    };
-
-    // Count newlines
-    let line_count = text.lines().count();
-
-    if line_count <= 1 {
-        // Single line → scalar
-        AdapterResult::scalar_opaque("media:txt;textable")
-    } else {
-        // Multi-line → list of lines
-        AdapterResult::list_opaque("media:txt;list;textable")
+        select_by_structure(candidates, is_list, false)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::input_resolver::ContentStructure;
+
+    fn txt_candidates() -> Vec<MediaUrn> {
+        vec![
+            MediaUrn::from_string("media:textable;txt").unwrap(),
+            MediaUrn::from_string("media:list;textable;txt").unwrap(),
+        ]
+    }
+
+    fn refs(urns: &[MediaUrn]) -> Vec<&MediaUrn> {
+        urns.iter().collect()
+    }
 
     #[test]
     fn test_plain_text_single_line() {
+        let candidates = txt_candidates();
         let adapter = PlainTextAdapter;
-        let path = PathBuf::from("note.txt");
-        let content = b"just a single line";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.content_structure, ContentStructure::ScalarOpaque);
-        assert_eq!(result.media_urn, "media:txt;textable");
+        let path = std::path::PathBuf::from("note.txt");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"just a single line").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ScalarOpaque);
+        assert!(!candidates[sel.candidate_index].has_marker_tag("list"));
     }
 
     #[test]
     fn test_plain_text_multi_line() {
+        let candidates = txt_candidates();
         let adapter = PlainTextAdapter;
-        let path = PathBuf::from("note.txt");
-        let content = b"line one\nline two\nline three";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.content_structure, ContentStructure::ListOpaque);
-        assert_eq!(result.media_urn, "media:txt;list;textable");
+        let path = std::path::PathBuf::from("note.txt");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"line one\nline two\nline three").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListOpaque);
+        assert!(candidates[sel.candidate_index].has_marker_tag("list"));
     }
 
     #[test]
     fn test_plain_text_empty() {
+        let candidates = txt_candidates();
         let adapter = PlainTextAdapter;
-        let path = PathBuf::from("empty.txt");
-        let content = b"";
-
-        let result = adapter.detect(&path, content);
-        // Empty file has 0 lines, which is <= 1
-        assert_eq!(result.content_structure, ContentStructure::ScalarOpaque);
+        let path = std::path::PathBuf::from("empty.txt");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ScalarOpaque);
     }
 
     #[test]
-    fn test_plain_text_binary() {
+    fn test_plain_text_binary_returns_none() {
+        let candidates = txt_candidates();
         let adapter = PlainTextAdapter;
-        let path = PathBuf::from("data.txt");
+        let path = std::path::PathBuf::from("data.txt");
         let content = &[0xFF, 0xFE, 0x00, 0x01]; // Invalid UTF-8
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, content);
+        assert!(sel.is_none(), "Binary content should not be handled by PlainTextAdapter");
     }
 }

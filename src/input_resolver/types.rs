@@ -3,8 +3,6 @@
 use std::path::PathBuf;
 use std::fmt;
 
-use crate::planner::InputCardinality;
-
 /// A single input specification from the user
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputItem {
@@ -67,14 +65,6 @@ impl ContentStructure {
         matches!(self, ContentStructure::ScalarRecord | ContentStructure::ListRecord)
     }
 
-    /// Convert to InputCardinality (for compatibility with planner)
-    pub fn to_cardinality(&self) -> InputCardinality {
-        if self.is_list() {
-            InputCardinality::Sequence
-        } else {
-            InputCardinality::Single
-        }
-    }
 }
 
 impl fmt::Display for ContentStructure {
@@ -110,8 +100,9 @@ pub struct ResolvedInputSet {
     /// All resolved files
     pub files: Vec<ResolvedFile>,
 
-    /// Aggregate cardinality (Single if 1 scalar file, Sequence otherwise)
-    pub cardinality: InputCardinality,
+    /// Whether the input is a sequence (multiple files).
+    /// Determined solely by file count — content structure is irrelevant.
+    pub is_sequence: bool,
 
     /// Common base media type (if files share a type), or None if heterogeneous
     pub common_media: Option<String>,
@@ -120,29 +111,22 @@ pub struct ResolvedInputSet {
 impl ResolvedInputSet {
     /// Create a new ResolvedInputSet from files
     pub fn new(files: Vec<ResolvedFile>) -> Self {
-        let cardinality = Self::compute_cardinality(&files);
+        let is_sequence = Self::compute_cardinality(&files);
         let common_media = Self::compute_common_media(&files);
 
         ResolvedInputSet {
             files,
-            cardinality,
+            is_sequence,
             common_media,
         }
     }
 
-    fn compute_cardinality(files: &[ResolvedFile]) -> InputCardinality {
-        match files.len() {
-            0 => InputCardinality::Single, // Edge case, should be error
-            1 => {
-                // Single file: cardinality depends on content structure
-                if files[0].content_structure.is_list() {
-                    InputCardinality::Sequence
-                } else {
-                    InputCardinality::Single
-                }
-            }
-            _ => InputCardinality::Sequence, // Multiple files always sequence
-        }
+    fn compute_cardinality(files: &[ResolvedFile]) -> bool {
+        // is_sequence is determined solely by file count.
+        // Content structure (list vs scalar) describes what's *inside* a file,
+        // not how many items the user provided.  A single JSON file containing
+        // an array is still one input item — is_sequence = false.
+        files.len() > 1
     }
 
     fn compute_common_media(files: &[ResolvedFile]) -> Option<String> {
@@ -150,30 +134,26 @@ impl ResolvedInputSet {
             return None;
         }
 
-        // Extract base media type (before any markers)
-        let first_base = Self::extract_base_media(&files[0].media_urn);
+        // Check if all files share an equivalent media URN via proper URN parsing.
+        // Two URNs are "common" if they are equivalent (same tags in any order).
+        let first = crate::urn::media_urn::MediaUrn::from_string(&files[0].media_urn)
+            .unwrap_or_else(|e| panic!(
+                "ResolvedInputSet: invalid media URN '{}': {}",
+                files[0].media_urn, e
+            ));
 
         for file in files.iter().skip(1) {
-            let base = Self::extract_base_media(&file.media_urn);
-            if base != first_base {
+            let other = crate::urn::media_urn::MediaUrn::from_string(&file.media_urn)
+                .unwrap_or_else(|e| panic!(
+                    "ResolvedInputSet: invalid media URN '{}': {}",
+                    file.media_urn, e
+                ));
+            if !first.is_equivalent(&other).unwrap_or(false) {
                 return None;
             }
         }
 
-        Some(first_base)
-    }
-
-    /// Extract base media type from URN (e.g., "media:json;record;textable" -> "json")
-    fn extract_base_media(urn: &str) -> String {
-        // Strip "media:" prefix
-        let without_prefix = urn.strip_prefix("media:").unwrap_or(urn);
-
-        // Take first segment (before any semicolon)
-        without_prefix
-            .split(';')
-            .next()
-            .unwrap_or("")
-            .to_string()
+        Some(files[0].media_urn.clone())
     }
 
     /// Returns true if all files have the same base media type

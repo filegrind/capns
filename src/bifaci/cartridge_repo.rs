@@ -425,7 +425,7 @@ impl CartridgeRepoServer {
         // Validate schema version - fail hard
         if registry.schema_version != "4.0" {
             return Err(CartridgeRepoError::ParseError(format!(
-                "Unsupported registry schema version: {}. Required: 3.0",
+                "Unsupported registry schema version: {}. Required: 4.0",
                 registry.schema_version
             )));
         }

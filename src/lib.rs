@@ -147,7 +147,7 @@ pub use orchestrator::{
 // InputResolver — unified input resolution with media detection
 pub use input_resolver::{
     InputItem, ContentStructure, ResolvedFile, ResolvedInputSet, InputResolverError,
-    MediaAdapter, AdapterMatch, AdapterResult, MediaAdapterRegistry,
+    MediaAdapter, AdapterResult, AdapterSelection, MediaAdapterRegistry,
     ValueAdapter, ValueAdapterResult, ValueAdapterRegistry,
     resolve_input, resolve_inputs, resolve_paths, detect_file,
     discriminate_candidates_by_validation,

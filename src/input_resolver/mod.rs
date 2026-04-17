@@ -47,8 +47,8 @@ pub use types::{
 
 pub use adapter::{
     MediaAdapter,
-    AdapterMatch,
     AdapterResult,
+    AdapterSelection,
 };
 
 pub use resolver::{
@@ -64,6 +64,5 @@ pub use path_resolver::resolve_directory;
 
 // Re-export adapter registries for extensibility
 pub use adapters::MediaAdapterRegistry;
-pub use adapters::extract_base_urn;
 pub use value_adapter::{ValueAdapter, ValueAdapterResult};
 pub use value_adapter_registry::ValueAdapterRegistry;

@@ -1,160 +1,125 @@
 //! MediaAdapter trait — pluggable file type detection
 //!
 //! Each adapter is responsible for:
-//! 1. Matching: Does this adapter handle this file? (by extension or magic bytes)
-//! 2. Detection: Given file content, produce media URN with correct list/record markers
+//! 1. Declaring a pattern URN that describes what media it handles
+//! 2. Given candidate URNs from the registry, selecting the best match based on content inspection
 
 use std::path::Path;
 use crate::input_resolver::ContentStructure;
+use crate::urn::media_urn::MediaUrn;
 
-/// Result of checking if an adapter matches a file
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AdapterMatch {
-    /// Adapter matches by extension (no content inspection needed for base type)
-    ByExtension,
-
-    /// Adapter matches by magic bytes (content was inspected)
-    ByMagicBytes,
-
-    /// Adapter does not match this file
-    NoMatch,
-}
-
-impl AdapterMatch {
-    pub fn matches(&self) -> bool {
-        !matches!(self, AdapterMatch::NoMatch)
-    }
-}
-
-/// Result of adapter detection
+/// Result of adapter detection — a selected candidate URN and its structure
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterResult {
-    /// The detected media URN (with appropriate markers)
+    /// The selected media URN (always one of the registry's own URNs, never constructed)
     pub media_urn: String,
 
     /// The detected content structure
     pub content_structure: ContentStructure,
 }
 
-impl AdapterResult {
-    /// Create a scalar opaque result (most common for binary files)
-    pub fn scalar_opaque(media_urn: impl Into<String>) -> Self {
-        AdapterResult {
-            media_urn: media_urn.into(),
-            content_structure: ContentStructure::ScalarOpaque,
-        }
-    }
+/// Result of candidate selection — index into the candidates slice + structure
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterSelection {
+    /// Index into the candidates slice passed to select_candidate
+    pub candidate_index: usize,
 
-    /// Create a scalar record result
-    pub fn scalar_record(media_urn: impl Into<String>) -> Self {
-        AdapterResult {
-            media_urn: media_urn.into(),
-            content_structure: ContentStructure::ScalarRecord,
-        }
-    }
-
-    /// Create a list opaque result
-    pub fn list_opaque(media_urn: impl Into<String>) -> Self {
-        AdapterResult {
-            media_urn: media_urn.into(),
-            content_structure: ContentStructure::ListOpaque,
-        }
-    }
-
-    /// Create a list record result
-    pub fn list_record(media_urn: impl Into<String>) -> Self {
-        AdapterResult {
-            media_urn: media_urn.into(),
-            content_structure: ContentStructure::ListRecord,
-        }
-    }
+    /// Detected content structure
+    pub content_structure: ContentStructure,
 }
 
 /// Trait for media type adapters
 ///
-/// Each adapter handles one or more file types and is responsible for:
-/// 1. Detecting if it applies to a file (by extension or magic bytes)
-/// 2. Inspecting content to determine the correct media URN and structure markers
+/// Each adapter handles a family of media types identified by a pattern URN.
+/// When given candidate URNs from the registry (all of which conform to the
+/// adapter's pattern), the adapter inspects file content and selects the
+/// most appropriate candidate.
 pub trait MediaAdapter: Send + Sync {
     /// Unique name for this adapter (for debugging/logging)
     fn name(&self) -> &'static str;
 
-    /// File extensions this adapter handles (lowercase, without dot)
-    /// Return empty slice if this adapter uses magic bytes only
-    fn extensions(&self) -> &'static [&'static str];
+    /// The pattern URN string this adapter handles.
+    /// Candidates that `conforms_to` this pattern are offered to this adapter.
+    /// e.g., "media:yaml" matches any URN with the yaml tag.
+    fn pattern_urn(&self) -> &'static str;
 
-    /// Magic bytes patterns this adapter recognizes
-    /// Each pattern is (offset, bytes) - checks if file[offset..] starts with bytes
-    /// Return empty slice if this adapter uses extension only
-    fn magic_bytes(&self) -> &'static [(&'static [u8], usize)] {
-        &[]
-    }
-
-    /// Check if this adapter matches the given file
-    ///
-    /// - `path`: File path (for extension checking)
-    /// - `content_prefix`: First N bytes of file content (for magic byte checking)
-    fn matches(&self, path: &Path, content_prefix: &[u8]) -> AdapterMatch {
-        // Check extension first (cheaper)
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            let ext_lower = ext.to_lowercase();
-            if self.extensions().iter().any(|&e| e == ext_lower) {
-                return AdapterMatch::ByExtension;
-            }
-        }
-
-        // Check magic bytes
-        for (magic, offset) in self.magic_bytes() {
-            if content_prefix.len() >= offset + magic.len() {
-                if &content_prefix[*offset..][..magic.len()] == *magic {
-                    return AdapterMatch::ByMagicBytes;
-                }
-            }
-        }
-
-        AdapterMatch::NoMatch
-    }
-
-    /// Detect media type and structure from file content
-    ///
-    /// This is called after `matches()` returns true.
-    ///
-    /// - `path`: File path
-    /// - `content`: Full file content (or first N bytes for large files)
-    ///
-    /// Returns the detected media URN with appropriate list/record markers
-    fn detect(&self, path: &Path, content: &[u8]) -> AdapterResult;
-
-    /// Whether this adapter requires content inspection to determine structure
-    ///
-    /// If false, the adapter can determine everything from extension alone.
-    /// If true, content must be read and passed to `detect()`.
+    /// Whether this adapter requires content inspection to determine structure.
+    /// If false, the most specific conforming candidate is selected automatically.
+    /// If true, `select_candidate` is called with file content.
     fn requires_content_inspection(&self) -> bool {
         false
     }
 
-    /// Priority for adapter matching (higher = checked first)
-    /// Default is 0. Use higher values for more specific adapters.
-    fn priority(&self) -> i32 {
-        0
+    /// Given conforming candidate URNs and file content, select the best match.
+    ///
+    /// Only called when `requires_content_inspection()` returns true.
+    /// The `candidates` slice contains only URNs that conform to this adapter's pattern.
+    ///
+    /// Returns `Some(selection)` with the index of the selected candidate and
+    /// the detected content structure, or `None` if no candidate matches.
+    fn select_candidate(
+        &self,
+        _candidates: &[&MediaUrn],
+        _path: &Path,
+        _content: &[u8],
+    ) -> Option<AdapterSelection> {
+        None
     }
 }
 
-/// Helper to build media URN with markers
-pub fn build_media_urn(base: &str, list: bool, record: bool, textable: bool) -> String {
-    let mut parts = vec![format!("media:{}", base)];
+/// Find the candidate whose marker tags best match the detected structure.
+///
+/// This is the standard selection logic used by content-inspecting adapters:
+/// given a boolean for list and record, find the candidate that has matching
+/// marker tags and is most specific.
+pub fn select_by_structure(
+    candidates: &[&MediaUrn],
+    is_list: bool,
+    is_record: bool,
+) -> Option<(usize, ContentStructure)> {
+    let structure = match (is_list, is_record) {
+        (true, true) => ContentStructure::ListRecord,
+        (true, false) => ContentStructure::ListOpaque,
+        (false, true) => ContentStructure::ScalarRecord,
+        (false, false) => ContentStructure::ScalarOpaque,
+    };
 
-    if list {
-        parts.push("list".to_string());
-    }
-    if record {
-        parts.push("record".to_string());
-    }
-    if textable {
-        parts.push("textable".to_string());
+    // Find candidates whose marker tags match the detected structure
+    let mut best_index: Option<usize> = None;
+    let mut best_specificity: usize = 0;
+
+    for (i, candidate) in candidates.iter().enumerate() {
+        let has_list = candidate.has_marker_tag("list");
+        let has_record = candidate.has_marker_tag("record");
+
+        if has_list == is_list && has_record == is_record {
+            let spec = candidate.specificity();
+            if best_index.is_none() || spec > best_specificity {
+                best_index = Some(i);
+                best_specificity = spec;
+            }
+        }
     }
 
-    parts.join(";")
+    // If no exact structure match, prefer the most general candidate
+    // (no list/record markers) so the URN doesn't overclaim structure.
+    if best_index.is_none() {
+        // First try: candidate with no structure markers (most general)
+        best_index = candidates
+            .iter()
+            .position(|c| !c.has_marker_tag("list") && !c.has_marker_tag("record"));
+
+        // Last resort: just use the least specific candidate
+        if best_index.is_none() {
+            best_index = candidates
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, c)| c.specificity())
+                .map(|(i, _)| i);
+        }
+    }
+
+    best_index.map(|i| (i, structure))
 }
 
 #[cfg(test)]
@@ -162,22 +127,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_media_urn_basic() {
-        assert_eq!(build_media_urn("pdf", false, false, false), "media:pdf");
-    }
+    fn test_select_by_structure_exact_match() {
+        let scalar = MediaUrn::from_string("media:textable;yaml").unwrap();
+        let list = MediaUrn::from_string("media:list;textable;yaml").unwrap();
+        let record = MediaUrn::from_string("media:record;textable;yaml").unwrap();
+        let list_record = MediaUrn::from_string("media:list;record;textable;yaml").unwrap();
+        let candidates: Vec<&MediaUrn> = vec![&scalar, &list, &record, &list_record];
 
-    #[test]
-    fn test_build_media_urn_with_list() {
-        assert_eq!(build_media_urn("json", true, false, true), "media:json;list;textable");
-    }
+        // Scalar opaque → picks scalar (no list, no record)
+        let (idx, structure) = select_by_structure(&candidates, false, false).unwrap();
+        assert_eq!(idx, 0);
+        assert_eq!(structure, ContentStructure::ScalarOpaque);
 
-    #[test]
-    fn test_build_media_urn_with_record() {
-        assert_eq!(build_media_urn("json", false, true, true), "media:json;record;textable");
-    }
+        // List opaque → picks list
+        let (idx, structure) = select_by_structure(&candidates, true, false).unwrap();
+        assert_eq!(idx, 1);
+        assert_eq!(structure, ContentStructure::ListOpaque);
 
-    #[test]
-    fn test_build_media_urn_with_both() {
-        assert_eq!(build_media_urn("csv", true, true, true), "media:csv;list;record;textable");
+        // Scalar record → picks record
+        let (idx, structure) = select_by_structure(&candidates, false, true).unwrap();
+        assert_eq!(idx, 2);
+        assert_eq!(structure, ContentStructure::ScalarRecord);
+
+        // List record → picks list_record
+        let (idx, structure) = select_by_structure(&candidates, true, true).unwrap();
+        assert_eq!(idx, 3);
+        assert_eq!(structure, ContentStructure::ListRecord);
     }
 }

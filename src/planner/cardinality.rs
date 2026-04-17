@@ -347,11 +347,37 @@ pub struct CapShapeInfo {
 }
 
 impl CapShapeInfo {
-    /// Create shape info by parsing a cap's input and output specs
+    /// Create shape info by parsing a cap's input and output specs.
+    /// Cardinality defaults to Single — use `from_cap_specs_with_sequence`
+    /// when is_sequence flags are known.
     pub fn from_cap_specs(cap_urn: &str, in_spec: &str, out_spec: &str) -> Self {
         Self {
             input: MediaShape::from_media_urn(in_spec),
             output: MediaShape::from_media_urn(out_spec),
+            cap_urn: cap_urn.to_string(),
+        }
+    }
+
+    /// Create shape info with explicit is_sequence flags from the Cap definition.
+    /// This is the primary constructor — cardinality comes from is_sequence, not the URN.
+    pub fn from_cap_specs_with_sequence(
+        cap_urn: &str,
+        in_spec: &str,
+        out_spec: &str,
+        input_is_sequence: bool,
+        output_is_sequence: bool,
+    ) -> Self {
+        let mut input = MediaShape::from_media_urn(in_spec);
+        let mut output = MediaShape::from_media_urn(out_spec);
+        if input_is_sequence {
+            input.cardinality = InputCardinality::Sequence;
+        }
+        if output_is_sequence {
+            output.cardinality = InputCardinality::Sequence;
+        }
+        Self {
+            input,
+            output,
             cap_urn: cap_urn.to_string(),
         }
     }
@@ -576,13 +602,22 @@ mod tests {
         assert_eq!(info.cardinality_pattern(), CardinalityPattern::OneToOne);
     }
 
-    // TEST699: CapShapeInfo cardinality is Single even for list-typed URNs
+    // TEST699: CapShapeInfo cardinality from URN is always Single; ManyToOne requires is_sequence
     #[test]
     fn test699_cap_shape_info_list_urn_still_single_cardinality() {
-        let info = CapShapeInfo::from_cap_specs("cap:merge-pdfs", "media:list;pdf", "media:pdf");
-        assert_eq!(info.input.cardinality, InputCardinality::Single);
-        assert_eq!(info.output.cardinality, InputCardinality::Single);
-        assert_eq!(info.cardinality_pattern(), CardinalityPattern::ManyToOne);
+        // URN parsing always yields Single — the "list" tag is a structure marker, not cardinality
+        let from_urn = CapShapeInfo::from_cap_specs("cap:merge-pdfs", "media:list;pdf", "media:pdf");
+        assert_eq!(from_urn.input.cardinality, InputCardinality::Single);
+        assert_eq!(from_urn.output.cardinality, InputCardinality::Single);
+        assert_eq!(from_urn.cardinality_pattern(), CardinalityPattern::OneToOne);
+
+        // With is_sequence=true on input, cardinality becomes ManyToOne
+        let with_seq = CapShapeInfo::from_cap_specs_with_sequence(
+            "cap:merge-pdfs", "media:list;pdf", "media:pdf", true, false,
+        );
+        assert_eq!(with_seq.input.cardinality, InputCardinality::Sequence);
+        assert_eq!(with_seq.output.cardinality, InputCardinality::Single);
+        assert_eq!(with_seq.cardinality_pattern(), CardinalityPattern::ManyToOne);
     }
 
     // ==================== CardinalityPattern Tests ====================
@@ -624,11 +659,11 @@ mod tests {
     }
 
     // TEST712: Tests shape chain analysis detects fan-out points in capability chains
-    // Verifies chains with one-to-many transitions are marked for transformation
+    // Fan-out requires is_sequence=true on the cap's output, not a "list" URN tag
     #[test]
     fn test712_strand_shape_analysis_with_fan_out() {
         let infos = vec![
-            CapShapeInfo::from_cap_specs("cap:pdf-to-pages", "media:pdf", "media:list;png"),
+            CapShapeInfo::from_cap_specs_with_sequence("cap:pdf-to-pages", "media:pdf", "media:png", false, true),
             CapShapeInfo::from_cap_specs("cap:thumbnail", "media:png", "media:png"),
         ];
         let analysis = StrandShapeAnalysis::analyze(infos);
@@ -835,13 +870,15 @@ mod tests {
         assert_eq!(info.output.structure, InputStructure::Record);
     }
 
-    // TEST741: Tests CapShapeInfo pattern detection
+    // TEST741: Tests CapShapeInfo pattern detection — OneToMany requires output is_sequence=true
     #[test]
     fn test741_cap_shape_info_pattern() {
-        let one_to_many = CapShapeInfo::from_cap_specs(
+        let one_to_many = CapShapeInfo::from_cap_specs_with_sequence(
             "cap:disbind",
             "media:pdf",
-            "media:disbound-page;list;textable"
+            "media:disbound-page;textable",
+            false,
+            true,
         );
         assert_eq!(one_to_many.cardinality_pattern(), CardinalityPattern::OneToMany);
     }
@@ -875,10 +912,11 @@ mod tests {
     }
 
     // TEST752: Tests shape chain analysis with fan-out (matching structures)
+    // Fan-out requires output is_sequence=true on the disbind cap
     #[test]
     fn test752_strand_shape_with_fanout() {
         let infos = vec![
-            CapShapeInfo::from_cap_specs("cap:disbind", "media:pdf", "media:page;list;textable"),
+            CapShapeInfo::from_cap_specs_with_sequence("cap:disbind", "media:pdf", "media:page;textable", false, true),
             CapShapeInfo::from_cap_specs("cap:process", "media:textable", "media:result;textable"),
         ];
         let analysis = StrandShapeAnalysis::analyze(infos);

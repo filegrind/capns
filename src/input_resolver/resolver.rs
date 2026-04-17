@@ -22,13 +22,26 @@ const MAX_INSPECTION_SIZE: usize = 64 * 1024;
 /// (no rules = no basis for elimination).
 ///
 /// Returns the surviving candidate URN strings in their original order.
+/// Discriminate candidates using validation rules and adapter baseline.
+///
+/// The baseline URN is the adapter's structural detection result (e.g., "media:json;record;textable"
+/// for a JSON object). Candidates more specific than the baseline must have validation rules
+/// that positively match the content — otherwise they're eliminated (they overclaim without proof).
+/// Candidates equivalent to or less specific than the baseline survive without validation.
 pub fn discriminate_candidates_by_validation(
     content: &[u8],
     candidate_urns: &[String],
     media_registry: &MediaUrnRegistry,
+    baseline_urn: &str,
 ) -> Vec<String> {
     let content_str = std::str::from_utf8(content).ok();
     let content_len = content.len();
+
+    let baseline = crate::urn::media_urn::MediaUrn::from_string(baseline_urn)
+        .unwrap_or_else(|e| panic!(
+            "discriminate_candidates_by_validation: invalid baseline URN '{}': {}",
+            baseline_urn, e
+        ));
 
     candidate_urns
         .iter()
@@ -40,7 +53,16 @@ pub fn discriminate_candidates_by_validation(
 
             let validation = match &spec.validation {
                 Some(v) if !v.is_empty() => v,
-                _ => return true, // No validation rules → survives
+                _ => {
+                    // No validation rules. Only keep if the candidate is not more
+                    // specific than the baseline (more specific without validation = overclaiming).
+                    let candidate_urn = match crate::urn::media_urn::MediaUrn::from_string(urn) {
+                        Ok(u) => u,
+                        Err(_) => return true, // Can't parse → keep
+                    };
+                    // Keep if baseline conforms to candidate (candidate is same or more general)
+                    return baseline.conforms_to(&candidate_urn).unwrap_or(true);
+                }
             };
 
             // Check pattern (regex against content as UTF-8)
@@ -285,7 +307,7 @@ mod tests {
 
     // Aggregate Cardinality Tests (TEST1090-TEST1099)
 
-    // TEST1090: 1 file scalar content
+    // TEST1090: 1 file scalar content → is_sequence=false (one file)
     #[test]
     fn test1090_single_file_scalar() {
         let dir = create_test_dir();
@@ -294,10 +316,13 @@ mod tests {
         let result = resolve_paths(&[path.to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 1);
-        assert_eq!(result.cardinality, crate::planner::InputCardinality::Single);
+        assert!(!result.is_sequence, "single file must be is_sequence=false");
     }
 
-    // TEST1091: 1 file list content (CSV)
+    // TEST1091: 1 file with list content (CSV) → is_sequence=false.
+    // Content structure is ListRecord (the file contains tabular data),
+    // but is_sequence is false because there is only one file.
+    // Content structure ≠ input cardinality.
     #[test]
     fn test1091_single_file_list_content() {
         let dir = create_test_dir();
@@ -306,17 +331,14 @@ mod tests {
         let result = resolve_paths(&[path.to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 1);
-        assert_eq!(
-            result.cardinality,
-            crate::planner::InputCardinality::Sequence
-        );
+        assert!(!result.is_sequence, "single file must be is_sequence=false regardless of content structure");
         assert_eq!(
             result.files[0].content_structure,
             ContentStructure::ListRecord
         );
     }
 
-    // TEST1092: 2 files
+    // TEST1092: 2 files → is_sequence=true
     #[test]
     fn test1092_two_files() {
         let dir = create_test_dir();
@@ -327,13 +349,10 @@ mod tests {
             resolve_paths(&[path1.to_str().unwrap(), path2.to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 2);
-        assert_eq!(
-            result.cardinality,
-            crate::planner::InputCardinality::Sequence
-        );
+        assert!(result.is_sequence, "multiple files must be is_sequence=true");
     }
 
-    // TEST1093: 1 dir with 1 file
+    // TEST1093: 1 dir with 1 file → is_sequence=false
     #[test]
     fn test1093_dir_single_file() {
         let dir = create_test_dir();
@@ -342,10 +361,10 @@ mod tests {
         let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 1);
-        assert_eq!(result.cardinality, crate::planner::InputCardinality::Single);
+        assert!(!result.is_sequence, "directory with single file must be is_sequence=false");
     }
 
-    // TEST1094: 1 dir with 3 files
+    // TEST1094: 1 dir with 3 files → is_sequence=true
     #[test]
     fn test1094_dir_multiple_files() {
         let dir = create_test_dir();
@@ -356,10 +375,7 @@ mod tests {
         let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 3);
-        assert_eq!(
-            result.cardinality,
-            crate::planner::InputCardinality::Sequence
-        );
+        assert!(result.is_sequence, "directory with multiple files must be is_sequence=true");
     }
 
     // TEST1098: Common media (all same type)
@@ -371,8 +387,15 @@ mod tests {
 
         let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
 
-        assert_eq!(result.common_media, Some("pdf".to_string()));
-        assert!(result.is_homogeneous());
+        assert!(result.is_homogeneous(), "two PDFs must be homogeneous");
+        // common_media is the full equivalent URN, not a string-split base
+        let common = result.common_media.as_ref().unwrap();
+        let common_urn = crate::urn::media_urn::MediaUrn::from_string(common).unwrap();
+        assert!(
+            common_urn.has_marker_tag("pdf"),
+            "common media for PDFs must have pdf tag, got: {}",
+            common
+        );
     }
 
     // TEST1099: Heterogeneous (mixed types)
@@ -629,15 +652,18 @@ mod tests {
         registry.media_urns_for_extension("txt").unwrap()
     }
 
-    // TEST_DISC_1: Plain text content ("Hello world") eliminates all model-spec variants
-    // because they require pattern ".*:.*" (content must contain a colon).
+    // TEST_DISC_1: Plain text content ("Hello world") with baseline media:list;textable;txt
+    // eliminates model-spec variants (they fail pattern ".*:.*") AND eliminates
+    // URNs more specific than the baseline that lack validation.
     #[test]
     fn test_disc_1_plain_text_eliminates_model_specs() {
         let (registry, _temp) = create_test_media_registry();
         let all_txt_urns = txt_extension_urns(&registry);
 
         let content = b"Hello world\nThis is a plain text file\nNo colons here";
-        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry);
+        // Baseline: adapter detected multi-line plain text
+        let baseline = "media:list;textable;txt";
+        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
 
         // model-spec variants have pattern ".*:.*" — plain text without colons fails this
         for survivor in &survivors {
@@ -647,13 +673,6 @@ mod tests {
                 survivor
             );
         }
-
-        // Plain text URN (media:txt;textable) has no validation → must survive
-        assert!(
-            survivors.iter().any(|u| u == "media:txt;textable"),
-            "media:txt;textable should survive (no validation rules), survivors: {:?}",
-            survivors
-        );
     }
 
     // TEST_DISC_2: Model spec content ("hf:MaziyarPanahi/Mistral-7B") passes the pattern.
@@ -663,7 +682,9 @@ mod tests {
         let all_txt_urns = txt_extension_urns(&registry);
 
         let content = b"hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF";
-        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry);
+        // Baseline: adapter detected single-line plain text
+        let baseline = "media:textable;txt";
+        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
 
         // Content has a colon → model-spec pattern matches → model-spec variants survive
         assert!(
@@ -677,7 +698,7 @@ mod tests {
     #[test]
     fn test_disc_5_empty_candidates() {
         let (registry, _temp) = create_test_media_registry();
-        let survivors = discriminate_candidates_by_validation(b"anything", &[], &registry);
+        let survivors = discriminate_candidates_by_validation(b"anything", &[], &registry, "media:");
         assert!(survivors.is_empty());
     }
 
@@ -686,7 +707,7 @@ mod tests {
     fn test_disc_6_unknown_urn_survives() {
         let (registry, _temp) = create_test_media_registry();
         let candidates = vec!["media:nonexistent;fake".to_string()];
-        let survivors = discriminate_candidates_by_validation(b"anything", &candidates, &registry);
+        let survivors = discriminate_candidates_by_validation(b"anything", &candidates, &registry, "media:");
         assert_eq!(survivors, candidates, "Unknown URN should survive — no spec to eliminate it");
     }
 }

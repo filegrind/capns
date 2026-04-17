@@ -110,8 +110,16 @@ impl CartridgeJson {
                 source: e,
             })?;
 
-        // Validate entry path does not escape version directory
+        // Validate entry point exists
         let entry_path = version_dir.join(&cartridge_json.entry);
+        if !entry_path.exists() {
+            return Err(CartridgeJsonError::EntryPointMissing {
+                path: json_path,
+                entry: cartridge_json.entry,
+            });
+        }
+
+        // Validate entry path does not escape version directory
         let canonical_dir = version_dir
             .canonicalize()
             .unwrap_or_else(|_| version_dir.to_path_buf());
@@ -121,14 +129,6 @@ impl CartridgeJson {
 
         if !canonical_entry.starts_with(&canonical_dir) {
             return Err(CartridgeJsonError::EntryPathEscape {
-                path: json_path,
-                entry: cartridge_json.entry,
-            });
-        }
-
-        // Validate entry point exists
-        if !entry_path.exists() {
-            return Err(CartridgeJsonError::EntryPointMissing {
                 path: json_path,
                 entry: cartridge_json.entry,
             });

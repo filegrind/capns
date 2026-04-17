@@ -1,29 +1,35 @@
 //! MediaAdapterRegistry — collection of content inspection adapters
 //!
 //! The registry integrates with MediaUrnRegistry for extension-to-URN mapping.
-//! Adapters only provide content inspection to refine the base URN with markers.
+//! Adapters provide content inspection to select the most appropriate URN
+//! from the registry's candidates for a given file.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::input_resolver::adapter::{MediaAdapter, AdapterResult};
+use crate::input_resolver::adapter::{AdapterResult, AdapterSelection, MediaAdapter, select_by_structure};
 use crate::input_resolver::ContentStructure;
 use crate::media::registry::MediaUrnRegistry;
+use crate::urn::media_urn::MediaUrn;
 
 use super::data::*;
 use super::text::*;
 
+/// A registered adapter with its parsed pattern URN
+struct RegisteredAdapter {
+    pattern: MediaUrn,
+    adapter: Arc<dyn MediaAdapter>,
+}
+
 /// Registry of media content inspection adapters
 ///
 /// This registry works with MediaUrnRegistry:
-/// 1. MediaUrnRegistry provides extension -> base URN mapping (from TOML specs)
-/// 2. Adapters are registered for base URNs that need content inspection
-/// 3. Adapters refine the URN with list/record markers based on content
+/// 1. MediaUrnRegistry provides extension -> candidate URN mapping (from specs)
+/// 2. Adapters declare a pattern URN — candidates that conform to it are offered
+/// 3. Adapters inspect content and select the best candidate
 pub struct MediaAdapterRegistry {
-    /// Adapters indexed by base URN they can refine
-    /// e.g., "media:json" -> JsonAdapter
-    adapters_by_urn: HashMap<String, Arc<dyn MediaAdapter>>,
+    /// Adapters with their parsed pattern URNs
+    adapters: Vec<RegisteredAdapter>,
 
     /// Reference to the media URN registry for extension lookups
     media_registry: Arc<MediaUrnRegistry>,
@@ -32,25 +38,32 @@ pub struct MediaAdapterRegistry {
 impl MediaAdapterRegistry {
     /// Create a new registry with the given MediaUrnRegistry
     pub fn new(media_registry: Arc<MediaUrnRegistry>) -> Self {
-        let mut adapters_by_urn: HashMap<String, Arc<dyn MediaAdapter>> = HashMap::new();
+        let mut adapters = Vec::new();
 
-        // Register content inspection adapters for URNs that need them
-        // These adapters determine list/record markers based on content
+        // Register content inspection adapters
+        let adapter_defs: Vec<Arc<dyn MediaAdapter>> = vec![
+            Arc::new(JsonAdapter),
+            Arc::new(NdjsonAdapter),
+            Arc::new(CsvAdapter),
+            Arc::new(TsvAdapter),
+            Arc::new(PsvAdapter),
+            Arc::new(YamlAdapter),
+            Arc::new(XmlAdapter),
+            Arc::new(TomlAdapter),
+            Arc::new(PlainTextAdapter),
+        ];
 
-        // Data interchange formats - require content inspection
-        adapters_by_urn.insert("media:json".to_string(), Arc::new(JsonAdapter));
-        adapters_by_urn.insert("media:ndjson".to_string(), Arc::new(NdjsonAdapter));
-        adapters_by_urn.insert("media:csv".to_string(), Arc::new(CsvAdapter));
-        adapters_by_urn.insert("media:tsv".to_string(), Arc::new(TsvAdapter));
-        adapters_by_urn.insert("media:psv".to_string(), Arc::new(PsvAdapter));
-        adapters_by_urn.insert("media:yaml".to_string(), Arc::new(YamlAdapter));
-        adapters_by_urn.insert("media:xml".to_string(), Arc::new(XmlAdapter));
-
-        // Text files that may need inspection
-        adapters_by_urn.insert("media:txt".to_string(), Arc::new(PlainTextAdapter));
+        for adapter in adapter_defs {
+            let pattern = MediaUrn::from_string(adapter.pattern_urn())
+                .unwrap_or_else(|e| panic!(
+                    "Adapter '{}' has invalid pattern URN '{}': {}",
+                    adapter.name(), adapter.pattern_urn(), e
+                ));
+            adapters.push(RegisteredAdapter { pattern, adapter });
+        }
 
         MediaAdapterRegistry {
-            adapters_by_urn,
+            adapters,
             media_registry,
         }
     }
@@ -60,27 +73,37 @@ impl MediaAdapterRegistry {
         &self.media_registry
     }
 
+    /// Check if any content-inspecting adapter handles the given URN string.
+    /// Returns true if the URN conforms to any registered adapter's pattern
+    /// AND that adapter requires content inspection.
+    pub fn has_content_adapter_for(&self, urn_str: &str) -> bool {
+        let urn = match MediaUrn::from_string(urn_str) {
+            Ok(u) => u,
+            Err(_) => return false,
+        };
+        self.adapters.iter().any(|reg| {
+            reg.adapter.requires_content_inspection()
+                && urn.conforms_to(&reg.pattern).unwrap_or(false)
+        })
+    }
+
     /// Detect media type for a file
     ///
     /// Resolution flow:
     /// 1. Extract extension from path
-    /// 2. Query MediaUrnRegistry for base URN(s) via extension
-    /// 3. If adapter exists for base URN and needs inspection, use it
-    /// 4. Otherwise return base URN with default structure
-    ///
-    /// - `path`: File path
-    /// - `content`: File content (full or prefix for inspection)
+    /// 2. Query MediaUrnRegistry for candidate URN(s) via extension
+    /// 3. Parse candidate URN strings into MediaUrn objects
+    /// 4. For each adapter whose pattern is accepted by any candidate,
+    ///    ask the adapter to select the best candidate via content inspection
+    /// 5. If exactly one adapter selects → return its result
+    /// 6. If no adapter selects → return the least-specific candidate with
+    ///    default structure derived from its marker tags
+    /// 7. If multiple adapters select (tie) → fail hard
     pub fn detect(&self, path: &Path, content: &[u8]) -> AdapterResult {
         // Step 1: Get extension
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
-
-        let ext = match ext {
-            Some(e) => e,
+        let ext = match path.extension().and_then(|e| e.to_str()) {
+            Some(e) => e.to_lowercase(),
             None => {
-                // No extension - return generic media URN
                 return AdapterResult {
                     media_urn: "media:".to_string(),
                     content_structure: ContentStructure::ScalarOpaque,
@@ -88,11 +111,10 @@ impl MediaAdapterRegistry {
             }
         };
 
-        // Step 2: Query registry for base URN(s)
-        let base_urns = match self.media_registry.media_urns_for_extension(&ext) {
-            Ok(urns) => urns,
-            Err(_) => {
-                // Extension not found in registry - return generic
+        // Step 2: Query registry for candidate URN strings
+        let candidate_strings = match self.media_registry.media_urns_for_extension(&ext) {
+            Ok(urns) if !urns.is_empty() => urns,
+            _ => {
                 return AdapterResult {
                     media_urn: "media:".to_string(),
                     content_structure: ContentStructure::ScalarOpaque,
@@ -100,101 +122,99 @@ impl MediaAdapterRegistry {
             }
         };
 
-        if base_urns.is_empty() {
+        // Step 3: Parse candidate URN strings into MediaUrn objects
+        let candidates: Vec<MediaUrn> = candidate_strings
+            .iter()
+            .filter_map(|s| MediaUrn::from_string(s).ok())
+            .collect();
+
+        if candidates.is_empty() {
             return AdapterResult {
                 media_urn: "media:".to_string(),
                 content_structure: ContentStructure::ScalarOpaque,
             };
         }
 
-        // Step 3: Find the best URN - prefer ones with adapters for content inspection
-        // Also prefer URNs that match the extension more closely (e.g., "media:json" for .json)
-        let (selected_urn, adapter) = self.select_best_urn_for_extension(&ext, &base_urns);
+        // Step 4: For each adapter, find conforming candidates and ask for selection
+        let mut selections: Vec<(String, AdapterResult)> = Vec::new();
 
-        // Step 4: If adapter exists and needs inspection, use it
-        if let Some(adapter) = adapter {
-            if adapter.requires_content_inspection() {
-                return adapter.detect(path, content);
+        for reg in &self.adapters {
+            // Find candidates that conform to this adapter's pattern
+            let conforming: Vec<(usize, &MediaUrn)> = candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.conforms_to(&reg.pattern).unwrap_or(false))
+                .collect();
+
+            if conforming.is_empty() {
+                continue;
+            }
+
+            if reg.adapter.requires_content_inspection() {
+                // Build a slice of conforming candidate refs for the adapter
+                let conforming_refs: Vec<&MediaUrn> = conforming.iter().map(|(_, c)| *c).collect();
+                if let Some(selection) = reg.adapter.select_candidate(&conforming_refs, path, content) {
+                    let selected_urn = &conforming[selection.candidate_index].1;
+                    selections.push((
+                        reg.adapter.name().to_string(),
+                        AdapterResult {
+                            media_urn: selected_urn.to_string(),
+                            content_structure: selection.content_structure,
+                        },
+                    ));
+                }
+            } else {
+                // Non-inspecting adapter: pick the most specific conforming candidate
+                let (best_idx, _) = conforming
+                    .iter()
+                    .enumerate()
+                    .max_by_key(|(_, (_, c))| c.specificity())
+                    .unwrap(); // conforming is non-empty
+                let selected = conforming[best_idx].1;
+                let structure = structure_from_marker_tags(selected);
+                selections.push((
+                    reg.adapter.name().to_string(),
+                    AdapterResult {
+                        media_urn: selected.to_string(),
+                        content_structure: structure,
+                    },
+                ));
             }
         }
 
-        // Step 5: No adapter or no inspection needed - determine default structure
-        let content_structure = determine_default_structure(&selected_urn);
-
-        AdapterResult {
-            media_urn: selected_urn,
-            content_structure,
-        }
-    }
-
-    /// Select the best URN for an extension from multiple candidates
-    ///
-    /// Priority order:
-    /// 1. URNs with matching adapters (for content inspection)
-    /// 2. URNs where the base type matches the extension (e.g., "media:json" for .json)
-    /// 3. First URN in the list
-    fn select_best_urn_for_extension(
-        &self,
-        ext: &str,
-        urns: &[String],
-    ) -> (String, Option<Arc<dyn MediaAdapter>>) {
-        // First, try to find a URN with a matching adapter where base type matches extension
-        for urn in urns {
-            let base_key = extract_base_urn(urn);
-            // Check if base type matches extension (e.g., "media:json" for "json" extension)
-            if base_key == format!("media:{}", ext) {
-                if let Some(adapter) = self.adapters_by_urn.get(&base_key) {
-                    return (urn.clone(), Some(adapter.clone()));
+        // Step 5-7: Select result
+        match selections.len() {
+            0 => {
+                // No adapter matched — use least-specific candidate with default structure
+                let least_specific = candidates
+                    .iter()
+                    .min_by_key(|c| c.specificity())
+                    .unwrap(); // candidates is non-empty
+                let structure = structure_from_marker_tags(least_specific);
+                AdapterResult {
+                    media_urn: least_specific.to_string(),
+                    content_structure: structure,
                 }
             }
-        }
-
-        // Second, try any URN with a matching adapter
-        for urn in urns {
-            let base_key = extract_base_urn(urn);
-            if let Some(adapter) = self.adapters_by_urn.get(&base_key) {
-                return (urn.clone(), Some(adapter.clone()));
+            1 => selections.into_iter().next().unwrap().1,
+            _ => {
+                // Multiple adapters selected — fail hard
+                let adapter_names: Vec<&str> = selections.iter().map(|(n, _)| n.as_str()).collect();
+                panic!(
+                    "Ambiguous adapter selection for '{}': adapters {:?} all claim to handle this file. \
+                     The media spec registry must be disambiguated.",
+                    path.display(),
+                    adapter_names
+                );
             }
         }
-
-        // Third, try to find a URN where base type matches extension (even without adapter)
-        for urn in urns {
-            let base_key = extract_base_urn(urn);
-            if base_key == format!("media:{}", ext) {
-                return (urn.clone(), None);
-            }
-        }
-
-        // Fallback: use first URN
-        (urns[0].clone(), None)
-    }
-
-    /// Check if an adapter exists for the given base URN
-    pub fn has_adapter(&self, base_urn: &str) -> bool {
-        let key = extract_base_urn(base_urn);
-        self.adapters_by_urn.contains_key(&key)
-    }
-
-    /// Get all registered adapter URNs
-    pub fn adapter_urns(&self) -> Vec<&str> {
-        self.adapters_by_urn.keys().map(|s| s.as_str()).collect()
     }
 }
 
-/// Extract base URN without markers
-/// e.g., "media:json;textable;record" -> "media:json"
-pub fn extract_base_urn(urn: &str) -> String {
-    if let Some(semicolon_pos) = urn.find(';') {
-        urn[..semicolon_pos].to_string()
-    } else {
-        urn.to_string()
-    }
-}
-
-/// Determine default content structure based on URN markers
-fn determine_default_structure(urn: &str) -> ContentStructure {
-    let has_list = urn.contains(";list");
-    let has_record = urn.contains(";record");
+/// Determine content structure from a MediaUrn's marker tags
+fn structure_from_marker_tags(urn: &MediaUrn) -> ContentStructure {
+    let has_list = urn.has_marker_tag("list");
+    let has_record = urn.has_marker_tag("record");
 
     match (has_list, has_record) {
         (true, true) => ContentStructure::ListRecord,
@@ -210,9 +230,6 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    // Internal tests for MediaAdapterRegistry helper functions
-    // These test internal implementation details and integration with MediaUrnRegistry
-
     fn create_test_registry() -> (Arc<MediaUrnRegistry>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().to_path_buf();
@@ -220,67 +237,56 @@ mod tests {
         (Arc::new(registry), temp_dir)
     }
 
-    // TEST983 (registry integration): JSON detection via MediaAdapterRegistry
+    // TEST983: JSON object detection via MediaAdapterRegistry produces ScalarRecord
     #[test]
     fn test983_json_detection_via_adapter_registry() {
         let (media_registry, _temp) = create_test_registry();
-        let adapter_registry = MediaAdapterRegistry::new(media_registry.clone());
+        let adapter_registry = MediaAdapterRegistry::new(media_registry);
 
-        // Check what URNs are registered for .json extension
-        let urns = media_registry.media_urns_for_extension("json");
-        tracing::info!("URNs for .json: {:?}", urns);
-
-        // Now detect a JSON file
         let path = PathBuf::from("test.json");
         let content = br#"{"key": "value"}"#;
         let result = adapter_registry.detect(&path, content);
 
-        tracing::info!("Detection result: {:?}", result);
         assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
-        assert!(result.media_urn.contains("record"));
     }
 
-    // Internal helper test: extract_base_urn
+    // TEST984: YAML sequence detection via MediaAdapterRegistry produces ListOpaque
     #[test]
-    fn test_extract_base_urn() {
-        assert_eq!(extract_base_urn("media:json"), "media:json");
-        assert_eq!(extract_base_urn("media:json;textable"), "media:json");
-        assert_eq!(extract_base_urn("media:json;list;record;textable"), "media:json");
-        assert_eq!(extract_base_urn("media:"), "media:");
-    }
-
-    #[test]
-    fn test_determine_default_structure() {
-        assert_eq!(
-            determine_default_structure("media:pdf"),
-            ContentStructure::ScalarOpaque
-        );
-        assert_eq!(
-            determine_default_structure("media:json;record;textable"),
-            ContentStructure::ScalarRecord
-        );
-        assert_eq!(
-            determine_default_structure("media:csv;list;textable"),
-            ContentStructure::ListOpaque
-        );
-        assert_eq!(
-            determine_default_structure("media:csv;list;record;textable"),
-            ContentStructure::ListRecord
-        );
-    }
-
-    #[test]
-    fn test_registry_has_adapters() {
+    fn test984_yaml_detection_via_adapter_registry() {
         let (media_registry, _temp) = create_test_registry();
-        let registry = MediaAdapterRegistry::new(media_registry);
+        let adapter_registry = MediaAdapterRegistry::new(media_registry);
 
-        // Should have adapters for data interchange formats
-        assert!(registry.has_adapter("media:json"));
-        assert!(registry.has_adapter("media:yaml"));
-        assert!(registry.has_adapter("media:csv"));
+        let path = PathBuf::from("list.yaml");
+        let content = b"- item1\n- item2\n- item3";
+        let result = adapter_registry.detect(&path, content);
 
-        // Should NOT have adapters for binary formats (no inspection needed)
-        assert!(!registry.has_adapter("media:pdf"));
-        assert!(!registry.has_adapter("media:png"));
+        assert_eq!(result.content_structure, ContentStructure::ListOpaque);
+    }
+
+    // TEST985: CSV detection via MediaAdapterRegistry
+    #[test]
+    fn test985_csv_detection_via_adapter_registry() {
+        let (media_registry, _temp) = create_test_registry();
+        let adapter_registry = MediaAdapterRegistry::new(media_registry);
+
+        let path = PathBuf::from("data.csv");
+        let content = b"name,age\nAlice,30\nBob,25";
+        let result = adapter_registry.detect(&path, content);
+
+        assert_eq!(result.content_structure, ContentStructure::ListRecord);
+    }
+
+    // TEST986: Unknown extension returns generic media URN
+    #[test]
+    fn test986_unknown_extension_returns_generic() {
+        let (media_registry, _temp) = create_test_registry();
+        let adapter_registry = MediaAdapterRegistry::new(media_registry);
+
+        let path = PathBuf::from("file.xyz123");
+        let content = b"some content";
+        let result = adapter_registry.detect(&path, content);
+
+        assert_eq!(result.media_urn, "media:");
+        assert_eq!(result.content_structure, ContentStructure::ScalarOpaque);
     }
 }

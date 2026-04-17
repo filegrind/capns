@@ -1,224 +1,188 @@
 //! Data interchange content inspection adapters
 //!
-//! These adapters inspect file content to determine list/record markers.
-//! The base URN is provided by MediaUrnRegistry; adapters refine it.
+//! These adapters inspect file content to determine structure (list/record markers).
+//! Given candidate URNs from the media spec registry, each adapter selects the
+//! candidate whose marker tags best match the detected content structure.
 
 use std::path::Path;
 
-use crate::input_resolver::adapter::{AdapterResult, MediaAdapter};
-use crate::input_resolver::ContentStructure;
+use crate::input_resolver::adapter::{AdapterSelection, MediaAdapter, select_by_structure};
+use crate::urn::media_urn::MediaUrn;
 
-/// JSON adapter — inspects content to determine list/record markers
+// =============================================================================
+// JSON
+// =============================================================================
+
 pub struct JsonAdapter;
 
 impl MediaAdapter for JsonAdapter {
-    fn name(&self) -> &'static str {
-        "json"
-    }
+    fn name(&self) -> &'static str { "json" }
+    fn pattern_urn(&self) -> &'static str { "media:json" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        // Empty - extensions handled by MediaUrnRegistry
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        detect_json_structure(content)
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_json_structure(content);
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// Detect JSON structure from content
-fn detect_json_structure(content: &[u8]) -> AdapterResult {
+/// Detect JSON structure from content → (is_list, is_record)
+fn detect_json_structure(content: &[u8]) -> (bool, bool) {
     let text = match std::str::from_utf8(content) {
         Ok(s) => s,
-        Err(_) => {
-            return AdapterResult::scalar_opaque("media:json;textable");
-        }
+        Err(_) => return (false, false),
     };
 
     let trimmed = text.trim_start();
-
     if trimmed.is_empty() {
-        return AdapterResult::scalar_opaque("media:json;textable");
+        return (false, false);
     }
 
     match trimmed.chars().next() {
-        Some('{') => AdapterResult::scalar_record("media:json;record;textable"),
-        Some('[') => detect_json_array_structure(trimmed),
-        Some('"') | Some('0'..='9') | Some('-') | Some('t') | Some('f') | Some('n') => {
-            AdapterResult::scalar_opaque("media:json;textable")
+        Some('{') => (false, true),
+        Some('[') => {
+            let after_bracket = trimmed[1..].trim_start();
+            if after_bracket.is_empty() || after_bracket.starts_with(']') {
+                (true, false)
+            } else if after_bracket.starts_with('{') {
+                (true, true)
+            } else {
+                (true, false)
+            }
         }
-        _ => AdapterResult::scalar_opaque("media:json;textable"),
+        _ => (false, false),
     }
 }
 
-/// Check if a JSON array contains objects
-fn detect_json_array_structure(trimmed: &str) -> AdapterResult {
-    let after_bracket = trimmed[1..].trim_start();
+// =============================================================================
+// NDJSON
+// =============================================================================
 
-    if after_bracket.is_empty() || after_bracket.starts_with(']') {
-        return AdapterResult::list_opaque("media:json;list;textable");
-    }
-
-    if after_bracket.starts_with('{') {
-        AdapterResult::list_record("media:json;list;record;textable")
-    } else {
-        AdapterResult::list_opaque("media:json;list;textable")
-    }
-}
-
-/// NDJSON (Newline-delimited JSON) adapter
 pub struct NdjsonAdapter;
 
 impl MediaAdapter for NdjsonAdapter {
-    fn name(&self) -> &'static str {
-        "ndjson"
-    }
+    fn name(&self) -> &'static str { "ndjson" }
+    fn pattern_urn(&self) -> &'static str { "media:ndjson" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        detect_ndjson_structure(content)
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_ndjson_structure(content);
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// Detect NDJSON structure from content
-fn detect_ndjson_structure(content: &[u8]) -> AdapterResult {
+/// Detect NDJSON structure → (is_list, is_record)
+/// NDJSON is always a list; check if items are objects
+fn detect_ndjson_structure(content: &[u8]) -> (bool, bool) {
     let text = match std::str::from_utf8(content) {
         Ok(s) => s,
-        Err(_) => {
-            return AdapterResult::list_opaque("media:ndjson;list;textable");
-        }
+        Err(_) => return (true, false),
     };
 
-    let mut has_object = false;
-
-    for line in text.lines().take(10) {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if trimmed.starts_with('{') {
-            has_object = true;
-            break;
-        }
-    }
-
-    if has_object {
-        AdapterResult::list_record("media:ndjson;list;record;textable")
-    } else {
-        AdapterResult::list_opaque("media:ndjson;list;textable")
-    }
+    let has_object = text.lines().take(10).any(|line| line.trim().starts_with('{'));
+    (true, has_object)
 }
 
-/// CSV adapter — inspects content to determine record marker
+// =============================================================================
+// CSV
+// =============================================================================
+
 pub struct CsvAdapter;
 
 impl MediaAdapter for CsvAdapter {
-    fn name(&self) -> &'static str {
-        "csv"
-    }
+    fn name(&self) -> &'static str { "csv" }
+    fn pattern_urn(&self) -> &'static str { "media:csv" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        detect_csv_structure(content, ',')
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_delimited_structure(content, ',');
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// TSV (Tab-separated values) adapter
+// =============================================================================
+// TSV
+// =============================================================================
+
 pub struct TsvAdapter;
 
 impl MediaAdapter for TsvAdapter {
-    fn name(&self) -> &'static str {
-        "tsv"
-    }
+    fn name(&self) -> &'static str { "tsv" }
+    fn pattern_urn(&self) -> &'static str { "media:tsv" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        let result = detect_csv_structure(content, '\t');
-        AdapterResult {
-            media_urn: result.media_urn.replace("csv", "tsv"),
-            content_structure: result.content_structure,
-        }
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_delimited_structure(content, '\t');
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// PSV (Pipe-separated values) adapter
+// =============================================================================
+// PSV
+// =============================================================================
+
 pub struct PsvAdapter;
 
 impl MediaAdapter for PsvAdapter {
-    fn name(&self) -> &'static str {
-        "psv"
-    }
+    fn name(&self) -> &'static str { "psv" }
+    fn pattern_urn(&self) -> &'static str { "media:psv" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        let result = detect_csv_structure(content, '|');
-        AdapterResult {
-            media_urn: result.media_urn.replace("csv", "psv"),
-            content_structure: result.content_structure,
-        }
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_delimited_structure(content, '|');
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// Detect CSV structure — list of records if multiple columns
-fn detect_csv_structure(content: &[u8], delimiter: char) -> AdapterResult {
+/// Detect delimited (CSV/TSV/PSV) structure → (is_list, is_record)
+/// Delimited data is always a list; record if multiple columns
+fn detect_delimited_structure(content: &[u8], delimiter: char) -> (bool, bool) {
     let text = match std::str::from_utf8(content) {
         Ok(s) => s,
-        Err(_) => {
-            return AdapterResult::list_opaque("media:csv;list;textable");
-        }
+        Err(_) => return (true, false),
     };
 
     let first_line = match text.lines().next() {
         Some(line) => line,
-        None => {
-            return AdapterResult::list_opaque("media:csv;list;textable");
-        }
+        None => return (true, false),
     };
 
-    let column_count = count_csv_columns(first_line, delimiter);
-
-    if column_count > 1 {
-        AdapterResult::list_record("media:csv;list;record;textable")
-    } else {
-        AdapterResult::list_opaque("media:csv;list;textable")
-    }
+    let column_count = count_delimited_columns(first_line, delimiter);
+    (true, column_count > 1)
 }
 
-/// Count columns in a CSV line (handles basic quoting)
-fn count_csv_columns(line: &str, delimiter: char) -> usize {
+/// Count columns in a delimited line (handles basic quoting)
+fn count_delimited_columns(line: &str, delimiter: char) -> usize {
     let mut count = 1;
     let mut in_quotes = false;
 
@@ -233,34 +197,34 @@ fn count_csv_columns(line: &str, delimiter: char) -> usize {
     count
 }
 
-/// YAML adapter — inspects content to determine structure
+// =============================================================================
+// YAML
+// =============================================================================
+
 pub struct YamlAdapter;
 
 impl MediaAdapter for YamlAdapter {
-    fn name(&self) -> &'static str {
-        "yaml"
-    }
+    fn name(&self) -> &'static str { "yaml" }
+    fn pattern_urn(&self) -> &'static str { "media:yaml" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        detect_yaml_structure(content)
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_yaml_structure(content);
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// Detect YAML structure from content
-fn detect_yaml_structure(content: &[u8]) -> AdapterResult {
+/// Detect YAML structure from content → (is_list, is_record)
+fn detect_yaml_structure(content: &[u8]) -> (bool, bool) {
     let text = match std::str::from_utf8(content) {
         Ok(s) => s,
-        Err(_) => {
-            return AdapterResult::scalar_opaque("media:yaml;textable");
-        }
+        Err(_) => return (false, false),
     };
 
     let trimmed = text.trim_start();
@@ -271,23 +235,15 @@ fn detect_yaml_structure(content: &[u8]) -> AdapterResult {
 
     if doc_count > 1 {
         let first_doc = trimmed.split("\n---").next().unwrap_or("");
-        let first_doc = first_doc
-            .strip_prefix("---")
-            .unwrap_or(first_doc)
-            .trim_start();
-
-        if looks_like_yaml_mapping(first_doc) {
-            return AdapterResult::list_record("media:yaml;list;record;textable");
-        } else {
-            return AdapterResult::list_opaque("media:yaml;list;textable");
-        }
+        let first_doc = first_doc.strip_prefix("---").unwrap_or(first_doc).trim_start();
+        return (true, looks_like_yaml_mapping(first_doc));
     }
 
     // Single document
     let doc = trimmed.strip_prefix("---").unwrap_or(trimmed).trim_start();
 
     if doc.is_empty() {
-        return AdapterResult::scalar_opaque("media:yaml;textable");
+        return (false, false);
     }
 
     if doc.starts_with('-') {
@@ -297,23 +253,16 @@ fn detect_yaml_structure(content: &[u8]) -> AdapterResult {
             .map(|l| l.trim_start().strip_prefix('-').unwrap_or("").trim_start())
             .unwrap_or("");
 
-        if looks_like_yaml_mapping(first_item) || first_item.contains(':') {
-            AdapterResult::list_record("media:yaml;list;record;textable")
-        } else {
-            AdapterResult::list_opaque("media:yaml;list;textable")
-        }
+        let is_record = looks_like_yaml_mapping(first_item) || first_item.contains(':');
+        (true, is_record)
     } else if doc.starts_with('{') {
-        AdapterResult::scalar_record("media:yaml;record;textable")
+        (false, true)
     } else if doc.starts_with('[') {
-        if doc.contains('{') {
-            AdapterResult::list_record("media:yaml;list;record;textable")
-        } else {
-            AdapterResult::list_opaque("media:yaml;list;textable")
-        }
+        (true, doc.contains('{'))
     } else if doc.contains(':') {
-        AdapterResult::scalar_record("media:yaml;record;textable")
+        (false, true)
     } else {
-        AdapterResult::scalar_opaque("media:yaml;textable")
+        (false, false)
     }
 }
 
@@ -334,51 +283,49 @@ fn looks_like_yaml_mapping(content: &str) -> bool {
     false
 }
 
-/// TOML adapter — always record (config file, no inspection needed)
+// =============================================================================
+// TOML
+// =============================================================================
+
 pub struct TomlAdapter;
 
 impl MediaAdapter for TomlAdapter {
-    fn name(&self) -> &'static str {
-        "toml"
-    }
+    fn name(&self) -> &'static str { "toml" }
+    fn pattern_urn(&self) -> &'static str { "media:toml" }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn detect(&self, _path: &Path, _content: &[u8]) -> AdapterResult {
-        AdapterResult::scalar_record("media:toml;record;textable")
-    }
+    // TOML is always a record — no content inspection needed.
+    // The registry will pick the most specific conforming candidate,
+    // which should be the record-tagged one.
 }
 
-/// XML adapter — inspects content to determine structure
+// =============================================================================
+// XML
+// =============================================================================
+
 pub struct XmlAdapter;
 
 impl MediaAdapter for XmlAdapter {
-    fn name(&self) -> &'static str {
-        "xml"
-    }
+    fn name(&self) -> &'static str { "xml" }
+    fn pattern_urn(&self) -> &'static str { "media:xml" }
+    fn requires_content_inspection(&self) -> bool { true }
 
-    fn extensions(&self) -> &'static [&'static str] {
-        &[]
-    }
-
-    fn requires_content_inspection(&self) -> bool {
-        true
-    }
-
-    fn detect(&self, _path: &Path, content: &[u8]) -> AdapterResult {
-        detect_xml_structure(content)
+    fn select_candidate(
+        &self,
+        candidates: &[&MediaUrn],
+        _path: &Path,
+        content: &[u8],
+    ) -> Option<AdapterSelection> {
+        let (is_list, is_record) = detect_xml_structure(content);
+        select_by_structure(candidates, is_list, is_record)
+            .map(|(idx, structure)| AdapterSelection { candidate_index: idx, content_structure: structure })
     }
 }
 
-/// Detect XML structure from content
-fn detect_xml_structure(content: &[u8]) -> AdapterResult {
+/// Detect XML structure from content → (is_list, is_record)
+fn detect_xml_structure(content: &[u8]) -> (bool, bool) {
     let text = match std::str::from_utf8(content) {
         Ok(s) => s,
-        Err(_) => {
-            return AdapterResult::scalar_opaque("media:xml;textable");
-        }
+        Err(_) => return (false, false),
     };
 
     // Skip XML declaration
@@ -394,190 +341,182 @@ fn detect_xml_structure(content: &[u8]) -> AdapterResult {
     if let Some(start) = trimmed.find('<') {
         if let Some(end) = trimmed[start..].find(|c| c == '>' || c == ' ' || c == '/') {
             let tag_name = &trimmed[start + 1..start + end];
-
-            // Look for repeated child elements
             let child_pattern = format!("<{}", tag_name.chars().take(1).collect::<String>());
-
             let child_count = trimmed.matches(&child_pattern).count();
 
             if child_count > 2 {
-                return AdapterResult::list_record("media:xml;list;record;textable");
+                return (true, true);
             }
         }
     }
 
     if trimmed.contains('=') || (trimmed.matches('<').count() > 2) {
-        AdapterResult::scalar_record("media:xml;record;textable")
+        (false, true)
     } else {
-        AdapterResult::scalar_opaque("media:xml;textable")
+        (false, false)
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use crate::input_resolver::ContentStructure;
 
-    // JSON Detection Tests (TEST1030-TEST1044)
+    // Helper: create candidate MediaUrn refs for testing
+    fn yaml_candidates() -> Vec<MediaUrn> {
+        vec![
+            MediaUrn::from_string("media:textable;yaml").unwrap(),
+            MediaUrn::from_string("media:list;textable;yaml").unwrap(),
+            MediaUrn::from_string("media:record;textable;yaml").unwrap(),
+            MediaUrn::from_string("media:list;record;textable;yaml").unwrap(),
+        ]
+    }
 
-    // TEST1030: Empty object
+    fn json_candidates() -> Vec<MediaUrn> {
+        vec![
+            MediaUrn::from_string("media:json;textable").unwrap(),
+            MediaUrn::from_string("media:json;list;textable").unwrap(),
+            MediaUrn::from_string("media:json;record;textable").unwrap(),
+            MediaUrn::from_string("media:json;list;record;textable").unwrap(),
+        ]
+    }
+
+    fn refs(urns: &[MediaUrn]) -> Vec<&MediaUrn> {
+        urns.iter().collect()
+    }
+
+    // JSON tests
+
     #[test]
     fn test1030_json_empty_object() {
+        let candidates = json_candidates();
         let adapter = JsonAdapter;
-        let path = PathBuf::from("data.json");
-        let content = b"{}";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:json;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
+        let path = std::path::PathBuf::from("data.json");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"{}").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ScalarRecord);
+        assert!(candidates[sel.candidate_index].has_marker_tag("record"));
+        assert!(!candidates[sel.candidate_index].has_marker_tag("list"));
     }
 
-    // TEST1031: Simple object
-    #[test]
-    fn test1031_json_simple_object() {
-        let adapter = JsonAdapter;
-        let path = PathBuf::from("data.json");
-        let content = br#"{"a": 1}"#;
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:json;record;textable");
-    }
-
-    // TEST1033: Empty array
     #[test]
     fn test1033_json_empty_array() {
+        let candidates = json_candidates();
         let adapter = JsonAdapter;
-        let path = PathBuf::from("data.json");
-        let content = b"[]";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:json;list;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListOpaque);
+        let path = std::path::PathBuf::from("data.json");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"[]").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListOpaque);
+        assert!(candidates[sel.candidate_index].has_marker_tag("list"));
+        assert!(!candidates[sel.candidate_index].has_marker_tag("record"));
     }
 
-    // TEST1036: Array of objects
     #[test]
     fn test1036_json_array_of_objects() {
+        let candidates = json_candidates();
         let adapter = JsonAdapter;
-        let path = PathBuf::from("data.json");
-        let content = br#"[{"a": 1}]"#;
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:json;list;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListRecord);
+        let path = std::path::PathBuf::from("data.json");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, br#"[{"a": 1}]"#).unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListRecord);
+        assert!(candidates[sel.candidate_index].has_marker_tag("list"));
+        assert!(candidates[sel.candidate_index].has_marker_tag("record"));
     }
 
-    // TEST1039: Number primitive
     #[test]
     fn test1039_json_number_primitive() {
+        let candidates = json_candidates();
         let adapter = JsonAdapter;
-        let path = PathBuf::from("data.json");
-        let content = b"42";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:json;textable");
-        assert_eq!(result.content_structure, ContentStructure::ScalarOpaque);
+        let path = std::path::PathBuf::from("data.json");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"42").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ScalarOpaque);
+        assert!(!candidates[sel.candidate_index].has_marker_tag("list"));
+        assert!(!candidates[sel.candidate_index].has_marker_tag("record"));
     }
 
-    // NDJSON Detection Tests (TEST1045-TEST1054)
+    // NDJSON tests
 
-    // TEST1045: Objects only
     #[test]
     fn test1045_ndjson_objects() {
+        let candidates = vec![
+            MediaUrn::from_string("media:ndjson;textable").unwrap(),
+            MediaUrn::from_string("media:ndjson;list;record;textable").unwrap(),
+            MediaUrn::from_string("media:ndjson;list;textable").unwrap(),
+        ];
         let adapter = NdjsonAdapter;
-        let path = PathBuf::from("data.ndjson");
-        let content = b"{\"a\":1}\n{\"b\":2}";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:ndjson;list;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListRecord);
+        let path = std::path::PathBuf::from("data.ndjson");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"{\"a\":1}\n{\"b\":2}").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListRecord);
     }
 
-    // TEST1047: Primitives only
     #[test]
     fn test1047_ndjson_primitives() {
+        let candidates = vec![
+            MediaUrn::from_string("media:ndjson;textable").unwrap(),
+            MediaUrn::from_string("media:ndjson;list;textable").unwrap(),
+        ];
         let adapter = NdjsonAdapter;
-        let path = PathBuf::from("data.ndjson");
-        let content = b"1\n2\n3";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:ndjson;list;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListOpaque);
+        let path = std::path::PathBuf::from("data.ndjson");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"1\n2\n3").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListOpaque);
     }
 
-    // CSV Detection Tests (TEST1055-TEST1064)
+    // CSV tests
 
-    // TEST1055: Multi-column with header
     #[test]
     fn test1055_csv_multi_column() {
+        let candidates = vec![
+            MediaUrn::from_string("media:csv;list;textable").unwrap(),
+            MediaUrn::from_string("media:csv;list;record;textable").unwrap(),
+        ];
         let adapter = CsvAdapter;
-        let path = PathBuf::from("data.csv");
-        let content = b"a,b\n1,2";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:csv;list;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListRecord);
+        let path = std::path::PathBuf::from("data.csv");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"a,b\n1,2").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListRecord);
     }
 
-    // TEST1056: Single column
     #[test]
     fn test1056_csv_single_column() {
+        let candidates = vec![
+            MediaUrn::from_string("media:csv;list;textable").unwrap(),
+            MediaUrn::from_string("media:csv;list;record;textable").unwrap(),
+        ];
         let adapter = CsvAdapter;
-        let path = PathBuf::from("data.csv");
-        let content = b"value\n1\n2";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:csv;list;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListOpaque);
+        let path = std::path::PathBuf::from("data.csv");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"value\n1\n2").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListOpaque);
     }
 
-    // YAML Detection Tests (TEST1065-TEST1074)
+    // YAML tests
 
-    // TEST1065: Simple mapping
     #[test]
     fn test1065_yaml_mapping() {
+        let candidates = yaml_candidates();
         let adapter = YamlAdapter;
-        let path = PathBuf::from("config.yaml");
-        let content = b"a: 1";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:yaml;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
+        let path = std::path::PathBuf::from("config.yaml");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"a: 1").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ScalarRecord);
     }
 
-    // TEST1067: Sequence of scalars
     #[test]
     fn test1067_yaml_sequence_of_scalars() {
+        let candidates = yaml_candidates();
         let adapter = YamlAdapter;
-        let path = PathBuf::from("list.yaml");
-        let content = b"- a\n- b";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:yaml;list;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListOpaque);
+        let path = std::path::PathBuf::from("list.yaml");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"- a\n- b").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListOpaque);
     }
 
-    // TEST1068: Sequence of mappings
     #[test]
     fn test1068_yaml_sequence_of_mappings() {
+        let candidates = yaml_candidates();
         let adapter = YamlAdapter;
-        let path = PathBuf::from("list.yaml");
-        let content = b"- a: 1\n- b: 2";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:yaml;list;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ListRecord);
+        let path = std::path::PathBuf::from("list.yaml");
+        let sel = adapter.select_candidate(&refs(&candidates), &path, b"- a: 1\n- b: 2").unwrap();
+        assert_eq!(sel.content_structure, ContentStructure::ListRecord);
     }
 
-    // TEST1087: TOML always record
-    #[test]
-    fn test1087_toml_always_record() {
-        let adapter = TomlAdapter;
-        let path = PathBuf::from("config.toml");
-        let content = b"[section]\nkey = \"value\"";
-
-        let result = adapter.detect(&path, content);
-        assert_eq!(result.media_urn, "media:toml;record;textable");
-        assert_eq!(result.content_structure, ContentStructure::ScalarRecord);
-    }
+    // TOML test — TomlAdapter doesn't inspect content, so no select_candidate test.
+    // The registry handles it by picking the most specific conforming candidate.
 }

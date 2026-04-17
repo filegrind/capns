@@ -654,11 +654,6 @@ impl LiveCapGraph {
                     .entry(edge.to_spec.clone())
                     .or_insert_with(|| ReachableTargetInfo {
                         media_spec: edge.to_spec.clone(),
-                        // display_name is a fallback the caller
-                        // may override via the registry; here
-                        // we just serialize the URN for
-                        // presentation. This is **not** used
-                        // for identity, only for display.
                         display_name: edge.to_spec.to_string(),
                         min_path_length: new_depth as i32,
                         path_count: 0,
@@ -708,11 +703,6 @@ impl LiveCapGraph {
         max_depth: usize,
         max_paths: usize,
     ) -> Vec<Strand> {
-        // Check if source already satisfies target
-        if source.is_equivalent(target).unwrap_or(false) {
-            return vec![];
-        }
-
         // Log outgoing edges from source to understand branching
         let source_edges = self.get_outgoing_edges(source, is_sequence);
         tracing::info!(
@@ -808,14 +798,6 @@ impl LiveCapGraph {
     where
         F: FnMut(PathFindingEvent),
     {
-        if source.is_equivalent(target).unwrap_or(false) {
-            on_event(PathFindingEvent::Complete {
-                total_paths: 0,
-                total_nodes_explored: 0,
-            });
-            return vec![];
-        }
-
         let mut all_paths: Vec<Strand> = Vec::new();
         let mut total_nodes_explored: u64 = 0;
 
@@ -903,8 +885,10 @@ impl LiveCapGraph {
             return;
         }
 
-        // Check if we've reached the EXACT target using is_equivalent()
-        if current.is_equivalent(target).unwrap_or(false) {
+        // Check if we've reached the EXACT target using is_equivalent().
+        // Skip this check at the starting node (empty path) — when source==target,
+        // we still want to explore edges to find round-trip transformation paths.
+        if !current_path.is_empty() && current.is_equivalent(target).unwrap_or(false) {
             if current_path.len() == depth_limit {
                 let cap_step_count = current_path.iter().filter(|s| s.is_cap()).count() as i32;
 

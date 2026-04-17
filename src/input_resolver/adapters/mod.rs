@@ -1,31 +1,31 @@
 //! Media Content Inspection Adapters
 //!
-//! This module provides adapters for file types that require content inspection
-//! to determine their full media URN (e.g., list/record markers for JSON, CSV, YAML).
+//! This module provides adapters for media types. Each adapter declares a
+//! pattern URN and can optionally inspect file content to select the most
+//! appropriate candidate URN from the media spec registry.
 //!
 //! ## Architecture
 //!
 //! The MediaAdapterRegistry integrates with MediaUrnRegistry:
-//! 1. MediaUrnRegistry (from TOML specs) provides extension -> base URN mapping
-//! 2. Adapters are registered for specific base URNs that need content inspection
-//! 3. Adapters refine the base URN with list/record markers based on content
-//!
-//! ## Which types need adapters?
-//!
-//! - **Data interchange** (JSON, NDJSON, CSV, TSV, PSV, YAML, XML): Need inspection
-//!   to determine if content is scalar/list and opaque/record
-//! - **Plain text** (.txt): May be single-line or multi-line (list)
-//! - **Binary formats** (PDF, PNG, MP3, etc.): No adapters needed - structure is
-//!   defined in the TOML spec and is fixed (always ScalarOpaque)
+//! 1. MediaUrnRegistry provides extension -> candidate URN mapping (from specs)
+//! 2. Each adapter declares a pattern URN — candidates that conform to it are offered
+//! 3. Content-inspecting adapters select the best candidate based on structure
+//! 4. Non-inspecting adapters let the registry pick the most specific candidate
 
 mod registry;
 pub(crate) mod data;
 pub(crate) mod text;
+pub(crate) mod documents;
+pub(crate) mod images;
+pub(crate) mod audio;
+pub(crate) mod video;
+pub(crate) mod code;
+pub(crate) mod archives;
+pub(crate) mod other;
 
 pub use registry::MediaAdapterRegistry;
-pub use registry::extract_base_urn;
 
-// Re-export content inspection adapters for testing
+// Re-export content inspection adapters
 pub use data::{
     CsvAdapter, JsonAdapter, NdjsonAdapter, PsvAdapter, TomlAdapter, TsvAdapter, XmlAdapter,
     YamlAdapter,

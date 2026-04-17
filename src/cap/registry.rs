@@ -835,16 +835,16 @@ mod url_encoding_tests {
     #[test]
     fn test141_exact_url_format() {
         let config = RegistryConfig::default();
-        // Simple media URNs without semicolons don't need quotes (colons don't need quoting)
-        let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task;id"#;
+        // media URNs with semicolons in in/out must be quoted; single-tag ones are fine unquoted
+        let urn = r#"cap:in=media:listing-id;op=use_grinder;out=media:task"#;
         let normalized = normalize_cap_urn(urn);
         let tags_part = normalized.strip_prefix("cap:").unwrap_or(&normalized);
         let encoded_tags = urlencoding::encode(tags_part);
         let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
-        // Just verify URL contains the encoded media URNs
-        assert!(url.contains("media%3Alisting-id"), "URL should contain encoded media URN");
-        assert!(url.contains("media%3Atask-id"), "URL should contain encoded media URN");
+        // Verify URL contains the encoded media URNs
+        assert!(url.contains("media%3Alisting-id"), "URL should contain encoded in media URN");
+        assert!(url.contains("media%3Atask"), "URL should contain encoded out media URN");
     }
 
     /// Test that normalization handles various input formats
