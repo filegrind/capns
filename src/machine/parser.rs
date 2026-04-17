@@ -111,10 +111,7 @@ pub type StrandNodeNames = HashMap<String, NodeId>;
 /// may fail; the combined error type is `MachineParseError`.
 /// The cap registry is required by the resolver to look up
 /// each cap's `args` list and run source-to-arg matching.
-pub fn parse_machine(
-    input: &str,
-    registry: &CapRegistry,
-) -> Result<Machine, MachineParseError> {
+pub fn parse_machine(input: &str, registry: &CapRegistry) -> Result<Machine, MachineParseError> {
     let (machine, _names) = parse_machine_with_node_names(input, registry)?;
     Ok(machine)
 }
@@ -138,17 +135,19 @@ pub fn parse_machine_with_node_names(
     }
 
     // Phase 1: pest grammar parse.
-    let pairs = MachineParser::parse(Rule::program, input).map_err(|e| {
-        MachineSyntaxError::ParseError {
+    let pairs =
+        MachineParser::parse(Rule::program, input).map_err(|e| MachineSyntaxError::ParseError {
             details: format!("{}", e),
-        }
-    })?;
+        })?;
 
     // Phase 2: walk AST collecting headers and wirings.
     let mut headers: Vec<(String, CapUrn, usize)> = Vec::new();
     let mut wirings: Vec<RawWiring> = Vec::new();
 
-    let program = pairs.into_iter().next().expect("pest produces a program rule");
+    let program = pairs
+        .into_iter()
+        .next()
+        .expect("pest produces a program rule");
     for (stmt_idx, pair) in program.into_inner().enumerate() {
         if pair.as_rule() != Rule::stmt {
             continue; // skip EOI
@@ -231,15 +230,15 @@ pub fn parse_machine_with_node_names(
     // Re-binding is allowed iff the new URN is_comparable to
     // the existing one (same specialization chain).
     let mut node_media: HashMap<String, MediaUrn> = HashMap::new();
-    let wildcard = MediaUrn::from_string("media:")
-        .expect("wildcard media URN parses");
+    let wildcard = MediaUrn::from_string("media:").expect("wildcard media URN parses");
 
     for w in &wirings {
-        let (cap_urn, _) = alias_map.get(&w.cap_alias).ok_or_else(|| {
-            MachineSyntaxError::UndefinedAlias {
-                alias: w.cap_alias.clone(),
-            }
-        })?;
+        let (cap_urn, _) =
+            alias_map
+                .get(&w.cap_alias)
+                .ok_or_else(|| MachineSyntaxError::UndefinedAlias {
+                    alias: w.cap_alias.clone(),
+                })?;
 
         for src in &w.sources {
             if alias_map.contains_key(src) {
@@ -258,18 +257,20 @@ pub fn parse_machine_with_node_names(
             .into());
         }
 
-        let cap_in_media = cap_urn.in_media_urn().map_err(|e| {
-            MachineSyntaxError::InvalidMediaUrn {
-                alias: w.cap_alias.clone(),
-                details: format!("in= spec: {}", e),
-            }
-        })?;
-        let cap_out_media = cap_urn.out_media_urn().map_err(|e| {
-            MachineSyntaxError::InvalidMediaUrn {
-                alias: w.cap_alias.clone(),
-                details: format!("out= spec: {}", e),
-            }
-        })?;
+        let cap_in_media =
+            cap_urn
+                .in_media_urn()
+                .map_err(|e| MachineSyntaxError::InvalidMediaUrn {
+                    alias: w.cap_alias.clone(),
+                    details: format!("in= spec: {}", e),
+                })?;
+        let cap_out_media =
+            cap_urn
+                .out_media_urn()
+                .map_err(|e| MachineSyntaxError::InvalidMediaUrn {
+                    alias: w.cap_alias.clone(),
+                    details: format!("out= spec: {}", e),
+                })?;
 
         // Primary source: bind to cap.in=
         if !w.sources.is_empty() {
@@ -338,8 +339,7 @@ pub fn parse_machine_with_node_names(
     // a media URN stay distinct NodeIds — that's the parser's
     // identity contract.
     let mut strands: Vec<MachineStrand> = Vec::with_capacity(group_min_idx.len());
-    let mut strand_node_names: Vec<StrandNodeNames> =
-        Vec::with_capacity(group_min_idx.len());
+    let mut strand_node_names: Vec<StrandNodeNames> = Vec::with_capacity(group_min_idx.len());
     for (strand_index, (root, _)) in group_min_idx.iter().enumerate() {
         let mut member_indices = groups[root].clone();
         member_indices.sort();
@@ -370,8 +370,7 @@ pub fn parse_machine_with_node_names(
             id
         }
 
-        let mut pre_interned: Vec<PreInternedWiring> =
-            Vec::with_capacity(member_indices.len());
+        let mut pre_interned: Vec<PreInternedWiring> = Vec::with_capacity(member_indices.len());
         for &w_idx in &member_indices {
             let w = &wirings[w_idx];
             let (cap_urn, _) = alias_map
@@ -383,8 +382,7 @@ pub fn parse_machine_with_node_names(
                 .iter()
                 .map(|name| intern_named(name, &node_media, &mut nodes, &mut name_to_id))
                 .collect();
-            let target_node_id =
-                intern_named(&w.target, &node_media, &mut nodes, &mut name_to_id);
+            let target_node_id = intern_named(&w.target, &node_media, &mut nodes, &mut name_to_id);
 
             pre_interned.push(PreInternedWiring {
                 cap_urn: cap_urn.clone(),
@@ -408,10 +406,7 @@ impl Machine {
     /// Combined lexical / grammatical / resolution parse. The
     /// cap registry is required to resolve each cap's argument
     /// structure during anchor realization.
-    pub fn from_string(
-        input: &str,
-        registry: &CapRegistry,
-    ) -> Result<Self, MachineParseError> {
+    pub fn from_string(input: &str, registry: &CapRegistry) -> Result<Self, MachineParseError> {
         parse_machine(input, registry)
     }
 }
@@ -544,8 +539,9 @@ mod tests {
         registry_with(vec![extract, embed])
     }
 
+    // TEST1163: Parsing one connected strand yields a single machine strand with both caps connected by the shared node.
     #[test]
-    fn parse_single_strand_two_caps_connected_via_shared_node() {
+    fn test1163_parse_single_strand_two_caps_connected_via_shared_node() {
         let registry = pdf_extract_embed_registry();
         let notation = "\
 [extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
@@ -565,8 +561,9 @@ mod tests {
         assert_eq!(extract_target, embed_source);
     }
 
+    // TEST1164: Parsing two disconnected strand definitions yields two separate machine strands.
     #[test]
-    fn parse_two_disconnected_strands_yields_two_machine_strands() {
+    fn test1164_parse_two_disconnected_strands_yields_two_machine_strands() {
         // Two strands sharing no node names. The parser must
         // partition them into two `MachineStrand`s and order
         // them by first appearance in the textual input.
@@ -610,8 +607,9 @@ mod tests {
             .contains("convert_b"));
     }
 
+    // TEST1165: Parsing fails hard when a referenced cap is missing from the registry cache.
     #[test]
-    fn parse_unknown_cap_in_registry_fails_hard() {
+    fn test1165_parse_unknown_cap_in_registry_fails_hard() {
         let registry = registry_with(vec![]);
         let notation = "\
 [ghost cap:in=media:pdf;op=ghost;out=\"media:txt;textable\"]\
@@ -625,8 +623,9 @@ mod tests {
         }
     }
 
+    // TEST1166: Duplicate header aliases are reported as syntax errors.
     #[test]
-    fn parse_duplicate_alias_is_syntax_error() {
+    fn test1166_parse_duplicate_alias_is_syntax_error() {
         let registry = pdf_extract_embed_registry();
         let notation = "\
 [extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
@@ -639,8 +638,9 @@ mod tests {
         ));
     }
 
+    // TEST1167: Wiring that references an undefined alias is reported as a syntax error.
     #[test]
-    fn parse_undefined_alias_is_syntax_error() {
+    fn test1167_parse_undefined_alias_is_syntax_error() {
         let registry = pdf_extract_embed_registry();
         let notation = "\
 [extract cap:in=media:pdf;op=extract;out=\"media:txt;textable\"]\
@@ -652,8 +652,9 @@ mod tests {
         ));
     }
 
+    // TEST1168: Parsing rejects node names that collide with declared cap aliases.
     #[test]
-    fn parse_node_alias_collision_with_header_alias_fails_hard() {
+    fn test1168_parse_node_alias_collision_with_header_alias_fails_hard() {
         // The user wrote `extract` as a NODE name in a wiring
         // but `extract` is also a header alias. This is
         // structurally ambiguous: is `extract` the cap or the
@@ -669,8 +670,9 @@ mod tests {
         ));
     }
 
+    // TEST1169: Loop markers in notation set the resolved edge loop flag on the following cap step.
     #[test]
-    fn parse_loop_marker_sets_is_loop_on_resolved_edge() {
+    fn test1169_parse_loop_marker_sets_is_loop_on_resolved_edge() {
         let cap_def = build_cap(
             "cap:in=media:textable;op=t;out=media:textable",
             "t",
@@ -685,11 +687,15 @@ mod tests {
         assert_eq!(machine.strand_count(), 1);
         let strand = &machine.strands()[0];
         assert_eq!(strand.edges().len(), 1);
-        assert!(strand.edges()[0].is_loop, "LOOP marker must propagate to MachineEdge::is_loop");
+        assert!(
+            strand.edges()[0].is_loop,
+            "LOOP marker must propagate to MachineEdge::is_loop"
+        );
     }
 
+    // TEST1170: Parsing and then serializing machine notation round-trips to the canonical form.
     #[test]
-    fn parse_then_serialize_round_trips_to_canonical_form() {
+    fn test1170_parse_then_serialize_round_trips_to_canonical_form() {
         // The user can write any aliases / node names; the
         // parse-then-reserialize cycle normalizes them to
         // edge_<i> / n<i> from the global counters. Round-tripping
@@ -714,8 +720,9 @@ mod tests {
         assert_eq!(canonical, canonical2);
     }
 
+    // TEST1171: Empty machine notation is rejected as a syntax error.
     #[test]
-    fn parse_empty_notation_is_syntax_error() {
+    fn test1171_parse_empty_notation_is_syntax_error() {
         let registry = registry_with(vec![]);
         let err = parse_machine("   ", &registry).unwrap_err();
         assert!(matches!(

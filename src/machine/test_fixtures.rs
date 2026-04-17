@@ -91,20 +91,14 @@ pub(crate) fn media(urn: &str) -> MediaUrn {
 
 /// Convenience: parse a cap URN string.
 pub(crate) fn cap(urn: &str) -> CapUrn {
-    CapUrn::from_string(urn)
-        .unwrap_or_else(|e| panic!("test fixture: invalid cap URN {urn}: {e}"))
+    CapUrn::from_string(urn).unwrap_or_else(|e| panic!("test fixture: invalid cap URN {urn}: {e}"))
 }
 
 /// Build a one-cap `StrandStep`. `from`/`to` are the runtime
 /// data URN at this step's input and output positions; in the
 /// new regime they should match the cap's declared in/out
 /// patterns (or a more-specific URN that conforms).
-pub(crate) fn cap_step(
-    cap_urn_str: &str,
-    title: &str,
-    from: &str,
-    to: &str,
-) -> StrandStep {
+pub(crate) fn cap_step(cap_urn_str: &str, title: &str, from: &str, to: &str) -> StrandStep {
     StrandStep {
         step_type: StrandStepType::Cap {
             cap_urn: cap(cap_urn_str),

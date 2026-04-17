@@ -7,8 +7,8 @@
 //! where nodes are MediaSpec IDs and edges are capabilities that convert
 //! from one spec to another.
 
-use crate::{Cap, CapArgumentValue, CapResult, CapUrn, CapSet};
 use crate::urn::media_urn::MediaUrn;
+use crate::{Cap, CapArgumentValue, CapResult, CapSet, CapUrn};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Registry error types for capability host operations
@@ -107,15 +107,17 @@ impl CapGraph {
     ///
     /// Iterates through all capabilities in all registries and adds them as edges.
     pub fn build_from_registries(
-        registries: &[(String, std::sync::Arc<std::sync::RwLock<CapMatrix>>)]
+        registries: &[(String, std::sync::Arc<std::sync::RwLock<CapMatrix>>)],
     ) -> Result<Self, CapMatrixError> {
         let mut graph = Self::new();
 
         for (registry_name, registry_arc) in registries {
-            let registry = registry_arc.read()
-                .map_err(|_| CapMatrixError::RegistryError(
-                    format!("Failed to acquire read lock for registry '{}'", registry_name)
-                ))?;
+            let registry = registry_arc.read().map_err(|_| {
+                CapMatrixError::RegistryError(format!(
+                    "Failed to acquire read lock for registry '{}'",
+                    registry_name
+                ))
+            })?;
 
             for entry in registry.sets.values() {
                 for cap in &entry.capabilities {
@@ -150,11 +152,11 @@ impl CapGraph {
 
         self.edges
             .iter()
-            .filter(|edge| {
-                match MediaUrn::from_string(&edge.from_spec) {
-                    Ok(requirement_urn) => provided_urn.conforms_to(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
-                    Err(_) => false,
-                }
+            .filter(|edge| match MediaUrn::from_string(&edge.from_spec) {
+                Ok(requirement_urn) => provided_urn
+                    .conforms_to(&requirement_urn)
+                    .expect("MediaUrn prefix mismatch impossible"),
+                Err(_) => false,
             })
             .collect()
     }
@@ -171,11 +173,11 @@ impl CapGraph {
 
         self.edges
             .iter()
-            .filter(|edge| {
-                match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.conforms_to(&requirement_urn).expect("MediaUrn prefix mismatch impossible"),
-                    Err(_) => false,
-                }
+            .filter(|edge| match MediaUrn::from_string(&edge.to_spec) {
+                Ok(produced_urn) => produced_urn
+                    .conforms_to(&requirement_urn)
+                    .expect("MediaUrn prefix mismatch impossible"),
+                Err(_) => false,
             })
             .collect()
     }
@@ -191,11 +193,11 @@ impl CapGraph {
 
         self.get_outgoing(from_spec)
             .iter()
-            .any(|edge| {
-                match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
-                    Err(_) => false,
-                }
+            .any(|edge| match MediaUrn::from_string(&edge.to_spec) {
+                Ok(produced_urn) => produced_urn
+                    .conforms_to(&to_requirement)
+                    .expect("MediaUrn prefix mismatch impossible"),
+                Err(_) => false,
             })
     }
 
@@ -210,13 +212,14 @@ impl CapGraph {
             Err(_) => return Vec::new(),
         };
 
-        let mut edges: Vec<&CapGraphEdge> = self.get_outgoing(from_spec)
+        let mut edges: Vec<&CapGraphEdge> = self
+            .get_outgoing(from_spec)
             .into_iter()
-            .filter(|edge| {
-                match MediaUrn::from_string(&edge.to_spec) {
-                    Ok(produced_urn) => produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible"),
-                    Err(_) => false,
-                }
+            .filter(|edge| match MediaUrn::from_string(&edge.to_spec) {
+                Ok(produced_urn) => produced_urn
+                    .conforms_to(&to_requirement)
+                    .expect("MediaUrn prefix mismatch impossible"),
+                Err(_) => false,
             })
             .collect();
 
@@ -251,7 +254,10 @@ impl CapGraph {
         // Start by checking edges from the initial spec
         for edge in &initial_edges {
             if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                if produced_urn
+                    .conforms_to(&to_requirement)
+                    .expect("MediaUrn prefix mismatch impossible")
+                {
                     return true;
                 }
             }
@@ -265,7 +271,10 @@ impl CapGraph {
         while let Some(current) = queue.pop_front() {
             for edge in self.get_outgoing(&current) {
                 if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                    if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                    if produced_urn
+                        .conforms_to(&to_requirement)
+                        .expect("MediaUrn prefix mismatch impossible")
+                    {
                         return true;
                     }
                 }
@@ -311,14 +320,20 @@ impl CapGraph {
             let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, *edge))?;
 
             if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                if produced_urn
+                    .conforms_to(&to_requirement)
+                    .expect("MediaUrn prefix mismatch impossible")
+                {
                     // Direct path found
                     return Some(vec![&self.edges[edge_idx]]);
                 }
             }
 
             if !visited.contains_key(&edge.to_spec) {
-                visited.insert(edge.to_spec.clone(), Some((from_spec.to_string(), edge_idx)));
+                visited.insert(
+                    edge.to_spec.clone(),
+                    Some((from_spec.to_string(), edge_idx)),
+                );
                 queue.push_back(edge.to_spec.clone());
             }
         }
@@ -329,7 +344,10 @@ impl CapGraph {
                 let edge_idx = self.edges.iter().position(|e| std::ptr::eq(e, edge))?;
 
                 if let Ok(produced_urn) = MediaUrn::from_string(&edge.to_spec) {
-                    if produced_urn.conforms_to(&to_requirement).expect("MediaUrn prefix mismatch impossible") {
+                    if produced_urn
+                        .conforms_to(&to_requirement)
+                        .expect("MediaUrn prefix mismatch impossible")
+                    {
                         // Found target - reconstruct path
                         let mut path_indices = vec![edge_idx];
                         let mut backtrack = current.clone();
@@ -423,7 +441,9 @@ impl CapGraph {
 
             // Check if edge output conforms to target
             let output_conforms = match MediaUrn::from_string(&edge.to_spec) {
-                Ok(produced) => produced.conforms_to(target).expect("MediaUrn prefix mismatch impossible"),
+                Ok(produced) => produced
+                    .conforms_to(target)
+                    .expect("MediaUrn prefix mismatch impossible"),
                 Err(_) => false,
             };
 
@@ -456,7 +476,12 @@ impl CapGraph {
     ///
     /// Unlike `find_path` which finds the shortest path, this finds the path with
     /// the highest total specificity score (sum of all edge specificities).
-    pub fn find_best_path(&self, from_spec: &str, to_spec: &str, max_depth: usize) -> Option<Vec<&CapGraphEdge>> {
+    pub fn find_best_path(
+        &self,
+        from_spec: &str,
+        to_spec: &str,
+        max_depth: usize,
+    ) -> Option<Vec<&CapGraphEdge>> {
         let all_paths = self.find_all_paths(from_spec, to_spec, max_depth);
 
         all_paths
@@ -552,9 +577,9 @@ impl CapMatrix {
     pub fn find_cap_sets(&self, request_urn: &str) -> Result<Vec<&dyn CapSet>, CapMatrixError> {
         let request = CapUrn::from_string(request_urn)
             .map_err(|e| CapMatrixError::InvalidUrn(format!("{}: {}", request_urn, e)))?;
-        
+
         let mut matching_sets = Vec::new();
-        
+
         for entry in self.sets.values() {
             for cap in &entry.capabilities {
                 // Use is_dispatchable: can this provider handle this request?
@@ -564,17 +589,20 @@ impl CapMatrix {
                 }
             }
         }
-        
+
         if matching_sets.is_empty() {
             return Err(CapMatrixError::NoSetsFound(request_urn.to_string()));
         }
-        
+
         Ok(matching_sets)
     }
 
     /// Find the best capability host for the request using specificity ranking
     /// Returns the CapSet (as Arc for cloning) and the Cap definition that matched
-    pub fn find_best_cap_set(&self, request_urn: &str) -> Result<(std::sync::Arc<dyn CapSet>, &Cap), CapMatrixError> {
+    pub fn find_best_cap_set(
+        &self,
+        request_urn: &str,
+    ) -> Result<(std::sync::Arc<dyn CapSet>, &Cap), CapMatrixError> {
         let request = CapUrn::from_string(request_urn)
             .map_err(|e| CapMatrixError::InvalidUrn(format!("{}: {}", request_urn, e)))?;
 
@@ -605,7 +633,6 @@ impl CapMatrix {
         }
     }
 
-
     /// Get all registered capability host names
     pub fn get_host_names(&self) -> Vec<String> {
         self.sets.keys().cloned().collect()
@@ -613,19 +640,24 @@ impl CapMatrix {
 
     /// Get all capabilities from all registered sets
     pub fn get_all_capabilities(&self) -> Vec<&Cap> {
-        self.sets.values()
+        self.sets
+            .values()
             .flat_map(|entry| &entry.capabilities)
             .collect()
     }
 
     /// Get capabilities for a specific host
     pub fn get_capabilities_for_host(&self, host_name: &str) -> Option<&[Cap]> {
-        self.sets.get(host_name).map(|entry| entry.capabilities.as_slice())
+        self.sets
+            .get(host_name)
+            .map(|entry| entry.capabilities.as_slice())
     }
 
     /// Iterate over all hosts and their capabilities
     pub fn iter_hosts_and_caps(&self) -> impl Iterator<Item = (&str, &[Cap])> {
-        self.sets.iter().map(|(name, entry)| (name.as_str(), entry.capabilities.as_slice()))
+        self.sets
+            .iter()
+            .map(|(name, entry)| (name.as_str(), entry.capabilities.as_slice()))
     }
 
     /// Check if any host can handle the specified capability
@@ -712,7 +744,8 @@ impl CapSet for CompositeCapSet {
         &self,
         cap_urn: &str,
         arguments: &[CapArgumentValue],
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<CapResult>> + Send + '_>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<CapResult>> + Send + '_>>
+    {
         let cap_urn = cap_urn.to_string();
         let arguments = arguments.to_vec();
 
@@ -762,16 +795,17 @@ impl CapSet for CompositeCapSet {
                 Some((host_arc, _)) => host_arc,
                 None => {
                     return Box::pin(async move {
-                        Err(anyhow::anyhow!("No capability host found for '{}'", cap_urn))
+                        Err(anyhow::anyhow!(
+                            "No capability host found for '{}'",
+                            cap_urn
+                        ))
                     });
                 }
             }
         };
 
         // Now we have an owned Arc<dyn CapSet> - no locks held
-        Box::pin(async move {
-            best_cap_set.execute_cap(&cap_urn, &arguments).await
-        })
+        Box::pin(async move { best_cap_set.execute_cap(&cap_urn, &arguments).await })
     }
 }
 
@@ -786,12 +820,19 @@ impl CapBlock {
 
     /// Add a child registry with a name (shared reference version)
     /// Registries are checked in order of addition for tie-breaking
-    pub fn add_registry(&mut self, name: String, registry: std::sync::Arc<std::sync::RwLock<CapMatrix>>) {
+    pub fn add_registry(
+        &mut self,
+        name: String,
+        registry: std::sync::Arc<std::sync::RwLock<CapMatrix>>,
+    ) {
         self.registries.push((name, registry));
     }
 
     /// Remove a child registry by name
-    pub fn remove_registry(&mut self, name: &str) -> Option<std::sync::Arc<std::sync::RwLock<CapMatrix>>> {
+    pub fn remove_registry(
+        &mut self,
+        name: &str,
+    ) -> Option<std::sync::Arc<std::sync::RwLock<CapMatrix>>> {
         if let Some(pos) = self.registries.iter().position(|(n, _)| n == name) {
             Some(self.registries.remove(pos).1)
         } else {
@@ -801,7 +842,8 @@ impl CapBlock {
 
     /// Get the Arc to a child registry by name
     pub fn get_registry(&self, name: &str) -> Option<std::sync::Arc<std::sync::RwLock<CapMatrix>>> {
-        self.registries.iter()
+        self.registries
+            .iter()
             .find(|(n, _)| n == name)
             .map(|(_, r)| r.clone())
     }
@@ -838,8 +880,9 @@ impl CapBlock {
         let mut best_overall: Option<BestCapSetMatch> = None;
 
         for (registry_name, registry_arc) in &self.registries {
-            let registry = registry_arc.read()
-                .map_err(|_| CapMatrixError::RegistryError("Failed to acquire read lock".to_string()))?;
+            let registry = registry_arc.read().map_err(|_| {
+                CapMatrixError::RegistryError("Failed to acquire read lock".to_string())
+            })?;
 
             // Find the best match within this registry
             if let Some((cap, specificity)) = Self::find_best_in_registry(&registry, &request) {
@@ -907,7 +950,7 @@ impl CapBlock {
     /// Returns (Cap, specificity) for the best match
     fn find_best_in_registry<'a>(
         registry: &'a CapMatrix,
-        request: &CapUrn
+        request: &CapUrn,
     ) -> Option<(&'a Cap, usize)> {
         let mut best: Option<(&Cap, usize)> = None;
 
@@ -936,12 +979,12 @@ impl CapBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapOutput, CapResult};
-    use crate::standard::media::{MEDIA_STRING, MEDIA_OBJECT};
     use crate::media::registry::MediaUrnRegistry;
-    use std::pin::Pin;
-    use std::future::Future;
+    use crate::standard::media::{MEDIA_OBJECT, MEDIA_STRING};
+    use crate::{CapOutput, CapResult};
     use std::collections::HashMap;
+    use std::future::Future;
+    use std::pin::Pin;
     use tempfile::TempDir;
 
     // Helper to create a test MediaUrnRegistry wrapped in Arc
@@ -972,7 +1015,9 @@ mod tests {
             _arguments: &[CapArgumentValue],
         ) -> Pin<Box<dyn Future<Output = anyhow::Result<CapResult>> + Send + '_>> {
             Box::pin(async move {
-                Ok(CapResult::Scalar(format!("Mock response from {}", self.name).into_bytes()))
+                Ok(CapResult::Scalar(
+                    format!("Mock response from {}", self.name).into_bytes(),
+                ))
             })
         }
     }
@@ -1001,7 +1046,9 @@ mod tests {
             registered_by: None,
         };
 
-        registry.register_cap_set("test-host".to_string(), host, vec![cap]).unwrap();
+        registry
+            .register_cap_set("test-host".to_string(), host, vec![cap])
+            .unwrap();
 
         // Test exact match
         let sets = registry.find_cap_sets(&test_urn("op=test;basic")).unwrap();
@@ -1009,13 +1056,21 @@ mod tests {
 
         // Test that MORE SPECIFIC request does NOT match LESS SPECIFIC provider
         // With is_dispatchable: if request requires model=gpt-4, provider must have it
-        assert!(registry.find_cap_sets(&test_urn("op=test;basic;model=gpt-4")).is_err(),
-            "Provider without model=gpt-4 cannot dispatch request requiring model=gpt-4");
+        assert!(
+            registry
+                .find_cap_sets(&test_urn("op=test;basic;model=gpt-4"))
+                .is_err(),
+            "Provider without model=gpt-4 cannot dispatch request requiring model=gpt-4"
+        );
 
         // Test that LESS SPECIFIC request DOES match MORE SPECIFIC provider
         // Request only needs op=test, provider has op=test;basic - provider refines request
         let sets = registry.find_cap_sets(&test_urn("op=test")).unwrap();
-        assert_eq!(sets.len(), 1, "General request should match specific provider");
+        assert_eq!(
+            sets.len(),
+            1,
+            "General request should match specific provider"
+        );
 
         // Test no match
         assert!(registry.find_cap_sets(&test_urn("op=different")).is_err());
@@ -1068,26 +1123,48 @@ mod tests {
             registered_by: None,
         };
 
-        registry.register_cap_set("general".to_string(), general_host, vec![general_cap]).unwrap();
-        registry.register_cap_set("specific".to_string(), specific_host, vec![specific_cap]).unwrap();
+        registry
+            .register_cap_set("general".to_string(), general_host, vec![general_cap])
+            .unwrap();
+        registry
+            .register_cap_set("specific".to_string(), specific_host, vec![specific_cap])
+            .unwrap();
 
         // General request (op=generate) should match BOTH providers
         // Both providers have op=generate, so both can dispatch
         let all_sets = registry.find_cap_sets(&test_urn("op=generate")).unwrap();
-        assert_eq!(all_sets.len(), 2, "General request should match both providers");
+        assert_eq!(
+            all_sets.len(),
+            2,
+            "General request should match both providers"
+        );
 
         // Best match should prefer the more specific provider (higher specificity)
-        let (_best_host, best_cap) = registry.find_best_cap_set(&test_urn("op=generate")).unwrap();
-        assert_eq!(best_cap.title, "Specific Text Generation Capability",
-            "More specific provider should be preferred");
+        let (_best_host, best_cap) = registry
+            .find_best_cap_set(&test_urn("op=generate"))
+            .unwrap();
+        assert_eq!(
+            best_cap.title, "Specific Text Generation Capability",
+            "More specific provider should be preferred"
+        );
 
         // Specific request (requiring text;model=gpt-4) should only match specific provider
-        let all_sets = registry.find_cap_sets(&test_urn("op=generate;text;model=gpt-4")).unwrap();
-        assert_eq!(all_sets.len(), 1, "Only specific provider can dispatch request requiring text;model=gpt-4");
+        let all_sets = registry
+            .find_cap_sets(&test_urn("op=generate;text;model=gpt-4"))
+            .unwrap();
+        assert_eq!(
+            all_sets.len(),
+            1,
+            "Only specific provider can dispatch request requiring text;model=gpt-4"
+        );
 
         // Request requiring temperature=low matches NEITHER (both lack it)
-        assert!(registry.find_cap_sets(&test_urn("op=generate;temperature=low")).is_err(),
-            "Neither provider has temperature=low");
+        assert!(
+            registry
+                .find_cap_sets(&test_urn("op=generate;temperature=low"))
+                .is_err(),
+            "Neither provider has temperature=low"
+        );
     }
 
     // TEST119: Test invalid URN returns InvalidUrn error
@@ -1127,15 +1204,19 @@ mod tests {
             registered_by: None,
         };
 
-        registry.register_cap_set("test".to_string(), host, vec![cap]).unwrap();
+        registry
+            .register_cap_set("test".to_string(), host, vec![cap])
+            .unwrap();
 
         // Exact match - provider can dispatch
         assert!(registry.accepts_request(&test_urn("op=test")));
 
         // Request with extra constraint - provider CANNOT dispatch (lacks extra=param)
         // This is the key is_dispatchable semantic: provider must satisfy ALL request constraints
-        assert!(!registry.accepts_request(&test_urn("op=test;extra=param")),
-            "Provider op=test cannot dispatch request requiring extra=param");
+        assert!(
+            !registry.accepts_request(&test_urn("op=test;extra=param")),
+            "Provider op=test cannot dispatch request requiring extra=param"
+        );
 
         // Different op - no match
         assert!(!registry.accepts_request(&test_urn("op=different")));
@@ -1174,33 +1255,39 @@ mod tests {
         let mut cartridge_registry = CapMatrix::new(media_registry.clone());
 
         // Provider: less specific cap
-        let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
+        let provider_host = Box::new(MockCapSet {
+            name: "provider".to_string(),
+        });
         let provider_cap = make_cap(
             r#"cap:in="media:binary";op=generate_thumbnail;out="media:binary""#,
-            "Provider Thumbnail Generator (generic)"
+            "Provider Thumbnail Generator (generic)",
         );
-        provider_registry.register_cap_set(
-            "provider".to_string(),
-            provider_host,
-            vec![provider_cap]
-        ).unwrap();
+        provider_registry
+            .register_cap_set("provider".to_string(), provider_host, vec![provider_cap])
+            .unwrap();
 
         // Cartridge: more specific cap (has ext=pdf)
-        let cartridge_host = Box::new(MockCapSet { name: "cartridge".to_string() });
+        let cartridge_host = Box::new(MockCapSet {
+            name: "cartridge".to_string(),
+        });
         let cartridge_cap = make_cap(
             r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#,
-            "Cartridge PDF Thumbnail Generator (specific)"
+            "Cartridge PDF Thumbnail Generator (specific)",
         );
-        cartridge_registry.register_cap_set(
-            "cartridge".to_string(),
-            cartridge_host,
-            vec![cartridge_cap]
-        ).unwrap();
+        cartridge_registry
+            .register_cap_set("cartridge".to_string(), cartridge_host, vec![cartridge_cap])
+            .unwrap();
 
         // Create composite with provider first (normally would have priority on ties)
         let mut composite = CapBlock::new(media_registry.clone());
-        composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
-        composite.add_registry("cartridges".to_string(), Arc::new(RwLock::new(cartridge_registry)));
+        composite.add_registry(
+            "providers".to_string(),
+            Arc::new(RwLock::new(provider_registry)),
+        );
+        composite.add_registry(
+            "cartridges".to_string(),
+            Arc::new(RwLock::new(cartridge_registry)),
+        );
 
         // Request for PDF thumbnails - cartridge's more specific cap should win
         let request = r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#;
@@ -1209,9 +1296,15 @@ mod tests {
         // Cartridge registry has specificity 4 (in, op, out, ext)
         // Provider registry has specificity 3 (in, op, out)
         // Cartridge should win even though providers were added first
-        assert_eq!(best.registry_name, "cartridges", "More specific cartridge should win over less specific provider");
+        assert_eq!(
+            best.registry_name, "cartridges",
+            "More specific cartridge should win over less specific provider"
+        );
         assert_eq!(best.specificity, 4, "Cartridge cap has 4 specific tags");
-        assert_eq!(best.cap.title, "Cartridge PDF Thumbnail Generator (specific)");
+        assert_eq!(
+            best.cap.title,
+            "Cartridge PDF Thumbnail Generator (specific)"
+        );
     }
 
     // TEST122: Test CapBlock breaks specificity ties by first registered registry
@@ -1224,22 +1317,35 @@ mod tests {
         let mut registry2 = CapMatrix::new(media_registry.clone());
 
         // Both have same specificity
-        let host1 = Box::new(MockCapSet { name: "host1".to_string() });
+        let host1 = Box::new(MockCapSet {
+            name: "host1".to_string(),
+        });
         let cap1 = make_cap(&test_urn("op=generate;ext=pdf"), "Registry 1 Cap");
-        registry1.register_cap_set("host1".to_string(), host1, vec![cap1]).unwrap();
+        registry1
+            .register_cap_set("host1".to_string(), host1, vec![cap1])
+            .unwrap();
 
-        let host2 = Box::new(MockCapSet { name: "host2".to_string() });
+        let host2 = Box::new(MockCapSet {
+            name: "host2".to_string(),
+        });
         let cap2 = make_cap(&test_urn("op=generate;ext=pdf"), "Registry 2 Cap");
-        registry2.register_cap_set("host2".to_string(), host2, vec![cap2]).unwrap();
+        registry2
+            .register_cap_set("host2".to_string(), host2, vec![cap2])
+            .unwrap();
 
         let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("first".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("second".to_string(), Arc::new(RwLock::new(registry2)));
 
-        let best = composite.find_best_cap_set(&test_urn("op=generate;ext=pdf")).unwrap();
+        let best = composite
+            .find_best_cap_set(&test_urn("op=generate;ext=pdf"))
+            .unwrap();
 
         // Both have same specificity, first registry should win
-        assert_eq!(best.registry_name, "first", "On tie, first registry should win");
+        assert_eq!(
+            best.registry_name, "first",
+            "On tie, first registry should win"
+        );
         assert_eq!(best.cap.title, "Registry 1 Cap");
     }
 
@@ -1254,29 +1360,49 @@ mod tests {
         let mut registry3 = CapMatrix::new(media_registry.clone());
 
         // Registry 1: doesn't match
-        let host1 = Box::new(MockCapSet { name: "host1".to_string() });
+        let host1 = Box::new(MockCapSet {
+            name: "host1".to_string(),
+        });
         let cap1 = make_cap(&test_urn("op=different"), "Registry 1");
-        registry1.register_cap_set("host1".to_string(), host1, vec![cap1]).unwrap();
+        registry1
+            .register_cap_set("host1".to_string(), host1, vec![cap1])
+            .unwrap();
 
         // Registry 2: matches but less specific
-        let host2 = Box::new(MockCapSet { name: "host2".to_string() });
+        let host2 = Box::new(MockCapSet {
+            name: "host2".to_string(),
+        });
         let cap2 = make_cap(&test_urn("op=generate"), "Registry 2");
-        registry2.register_cap_set("host2".to_string(), host2, vec![cap2]).unwrap();
+        registry2
+            .register_cap_set("host2".to_string(), host2, vec![cap2])
+            .unwrap();
 
         // Registry 3: matches and most specific
-        let host3 = Box::new(MockCapSet { name: "host3".to_string() });
-        let cap3 = make_cap(&test_urn("op=generate;ext=pdf;format=thumbnail"), "Registry 3");
-        registry3.register_cap_set("host3".to_string(), host3, vec![cap3]).unwrap();
+        let host3 = Box::new(MockCapSet {
+            name: "host3".to_string(),
+        });
+        let cap3 = make_cap(
+            &test_urn("op=generate;ext=pdf;format=thumbnail"),
+            "Registry 3",
+        );
+        registry3
+            .register_cap_set("host3".to_string(), host3, vec![cap3])
+            .unwrap();
 
         let mut composite = CapBlock::new(media_registry.clone());
         composite.add_registry("r1".to_string(), Arc::new(RwLock::new(registry1)));
         composite.add_registry("r2".to_string(), Arc::new(RwLock::new(registry2)));
         composite.add_registry("r3".to_string(), Arc::new(RwLock::new(registry3)));
 
-        let best = composite.find_best_cap_set(&test_urn("op=generate;ext=pdf;format=thumbnail")).unwrap();
+        let best = composite
+            .find_best_cap_set(&test_urn("op=generate;ext=pdf;format=thumbnail"))
+            .unwrap();
 
         // Registry 3 has more specific tags
-        assert_eq!(best.registry_name, "r3", "Most specific registry should win");
+        assert_eq!(
+            best.registry_name, "r3",
+            "Most specific registry should win"
+        );
     }
 
     // TEST124: Test CapBlock returns error when no registries match the request
@@ -1306,33 +1432,47 @@ mod tests {
         let mut cartridge_registry = CapMatrix::new(media_registry.clone());
 
         // Provider with generic fallback (can handle any file type)
-        let provider_host = Box::new(MockCapSet { name: "provider_fallback".to_string() });
+        let provider_host = Box::new(MockCapSet {
+            name: "provider_fallback".to_string(),
+        });
         let provider_cap = make_cap(
             r#"cap:in="media:binary";op=generate_thumbnail;out="media:binary""#,
-            "Generic Thumbnail Provider"
+            "Generic Thumbnail Provider",
         );
-        provider_registry.register_cap_set(
-            "provider_fallback".to_string(),
-            provider_host,
-            vec![provider_cap]
-        ).unwrap();
+        provider_registry
+            .register_cap_set(
+                "provider_fallback".to_string(),
+                provider_host,
+                vec![provider_cap],
+            )
+            .unwrap();
 
         // Cartridge with PDF-specific handler
-        let cartridge_host = Box::new(MockCapSet { name: "pdf_cartridge".to_string() });
+        let cartridge_host = Box::new(MockCapSet {
+            name: "pdf_cartridge".to_string(),
+        });
         let cartridge_cap = make_cap(
             r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#,
-            "PDF Thumbnail Cartridge"
+            "PDF Thumbnail Cartridge",
         );
-        cartridge_registry.register_cap_set(
-            "pdf_cartridge".to_string(),
-            cartridge_host,
-            vec![cartridge_cap]
-        ).unwrap();
+        cartridge_registry
+            .register_cap_set(
+                "pdf_cartridge".to_string(),
+                cartridge_host,
+                vec![cartridge_cap],
+            )
+            .unwrap();
 
         // Providers first (would win on tie)
         let mut composite = CapBlock::new(media_registry.clone());
-        composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
-        composite.add_registry("cartridges".to_string(), Arc::new(RwLock::new(cartridge_registry)));
+        composite.add_registry(
+            "providers".to_string(),
+            Arc::new(RwLock::new(provider_registry)),
+        );
+        composite.add_registry(
+            "cartridges".to_string(),
+            Arc::new(RwLock::new(cartridge_registry)),
+        );
 
         // Request for PDF thumbnail
         let request = r#"cap:ext=pdf;in="media:binary";op=generate_thumbnail;out="media:binary""#;
@@ -1346,15 +1486,21 @@ mod tests {
         // Test that request requiring ext=wav matches NEITHER provider
         // - Generic provider lacks ext tag (cannot satisfy ext=wav constraint)
         // - PDF cartridge has ext=pdf (value conflict with ext=wav)
-        let request_wav = r#"cap:ext=wav;in="media:binary";op=generate_thumbnail;out="media:binary""#;
-        assert!(composite.find_best_cap_set(request_wav).is_err(),
-            "Neither provider can dispatch ext=wav request");
+        let request_wav =
+            r#"cap:ext=wav;in="media:binary";op=generate_thumbnail;out="media:binary""#;
+        assert!(
+            composite.find_best_cap_set(request_wav).is_err(),
+            "Neither provider can dispatch ext=wav request"
+        );
 
         // Test that generic request (no ext constraint) matches BOTH providers
         // Both can dispatch, but PDF cartridge is more specific
         let request_any = r#"cap:in="media:binary";op=generate_thumbnail;out="media:binary""#;
         let best_any = composite.find_best_cap_set(request_any).unwrap();
-        assert_eq!(best_any.registry_name, "cartridges", "More specific PDF cartridge should win");
+        assert_eq!(
+            best_any.registry_name, "cartridges",
+            "More specific PDF cartridge should win"
+        );
     }
 
     // TEST126: Test composite can method returns CapCaller for capability execution
@@ -1365,19 +1511,23 @@ mod tests {
 
         let mut provider_registry = CapMatrix::new(media_registry.clone());
 
-        let provider_host = Box::new(MockCapSet { name: "test_provider".to_string() });
-        let provider_cap = make_cap(
-            &test_urn("op=generate;ext=pdf"),
-            "Test Provider"
-        );
-        provider_registry.register_cap_set(
-            "test_provider".to_string(),
-            provider_host,
-            vec![provider_cap]
-        ).unwrap();
+        let provider_host = Box::new(MockCapSet {
+            name: "test_provider".to_string(),
+        });
+        let provider_cap = make_cap(&test_urn("op=generate;ext=pdf"), "Test Provider");
+        provider_registry
+            .register_cap_set(
+                "test_provider".to_string(),
+                provider_host,
+                vec![provider_cap],
+            )
+            .unwrap();
 
         let mut composite = CapBlock::new(media_registry.clone());
-        composite.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
+        composite.add_registry(
+            "providers".to_string(),
+            Arc::new(RwLock::new(provider_registry)),
+        );
 
         // Test can() returns a CapCaller
         let _caller = composite.can(&test_urn("op=generate;ext=pdf")).unwrap();
@@ -1401,7 +1551,11 @@ mod tests {
         // Use full media URN strings for proper matching
         let media_identity = "media:";
         let cap = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract_text;out="{}""#, media_identity, MEDIA_STRING)).unwrap(),
+            urn: CapUrn::from_string(&format!(
+                r#"cap:in="{}";op=extract_text;out="{}""#,
+                media_identity, MEDIA_STRING
+            ))
+            .unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: Some("Extract text from binary".to_string()),
             documentation: None,
@@ -1421,7 +1575,10 @@ mod tests {
 
         // Check edge was created
         assert!(graph.get_edges().len() >= 1, "Should have at least 1 edge");
-        assert!(graph.has_direct_edge(media_identity, MEDIA_STRING), "Should have edge from binary to string");
+        assert!(
+            graph.has_direct_edge(media_identity, MEDIA_STRING),
+            "Should have edge from binary to string"
+        );
     }
 
     // TEST128: Test CapGraph tracks outgoing and incoming edges for spec conversions
@@ -1431,7 +1588,11 @@ mod tests {
 
         // binary -> str - use full constants for proper matching
         let cap1 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract_text;out="{}""#, "media:binary", MEDIA_STRING)).unwrap(),
+            urn: CapUrn::from_string(&format!(
+                r#"cap:in="{}";op=extract_text;out="{}""#,
+                "media:binary", MEDIA_STRING
+            ))
+            .unwrap(),
             title: "Text Extractor".to_string(),
             cap_description: None,
             documentation: None,
@@ -1446,7 +1607,11 @@ mod tests {
 
         // binary -> obj (JSON)
         let cap2 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=parse_json;out="{}""#, "media:binary", MEDIA_OBJECT)).unwrap(),
+            urn: CapUrn::from_string(&format!(
+                r#"cap:in="{}";op=parse_json;out="{}""#,
+                "media:binary", MEDIA_OBJECT
+            ))
+            .unwrap(),
             title: "JSON Parser".to_string(),
             cap_description: None,
             documentation: None,
@@ -1482,7 +1647,11 @@ mod tests {
 
         // binary -> str - use full constants
         let cap1 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=extract;out="{}""#, "media:binary", MEDIA_STRING)).unwrap(),
+            urn: CapUrn::from_string(&format!(
+                r#"cap:in="{}";op=extract;out="{}""#,
+                "media:binary", MEDIA_STRING
+            ))
+            .unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             documentation: None,
@@ -1497,7 +1666,11 @@ mod tests {
 
         // str -> obj
         let cap2 = Cap {
-            urn: CapUrn::from_string(&format!(r#"cap:in="{}";op=parse;out="{}""#, MEDIA_STRING, MEDIA_OBJECT)).unwrap(),
+            urn: CapUrn::from_string(&format!(
+                r#"cap:in="{}";op=parse;out="{}""#,
+                MEDIA_STRING, MEDIA_OBJECT
+            ))
+            .unwrap(),
             title: "Str to Obj".to_string(),
             cap_description: None,
             documentation: None,
@@ -1537,7 +1710,8 @@ mod tests {
 
         // Create a chain: binary -> str -> obj
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#)
+                .unwrap(),
             title: "Binary to Str".to_string(),
             cap_description: None,
             documentation: None,
@@ -1551,7 +1725,8 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#)
+                .unwrap(),
             title: "Str to Obj".to_string(),
             cap_description: None,
             documentation: None,
@@ -1595,7 +1770,8 @@ mod tests {
 
         // Create multiple paths: A -> B -> C and A -> C directly
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:binary";op=step1;out="media:string""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=step1;out="media:string""#)
+                .unwrap(),
             title: "A to B".to_string(),
             cap_description: None,
             documentation: None,
@@ -1609,7 +1785,8 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:string";op=step2;out="media:object""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=step2;out="media:object""#)
+                .unwrap(),
             title: "B to C".to_string(),
             cap_description: None,
             documentation: None,
@@ -1623,7 +1800,8 @@ mod tests {
         };
 
         let cap3 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:binary";op=direct;out="media:object""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=direct;out="media:object""#)
+                .unwrap(),
             title: "A to C Direct".to_string(),
             cap_description: None,
             documentation: None,
@@ -1656,7 +1834,8 @@ mod tests {
 
         // Add multiple caps with different specificities for same conversion
         let cap1 = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:binary";op=generic;out="media:string""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=generic;out="media:string""#)
+                .unwrap(),
             title: "Generic".to_string(),
             cap_description: None,
             documentation: None,
@@ -1670,7 +1849,10 @@ mod tests {
         };
 
         let cap2 = Cap {
-            urn: CapUrn::from_string(r#"cap:ext=pdf;in="media:binary";op=specific;out="media:string""#).unwrap(),
+            urn: CapUrn::from_string(
+                r#"cap:ext=pdf;in="media:binary";op=specific;out="media:string""#,
+            )
+            .unwrap(),
             title: "Specific PDF".to_string(),
             cap_description: None,
             documentation: None,
@@ -1703,9 +1885,12 @@ mod tests {
         let mut cartridge_registry = CapMatrix::new(media_registry.clone());
 
         // Provider: binary -> str
-        let provider_host = Box::new(MockCapSet { name: "provider".to_string() });
+        let provider_host = Box::new(MockCapSet {
+            name: "provider".to_string(),
+        });
         let provider_cap = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=extract;out="media:string""#)
+                .unwrap(),
             title: "Provider Text Extractor".to_string(),
             cap_description: None,
             documentation: None,
@@ -1717,16 +1902,17 @@ mod tests {
             metadata_json: None,
             registered_by: None,
         };
-        provider_registry.register_cap_set(
-            "provider".to_string(),
-            provider_host,
-            vec![provider_cap]
-        ).unwrap();
+        provider_registry
+            .register_cap_set("provider".to_string(), provider_host, vec![provider_cap])
+            .unwrap();
 
         // Cartridge: str -> obj
-        let cartridge_host = Box::new(MockCapSet { name: "cartridge".to_string() });
+        let cartridge_host = Box::new(MockCapSet {
+            name: "cartridge".to_string(),
+        });
         let cartridge_cap = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:string";op=parse;out="media:object""#)
+                .unwrap(),
             title: "Cartridge JSON Parser".to_string(),
             cap_description: None,
             documentation: None,
@@ -1738,15 +1924,19 @@ mod tests {
             metadata_json: None,
             registered_by: None,
         };
-        cartridge_registry.register_cap_set(
-            "cartridge".to_string(),
-            cartridge_host,
-            vec![cartridge_cap]
-        ).unwrap();
+        cartridge_registry
+            .register_cap_set("cartridge".to_string(), cartridge_host, vec![cartridge_cap])
+            .unwrap();
 
         let mut cube = CapBlock::new(media_registry.clone());
-        cube.add_registry("providers".to_string(), Arc::new(RwLock::new(provider_registry)));
-        cube.add_registry("cartridges".to_string(), Arc::new(RwLock::new(cartridge_registry)));
+        cube.add_registry(
+            "providers".to_string(),
+            Arc::new(RwLock::new(provider_registry)),
+        );
+        cube.add_registry(
+            "cartridges".to_string(),
+            Arc::new(RwLock::new(cartridge_registry)),
+        );
 
         // Build graph
         let graph = cube.graph().unwrap();
@@ -1769,12 +1959,16 @@ mod tests {
         assert_eq!(path.len(), 2);
 
         // Check registry names in edges
-        let provider_edges: Vec<_> = graph.get_edges().iter()
+        let provider_edges: Vec<_> = graph
+            .get_edges()
+            .iter()
             .filter(|e| e.registry_name == "providers")
             .collect();
         assert_eq!(provider_edges.len(), 1);
 
-        let cartridge_edges: Vec<_> = graph.get_edges().iter()
+        let cartridge_edges: Vec<_> = graph
+            .get_edges()
+            .iter()
             .filter(|e| e.registry_name == "cartridges")
             .collect();
         assert_eq!(cartridge_edges.len(), 1);
@@ -1830,28 +2024,53 @@ mod tests {
 
         // Direct path: binary -> obj (low specificity, just op)
         let cap_direct = Cap {
-            urn: CapUrn::from_string(r#"cap:in="media:binary";op=direct;out="media:object""#).unwrap(),
+            urn: CapUrn::from_string(r#"cap:in="media:binary";op=direct;out="media:object""#)
+                .unwrap(),
             title: "Direct Low Spec".to_string(),
-            cap_description: None, documentation: None, metadata: HashMap::new(),
-            command: "d".to_string(), media_specs: Vec::new(),
-            args: vec![], output: None, metadata_json: None, registered_by: None,
+            cap_description: None,
+            documentation: None,
+            metadata: HashMap::new(),
+            command: "d".to_string(),
+            media_specs: Vec::new(),
+            args: vec![],
+            output: None,
+            metadata_json: None,
+            registered_by: None,
         };
 
         // Two-hop path: binary -> string -> obj (high specificity, ext=pdf on first hop)
         let cap_hop1 = Cap {
-            urn: CapUrn::from_string(r#"cap:ext=pdf;in="media:binary";op=extract;out="media:string""#).unwrap(),
+            urn: CapUrn::from_string(
+                r#"cap:ext=pdf;in="media:binary";op=extract;out="media:string""#,
+            )
+            .unwrap(),
             title: "Hop1 High Spec".to_string(),
-            cap_description: None, documentation: None, metadata: HashMap::new(),
-            command: "h1".to_string(), media_specs: Vec::new(),
-            args: vec![], output: None, metadata_json: None, registered_by: None,
+            cap_description: None,
+            documentation: None,
+            metadata: HashMap::new(),
+            command: "h1".to_string(),
+            media_specs: Vec::new(),
+            args: vec![],
+            output: None,
+            metadata_json: None,
+            registered_by: None,
         };
 
         let cap_hop2 = Cap {
-            urn: CapUrn::from_string(r#"cap:ext=json;in="media:string";op=parse;out="media:object""#).unwrap(),
+            urn: CapUrn::from_string(
+                r#"cap:ext=json;in="media:string";op=parse;out="media:object""#,
+            )
+            .unwrap(),
             title: "Hop2 High Spec".to_string(),
-            cap_description: None, documentation: None, metadata: HashMap::new(),
-            command: "h2".to_string(), media_specs: Vec::new(),
-            args: vec![], output: None, metadata_json: None, registered_by: None,
+            cap_description: None,
+            documentation: None,
+            metadata: HashMap::new(),
+            command: "h2".to_string(),
+            media_specs: Vec::new(),
+            args: vec![],
+            output: None,
+            metadata_json: None,
+            registered_by: None,
         };
 
         graph.add_cap(&cap_direct, "r1");
@@ -1863,11 +2082,17 @@ mod tests {
         assert_eq!(shortest.len(), 1);
 
         // find_best_path returns highest total specificity (2 hops, each with ext tag)
-        let best = graph.find_best_path("media:binary", "media:object", 5).unwrap();
+        let best = graph
+            .find_best_path("media:binary", "media:object", 5)
+            .unwrap();
         let total_spec: usize = best.iter().map(|e| e.specificity).sum();
         let direct_spec = shortest[0].specificity;
-        assert!(total_spec > direct_spec,
-            "Best path total specificity {} must exceed direct path {}", total_spec, direct_spec);
+        assert!(
+            total_spec > direct_spec,
+            "Best path total specificity {} must exceed direct path {}",
+            total_spec,
+            direct_spec
+        );
         assert_eq!(best.len(), 2);
     }
 
@@ -1877,18 +2102,31 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
-        let host = Box::new(MockCapSet { name: "removable".to_string() });
+        let host = Box::new(MockCapSet {
+            name: "removable".to_string(),
+        });
         let cap = make_cap(&test_urn("op=test"), "Removable Cap");
-        registry.register_cap_set("removable".to_string(), host, vec![cap]).unwrap();
+        registry
+            .register_cap_set("removable".to_string(), host, vec![cap])
+            .unwrap();
 
         assert!(registry.accepts_request(&test_urn("op=test")));
 
         // Unregister
-        assert!(registry.unregister_cap_set("removable"), "Should return true for existing host");
-        assert!(!registry.accepts_request(&test_urn("op=test")), "Cap should be gone after unregister");
+        assert!(
+            registry.unregister_cap_set("removable"),
+            "Should return true for existing host"
+        );
+        assert!(
+            !registry.accepts_request(&test_urn("op=test")),
+            "Cap should be gone after unregister"
+        );
 
         // Unregister non-existent
-        assert!(!registry.unregister_cap_set("nonexistent"), "Should return false for missing host");
+        assert!(
+            !registry.unregister_cap_set("nonexistent"),
+            "Should return false for missing host"
+        );
     }
 
     // TEST570: clear removes all registered sets
@@ -1897,10 +2135,26 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
-        let host1 = Box::new(MockCapSet { name: "h1".to_string() });
-        let host2 = Box::new(MockCapSet { name: "h2".to_string() });
-        registry.register_cap_set("h1".to_string(), host1, vec![make_cap(&test_urn("op=a"), "A")]).unwrap();
-        registry.register_cap_set("h2".to_string(), host2, vec![make_cap(&test_urn("op=b"), "B")]).unwrap();
+        let host1 = Box::new(MockCapSet {
+            name: "h1".to_string(),
+        });
+        let host2 = Box::new(MockCapSet {
+            name: "h2".to_string(),
+        });
+        registry
+            .register_cap_set(
+                "h1".to_string(),
+                host1,
+                vec![make_cap(&test_urn("op=a"), "A")],
+            )
+            .unwrap();
+        registry
+            .register_cap_set(
+                "h2".to_string(),
+                host2,
+                vec![make_cap(&test_urn("op=b"), "B")],
+            )
+            .unwrap();
 
         assert_eq!(registry.get_host_names().len(), 2);
         registry.clear();
@@ -1914,13 +2168,21 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
-        let host1 = Box::new(MockCapSet { name: "h1".to_string() });
-        let host2 = Box::new(MockCapSet { name: "h2".to_string() });
+        let host1 = Box::new(MockCapSet {
+            name: "h1".to_string(),
+        });
+        let host2 = Box::new(MockCapSet {
+            name: "h2".to_string(),
+        });
         let cap1 = make_cap(&test_urn("op=a"), "Cap A");
         let cap2 = make_cap(&test_urn("op=b"), "Cap B");
         let cap3 = make_cap(&test_urn("op=c"), "Cap C");
-        registry.register_cap_set("h1".to_string(), host1, vec![cap1, cap2]).unwrap();
-        registry.register_cap_set("h2".to_string(), host2, vec![cap3]).unwrap();
+        registry
+            .register_cap_set("h1".to_string(), host1, vec![cap1, cap2])
+            .unwrap();
+        registry
+            .register_cap_set("h2".to_string(), host2, vec![cap3])
+            .unwrap();
 
         let all = registry.get_all_capabilities();
         assert_eq!(all.len(), 3);
@@ -1932,9 +2194,13 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
-        let host = Box::new(MockCapSet { name: "myhost".to_string() });
+        let host = Box::new(MockCapSet {
+            name: "myhost".to_string(),
+        });
         let cap = make_cap(&test_urn("op=test"), "Test");
-        registry.register_cap_set("myhost".to_string(), host, vec![cap]).unwrap();
+        registry
+            .register_cap_set("myhost".to_string(), host, vec![cap])
+            .unwrap();
 
         let caps = registry.get_capabilities_for_host("myhost");
         assert!(caps.is_some());
@@ -1949,10 +2215,26 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut registry = CapMatrix::new(media_registry);
 
-        let host1 = Box::new(MockCapSet { name: "h1".to_string() });
-        let host2 = Box::new(MockCapSet { name: "h2".to_string() });
-        registry.register_cap_set("h1".to_string(), host1, vec![make_cap(&test_urn("op=a"), "A")]).unwrap();
-        registry.register_cap_set("h2".to_string(), host2, vec![make_cap(&test_urn("op=b"), "B")]).unwrap();
+        let host1 = Box::new(MockCapSet {
+            name: "h1".to_string(),
+        });
+        let host2 = Box::new(MockCapSet {
+            name: "h2".to_string(),
+        });
+        registry
+            .register_cap_set(
+                "h1".to_string(),
+                host1,
+                vec![make_cap(&test_urn("op=a"), "A")],
+            )
+            .unwrap();
+        registry
+            .register_cap_set(
+                "h2".to_string(),
+                host2,
+                vec![make_cap(&test_urn("op=b"), "B")],
+            )
+            .unwrap();
 
         let entries: Vec<_> = registry.iter_hosts_and_caps().collect();
         assert_eq!(entries.len(), 2);
@@ -1968,8 +2250,15 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
 
         let mut reg1 = CapMatrix::new(media_registry.clone());
-        let host = Box::new(MockCapSet { name: "h1".to_string() });
-        reg1.register_cap_set("h1".to_string(), host, vec![make_cap(&test_urn("op=a"), "A")]).unwrap();
+        let host = Box::new(MockCapSet {
+            name: "h1".to_string(),
+        });
+        reg1.register_cap_set(
+            "h1".to_string(),
+            host,
+            vec![make_cap(&test_urn("op=a"), "A")],
+        )
+        .unwrap();
 
         let mut block = CapBlock::new(media_registry.clone());
         block.add_registry("r1".to_string(), Arc::new(RwLock::new(reg1)));
@@ -2005,8 +2294,14 @@ mod tests {
         let (media_registry, _temp_dir) = test_media_registry();
         let mut block = CapBlock::new(media_registry.clone());
 
-        block.add_registry("alpha".to_string(), Arc::new(RwLock::new(CapMatrix::new(media_registry.clone()))));
-        block.add_registry("beta".to_string(), Arc::new(RwLock::new(CapMatrix::new(media_registry.clone()))));
+        block.add_registry(
+            "alpha".to_string(),
+            Arc::new(RwLock::new(CapMatrix::new(media_registry.clone()))),
+        );
+        block.add_registry(
+            "beta".to_string(),
+            Arc::new(RwLock::new(CapMatrix::new(media_registry.clone()))),
+        );
 
         let names = block.get_registry_names();
         assert_eq!(names.len(), 2);
@@ -2022,17 +2317,29 @@ mod tests {
         let cap = Cap {
             urn: CapUrn::from_string(r#"cap:in="media:binary";op=x;out="media:string""#).unwrap(),
             title: "X".to_string(),
-            cap_description: None, documentation: None, metadata: HashMap::new(),
-            command: "x".to_string(), media_specs: Vec::new(),
-            args: vec![], output: None, metadata_json: None, registered_by: None,
+            cap_description: None,
+            documentation: None,
+            metadata: HashMap::new(),
+            command: "x".to_string(),
+            media_specs: Vec::new(),
+            args: vec![],
+            output: None,
+            metadata_json: None,
+            registered_by: None,
         };
         graph.add_cap(&cap, "r");
 
         let inputs = graph.get_input_specs();
-        assert!(inputs.contains(&"media:binary"), "binary should be an input spec");
+        assert!(
+            inputs.contains(&"media:binary"),
+            "binary should be an input spec"
+        );
 
         let outputs = graph.get_output_specs();
-        assert!(outputs.contains(&"media:string"), "string should be an output spec");
+        assert!(
+            outputs.contains(&"media:string"),
+            "string should be an output spec"
+        );
 
         // binary is only an input (no edges pointing TO it)
         assert!(!outputs.contains(&"media:binary"));

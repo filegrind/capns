@@ -21,11 +21,11 @@
 //! This matches how real cartridges work: CartridgeRuntime forwards frames to handlers,
 //! and each handler decides how to consume/produce data.
 
-use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
 use crate::bifaci::cartridge_runtime::{
     ChannelFrameSender, FrameSender, PeerCall, PeerInvoker, RuntimeError,
 };
+use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
+use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
 use crate::bifaci::relay_switch::InstalledCartridgeIdentity;
 use crate::cap::caller::CapArgumentValue;
 use crate::cap::definition::Cap;
@@ -106,7 +106,12 @@ impl ResponseWriter {
         tx: mpsc::UnboundedSender<Frame>,
         max_chunk: usize,
     ) -> Self {
-        Self { request_id, routing_id, tx, max_chunk }
+        Self {
+            request_id,
+            routing_id,
+            tx,
+            max_chunk,
+        }
     }
 
     /// Send a frame, stamping it with the request_id and routing_id.
@@ -123,7 +128,12 @@ impl ResponseWriter {
     }
 
     /// Send a complete data response with metadata on STREAM_START.
-    pub fn emit_response_with_meta(&self, media_urn: &str, data: &[u8], meta: Option<crate::StreamMeta>) {
+    pub fn emit_response_with_meta(
+        &self,
+        media_urn: &str,
+        data: &[u8],
+        meta: Option<crate::StreamMeta>,
+    ) {
         let stream_id = "result".to_string();
 
         let mut start = Frame::stream_start(
@@ -169,7 +179,11 @@ impl ResponseWriter {
                     checksum,
                 ));
             }
-            self.send(Frame::stream_end(MessageId::Uint(0), stream_id, chunk_count));
+            self.send(Frame::stream_end(
+                MessageId::Uint(0),
+                stream_id,
+                chunk_count,
+            ));
         }
 
         self.send(Frame::end_ok(MessageId::Uint(0), None));
@@ -214,8 +228,7 @@ impl ResponseWriter {
 
         for (i, item) in items.iter().enumerate() {
             let mut cbor_payload = Vec::new();
-            ciborium::into_writer(item, &mut cbor_payload)
-                .expect("BUG: CBOR encode list item");
+            ciborium::into_writer(item, &mut cbor_payload).expect("BUG: CBOR encode list item");
             let checksum = Frame::compute_checksum(&cbor_payload);
             let mut chunk = Frame::chunk(
                 MessageId::Uint(0),
@@ -231,7 +244,11 @@ impl ResponseWriter {
             self.send(chunk);
         }
 
-        self.send(Frame::stream_end(MessageId::Uint(0), stream_id, items.len() as u64));
+        self.send(Frame::stream_end(
+            MessageId::Uint(0),
+            stream_id,
+            items.len() as u64,
+        ));
         self.send(Frame::end_ok(MessageId::Uint(0), None));
     }
 
@@ -270,7 +287,8 @@ impl PeerInvoker for InProcessPeerInvoker {
         let request_id = MessageId::new_uuid();
         tracing::info!(
             "[InProcessCartridgeHost] PEER_CALL: cap='{}' peer_rid={:?}",
-            cap_urn, request_id
+            cap_urn,
+            request_id
         );
 
         // Create channel for response frames
@@ -279,19 +297,17 @@ impl PeerInvoker for InProcessPeerInvoker {
         // Register before sending REQ
         {
             let mut pending = self.pending_requests.lock().unwrap();
-            pending.insert(request_id.clone(), PendingPeerRequest {
-                sender,
-                origin_request_id: self.origin_request_id.clone(),
-            });
+            pending.insert(
+                request_id.clone(),
+                PendingPeerRequest {
+                    sender,
+                    origin_request_id: self.origin_request_id.clone(),
+                },
+            );
         }
 
         // Send REQ frame through the host's write channel, stamped with parent_rid for cancel cascade
-        let mut req_frame = Frame::req(
-            request_id.clone(),
-            cap_urn,
-            vec![],
-            "application/cbor",
-        );
+        let mut req_frame = Frame::req(request_id.clone(), cap_urn, vec![], "application/cbor");
         let mut meta = req_frame.meta.take().unwrap_or_default();
         meta.insert(
             "parent_rid".to_string(),
@@ -361,14 +377,20 @@ pub async fn accumulate_input(
                 if let Some(&idx) = active.get(&sid) {
                     if let Some(payload) = &frame.payload {
                         // CBOR-decode chunk payload to extract raw bytes
-                        let value: ciborium::Value = ciborium::from_reader(&payload[..])
-                            .map_err(|e| format!(
-                                "chunk payload is not valid CBOR (stream={}, {} bytes): {}",
-                                sid, payload.len(), e
-                            ))?;
+                        let value: ciborium::Value =
+                            ciborium::from_reader(&payload[..]).map_err(|e| {
+                                format!(
+                                    "chunk payload is not valid CBOR (stream={}, {} bytes): {}",
+                                    sid,
+                                    payload.len(),
+                                    e
+                                )
+                            })?;
                         match value {
                             ciborium::Value::Bytes(b) => streams[idx].2.extend_from_slice(&b),
-                            ciborium::Value::Text(s) => streams[idx].2.extend_from_slice(s.as_bytes()),
+                            ciborium::Value::Text(s) => {
+                                streams[idx].2.extend_from_slice(s.as_bytes())
+                            }
                             other => {
                                 return Err(format!(
                                     "unexpected CBOR type in chunk payload: {:?}",
@@ -489,7 +511,11 @@ impl InProcessCartridgeHost {
     pub fn new(handlers: Vec<(String, Vec<Cap>, Arc<dyn FrameHandler>)>) -> Self {
         let handlers = handlers
             .into_iter()
-            .map(|(name, caps, handler)| HandlerEntry { name, caps, handler })
+            .map(|(name, caps, handler)| HandlerEntry {
+                name,
+                caps,
+                handler,
+            })
             .collect();
         Self { handlers }
     }
@@ -580,12 +606,18 @@ impl InProcessCartridgeHost {
     /// Run the host. Returns when the local connection closes.
     ///
     /// `local_read` / `local_write` connect to the RelaySlave's local side.
-    pub async fn run<R: AsyncRead + Unpin + Send + 'static, W: AsyncWrite + Unpin + Send + 'static>(
+    pub async fn run<
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send + 'static,
+    >(
         self,
         local_read: R,
         local_write: W,
     ) -> Result<(), CborError> {
-        tracing::info!("[InProcessCartridgeHost] run() starting, handler_count={}", self.handlers.len());
+        tracing::info!(
+            "[InProcessCartridgeHost] run() starting, handler_count={}",
+            self.handlers.len()
+        );
         let mut reader = FrameReader::new(local_read);
 
         // Writer runs in a separate task with SeqAssigner
@@ -599,7 +631,9 @@ impl InProcessCartridgeHost {
                 seq_assigner.assign(&mut frame);
                 tracing::debug!(
                     "[InProcessCartridgeHost] writer: type={:?} id={} seq={}",
-                    frame.frame_type, frame.id, frame.seq
+                    frame.frame_type,
+                    frame.id,
+                    frame.seq
                 );
                 if let Err(e) = writer.write(&frame).await {
                     tracing::error!("[InProcessCartridgeHost] writer error: {}", e);
@@ -614,7 +648,10 @@ impl InProcessCartridgeHost {
 
         // Send initial RelayNotify with aggregate caps
         let manifest = self.build_manifest();
-        tracing::info!("[InProcessCartridgeHost] sending RelayNotify, manifest_len={}", manifest.len());
+        tracing::info!(
+            "[InProcessCartridgeHost] sending RelayNotify, manifest_len={}",
+            manifest.len()
+        );
         let notify = Frame::relay_notify(&manifest, &Limits::default());
         write_tx
             .send(notify)
@@ -645,7 +682,11 @@ impl InProcessCartridgeHost {
             tracing::info!("[InProcessCartridgeHost] waiting for frame...");
             let frame = match reader.read().await {
                 Ok(Some(f)) => {
-                    tracing::info!("[InProcessCartridgeHost] received frame type={:?} id={}", f.frame_type, f.id);
+                    tracing::info!(
+                        "[InProcessCartridgeHost] received frame type={:?} id={}",
+                        f.frame_type,
+                        f.id
+                    );
                     f
                 }
                 Ok(None) => {
@@ -665,8 +706,7 @@ impl InProcessCartridgeHost {
                     let cap_urn = match &frame.cap {
                         Some(c) => c.clone(),
                         None => {
-                            let mut err =
-                                Frame::err(rid, "PROTOCOL_ERROR", "REQ missing cap URN");
+                            let mut err = Frame::err(rid, "PROTOCOL_ERROR", "REQ missing cap URN");
                             err.routing_id = xid;
                             let _ = write_tx.send(err);
                             continue;
@@ -675,22 +715,40 @@ impl InProcessCartridgeHost {
 
                     // Identity cap is "cap:" — exact string match, NOT conforms_to.
                     let is_identity = cap_urn == CAP_IDENTITY;
-                    tracing::info!("[InProcessCartridgeHost] REQ cap_urn={} is_identity={}", cap_urn, is_identity);
+                    tracing::info!(
+                        "[InProcessCartridgeHost] REQ cap_urn={} is_identity={}",
+                        cap_urn,
+                        is_identity
+                    );
 
                     let handler: Arc<dyn FrameHandler> = if is_identity {
                         Arc::clone(&identity_handler)
                     } else {
-                        tracing::debug!("[InProcessCartridgeHost] searching cap_table with {} entries", cap_table.len());
+                        tracing::debug!(
+                            "[InProcessCartridgeHost] searching cap_table with {} entries",
+                            cap_table.len()
+                        );
                         for (i, (cap, idx)) in cap_table.iter().enumerate() {
-                            tracing::info!("[InProcessCartridgeHost]   cap_table[{}]: cap={} handler_idx={}", i, cap, idx);
+                            tracing::info!(
+                                "[InProcessCartridgeHost]   cap_table[{}]: cap={} handler_idx={}",
+                                i,
+                                cap,
+                                idx
+                            );
                         }
                         match Self::find_handler_for_cap(&cap_table, &cap_urn) {
                             Some(idx) => {
-                                tracing::info!("[InProcessCartridgeHost] found handler at idx={}", idx);
+                                tracing::info!(
+                                    "[InProcessCartridgeHost] found handler at idx={}",
+                                    idx
+                                );
                                 Arc::clone(&handlers[idx].handler)
                             }
                             None => {
-                                tracing::info!("[InProcessCartridgeHost] NO_HANDLER for cap={}", cap_urn);
+                                tracing::info!(
+                                    "[InProcessCartridgeHost] NO_HANDLER for cap={}",
+                                    cap_urn
+                                );
                                 let mut err = Frame::err(
                                     rid,
                                     "NO_HANDLER",
@@ -716,24 +774,31 @@ impl InProcessCartridgeHost {
                     });
 
                     // Spawn handler task
-                    let output = ResponseWriter::new(
-                        rid.clone(),
-                        xid.clone(),
-                        write_tx.clone(),
-                        max_chunk,
-                    );
+                    let output =
+                        ResponseWriter::new(rid.clone(), xid.clone(), write_tx.clone(), max_chunk);
                     let cap_urn_owned = cap_urn.clone();
                     let handler_rid = rid.clone();
                     let handle = tokio::spawn(async move {
-                        tracing::info!("[InProcessCartridgeHost] handler task starting for cap={}", cap_urn_owned);
-                        handler.handle_request(&cap_urn_owned, input_rx, output, peer).await;
-                        tracing::info!("[InProcessCartridgeHost] handler task completed for cap={}", cap_urn_owned);
+                        tracing::info!(
+                            "[InProcessCartridgeHost] handler task starting for cap={}",
+                            cap_urn_owned
+                        );
+                        handler
+                            .handle_request(&cap_urn_owned, input_rx, output, peer)
+                            .await;
+                        tracing::info!(
+                            "[InProcessCartridgeHost] handler task completed for cap={}",
+                            cap_urn_owned
+                        );
                     });
                     handler_handles.insert(handler_rid, handle);
                 }
 
                 // Continuation frames: forward to active request or peer response
-                FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd | FrameType::Log => {
+                FrameType::StreamStart
+                | FrameType::Chunk
+                | FrameType::StreamEnd
+                | FrameType::Log => {
                     // Try active request first (incoming request continuation)
                     if let Some(tx) = active.get(&frame.id) {
                         let _ = tx.send(frame);
@@ -743,7 +808,11 @@ impl InProcessCartridgeHost {
                     // Try peer response (response to handler's peer call)
                     let pending = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = pending.get(&frame.id) {
-                        tracing::debug!("[InProcessCartridgeHost] routing {:?} to peer_response rid={:?}", frame.frame_type, frame.id);
+                        tracing::debug!(
+                            "[InProcessCartridgeHost] routing {:?} to peer_response rid={:?}",
+                            frame.frame_type,
+                            frame.id
+                        );
                         let _ = pr.sender.send(frame);
                     } else {
                         tracing::warn!("[InProcessCartridgeHost] {:?} rid={:?} not found in active or pending_peer_requests", frame.frame_type, frame.id);
@@ -764,7 +833,10 @@ impl InProcessCartridgeHost {
                     // Try peer response — send END then remove
                     let mut pending = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = pending.remove(&frame.id) {
-                        tracing::info!("[InProcessCartridgeHost] PEER_END received: peer_rid={:?}", frame.id);
+                        tracing::info!(
+                            "[InProcessCartridgeHost] PEER_END received: peer_rid={:?}",
+                            frame.id
+                        );
                         let _ = pr.sender.send(frame);
                     }
                     drop(pending);
@@ -773,7 +845,9 @@ impl InProcessCartridgeHost {
                 FrameType::Err => {
                     tracing::error!(
                         "[InProcessCartridgeHost] ERR received: rid={:?} code={:?} msg={:?}",
-                        frame.id, frame.error_code(), frame.error_message()
+                        frame.id,
+                        frame.error_code(),
+                        frame.error_message()
                     );
                     // Try active request first — forward ERR then remove
                     if let Some(tx) = active.remove(&frame.id) {
@@ -795,7 +869,11 @@ impl InProcessCartridgeHost {
                     let target_rid = frame.id.clone();
                     let xid = frame.routing_id.clone();
                     let force_kill = frame.force_kill.unwrap_or(false);
-                    tracing::info!("[InProcessCartridgeHost] Cancel received: rid={:?} force_kill={}", target_rid, force_kill);
+                    tracing::info!(
+                        "[InProcessCartridgeHost] Cancel received: rid={:?} force_kill={}",
+                        target_rid,
+                        force_kill
+                    );
 
                     // Drop active sender → handler's input recv() returns None
                     active.remove(&target_rid);
@@ -808,7 +886,8 @@ impl InProcessCartridgeHost {
                     // Cancel peer calls originating from this request
                     {
                         let mut pending = pending_peer_requests.lock().unwrap();
-                        let peer_rids_to_cancel: Vec<MessageId> = pending.iter()
+                        let peer_rids_to_cancel: Vec<MessageId> = pending
+                            .iter()
                             .filter(|(_, pr)| pr.origin_request_id == target_rid)
                             .map(|(rid, _)| rid.clone())
                             .collect();
@@ -853,8 +932,8 @@ impl InProcessCartridgeHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bifaci::io::{FrameReader, FrameWriter};
     use crate::bifaci::decode_chunk_payload;
+    use crate::bifaci::io::{FrameReader, FrameWriter};
     use crate::Cap;
     use tokio::io::{BufReader, BufWriter};
     use tokio::net::UnixStream;
@@ -925,9 +1004,7 @@ mod tests {
         let (host_read, host_write) = host_sock.into_split();
         let (test_read, test_write) = test_sock.into_split();
 
-        let host_task = tokio::spawn(async move {
-            host.run(host_read, host_write).await
-        });
+        let host_task = tokio::spawn(async move { host.run(host_read, host_write).await });
 
         let mut reader = FrameReader::new(BufReader::new(test_read));
         let mut writer = FrameWriter::new(BufWriter::new(test_write));
@@ -997,9 +1074,7 @@ mod tests {
         let (host_read, host_write) = host_sock.into_split();
         let (test_read, test_write) = test_sock.into_split();
 
-        let host_task = tokio::spawn(async move {
-            host.run(host_read, host_write).await
-        });
+        let host_task = tokio::spawn(async move { host.run(host_read, host_write).await });
 
         let mut reader = FrameReader::new(BufReader::new(test_read));
         let mut writer = FrameWriter::new(BufWriter::new(test_write));
@@ -1068,9 +1143,7 @@ mod tests {
         let (host_read, host_write) = host_sock.into_split();
         let (test_read, test_write) = test_sock.into_split();
 
-        let host_task = tokio::spawn(async move {
-            host.run(host_read, host_write).await
-        });
+        let host_task = tokio::spawn(async move { host.run(host_read, host_write).await });
 
         let mut reader = FrameReader::new(BufReader::new(test_read));
         let mut writer = FrameWriter::new(BufWriter::new(test_write));
@@ -1126,9 +1199,7 @@ mod tests {
         let (host_read, host_write) = host_sock.into_split();
         let (test_read, test_write) = test_sock.into_split();
 
-        let host_task = tokio::spawn(async move {
-            host.run(host_read, host_write).await
-        });
+        let host_task = tokio::spawn(async move { host.run(host_read, host_write).await });
 
         let mut reader = FrameReader::new(BufReader::new(test_read));
         let mut writer = FrameWriter::new(BufWriter::new(test_write));
@@ -1187,9 +1258,7 @@ mod tests {
         let (host_read, host_write) = host_sock.into_split();
         let (test_read, test_write) = test_sock.into_split();
 
-        let host_task = tokio::spawn(async move {
-            host.run(host_read, host_write).await
-        });
+        let host_task = tokio::spawn(async move { host.run(host_read, host_write).await });
 
         let mut reader = FrameReader::new(BufReader::new(test_read));
         let mut writer = FrameWriter::new(BufWriter::new(test_write));
@@ -1224,10 +1293,8 @@ mod tests {
     // TEST660: InProcessCartridgeHost closest-specificity routing prefers specific over identity
     #[test]
     fn test660_closest_specificity_routing() {
-        let specific_urn =
-            "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"";
-        let generic_urn =
-            "cap:in=\"media:image\";op=thumbnail;out=\"media:image;png\"";
+        let specific_urn = "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"";
+        let generic_urn = "cap:in=\"media:image\";op=thumbnail;out=\"media:image;png\"";
 
         let specific_cap = make_test_cap(specific_urn);
         let generic_cap = make_test_cap(generic_urn);

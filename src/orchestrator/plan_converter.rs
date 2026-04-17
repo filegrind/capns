@@ -14,10 +14,10 @@
 //! - ForEach/Merge/Split nodes are rejected — the caller must decompose
 //!   ForEach plans into sub-plans before conversion (see MachinePlan::extract_*)
 
-use std::collections::HashMap;
+use super::types::{ParseOrchestrationError, ResolvedEdge, ResolvedGraph};
 use crate::cap::registry::CapRegistry;
-use crate::planner::{MachinePlan, ExecutionNodeType};
-use super::types::{ResolvedEdge, ResolvedGraph, ParseOrchestrationError};
+use crate::planner::{ExecutionNodeType, MachinePlan};
+use std::collections::HashMap;
 
 /// Convert a MachinePlan to a ResolvedGraph for execution.
 ///
@@ -37,19 +37,22 @@ pub async fn plan_to_resolved_graph(
     let mut nodes: HashMap<String, String> = HashMap::new();
     let mut resolved_edges: Vec<ResolvedEdge> = Vec::new();
 
-    let lookup_cached = |cap_urn: &str| -> Result<crate::cap::definition::Cap, ParseOrchestrationError> {
-        registry
-            .get_cached_cap(cap_urn)
-            .ok_or_else(|| ParseOrchestrationError::CapNotFound {
-                cap_urn: cap_urn.to_string(),
-            })
-    };
+    let lookup_cached =
+        |cap_urn: &str| -> Result<crate::cap::definition::Cap, ParseOrchestrationError> {
+            registry
+                .get_cached_cap(cap_urn)
+                .ok_or_else(|| ParseOrchestrationError::CapNotFound {
+                    cap_urn: cap_urn.to_string(),
+                })
+        };
 
     // First pass: identify all data nodes (InputSlots and cap outputs)
     // and their media URNs
     for (node_id, node) in &plan.nodes {
         match &node.node_type {
-            ExecutionNodeType::InputSlot { expected_media_urn, .. } => {
+            ExecutionNodeType::InputSlot {
+                expected_media_urn, ..
+            } => {
                 nodes.insert(node_id.clone(), expected_media_urn.clone());
             }
             ExecutionNodeType::Cap { cap_urn, .. } => {
@@ -68,7 +71,9 @@ pub async fn plan_to_resolved_graph(
                     }
                 }
             }
-            ExecutionNodeType::Collect { output_media_urn, .. } => {
+            ExecutionNodeType::Collect {
+                output_media_urn, ..
+            } => {
                 if let Some(media_urn) = output_media_urn {
                     // Standalone Collect (scalar→list): pass-through at execution time.
                     // The data flows unchanged, only the type annotation changes.
@@ -123,7 +128,11 @@ pub async fn plan_to_resolved_graph(
     let mut collect_predecessors: HashMap<String, String> = HashMap::new();
     for edge in &plan.edges {
         if let Some(to_node) = plan.nodes.get(&edge.to_node) {
-            if let ExecutionNodeType::Collect { output_media_urn: Some(_), .. } = &to_node.node_type {
+            if let ExecutionNodeType::Collect {
+                output_media_urn: Some(_),
+                ..
+            } = &to_node.node_type
+            {
                 collect_predecessors.insert(edge.to_node.clone(), edge.from_node.clone());
             }
         }
@@ -134,11 +143,12 @@ pub async fn plan_to_resolved_graph(
     // In ResolvedGraph, this becomes: source_node --cap_edge--> cap_node
     // The cap's output is stored AT the cap node (cap_0, cap_1, etc.)
     for edge in &plan.edges {
-        let to_node = plan.nodes.get(&edge.to_node).ok_or_else(|| {
-            ParseOrchestrationError::CapNotFound {
-                cap_urn: format!("Node '{}' not found in plan", edge.to_node),
-            }
-        })?;
+        let to_node =
+            plan.nodes
+                .get(&edge.to_node)
+                .ok_or_else(|| ParseOrchestrationError::CapNotFound {
+                    cap_urn: format!("Node '{}' not found in plan", edge.to_node),
+                })?;
 
         // Only create ResolvedEdges for edges that point to Cap nodes
         if let ExecutionNodeType::Cap { cap_urn, .. } = &to_node.node_type {
@@ -159,7 +169,7 @@ pub async fn plan_to_resolved_graph(
             // This allows the next edge (cap_0 → cap_1) to find data at cap_0
             resolved_edges.push(ResolvedEdge {
                 from,
-                to: edge.to_node.clone(),  // Store output at the cap node
+                to: edge.to_node.clone(), // Store output at the cap node
                 cap_urn: cap_urn.clone(),
                 cap: cap.clone(),
                 in_media,
@@ -180,7 +190,9 @@ mod tests {
     use super::*;
     use crate::cap::definition::{ArgSource, Cap, CapArg, CapOutput};
     use crate::cap::registry::CapRegistry;
-    use crate::planner::{ExecutionNodeType, MachinePlan, MachineNode, MachinePlanEdge, InputCardinality};
+    use crate::planner::{
+        ExecutionNodeType, InputCardinality, MachineNode, MachinePlan, MachinePlanEdge,
+    };
     use crate::urn::cap_urn::CapUrn;
 
     /// Build a `CapRegistry::new_for_test()` populated with the
@@ -218,8 +230,9 @@ mod tests {
         registry
     }
 
+    // TEST1161: Converting a simple linear plan produces resolved edges for the cap-to-cap chain.
     #[tokio::test]
-    async fn test_simple_linear_chain_conversion() {
+    async fn test1161_simple_linear_chain_conversion() {
         let registry = build_test_registry(&[
             "cap:in=media:pdf;op=extract;out=media:text",
             "cap:in=media:text;op=summarize;out=media:summary",
@@ -228,11 +241,22 @@ mod tests {
         let mut plan = MachinePlan::new("test_chain");
 
         // Add input slot
-        plan.add_node(MachineNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
+        plan.add_node(MachineNode::input_slot(
+            "input",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
 
         // Add two caps in sequence
-        plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;op=extract;out=media:text"));
-        plan.add_node(MachineNode::cap("cap_1", "cap:in=media:text;op=summarize;out=media:summary"));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:pdf;op=extract;out=media:text",
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_1",
+            "cap:in=media:text;op=summarize;out=media:summary",
+        ));
 
         // Add output
         plan.add_node(MachineNode::output("output", "result", "cap_1"));
@@ -278,10 +302,26 @@ mod tests {
         ]);
 
         let mut plan = MachinePlan::new("foreach_plan");
-        plan.add_node(MachineNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;op=disbind;out=media:pdf-page"));
-        plan.add_node(MachineNode::for_each("foreach_0", "cap_0", "cap_1", "cap_1"));
-        plan.add_node(MachineNode::cap("cap_1", "cap:in=media:pdf-page;op=process;out=media:text"));
+        plan.add_node(MachineNode::input_slot(
+            "input",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:pdf;op=disbind;out=media:pdf-page",
+        ));
+        plan.add_node(MachineNode::for_each(
+            "foreach_0",
+            "cap_0",
+            "cap_1",
+            "cap_1",
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_1",
+            "cap:in=media:pdf-page;op=process;out=media:text",
+        ));
         plan.add_node(MachineNode::output("output", "result", "cap_1"));
 
         plan.add_edge(MachinePlanEdge::direct("input", "cap_0"));
@@ -292,8 +332,16 @@ mod tests {
         let result = plan_to_resolved_graph(&plan, &registry).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("ForEach node"), "Expected ForEach rejection, got: {}", err);
-        assert!(err.contains("Decompose"), "Should mention decomposition, got: {}", err);
+        assert!(
+            err.contains("ForEach node"),
+            "Expected ForEach rejection, got: {}",
+            err
+        );
+        assert!(
+            err.contains("Decompose"),
+            "Should mention decomposition, got: {}",
+            err
+        );
     }
 
     // TEST771: plan_to_resolved_graph rejects plans containing Collect nodes
@@ -305,10 +353,26 @@ mod tests {
         ]);
 
         let mut plan = MachinePlan::new("collect_plan");
-        plan.add_node(MachineNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;op=disbind;out=media:pdf-page"));
-        plan.add_node(MachineNode::for_each("foreach_0", "cap_0", "cap_1", "cap_1"));
-        plan.add_node(MachineNode::cap("cap_1", "cap:in=media:pdf-page;op=process;out=media:text"));
+        plan.add_node(MachineNode::input_slot(
+            "input",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:pdf;op=disbind;out=media:pdf-page",
+        ));
+        plan.add_node(MachineNode::for_each(
+            "foreach_0",
+            "cap_0",
+            "cap_1",
+            "cap_1",
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_1",
+            "cap:in=media:pdf-page;op=process;out=media:text",
+        ));
         plan.add_node(MachineNode::collect("collect_0", vec!["cap_1".to_string()]));
         plan.add_node(MachineNode::output("output", "result", "collect_0"));
 
@@ -322,8 +386,11 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         // Could hit either ForEach or Collect first depending on HashMap iteration order
-        assert!(err.contains("ForEach node") || err.contains("Collect node"),
-            "Expected ForEach or Collect rejection, got: {}", err);
+        assert!(
+            err.contains("ForEach node") || err.contains("Collect node"),
+            "Expected ForEach or Collect rejection, got: {}",
+            err
+        );
     }
 
     // TEST953: Linear plans (no ForEach/Collect) still convert successfully
@@ -332,15 +399,27 @@ mod tests {
         let registry = build_test_registry(&["cap:in=media:pdf;op=extract;out=media:text"]);
 
         let mut plan = MachinePlan::new("linear_plan");
-        plan.add_node(MachineNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;op=extract;out=media:text"));
+        plan.add_node(MachineNode::input_slot(
+            "input",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:pdf;op=extract;out=media:text",
+        ));
         plan.add_node(MachineNode::output("output", "result", "cap_0"));
 
         plan.add_edge(MachinePlanEdge::direct("input", "cap_0"));
         plan.add_edge(MachinePlanEdge::direct("cap_0", "output"));
 
         let result = plan_to_resolved_graph(&plan, &registry).await;
-        assert!(result.is_ok(), "Linear plan should still convert: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Linear plan should still convert: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap().edges.len(), 1);
     }
 
@@ -356,8 +435,16 @@ mod tests {
         ]);
 
         let mut plan = MachinePlan::new("collect_plan");
-        plan.add_node(MachineNode::input_slot("input", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(MachineNode::cap("cap_0", r#"cap:in=media:pdf;op=extract;out="media:text;textable""#));
+        plan.add_node(MachineNode::input_slot(
+            "input",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            r#"cap:in=media:pdf;op=extract;out="media:text;textable""#,
+        ));
 
         // Standalone Collect: scalar→list with output_media_urn set
         let mut collect_node = MachineNode::collect("collect_0", vec!["cap_0".to_string()]);
@@ -377,7 +464,11 @@ mod tests {
         plan.add_edge(MachinePlanEdge::direct("cap_1", "output"));
 
         let result = plan_to_resolved_graph(&plan, &registry).await;
-        assert!(result.is_ok(), "Plan with standalone Collect should convert: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Plan with standalone Collect should convert: {:?}",
+            result.err()
+        );
 
         let graph = result.unwrap();
         // Two resolved edges: input→cap_0 and cap_0→cap_1 (the
@@ -385,8 +476,17 @@ mod tests {
         // outgoing edge becomes a direct cap_0 → cap_1 edge).
         // HashMap iteration order is non-deterministic, so
         // assert by membership rather than by index.
-        assert_eq!(graph.edges.len(), 2, "Expected 2 edges, got {}: {:?}",
-            graph.edges.len(), graph.edges.iter().map(|e| format!("{}→{}", e.from, e.to)).collect::<Vec<_>>());
+        assert_eq!(
+            graph.edges.len(),
+            2,
+            "Expected 2 edges, got {}: {:?}",
+            graph.edges.len(),
+            graph
+                .edges
+                .iter()
+                .map(|e| format!("{}→{}", e.from, e.to))
+                .collect::<Vec<_>>()
+        );
 
         let edge_pairs: std::collections::HashSet<(String, String)> = graph
             .edges
@@ -404,12 +504,16 @@ mod tests {
         // The standalone Collect should NOT appear as an
         // edge endpoint — it's a pass-through.
         assert!(
-            !edge_pairs.iter().any(|(f, t)| f == "collect_0" || t == "collect_0"),
+            !edge_pairs
+                .iter()
+                .any(|(f, t)| f == "collect_0" || t == "collect_0"),
             "standalone Collect must not appear as an edge endpoint"
         );
 
         // has_foreach should be false (standalone Collect does NOT trigger ForEach execution path)
-        assert!(!plan.has_foreach(),
-            "Plan with only standalone Collect should NOT trigger ForEach execution path");
+        assert!(
+            !plan.has_foreach(),
+            "Plan with only standalone Collect should NOT trigger ForEach execution path"
+        );
     }
 }

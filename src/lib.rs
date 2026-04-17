@@ -28,127 +28,170 @@
 //! 5. Cartridge can send LOG frames for progress/status
 //! 6. Relay-specific: RelayNotify (slave→master) and RelayState (master→slave)
 
-pub mod urn;
-pub mod cap;
-pub mod media;
 pub mod bifaci;
-pub mod standard;
-pub mod planner;
-pub mod orchestrator;
-pub mod machine;
+pub mod cap;
 pub mod input_resolver;
+pub mod machine;
+pub mod media;
+pub mod orchestrator;
+pub mod planner;
+pub mod standard;
+pub mod urn;
 
 // URN types
+pub use urn::cap_matrix::*;
 pub use urn::cap_urn::*;
 pub use urn::media_urn::*;
-pub use urn::cap_matrix::*;
 
 // Cap definitions
-pub use cap::definition::*;
-pub use cap::validation::*;
-pub use cap::schema_validation::{SchemaValidator as JsonSchemaValidator, SchemaValidationError, SchemaResolver, FileSchemaResolver};
-pub use cap::registry::*;
 pub use cap::caller::{CapArgumentValue, CapCaller, CapResult, CapSet, StdinSource};
+pub use cap::definition::*;
+pub use cap::registry::*;
 pub use cap::response::*;
+pub use cap::schema_validation::{
+    FileSchemaResolver, SchemaResolver, SchemaValidationError,
+    SchemaValidator as JsonSchemaValidator,
+};
+pub use cap::validation::*;
 
 // Media types
+pub use media::profile::{ProfileSchemaError, ProfileSchemaRegistry};
+pub use media::registry::{MediaRegistryError, MediaUrnRegistry, StoredMediaSpec};
 pub use media::spec::*;
-pub use media::registry::{MediaUrnRegistry, MediaRegistryError, StoredMediaSpec};
-pub use media::profile::{ProfileSchemaRegistry, ProfileSchemaError};
 
 // Standard caps and media
 pub use standard::*;
 
 // Bifaci protocol — frames, I/O, runtimes
+pub use bifaci::cartridge_runtime::{
+    find_stream, find_stream_meta, find_stream_str, require_stream, require_stream_str,
+    CapacityHandle, CartridgeRuntime, CliStreamEmitter, DiscardOp, FrameSender, IdentityOp,
+    InputPackage, InputStream, NoPeerInvoker, OpFactory, OutputStream, PeerCall, PeerInvoker,
+    PeerResponse, PeerResponseItem, ProgressSender, Request, RuntimeError, StreamError, StreamMeta,
+    StreamSender, WET_KEY_REQUEST,
+};
 pub use bifaci::decode_chunk_payload;
-pub use bifaci::frame::{Frame, FrameType, MessageId, Limits, FlowKey, SeqAssigner, ReorderBuffer, PROTOCOL_VERSION, DEFAULT_MAX_FRAME, DEFAULT_MAX_CHUNK, DEFAULT_MAX_REORDER_BUFFER};
+pub use bifaci::frame::{
+    FlowKey, Frame, FrameType, Limits, MessageId, ReorderBuffer, SeqAssigner, DEFAULT_MAX_CHUNK,
+    DEFAULT_MAX_FRAME, DEFAULT_MAX_REORDER_BUFFER, PROTOCOL_VERSION,
+};
 pub use bifaci::io::{
-    CborError, FrameReader, FrameWriter, HandshakeResult,
-    encode_frame, decode_frame, read_frame, write_frame,
-    handshake, handshake_accept,
-    verify_identity,
+    decode_frame, encode_frame, handshake, handshake_accept, read_frame, verify_identity,
+    write_frame, CborError, FrameReader, FrameWriter, HandshakeResult,
 };
 pub use bifaci::manifest::*;
-pub use bifaci::cartridge_runtime::{CartridgeRuntime, RuntimeError, FrameSender, PeerInvoker, NoPeerInvoker, CliStreamEmitter, InputStream, InputPackage, OutputStream, ProgressSender, StreamSender, StreamMeta, PeerCall, PeerResponse, PeerResponseItem, StreamError, Request, OpFactory, IdentityOp, DiscardOp, CapacityHandle, WET_KEY_REQUEST, find_stream, find_stream_str, find_stream_meta, require_stream, require_stream_str};
 
 // Re-export ops crate types used by Op-based handlers
-pub use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
 pub use async_trait::async_trait;
 pub use bifaci::cartridge_repo::{
-    CartridgeRepo, CartridgeRepoError,
-    CartridgeCapSummary, CartridgeInfo, CartridgeSuggestion, CartridgeRegistryResponse,
-    CartridgePackageInfo, CartridgeBuild, CartridgeVersionData, CartridgeDistributionInfo,
-    CartridgeRegistry, CartridgeRegistryEntry,
+    CartridgeBuild, CartridgeCapSummary, CartridgeDistributionInfo, CartridgeInfo,
+    CartridgePackageInfo, CartridgeRegistry, CartridgeRegistryEntry, CartridgeRegistryResponse,
+    CartridgeRepo, CartridgeRepoError, CartridgeSuggestion, CartridgeVersionData,
 };
+pub use ops::{DryContext, Op, OpError, OpMetadata, OpResult, WetContext};
 
 // CartridgeHost is the primary API for host-side cartridge communication (async/tokio-native)
 pub use bifaci::host_runtime::{
-    CartridgeHostRuntime as CartridgeHost,
-    AsyncHostError as HostError,
-    CartridgeResponse,
-    ResponseChunk,
-    StreamingResponse,
+    AsyncHostError as HostError, CartridgeHostRuntime as CartridgeHost, CartridgeResponse,
+    ResponseChunk, StreamingResponse,
 };
 
 // Also export with explicit Async prefix for clarity when needed
-pub use bifaci::host_runtime::CartridgeHostRuntime;
 pub use bifaci::host_runtime::AsyncHostError;
+pub use bifaci::host_runtime::CartridgeHostRuntime;
 
 // Cartridge process monitoring
-pub use bifaci::host_runtime::{CartridgeProcessInfo, CartridgeProcessHandle, HostCommand};
+pub use bifaci::host_runtime::{CartridgeProcessHandle, CartridgeProcessInfo, HostCommand};
 
 // Cartridge install metadata
-pub use bifaci::cartridge_json::{CartridgeJson, CartridgeJsonError, CartridgeInstallSource, hash_cartridge_directory};
+pub use bifaci::cartridge_json::{
+    hash_cartridge_directory, CartridgeInstallSource, CartridgeJson, CartridgeJsonError,
+};
 
 // Relay exports
-pub use bifaci::relay::{RelaySlave, RelayMaster};
-pub use bifaci::relay_switch::{InstalledCartridgeIdentity, RelaySwitch, RelaySwitchError, MasterHealthStatus};
-pub use bifaci::in_process_host::{InProcessCartridgeHost, FrameHandler, ResponseWriter, accumulate_input};
+pub use bifaci::in_process_host::{
+    accumulate_input, FrameHandler, InProcessCartridgeHost, ResponseWriter,
+};
+pub use bifaci::relay::{RelayMaster, RelaySlave};
+pub use bifaci::relay_switch::{
+    InstalledCartridgeIdentity, MasterHealthStatus, RelaySwitch, RelaySwitchError,
+};
 
 // Planner — planning, discovery, and execution for machines
 pub use planner::{
-    PlannerError, PlannerResult, CapExecutor, CapSettingsProvider,
-    // Shape (cardinality + structure)
-    InputCardinality, InputStructure, MediaShape,
-    CardinalityCompatibility, CardinalityPattern, StructureCompatibility, ShapeCompatibility,
-    CapShapeInfo, StrandShapeAnalysis,
     // Argument binding
-    ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,
-    StrandInput, CapFileMetadata, CapInputFile, ResolvedArgument, SourceEntityType,
+    ArgumentBinding,
+    ArgumentBindings,
+    ArgumentInfo,
+    ArgumentResolution,
+    ArgumentResolutionContext,
+    ArgumentSource,
+    BodyOutcome,
+    CapExecutor,
+    CapFileMetadata,
     // Collection input
-    CapInputCollection, CollectionFile,
-    // Execution plan
-    MachinePlan, MachineNode, MachinePlanEdge, EdgeType, ExecutionNodeType, MergeStrategy,
-    NodeExecutionResult, MachineResult, BodyOutcome, NodeId,
-    // Plan builder
-    MachinePlanBuilder,
-    ArgumentResolution, ArgumentInfo, StepArgumentRequirements, PathArgumentRequirements,
+    CapInputCollection,
+    CapInputFile,
+    CapSettingsProvider,
+    CapShapeInfo,
+    CardinalityCompatibility,
+    CardinalityPattern,
+    CollectionFile,
+    EdgeType,
+    ExecutionNodeType,
+    // Shape (cardinality + structure)
+    InputCardinality,
+    InputStructure,
     // Live cap graph (unified path finding)
-    LiveCapGraph, LiveMachinePlanEdge, ReachableTargetInfo, StrandStep, Strand,
+    LiveCapGraph,
+    LiveMachinePlanEdge,
     // Executor
     MachineExecutor,
+    MachineNode,
+    // Execution plan
+    MachinePlan,
+    // Plan builder
+    MachinePlanBuilder,
+    MachinePlanEdge,
+    MachineResult,
+    MediaShape,
+    MergeStrategy,
+    NodeExecutionResult,
+    NodeId,
+    PathArgumentRequirements,
+    PlannerError,
+    PlannerResult,
+    ReachableTargetInfo,
+    ResolvedArgument,
+    ShapeCompatibility,
+    SourceEntityType,
+    StepArgumentRequirements,
+    Strand,
+    StrandInput,
+    StrandShapeAnalysis,
+    StrandStep,
+    StructureCompatibility,
 };
 
 // Machine notation — typed DAG path identifiers
 pub use machine::{
-    Machine, MachineAbstractionError, MachineEdge, MachineParseError, MachineRun,
-    MachineRunStatus, MachineSyntaxError, MachineStrand, NotationFormat,
-    parse_machine, parse_machine_with_node_names, StrandNodeNames,
+    parse_machine, parse_machine_with_node_names, Machine, MachineAbstractionError, MachineEdge,
+    MachineParseError, MachineRun, MachineRunStatus, MachineStrand, MachineSyntaxError,
+    NotationFormat, StrandNodeNames,
 };
 
 // Orchestrator — machine notation parsing and DAG execution
 pub use orchestrator::{
-    ParseOrchestrationError, ResolvedEdge, ResolvedGraph,
-    parse_machine_to_cap_dag, plan_to_resolved_graph, execute_dag, NodeData, ExecutionError,
-    EdgeGroup, CartridgeManager, ExecutionContext, CapProgressFn, ProgressMapper, map_progress,
-    split_cbor_array, assemble_cbor_array, split_cbor_sequence, assemble_cbor_sequence, CborUtilError,
+    assemble_cbor_array, assemble_cbor_sequence, execute_dag, map_progress,
+    parse_machine_to_cap_dag, plan_to_resolved_graph, split_cbor_array, split_cbor_sequence,
+    CapProgressFn, CartridgeManager, CborUtilError, EdgeGroup, ExecutionContext, ExecutionError,
+    NodeData, ParseOrchestrationError, ProgressMapper, ResolvedEdge, ResolvedGraph,
 };
 
 // InputResolver — unified input resolution with media detection
 pub use input_resolver::{
-    InputItem, ContentStructure, ResolvedFile, ResolvedInputSet, InputResolverError,
-    MediaAdapter, AdapterResult, AdapterSelection, MediaAdapterRegistry,
-    ValueAdapter, ValueAdapterResult, ValueAdapterRegistry,
-    resolve_input, resolve_inputs, resolve_paths, detect_file,
-    discriminate_candidates_by_validation,
+    detect_file, discriminate_candidates_by_validation, resolve_input, resolve_inputs,
+    resolve_paths, AdapterResult, AdapterSelection, ContentStructure, InputItem,
+    InputResolverError, MediaAdapter, MediaAdapterRegistry, ResolvedFile, ResolvedInputSet,
+    ValueAdapter, ValueAdapterRegistry, ValueAdapterResult,
 };

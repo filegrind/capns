@@ -16,7 +16,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("SUCCESS: Cap parsed correctly!");
             println!("  URN: {}", cap.urn_string());
             println!("  Command: {}", cap.command);
-            println!("  Description: {}", cap.cap_description.as_ref().unwrap_or(&"None".to_string()));
+            println!(
+                "  Description: {}",
+                cap.cap_description.as_ref().unwrap_or(&"None".to_string())
+            );
             println!("  Accepts stdin: {}", cap.accepts_stdin());
             if let Some(stdin_urn) = cap.get_stdin_media_urn() {
                 println!("  Stdin media URN: {}", stdin_urn);
@@ -41,9 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(output) = &cap.output {
-                println!("  Output: {} - {}", output.media_urn, output.output_description);
+                println!(
+                    "  Output: {} - {}",
+                    output.media_urn, output.output_description
+                );
             }
-        },
+        }
         Err(e) => {
             println!("FAILED: {}", e);
             return Err(e.into());

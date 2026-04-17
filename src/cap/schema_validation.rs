@@ -3,9 +3,9 @@
 //! Provides comprehensive validation of JSON data against JSON Schema Draft-07.
 //! Schemas are located in the `media_specs` table of the cap definition or in the registry.
 
-use crate::{Cap, CapOutput, CapArg};
-use crate::media::spec::resolve_media_urn;
 use crate::media::registry::MediaUrnRegistry;
+use crate::media::spec::resolve_media_urn;
+use crate::{Cap, CapArg, CapOutput};
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -60,14 +60,16 @@ impl SchemaValidator {
         let args = cap.get_args();
 
         // Get positional args sorted by position
-        let mut positional_args: Vec<(&CapArg, usize)> = args.iter()
+        let mut positional_args: Vec<(&CapArg, usize)> = args
+            .iter()
             .filter_map(|arg| {
-                arg.sources.iter()
-                    .find_map(|s| if let crate::ArgSource::Position { position } = s {
+                arg.sources.iter().find_map(|s| {
+                    if let crate::ArgSource::Position { position } = s {
                         Some((arg, *position))
                     } else {
                         None
-                    })
+                    }
+                })
             })
             .collect();
         positional_args.sort_by_key(|(_, pos)| *pos);
@@ -75,7 +77,8 @@ impl SchemaValidator {
         // Validate positional arguments
         for (arg_def, position) in positional_args {
             if let Some(arg_value) = arguments.get(position) {
-                self.validate_argument_with_cap(cap, arg_def, arg_value, registry).await?;
+                self.validate_argument_with_cap(cap, arg_def, arg_value, registry)
+                    .await?;
             }
         }
 
@@ -116,12 +119,13 @@ impl SchemaValidator {
         registry: &MediaUrnRegistry,
     ) -> Result<(), SchemaValidationError> {
         // Resolve the spec ID to get the schema
-        let resolved = resolve_media_urn(&output_def.media_urn, Some(cap.get_media_specs()), registry)
-            .await
-            .map_err(|e| SchemaValidationError::MediaUrnNotResolved {
-                media_urn: output_def.media_urn.clone(),
-                error: e.to_string(),
-            })?;
+        let resolved =
+            resolve_media_urn(&output_def.media_urn, Some(cap.get_media_specs()), registry)
+                .await
+                .map_err(|e| SchemaValidationError::MediaUrnNotResolved {
+                    media_urn: output_def.media_urn.clone(),
+                    error: e.to_string(),
+                })?;
 
         // If no schema in the resolved spec, skip validation
         let schema = match resolved.schema {
@@ -139,8 +143,8 @@ impl SchemaValidator {
         value: &JsonValue,
         schema: &JsonValue,
     ) -> Result<(), SchemaValidationError> {
-        let schema_key = serde_json::to_string(schema)
-            .map_err(|_| SchemaValidationError::InvalidJson)?;
+        let schema_key =
+            serde_json::to_string(schema).map_err(|_| SchemaValidationError::InvalidJson)?;
 
         // Use cached compiled schema or compile new one
         let compiled_schema = if let Some(cached) = self.schema_cache.get(&schema_key) {
@@ -196,26 +200,28 @@ impl FileSchemaResolver {
 impl SchemaResolver for FileSchemaResolver {
     fn resolve_schema(&self, schema_ref: &str) -> Result<JsonValue, SchemaValidationError> {
         let schema_path = self.base_path.join(schema_ref);
-        let schema_content = std::fs::read_to_string(&schema_path)
-            .map_err(|_| SchemaValidationError::MediaUrnNotResolved {
+        let schema_content = std::fs::read_to_string(&schema_path).map_err(|_| {
+            SchemaValidationError::MediaUrnNotResolved {
                 media_urn: schema_ref.to_string(),
                 error: "File not found".to_string(),
-            })?;
+            }
+        })?;
 
-        serde_json::from_str(&schema_content)
-            .map_err(|_| SchemaValidationError::MediaUrnNotResolved {
+        serde_json::from_str(&schema_content).map_err(|_| {
+            SchemaValidationError::MediaUrnNotResolved {
                 media_urn: schema_ref.to_string(),
                 error: "Invalid JSON".to_string(),
-            })
+            }
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::standard::media::MEDIA_STRING;
     use crate::media::spec::MediaSpecDef;
-    use crate::{CapUrn, CapArg, ArgSource};
+    use crate::standard::media::MEDIA_STRING;
+    use crate::{ArgSource, CapArg, CapUrn};
     use serde_json::json;
 
     // Helper to create test URN with required in/out specs
@@ -225,7 +231,9 @@ mod tests {
 
     // Helper to create a test registry
     async fn test_registry() -> MediaUrnRegistry {
-        MediaUrnRegistry::new().await.expect("Failed to create test registry")
+        MediaUrnRegistry::new()
+            .await
+            .expect("Failed to create test registry")
     }
 
     // TEST163: Test argument schema validation succeeds with valid JSON matching schema
@@ -266,7 +274,10 @@ mod tests {
         );
 
         let valid_value = json!({"name": "John", "age": 30});
-        assert!(validator.validate_argument_with_cap(&cap, &arg, &valid_value, &registry).await.is_ok());
+        assert!(validator
+            .validate_argument_with_cap(&cap, &arg, &valid_value, &registry)
+            .await
+            .is_ok());
     }
 
     // TEST164: Test argument schema validation fails with JSON missing required fields
@@ -306,7 +317,10 @@ mod tests {
         );
 
         let invalid_value = json!({"age": 30}); // Missing required "name"
-        assert!(validator.validate_argument_with_cap(&cap, &arg, &invalid_value, &registry).await.is_err());
+        assert!(validator
+            .validate_argument_with_cap(&cap, &arg, &invalid_value, &registry)
+            .await
+            .is_err());
     }
 
     // TEST165: Test output schema validation succeeds with valid JSON matching schema
@@ -343,7 +357,10 @@ mod tests {
         let output = CapOutput::new("my:query-result.v1", "Query result");
 
         let valid_value = json!({"result": "success", "timestamp": "2023-01-01T00:00:00Z"});
-        assert!(validator.validate_output_with_cap(&cap, &output, &valid_value, &registry).await.is_ok());
+        assert!(validator
+            .validate_output_with_cap(&cap, &output, &valid_value, &registry)
+            .await
+            .is_ok());
     }
 
     // TEST166: Test validation skipped when resolved media spec has no schema
@@ -365,7 +382,10 @@ mod tests {
 
         let value = json!("any string value");
         // Should succeed - MEDIA_STRING resolves from registry and has no schema
-        assert!(validator.validate_argument_with_cap(&cap, &arg, &value, &registry).await.is_ok());
+        assert!(validator
+            .validate_argument_with_cap(&cap, &arg, &value, &registry)
+            .await
+            .is_ok());
     }
 
     // TEST167: Test validation fails hard when media URN cannot be resolved from any source
@@ -385,11 +405,16 @@ mod tests {
         );
 
         let value = json!("test");
-        let result = validator.validate_argument_with_cap(&cap, &arg, &value, &registry).await;
+        let result = validator
+            .validate_argument_with_cap(&cap, &arg, &value, &registry)
+            .await;
         assert!(result.is_err());
 
         if let Err(SchemaValidationError::MediaUrnNotResolved { media_urn, .. }) = result {
-            assert_eq!(media_urn, "media:completely-unknown-urn-that-does-not-exist");
+            assert_eq!(
+                media_urn,
+                "media:completely-unknown-urn-that-does-not-exist"
+            );
         } else {
             panic!("Expected MediaUrnNotResolved error");
         }

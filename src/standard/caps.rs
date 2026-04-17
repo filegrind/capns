@@ -4,34 +4,56 @@
 //! all MACINA providers, including their formal argument specifications.
 //! These definitions should match the TOML definitions in capgraph/src/
 
-use crate::{Cap, CapOutput, CapRegistry, CapUrn, CapUrnBuilder, RegistryError};
 use crate::urn::media_urn::{
-    // Primitives (needed for coercion functions)
-    MEDIA_STRING, MEDIA_INTEGER, MEDIA_BOOLEAN, MEDIA_OBJECT, MEDIA_IDENTITY,
-    // Semantic media types
-    MEDIA_PNG,
-    // Document types
-    MEDIA_PDF, MEDIA_EPUB,
+    MEDIA_AVAILABILITY_OUTPUT,
+    MEDIA_BOOLEAN,
+    MEDIA_CONTENTS_OUTPUT,
+    MEDIA_CSV,
+    MEDIA_DECISION,
+    MEDIA_DOWNLOAD_OUTPUT,
+    MEDIA_EMBEDDING_VECTOR,
+    MEDIA_EPUB,
+    MEDIA_IDENTITY,
+    MEDIA_INTEGER,
+    MEDIA_JSON,
+    MEDIA_JSON_LIST,
+    MEDIA_JSON_LIST_RECORD,
+    MEDIA_JSON_RECORD,
+    MEDIA_JSON_SCHEMA,
+    // Format conversion types (JSON, YAML, CSV variants)
+    MEDIA_JSON_VALUE,
+    MEDIA_LIST_OUTPUT,
+    MEDIA_LLM_INFERENCE_OUTPUT,
+    MEDIA_LOG,
     // Text format types
-    MEDIA_MD, MEDIA_TXT, MEDIA_RST, MEDIA_LOG,
+    MEDIA_MD,
+    // CAPDAG output types
+    MEDIA_MODEL_DIM,
+    MEDIA_MODEL_REPO,
     // Semantic input types
     MEDIA_MODEL_SPEC,
-    MEDIA_MODEL_REPO, MEDIA_JSON_SCHEMA,
-    // Semantic output types
-    MEDIA_TEXTABLE_PAGE,
-    // CAPDAG output types
-    MEDIA_MODEL_DIM, MEDIA_DOWNLOAD_OUTPUT,
-    MEDIA_LIST_OUTPUT, MEDIA_STATUS_OUTPUT, MEDIA_CONTENTS_OUTPUT,
-    MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
-    MEDIA_EMBEDDING_VECTOR, MEDIA_JSON, MEDIA_LLM_INFERENCE_OUTPUT,
-    MEDIA_DECISION, MEDIA_VOID,
-    // Format conversion types (JSON, YAML, CSV variants)
-    MEDIA_JSON_VALUE, MEDIA_JSON_RECORD, MEDIA_JSON_LIST, MEDIA_JSON_LIST_RECORD,
-    MEDIA_YAML_VALUE, MEDIA_YAML_RECORD, MEDIA_YAML_LIST, MEDIA_YAML_LIST_RECORD,
-    MEDIA_CSV,
+    MEDIA_OBJECT,
+    MEDIA_PATH_OUTPUT,
+    // Document types
+    MEDIA_PDF,
+    // Semantic media types
+    MEDIA_PNG,
+    MEDIA_RST,
+    MEDIA_STATUS_OUTPUT,
+    // Primitives (needed for coercion functions)
+    MEDIA_STRING,
     // Bare list types (no format tag)
     MEDIA_TEXTABLE_LIST,
+    // Semantic output types
+    MEDIA_TEXTABLE_PAGE,
+    MEDIA_TXT,
+    MEDIA_VOID,
+    MEDIA_YAML_LIST,
+    MEDIA_YAML_LIST_RECORD,
+    MEDIA_YAML_RECORD,
+    MEDIA_YAML_VALUE,
 };
+use crate::{Cap, CapOutput, CapRegistry, CapUrn, CapUrnBuilder, RegistryError};
 use std::sync::Arc;
 
 // =============================================================================
@@ -86,7 +108,10 @@ pub fn identity_cap() -> Cap {
             stdin: "media:".to_string(),
         }],
     ));
-    cap.set_output(crate::cap::definition::CapOutput::new("media:", "The input data, unchanged"));
+    cap.set_output(crate::cap::definition::CapOutput::new(
+        "media:",
+        "The input data, unchanged",
+    ));
     cap
 }
 
@@ -113,10 +138,12 @@ pub fn discard_cap() -> Cap {
             stdin: "media:".to_string(),
         }],
     ));
-    cap.set_output(crate::cap::definition::CapOutput::new(MEDIA_VOID, "Void (no output)"));
+    cap.set_output(crate::cap::definition::CapOutput::new(
+        MEDIA_VOID,
+        "Void (no output)",
+    ));
     cap
 }
-
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -267,8 +294,8 @@ pub fn image_embeddings_generation_urn() -> CapUrn {
 
 /// Build URN for model-download capability
 pub fn model_download_urn() -> CapUrn {
-		CapUrnBuilder::new()
-		.tag("op", "download-model")
+    CapUrnBuilder::new()
+        .tag("op", "download-model")
         .in_spec(MEDIA_MODEL_SPEC)
         .out_spec(MEDIA_DOWNLOAD_OUTPUT)
         .build()
@@ -299,7 +326,7 @@ pub fn model_status_urn() -> CapUrn {
 /// Build URN for model-contents capability
 pub fn model_contents_urn() -> CapUrn {
     CapUrnBuilder::new()
-		.tag("op", "model-contents")
+        .tag("op", "model-contents")
         .in_spec(MEDIA_MODEL_SPEC)
         .out_spec(MEDIA_CONTENTS_OUTPUT)
         .build()
@@ -553,50 +580,122 @@ pub struct FormatConversionPath {
 pub fn all_format_conversion_paths() -> Vec<FormatConversionPath> {
     vec![
         // JSON <-> YAML value
-        FormatConversionPath { in_media: MEDIA_JSON_VALUE, out_media: MEDIA_YAML_VALUE,
-            title: "Convert JSON Value to YAML", description: "Convert a JSON scalar value to YAML format" },
-        FormatConversionPath { in_media: MEDIA_YAML_VALUE, out_media: MEDIA_JSON_VALUE,
-            title: "Convert YAML Value to JSON", description: "Convert a YAML scalar value to JSON format" },
+        FormatConversionPath {
+            in_media: MEDIA_JSON_VALUE,
+            out_media: MEDIA_YAML_VALUE,
+            title: "Convert JSON Value to YAML",
+            description: "Convert a JSON scalar value to YAML format",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_YAML_VALUE,
+            out_media: MEDIA_JSON_VALUE,
+            title: "Convert YAML Value to JSON",
+            description: "Convert a YAML scalar value to JSON format",
+        },
         // JSON <-> YAML record
-        FormatConversionPath { in_media: MEDIA_JSON_RECORD, out_media: MEDIA_YAML_RECORD,
-            title: "Convert JSON Object to YAML Mapping", description: "Convert a JSON object to a YAML mapping" },
-        FormatConversionPath { in_media: MEDIA_YAML_RECORD, out_media: MEDIA_JSON_RECORD,
-            title: "Convert YAML Mapping to JSON Object", description: "Convert a YAML mapping to a JSON object" },
+        FormatConversionPath {
+            in_media: MEDIA_JSON_RECORD,
+            out_media: MEDIA_YAML_RECORD,
+            title: "Convert JSON Object to YAML Mapping",
+            description: "Convert a JSON object to a YAML mapping",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_YAML_RECORD,
+            out_media: MEDIA_JSON_RECORD,
+            title: "Convert YAML Mapping to JSON Object",
+            description: "Convert a YAML mapping to a JSON object",
+        },
         // JSON <-> YAML list
-        FormatConversionPath { in_media: MEDIA_JSON_LIST, out_media: MEDIA_YAML_LIST,
-            title: "Convert JSON Array to YAML Sequence", description: "Convert a JSON array to a YAML sequence" },
-        FormatConversionPath { in_media: MEDIA_YAML_LIST, out_media: MEDIA_JSON_LIST,
-            title: "Convert YAML Sequence to JSON Array", description: "Convert a YAML sequence to a JSON array" },
+        FormatConversionPath {
+            in_media: MEDIA_JSON_LIST,
+            out_media: MEDIA_YAML_LIST,
+            title: "Convert JSON Array to YAML Sequence",
+            description: "Convert a JSON array to a YAML sequence",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_YAML_LIST,
+            out_media: MEDIA_JSON_LIST,
+            title: "Convert YAML Sequence to JSON Array",
+            description: "Convert a YAML sequence to a JSON array",
+        },
         // JSON <-> YAML list of records
-        FormatConversionPath { in_media: MEDIA_JSON_LIST_RECORD, out_media: MEDIA_YAML_LIST_RECORD,
-            title: "Convert JSON Array of Objects to YAML List of Mappings", description: "Convert a JSON array of objects to a YAML list of mappings" },
-        FormatConversionPath { in_media: MEDIA_YAML_LIST_RECORD, out_media: MEDIA_JSON_LIST_RECORD,
-            title: "Convert YAML List of Mappings to JSON Array of Objects", description: "Convert a YAML list of mappings to a JSON array of objects" },
+        FormatConversionPath {
+            in_media: MEDIA_JSON_LIST_RECORD,
+            out_media: MEDIA_YAML_LIST_RECORD,
+            title: "Convert JSON Array of Objects to YAML List of Mappings",
+            description: "Convert a JSON array of objects to a YAML list of mappings",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_YAML_LIST_RECORD,
+            out_media: MEDIA_JSON_LIST_RECORD,
+            title: "Convert YAML List of Mappings to JSON Array of Objects",
+            description: "Convert a YAML list of mappings to a JSON array of objects",
+        },
         // JSON list of records <-> CSV
-        FormatConversionPath { in_media: MEDIA_JSON_LIST_RECORD, out_media: MEDIA_CSV,
-            title: "Convert JSON Array of Objects to CSV", description: "Convert a JSON array of objects to CSV format" },
-        FormatConversionPath { in_media: MEDIA_CSV, out_media: MEDIA_JSON_LIST_RECORD,
-            title: "Convert CSV to JSON Array of Objects", description: "Convert CSV data to a JSON array of objects" },
+        FormatConversionPath {
+            in_media: MEDIA_JSON_LIST_RECORD,
+            out_media: MEDIA_CSV,
+            title: "Convert JSON Array of Objects to CSV",
+            description: "Convert a JSON array of objects to CSV format",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_CSV,
+            out_media: MEDIA_JSON_LIST_RECORD,
+            title: "Convert CSV to JSON Array of Objects",
+            description: "Convert CSV data to a JSON array of objects",
+        },
         // YAML list of records <-> CSV
-        FormatConversionPath { in_media: MEDIA_YAML_LIST_RECORD, out_media: MEDIA_CSV,
-            title: "Convert YAML List of Mappings to CSV", description: "Convert a YAML list of mappings to CSV format" },
-        FormatConversionPath { in_media: MEDIA_CSV, out_media: MEDIA_YAML_LIST_RECORD,
-            title: "Convert CSV to YAML List of Mappings", description: "Convert CSV data to a YAML list of mappings" },
+        FormatConversionPath {
+            in_media: MEDIA_YAML_LIST_RECORD,
+            out_media: MEDIA_CSV,
+            title: "Convert YAML List of Mappings to CSV",
+            description: "Convert a YAML list of mappings to CSV format",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_CSV,
+            out_media: MEDIA_YAML_LIST_RECORD,
+            title: "Convert CSV to YAML List of Mappings",
+            description: "Convert CSV data to a YAML list of mappings",
+        },
         // Textable list <-> JSON list
-        FormatConversionPath { in_media: MEDIA_TEXTABLE_LIST, out_media: MEDIA_JSON_LIST,
-            title: "Convert Text List to JSON Array", description: "Convert a list of textable values to a JSON array" },
-        FormatConversionPath { in_media: MEDIA_JSON_LIST, out_media: MEDIA_TEXTABLE_LIST,
-            title: "Convert JSON Array to Text List", description: "Convert a JSON array to a list of textable values" },
+        FormatConversionPath {
+            in_media: MEDIA_TEXTABLE_LIST,
+            out_media: MEDIA_JSON_LIST,
+            title: "Convert Text List to JSON Array",
+            description: "Convert a list of textable values to a JSON array",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_JSON_LIST,
+            out_media: MEDIA_TEXTABLE_LIST,
+            title: "Convert JSON Array to Text List",
+            description: "Convert a JSON array to a list of textable values",
+        },
         // Textable list <-> YAML list
-        FormatConversionPath { in_media: MEDIA_TEXTABLE_LIST, out_media: MEDIA_YAML_LIST,
-            title: "Convert Text List to YAML Sequence", description: "Convert a list of textable values to a YAML sequence" },
-        FormatConversionPath { in_media: MEDIA_YAML_LIST, out_media: MEDIA_TEXTABLE_LIST,
-            title: "Convert YAML Sequence to Text List", description: "Convert a YAML sequence to a list of textable values" },
+        FormatConversionPath {
+            in_media: MEDIA_TEXTABLE_LIST,
+            out_media: MEDIA_YAML_LIST,
+            title: "Convert Text List to YAML Sequence",
+            description: "Convert a list of textable values to a YAML sequence",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_YAML_LIST,
+            out_media: MEDIA_TEXTABLE_LIST,
+            title: "Convert YAML Sequence to Text List",
+            description: "Convert a YAML sequence to a list of textable values",
+        },
         // Textable list <-> CSV
-        FormatConversionPath { in_media: MEDIA_TEXTABLE_LIST, out_media: MEDIA_CSV,
-            title: "Convert Text List to CSV", description: "Convert a list of textable values to CSV format" },
-        FormatConversionPath { in_media: MEDIA_CSV, out_media: MEDIA_TEXTABLE_LIST,
-            title: "Convert CSV to Text List", description: "Convert CSV data to a list of textable values" },
+        FormatConversionPath {
+            in_media: MEDIA_TEXTABLE_LIST,
+            out_media: MEDIA_CSV,
+            title: "Convert Text List to CSV",
+            description: "Convert a list of textable values to CSV format",
+        },
+        FormatConversionPath {
+            in_media: MEDIA_CSV,
+            out_media: MEDIA_TEXTABLE_LIST,
+            title: "Convert CSV to Text List",
+            description: "Convert CSV data to a list of textable values",
+        },
     ]
 }
 
@@ -617,25 +716,37 @@ pub async fn llm_generate_text_cap(registry: Arc<CapRegistry>) -> Result<Cap, Re
 }
 
 /// Get multiplechoice cap from registry with language
-pub async fn llm_multiplechoice(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn llm_multiplechoice(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = llm_multiplechoice_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get codegeneration cap from registry with language
-pub async fn llm_codegeneration(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn llm_codegeneration(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = llm_codegeneration_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get creative cap from registry with language
-pub async fn llm_creative(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn llm_creative(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = llm_creative_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get summarization cap from registry with language
-pub async fn llm_summarization(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn llm_summarization(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = llm_summarization_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
@@ -657,7 +768,9 @@ pub async fn embeddings_generation_cap(registry: Arc<CapRegistry>) -> Result<Cap
 }
 
 /// Get image embeddings-generation cap from registry
-pub async fn image_embeddings_generation_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryError> {
+pub async fn image_embeddings_generation_cap(
+    registry: Arc<CapRegistry>,
+) -> Result<Cap, RegistryError> {
     let urn = image_embeddings_generation_urn();
     registry.get_cap(&urn.to_string()).await
 }
@@ -707,13 +820,19 @@ pub async fn model_path_cap(registry: Arc<CapRegistry>) -> Result<Cap, RegistryE
 // -----------------------------------------------------------------------------
 
 /// Get page-image rendering cap from registry.
-pub async fn render_page_image_cap(registry: Arc<CapRegistry>, input_media: &str) -> Result<Cap, RegistryError> {
+pub async fn render_page_image_cap(
+    registry: Arc<CapRegistry>,
+    input_media: &str,
+) -> Result<Cap, RegistryError> {
     let urn = render_page_image_urn(input_media);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get disbind cap from registry
-pub async fn disbind_cap(registry: Arc<CapRegistry>, input_media: &str) -> Result<Cap, RegistryError> {
+pub async fn disbind_cap(
+    registry: Arc<CapRegistry>,
+    input_media: &str,
+) -> Result<Cap, RegistryError> {
     let urn = disbind_urn(input_media);
     registry.get_cap(&urn.to_string()).await
 }
@@ -723,19 +842,28 @@ pub async fn disbind_cap(registry: Arc<CapRegistry>, input_media: &str) -> Resul
 // -----------------------------------------------------------------------------
 
 /// Get structured-query cap from registry
-pub async fn structured_query_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn structured_query_cap(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = structured_query_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get make-decision cap from registry
-pub async fn make_decision_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn make_decision_cap(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = make_decision_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
 
 /// Get make-multiple-decisions cap from registry
-pub async fn make_multiple_decisions_cap(registry: Arc<CapRegistry>, lang_code: &str) -> Result<Cap, RegistryError> {
+pub async fn make_multiple_decisions_cap(
+    registry: Arc<CapRegistry>,
+    lang_code: &str,
+) -> Result<Cap, RegistryError> {
     let urn = make_multiple_decisions_urn(lang_code);
     registry.get_cap(&urn.to_string()).await
 }
@@ -745,7 +873,11 @@ pub async fn make_multiple_decisions_cap(registry: Arc<CapRegistry>, lang_code: 
 // -----------------------------------------------------------------------------
 
 /// Get a single coercion cap from registry
-pub async fn coercion_cap(registry: Arc<CapRegistry>, source_type: &str, target_type: &str) -> Result<Cap, RegistryError> {
+pub async fn coercion_cap(
+    registry: Arc<CapRegistry>,
+    source_type: &str,
+    target_type: &str,
+) -> Result<Cap, RegistryError> {
     let urn = coercion_urn(source_type, target_type);
     registry.get_cap(&urn.to_string()).await
 }
@@ -753,7 +885,9 @@ pub async fn coercion_cap(registry: Arc<CapRegistry>, source_type: &str, target_
 /// Get all coercion caps from registry
 /// Returns a vector of (source_type, target_type, Cap) tuples
 /// Fails if any coercion cap is missing from the registry
-pub async fn all_coercion_caps(registry: Arc<CapRegistry>) -> Result<Vec<(&'static str, &'static str, Cap)>, RegistryError> {
+pub async fn all_coercion_caps(
+    registry: Arc<CapRegistry>,
+) -> Result<Vec<(&'static str, &'static str, Cap)>, RegistryError> {
     let mut caps = Vec::new();
     for (source_type, target_type) in all_coercion_paths() {
         let cap = coercion_cap(registry.clone(), source_type, target_type).await?;
@@ -793,25 +927,41 @@ pub async fn all_format_conversion_caps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::urn::media_urn::{MEDIA_MODEL_SPEC, MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT};
     use crate::standard::media::MEDIA_STRING;
+    use crate::urn::media_urn::{
+        MEDIA_AVAILABILITY_OUTPUT, MEDIA_LLM_INFERENCE_OUTPUT, MEDIA_MODEL_SPEC, MEDIA_PATH_OUTPUT,
+    };
 
     // TEST307: Test model_availability_urn builds valid cap URN with correct op and media specs
     #[test]
     fn test307_model_availability_urn() {
         let urn = model_availability_urn();
-        assert!(urn.has_tag("op", "model-availability"), "URN must have op=model-availability");
+        assert!(
+            urn.has_tag("op", "model-availability"),
+            "URN must have op=model-availability"
+        );
         assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
-        assert_eq!(urn.out_spec(), MEDIA_AVAILABILITY_OUTPUT, "output must be availability output");
+        assert_eq!(
+            urn.out_spec(),
+            MEDIA_AVAILABILITY_OUTPUT,
+            "output must be availability output"
+        );
     }
 
     // TEST308: Test model_path_urn builds valid cap URN with correct op and media specs
     #[test]
     fn test308_model_path_urn() {
         let urn = model_path_urn();
-        assert!(urn.has_tag("op", "model-path"), "URN must have op=model-path");
+        assert!(
+            urn.has_tag("op", "model-path"),
+            "URN must have op=model-path"
+        );
         assert_eq!(urn.in_spec(), MEDIA_MODEL_SPEC, "input must be model-spec");
-        assert_eq!(urn.out_spec(), MEDIA_PATH_OUTPUT, "output must be path output");
+        assert_eq!(
+            urn.out_spec(),
+            MEDIA_PATH_OUTPUT,
+            "output must be path output"
+        );
     }
 
     // TEST309: Test model_availability_urn and model_path_urn produce distinct URNs
@@ -819,8 +969,11 @@ mod tests {
     fn test309_model_availability_and_path_are_distinct() {
         let avail = model_availability_urn();
         let path = model_path_urn();
-        assert_ne!(avail.to_string(), path.to_string(),
-            "availability and path must be distinct cap URNs");
+        assert_ne!(
+            avail.to_string(),
+            path.to_string(),
+            "availability and path must be distinct cap URNs"
+        );
     }
 
     #[test]
@@ -832,13 +985,24 @@ mod tests {
         let out_spec = MediaUrn::from_string(urn.out_spec()).expect("out_spec must parse");
         let expected = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING must parse");
 
-        assert!(urn.has_tag("op", "generate_text"), "must have op=generate_text");
+        assert!(
+            urn.has_tag("op", "generate_text"),
+            "must have op=generate_text"
+        );
         assert!(urn.has_marker_tag("llm"), "must have llm tag");
         assert!(urn.has_marker_tag("ml-model"), "must have ml-model tag");
-        assert!(in_spec.conforms_to(&expected).unwrap(),
-            "in_spec '{}' must match MEDIA_STRING '{}'", urn.in_spec(), MEDIA_STRING);
-        assert!(out_spec.conforms_to(&expected).unwrap(),
-            "out_spec '{}' must match MEDIA_STRING '{}'", urn.out_spec(), MEDIA_STRING);
+        assert!(
+            in_spec.conforms_to(&expected).unwrap(),
+            "in_spec '{}' must match MEDIA_STRING '{}'",
+            urn.in_spec(),
+            MEDIA_STRING
+        );
+        assert!(
+            out_spec.conforms_to(&expected).unwrap(),
+            "out_spec '{}' must match MEDIA_STRING '{}'",
+            urn.out_spec(),
+            MEDIA_STRING
+        );
     }
 
     // TEST312: Test all URN builders produce parseable cap URNs
@@ -852,11 +1016,19 @@ mod tests {
         // Verify they roundtrip through CapUrn parsing
         let avail_str = model_availability_urn().to_string();
         let parsed = crate::urn::cap_urn::CapUrn::from_string(&avail_str);
-        assert!(parsed.is_ok(), "model_availability_urn must be parseable: {:?}", parsed.err());
+        assert!(
+            parsed.is_ok(),
+            "model_availability_urn must be parseable: {:?}",
+            parsed.err()
+        );
 
         let path_str = model_path_urn().to_string();
         let parsed = crate::urn::cap_urn::CapUrn::from_string(&path_str);
-        assert!(parsed.is_ok(), "model_path_urn must be parseable: {:?}", parsed.err());
+        assert!(
+            parsed.is_ok(),
+            "model_path_urn must be parseable: {:?}",
+            parsed.err()
+        );
     }
 
     // TEST473: CAP_DISCARD parses as valid CapUrn with in=media: and out=media:void
@@ -866,8 +1038,16 @@ mod tests {
         use crate::urn::media_urn::MEDIA_VOID;
 
         let urn = CapUrn::from_string(CAP_DISCARD).expect("CAP_DISCARD must parse");
-        assert_eq!(urn.in_spec(), "media:", "CAP_DISCARD input must be wildcard media:");
-        assert_eq!(urn.out_spec(), MEDIA_VOID, "CAP_DISCARD output must be media:void");
+        assert_eq!(
+            urn.in_spec(),
+            "media:",
+            "CAP_DISCARD input must be wildcard media:"
+        );
+        assert_eq!(
+            urn.out_spec(),
+            MEDIA_VOID,
+            "CAP_DISCARD output must be media:void"
+        );
     }
 
     // TEST474: CAP_DISCARD accepts specific-input/void-output caps
@@ -884,14 +1064,18 @@ mod tests {
         // that are at least as specific. The specific cap IS more specific.
         // As instance, does the specific cap conform to the discard pattern?
         // specific.conforms_to(discard) == discard.accepts(specific)
-        assert!(discard.accepts(&specific),
-            "CAP_DISCARD must accept a more specific cap with void output");
+        assert!(
+            discard.accepts(&specific),
+            "CAP_DISCARD must accept a more specific cap with void output"
+        );
 
         // But a cap with non-void output must NOT conform to discard
         let non_void = CapUrn::from_string("cap:in=\"media:pdf\";op=convert;out=\"media:string\"")
             .expect("non-void cap must parse");
-        assert!(!discard.accepts(&non_void),
-            "CAP_DISCARD must NOT accept a cap with non-void output");
+        assert!(
+            !discard.accepts(&non_void),
+            "CAP_DISCARD must NOT accept a cap with non-void output"
+        );
     }
 
     // TEST605: all_coercion_paths each entry builds a valid parseable CapUrn
@@ -902,15 +1086,23 @@ mod tests {
 
         for (source, target) in &paths {
             let urn = coercion_urn(source, target);
-            assert!(urn.has_tag("op", "coerce"),
-                "Coercion URN for {}→{} must have op=coerce", source, target);
+            assert!(
+                urn.has_tag("op", "coerce"),
+                "Coercion URN for {}→{} must have op=coerce",
+                source,
+                target
+            );
 
             // Verify roundtrip through string parsing
             let urn_str = urn.to_string();
             let reparsed = crate::urn::cap_urn::CapUrn::from_string(&urn_str);
-            assert!(reparsed.is_ok(),
+            assert!(
+                reparsed.is_ok(),
                 "Coercion URN for {}→{} must roundtrip through parsing: {:?}",
-                source, target, reparsed.err());
+                source,
+                target,
+                reparsed.err()
+            );
         }
     }
 
@@ -923,14 +1115,23 @@ mod tests {
         // in_spec should conform to MEDIA_STRING
         let in_urn = MediaUrn::from_string(urn.in_spec()).expect("in_spec should parse");
         let expected_in = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING should parse");
-        assert!(in_urn.conforms_to(&expected_in).unwrap(),
-            "in_spec '{}' should conform to '{}'", urn.in_spec(), MEDIA_STRING);
+        assert!(
+            in_urn.conforms_to(&expected_in).unwrap(),
+            "in_spec '{}' should conform to '{}'",
+            urn.in_spec(),
+            MEDIA_STRING
+        );
 
         // out_spec should conform to MEDIA_INTEGER
         let out_urn = MediaUrn::from_string(urn.out_spec()).expect("out_spec should parse");
-        let expected_out = MediaUrn::from_string(MEDIA_INTEGER).expect("MEDIA_INTEGER should parse");
-        assert!(out_urn.conforms_to(&expected_out).unwrap(),
-            "out_spec '{}' should conform to '{}'", urn.out_spec(), MEDIA_INTEGER);
+        let expected_out =
+            MediaUrn::from_string(MEDIA_INTEGER).expect("MEDIA_INTEGER should parse");
+        assert!(
+            out_urn.conforms_to(&expected_out).unwrap(),
+            "out_spec '{}' should conform to '{}'",
+            urn.out_spec(),
+            MEDIA_INTEGER
+        );
     }
 
     // TEST850: all_format_conversion_paths each entry builds a valid parseable CapUrn
@@ -941,15 +1142,23 @@ mod tests {
 
         for path in &paths {
             let urn = format_conversion_urn(path.in_media, path.out_media);
-            assert!(urn.has_tag("op", "convert_format"),
-                "Format conversion URN for {}→{} must have op=convert_format", path.in_media, path.out_media);
+            assert!(
+                urn.has_tag("op", "convert_format"),
+                "Format conversion URN for {}→{} must have op=convert_format",
+                path.in_media,
+                path.out_media
+            );
 
             // Verify roundtrip through string parsing
             let urn_str = urn.to_string();
             let reparsed = crate::urn::cap_urn::CapUrn::from_string(&urn_str);
-            assert!(reparsed.is_ok(),
+            assert!(
+                reparsed.is_ok(),
                 "Format conversion URN for {}→{} must roundtrip through parsing: {:?}",
-                path.in_media, path.out_media, reparsed.err());
+                path.in_media,
+                path.out_media,
+                reparsed.err()
+            );
         }
     }
 
@@ -960,13 +1169,23 @@ mod tests {
 
         let urn = format_conversion_urn(MEDIA_JSON_VALUE, MEDIA_YAML_VALUE);
         let in_urn = MediaUrn::from_string(urn.in_spec()).expect("in_spec should parse");
-        let expected_in = MediaUrn::from_string(MEDIA_JSON_VALUE).expect("MEDIA_JSON_VALUE should parse");
-        assert!(in_urn.conforms_to(&expected_in).unwrap(),
-            "in_spec '{}' should conform to '{}'", urn.in_spec(), MEDIA_JSON_VALUE);
+        let expected_in =
+            MediaUrn::from_string(MEDIA_JSON_VALUE).expect("MEDIA_JSON_VALUE should parse");
+        assert!(
+            in_urn.conforms_to(&expected_in).unwrap(),
+            "in_spec '{}' should conform to '{}'",
+            urn.in_spec(),
+            MEDIA_JSON_VALUE
+        );
 
         let out_urn = MediaUrn::from_string(urn.out_spec()).expect("out_spec should parse");
-        let expected_out = MediaUrn::from_string(MEDIA_YAML_VALUE).expect("MEDIA_YAML_VALUE should parse");
-        assert!(out_urn.conforms_to(&expected_out).unwrap(),
-            "out_spec '{}' should conform to '{}'", urn.out_spec(), MEDIA_YAML_VALUE);
+        let expected_out =
+            MediaUrn::from_string(MEDIA_YAML_VALUE).expect("MEDIA_YAML_VALUE should parse");
+        assert!(
+            out_urn.conforms_to(&expected_out).unwrap(),
+            "out_spec '{}' should conform to '{}'",
+            urn.out_spec(),
+            MEDIA_YAML_VALUE
+        );
     }
 }

@@ -1,12 +1,12 @@
 //! Pure cap-based execution with strict input validation
 
-use anyhow::{Result, anyhow};
+use crate::bifaci::frame::{Frame, MessageId};
+use crate::media::registry::MediaUrnRegistry;
+use crate::media::spec::{resolve_media_urn, ResolvedMediaSpec};
+use crate::{Cap, CapUrn, ResponseWrapper};
+use anyhow::{anyhow, Result};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
-use crate::{CapUrn, ResponseWrapper, Cap};
-use crate::bifaci::frame::{Frame, MessageId};
-use crate::media::spec::{resolve_media_urn, ResolvedMediaSpec};
-use crate::media::registry::MediaUrnRegistry;
 
 /// Source for stdin data - either raw bytes or a file reference.
 ///
@@ -92,14 +92,22 @@ impl CapArgumentValue {
                 ciborium::into_writer(&ciborium::Value::Bytes(Vec::new()), &mut cbor_payload)
                     .expect("BUG: failed to CBOR-encode empty bytes");
                 let checksum = Frame::compute_checksum(&cbor_payload);
-                frames.push(Frame::chunk(rid.clone(), stream_id.clone(), 0, cbor_payload, 0, checksum));
+                frames.push(Frame::chunk(
+                    rid.clone(),
+                    stream_id.clone(),
+                    0,
+                    cbor_payload,
+                    0,
+                    checksum,
+                ));
             } else {
                 for (i, chunk_data) in data.chunks(max_chunk).enumerate() {
                     let mut cbor_payload = Vec::new();
                     ciborium::into_writer(
                         &ciborium::Value::Bytes(chunk_data.to_vec()),
                         &mut cbor_payload,
-                    ).expect("BUG: failed to CBOR-encode chunk");
+                    )
+                    .expect("BUG: failed to CBOR-encode chunk");
                     let checksum = Frame::compute_checksum(&cbor_payload);
                     frames.push(Frame::chunk(
                         rid.clone(),
@@ -113,7 +121,11 @@ impl CapArgumentValue {
             }
 
             // STREAM_END
-            let chunk_count = if data.is_empty() { 1 } else { (data.len() + max_chunk - 1) / max_chunk } as u64;
+            let chunk_count = if data.is_empty() {
+                1
+            } else {
+                (data.len() + max_chunk - 1) / max_chunk
+            } as u64;
             frames.push(Frame::stream_end(rid.clone(), stream_id, chunk_count));
         }
 
@@ -205,10 +217,7 @@ impl CapCaller {
         self.validate_arguments(&arguments)?;
 
         // Execute via cap host method
-        let cap_result = self.cap_set.execute_cap(
-            &self.cap,
-            &arguments,
-        ).await?;
+        let cap_result = self.cap_set.execute_cap(&self.cap, &arguments).await?;
 
         // Resolve output spec to determine response type
         let output_spec = self.resolve_output_spec().await?;
@@ -283,26 +292,19 @@ impl CapCaller {
         let arg_defs = self.cap_definition.get_args();
 
         // Build set of provided media_urns
-        let provided_urns: std::collections::HashSet<_> = arguments
-            .iter()
-            .map(|a| a.media_urn.as_str())
-            .collect();
+        let provided_urns: std::collections::HashSet<_> =
+            arguments.iter().map(|a| a.media_urn.as_str()).collect();
 
         // Check all required arguments are provided
         for arg_def in arg_defs {
             if arg_def.required && !provided_urns.contains(arg_def.media_urn.as_str()) {
-                return Err(anyhow!(
-                    "Missing required argument: {}",
-                    arg_def.media_urn
-                ));
+                return Err(anyhow!("Missing required argument: {}", arg_def.media_urn));
             }
         }
 
         // Check for unknown arguments
-        let known_urns: std::collections::HashSet<_> = arg_defs
-            .iter()
-            .map(|a| a.media_urn.as_str())
-            .collect();
+        let known_urns: std::collections::HashSet<_> =
+            arg_defs.iter().map(|a| a.media_urn.as_str()).collect();
 
         for arg in arguments {
             if !known_urns.contains(arg.media_urn.as_str()) {
@@ -574,7 +576,8 @@ mod tests {
         let frames = CapArgumentValue::build_request_frames(&rid, "cap:op=test", &[arg], 32768);
 
         // Find the STREAM_START frame
-        let stream_start = frames.iter()
+        let stream_start = frames
+            .iter()
             .find(|f| f.frame_type == FrameType::StreamStart)
             .expect("Must have STREAM_START frame");
 
@@ -589,7 +592,7 @@ mod tests {
     #[test]
     fn test676_build_request_frames_round_trip_find_stream_succeeds() {
         use crate::bifaci::frame::FrameType;
-        use crate::{MessageId, find_stream};
+        use crate::{find_stream, MessageId};
 
         let full_urn = "media:llm-generation-request;json;record";
         let payload = b"{\"prompt\":\"hello\",\"model_spec\":\"test\"}";
@@ -598,7 +601,11 @@ mod tests {
         let frames = CapArgumentValue::build_request_frames(&rid, "cap:op=test", &[arg], 32768);
 
         // Simulate cartridge-side: extract streams from frames (like collect_streams does)
-        let mut streams: Vec<(String, Vec<u8>, Option<std::collections::BTreeMap<String, ciborium::Value>>)> = Vec::new();
+        let mut streams: Vec<(
+            String,
+            Vec<u8>,
+            Option<std::collections::BTreeMap<String, ciborium::Value>>,
+        )> = Vec::new();
         let mut active: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
         for frame in &frames {
@@ -618,7 +625,9 @@ mod tests {
                                 .expect("CHUNK payload must be valid CBOR");
                             match value {
                                 ciborium::Value::Bytes(b) => streams[idx].1.extend_from_slice(&b),
-                                ciborium::Value::Text(s) => streams[idx].1.extend_from_slice(s.as_bytes()),
+                                ciborium::Value::Text(s) => {
+                                    streams[idx].1.extend_from_slice(s.as_bytes())
+                                }
                                 other => panic!("Unexpected CBOR type: {:?}", other),
                             }
                         }
@@ -630,8 +639,15 @@ mod tests {
 
         // Now find_stream should succeed with the full URN
         let found = find_stream(&streams, full_urn);
-        assert!(found.is_some(), "find_stream must find the stream by full media URN");
-        assert_eq!(found.unwrap(), payload.as_slice(), "Round-tripped bytes must match original");
+        assert!(
+            found.is_some(),
+            "find_stream must find the stream by full media URN"
+        );
+        assert_eq!(
+            found.unwrap(),
+            payload.as_slice(),
+            "Round-tripped bytes must match original"
+        );
     }
 
     // TEST677: build_request_frames with BASE URN → find_stream with FULL URN FAILS
@@ -642,7 +658,7 @@ mod tests {
     #[test]
     fn test677_base_urn_does_not_match_full_urn_in_find_stream() {
         use crate::bifaci::frame::FrameType;
-        use crate::{MessageId, find_stream};
+        use crate::{find_stream, MessageId};
 
         // Sender uses BASE URN (the bug)
         let base_urn = "media:llm-generation-request";
@@ -652,7 +668,11 @@ mod tests {
         let frames = CapArgumentValue::build_request_frames(&rid, "cap:op=test", &[arg], 32768);
 
         // Extract streams (same as above)
-        let mut streams: Vec<(String, Vec<u8>, Option<std::collections::BTreeMap<String, ciborium::Value>>)> = Vec::new();
+        let mut streams: Vec<(
+            String,
+            Vec<u8>,
+            Option<std::collections::BTreeMap<String, ciborium::Value>>,
+        )> = Vec::new();
         let mut active: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
         for frame in &frames {
@@ -688,7 +708,8 @@ mod tests {
         assert!(
             found.is_none(),
             "Base URN '{}' must NOT match full URN '{}' — is_equivalent requires exact tag set",
-            base_urn, full_urn
+            base_urn,
+            full_urn
         );
     }
 }

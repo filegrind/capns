@@ -15,7 +15,6 @@ use crate::machine::{parse_machine_with_node_names, MachineParseError, NodeId, S
 use crate::{InputStructure, MediaUrn};
 use std::collections::HashMap;
 
-
 /// Check if two media URNs are on the same specialization chain.
 ///
 /// Returns true if either URN accepts the other, meaning they represent
@@ -87,8 +86,8 @@ pub async fn parse_machine_to_cap_dag(
     // per-binding `ResolvedEdge` shape the executor consumes,
     // and the structure-compatibility check (record vs
     // opaque).
-    let (machine, strand_node_names) = parse_machine_with_node_names(notation, registry)
-        .map_err(translate_machine_parse_error)?;
+    let (machine, strand_node_names) =
+        parse_machine_with_node_names(notation, registry).map_err(translate_machine_parse_error)?;
 
     // Phase 2: For each strand, build a reverse `NodeId →
     // user node name` map so we can produce `ResolvedEdge`s
@@ -116,9 +115,10 @@ pub async fn parse_machine_to_cap_dag(
             // on the wire. The target node's URN in the resolved
             // strand is computed by the parser from the same
             // cap.out spec, so they're consistent.
-            let cap_out_media = edge.cap_urn.out_media_urn().map_err(|e| {
-                ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e))
-            })?;
+            let cap_out_media = edge
+                .cap_urn
+                .out_media_urn()
+                .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
 
             let target_name = lookup_node_name(&id_to_name, edge.target)?;
 
@@ -240,13 +240,12 @@ fn lookup_node_name(
     id_to_name: &HashMap<NodeId, String>,
     id: NodeId,
 ) -> Result<String, ParseOrchestrationError> {
-    id_to_name
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| ParseOrchestrationError::MachineSyntaxParseFailed(format!(
+    id_to_name.get(&id).cloned().ok_or_else(|| {
+        ParseOrchestrationError::MachineSyntaxParseFailed(format!(
             "internal error: NodeId {} has no user-written node name",
             id
-        )))
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -305,8 +304,9 @@ mod tests {
     // Simple parsing
     // =========================================================================
 
+    // TEST1256: A single declared cap and one wiring parse into a two-node one-edge DAG.
     #[tokio::test]
-    async fn parse_simple_machine() {
+    async fn test1256_parse_simple_machine() {
         let registry = build_test_registry(&[(
             r#"cap:in="media:pdf";op=extract;out="media:txt;textable""#,
             &["media:pdf"],
@@ -328,17 +328,24 @@ mod tests {
         // Verify node media using semantic comparison
         let node_a = MediaUrn::from_string(graph.nodes.get("A").unwrap()).unwrap();
         let expected_a = MediaUrn::from_string("media:pdf").unwrap();
-        assert!(node_a.is_equivalent(&expected_a).unwrap(),
-            "Node A: expected media:pdf, got {}", node_a);
+        assert!(
+            node_a.is_equivalent(&expected_a).unwrap(),
+            "Node A: expected media:pdf, got {}",
+            node_a
+        );
 
         let node_b = MediaUrn::from_string(graph.nodes.get("B").unwrap()).unwrap();
         let expected_b = MediaUrn::from_string("media:txt;textable").unwrap();
-        assert!(node_b.is_equivalent(&expected_b).unwrap(),
-            "Node B: expected media:txt;textable, got {}", node_b);
+        assert!(
+            node_b.is_equivalent(&expected_b).unwrap(),
+            "Node B: expected media:txt;textable, got {}",
+            node_b
+        );
     }
 
+    // TEST1257: Two sequential wirings preserve the intermediate node media type.
     #[tokio::test]
-    async fn parse_two_step_chain() {
+    async fn test1257_parse_two_step_chain() {
         let registry = build_test_registry(&[
             (
                 r#"cap:in="media:pdf";op=extract;out="media:txt;textable""#,
@@ -369,16 +376,20 @@ mod tests {
         // Verify the intermediate node B has the correct media type
         let node_b = MediaUrn::from_string(graph.nodes.get("B").unwrap()).unwrap();
         let expected_b = MediaUrn::from_string("media:txt;textable").unwrap();
-        assert!(node_b.is_equivalent(&expected_b).unwrap(),
-            "Intermediate node B should be media:txt;textable, got {}", node_b);
+        assert!(
+            node_b.is_equivalent(&expected_b).unwrap(),
+            "Intermediate node B should be media:txt;textable, got {}",
+            node_b
+        );
     }
 
     // =========================================================================
     // Fan-out: one source, multiple caps
     // =========================================================================
 
+    // TEST1258: One source node can fan out into multiple caps and target nodes.
     #[tokio::test]
-    async fn parse_fan_out() {
+    async fn test1258_parse_fan_out() {
         let registry = build_test_registry(&[
             (
                 r#"cap:in="media:pdf";op=extract_metadata;out="media:file-metadata;record;textable""#,
@@ -418,8 +429,9 @@ mod tests {
     // Fan-in: multiple sources to one cap
     // =========================================================================
 
+    // TEST1259: Fan-in wiring resolves multiple upstream outputs into one multi-arg cap.
     #[tokio::test]
-    async fn parse_fan_in() {
+    async fn test1259_parse_fan_in() {
         // The describe cap has TWO input args: image;png (the
         // primary, declared in= spec) and model-spec;textable
         // (a secondary fan-in input). The resolver's matching
@@ -464,8 +476,9 @@ mod tests {
     // LOOP wiring
     // =========================================================================
 
+    // TEST1260: LOOP wiring parses as a single edge while preserving the loop marker semantics.
     #[tokio::test]
-    async fn parse_loop_wiring() {
+    async fn test1260_parse_loop_wiring() {
         let registry = build_test_registry(&[(
             r#"cap:in="media:disbound-page;textable";op=page_to_text;out="media:txt;textable""#,
             &["media:disbound-page;textable"],
@@ -489,8 +502,9 @@ mod tests {
     // Cap not found in registry
     // =========================================================================
 
+    // TEST1261: Parsing fails with CapNotFound when a declared cap is absent from the registry.
     #[tokio::test]
-    async fn cap_not_found_in_registry() {
+    async fn test1261_cap_not_found_in_registry() {
         let registry = build_test_registry(&[]);
         let notation = concat!(
             r#"[ex cap:in="media:unknown";op=test;out="media:unknown"]"#,
@@ -498,28 +512,39 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(matches!(result, Err(ParseOrchestrationError::CapNotFound { .. })),
-            "Expected CapNotFound, got {:?}", result);
+        assert!(
+            matches!(result, Err(ParseOrchestrationError::CapNotFound { .. })),
+            "Expected CapNotFound, got {:?}",
+            result
+        );
     }
 
     // =========================================================================
     // Invalid machine notation
     // =========================================================================
 
+    // TEST1262: Non-machine text fails with a machine syntax parse error.
     #[tokio::test]
-    async fn invalid_machine_notation() {
+    async fn test1262_invalid_machine_notation() {
         let registry = build_test_registry(&[]);
         let result = parse_machine_to_cap_dag("not valid", &registry).await;
-        assert!(matches!(result, Err(ParseOrchestrationError::MachineSyntaxParseFailed(_))),
-            "Expected MachineSyntaxParseFailed, got {:?}", result);
+        assert!(
+            matches!(
+                result,
+                Err(ParseOrchestrationError::MachineSyntaxParseFailed(_))
+            ),
+            "Expected MachineSyntaxParseFailed, got {:?}",
+            result
+        );
     }
 
     // =========================================================================
     // Cycle detection — NotADag
     // =========================================================================
 
+    // TEST1263: Cyclic wirings are rejected as non-DAG orchestrations.
     #[tokio::test]
-    async fn cycle_detection() {
+    async fn test1263_cycle_detection() {
         let registry = build_test_registry(&[(
             r#"cap:in="media:txt;textable";op=process;out="media:txt;textable""#,
             &["media:txt;textable"],
@@ -537,16 +562,20 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(matches!(result, Err(ParseOrchestrationError::NotADag { .. })),
-            "Expected NotADag for cyclic graph, got {:?}", result);
+        assert!(
+            matches!(result, Err(ParseOrchestrationError::NotADag { .. })),
+            "Expected NotADag for cyclic graph, got {:?}",
+            result
+        );
     }
 
     // =========================================================================
     // Media type conflict at shared node
     // =========================================================================
 
+    // TEST1264: Shared nodes with incompatible upstream and downstream media fail during parsing.
     #[tokio::test]
-    async fn incompatible_media_types_at_shared_node() {
+    async fn test1264_incompatible_media_types_at_shared_node() {
         // Cap A outputs media:pdf; cap B inputs media:audio;wav.
         // These are completely incompatible at the shared node B,
         // and the parser's lexical assign-or-check-node step
@@ -572,16 +601,23 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(matches!(result, Err(ParseOrchestrationError::MachineSyntaxParseFailed(_))),
-            "Expected MachineSyntaxParseFailed for pdf vs audio at shared node, got {:?}", result);
+        assert!(
+            matches!(
+                result,
+                Err(ParseOrchestrationError::MachineSyntaxParseFailed(_))
+            ),
+            "Expected MachineSyntaxParseFailed for pdf vs audio at shared node, got {:?}",
+            result
+        );
     }
 
     // =========================================================================
     // Compatible media URNs at shared node (subset/superset)
     // =========================================================================
 
+    // TEST1265: Shared nodes accept compatible media URNs when one is a more specific form of the other.
     #[tokio::test]
-    async fn compatible_media_urns_at_shared_node() {
+    async fn test1265_compatible_media_urns_at_shared_node() {
         // Cap A outputs media:image;png; cap B inputs
         // media:image;png;bytes. The parser's lexical
         // is_comparable accepts the chain (bytes is more
@@ -609,18 +645,21 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(result.is_ok(),
+        assert!(
+            result.is_ok(),
             "Compatible media URNs (image;png vs image;png;bytes) should not conflict: {:?}",
-            result.err());
+            result.err()
+        );
     }
 
     // =========================================================================
     // Structure mismatch — record vs opaque
     // =========================================================================
 
+    // TEST1266: Record-to-opaque structure mismatches are rejected once structure checking is enabled.
     #[tokio::test]
     #[ignore = "structure mismatch detection between node media and cap input not yet implemented"]
-    async fn structure_mismatch_record_to_opaque() {
+    async fn test1266_structure_mismatch_record_to_opaque() {
         // Cap A outputs record (media:json;record;textable),
         // cap B inputs opaque (media:json;textable, no record).
         // The parser's lexical is_comparable check passes
@@ -650,16 +689,23 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(matches!(result, Err(ParseOrchestrationError::StructureMismatch { .. })),
-            "Record to opaque structure mismatch must be detected: {:?}", result);
+        assert!(
+            matches!(
+                result,
+                Err(ParseOrchestrationError::StructureMismatch { .. })
+            ),
+            "Record to opaque structure mismatch must be detected: {:?}",
+            result
+        );
     }
 
     // =========================================================================
     // Structure match — both record (should succeed)
     // =========================================================================
 
+    // TEST1267: Record-shaped outputs can feed record-shaped inputs without error.
     #[tokio::test]
-    async fn structure_match_both_record() {
+    async fn test1267_structure_match_both_record() {
         let registry = build_test_registry(&[
             (
                 r#"cap:in="media:void";op=produce;out="media:json;record;textable""#,
@@ -681,16 +727,20 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(result.is_ok(),
-            "Record to record should be accepted: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Record to record should be accepted: {:?}",
+            result.err()
+        );
     }
 
     // =========================================================================
     // Structure match — both opaque (should succeed)
     // =========================================================================
 
+    // TEST1268: Opaque outputs can feed opaque inputs without triggering structure conflicts.
     #[tokio::test]
-    async fn structure_match_both_opaque() {
+    async fn test1268_structure_match_both_opaque() {
         let registry = build_test_registry(&[
             (
                 r#"cap:in="media:void";op=produce;out="media:json;textable""#,
@@ -712,16 +762,20 @@ mod tests {
         );
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(result.is_ok(),
-            "Opaque to opaque should be accepted: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Opaque to opaque should be accepted: {:?}",
+            result.err()
+        );
     }
 
     // =========================================================================
     // Multi-line format
     // =========================================================================
 
+    // TEST1269: Multi-line machine notation parses successfully with the same semantics as inline notation.
     #[tokio::test]
-    async fn parse_multiline_machine() {
+    async fn test1269_parse_multiline_machine() {
         let registry = build_test_registry(&[(
             r#"cap:in="media:pdf";op=extract;out="media:txt;textable""#,
             &["media:pdf"],
@@ -734,6 +788,10 @@ mod tests {
 "#;
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
-        assert!(result.is_ok(), "Multi-line parse failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Multi-line parse failed: {:?}",
+            result.err()
+        );
     }
 }

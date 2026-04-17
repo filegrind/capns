@@ -117,12 +117,7 @@ impl EdgeAssignmentBinding {
         {
             return false;
         }
-        node_map.bind(
-            self.source,
-            other.source,
-            self_strand,
-            other_strand,
-        )
+        node_map.bind(self.source, other.source, self_strand, other_strand)
     }
 }
 
@@ -604,9 +599,7 @@ impl MachineRun {
 #[cfg(test)]
 mod tests {
     use super::{Machine, MachineAbstractionError, MachineRun, MachineRunStatus};
-    use crate::machine::test_fixtures::{
-        build_cap, cap_step, registry_with, strand_from_steps,
-    };
+    use crate::machine::test_fixtures::{build_cap, cap_step, registry_with, strand_from_steps};
 
     fn extract_cap_def() -> crate::cap::definition::Cap {
         build_cap(
@@ -650,27 +643,26 @@ mod tests {
         )
     }
 
+    // TEST1155: Building a machine from one strand produces one strand with one resolved edge.
     #[test]
-    fn from_strand_produces_single_strand_machine() {
+    fn test1155_from_strand_produces_single_strand_machine() {
         let registry = registry_with(vec![extract_cap_def()]);
         let m = Machine::from_strand(&pdf_to_txt_strand(), &registry).unwrap();
         assert_eq!(m.strand_count(), 1);
         assert_eq!(m.strands()[0].edges().len(), 1);
     }
 
+    // TEST1156: Building from multiple strands keeps them disjoint and preserves input strand order.
     #[test]
-    fn from_strands_keeps_strands_disjoint() {
+    fn test1156_from_strands_keeps_strands_disjoint() {
         // Two strands, each with one cap. Even though both
         // touch `media:txt;textable` (one as input, one as
         // output), `from_strands` does NOT join them — that's
         // the contract: programmatic construction never
         // creates crossings.
         let registry = registry_with(vec![extract_cap_def(), embed_cap_def()]);
-        let m = Machine::from_strands(
-            &[pdf_to_txt_strand(), txt_to_vec_strand()],
-            &registry,
-        )
-        .unwrap();
+        let m =
+            Machine::from_strands(&[pdf_to_txt_strand(), txt_to_vec_strand()], &registry).unwrap();
         assert_eq!(
             m.strand_count(),
             2,
@@ -690,25 +682,25 @@ mod tests {
             .contains("op=embed"));
     }
 
+    // TEST1157: Building from zero strands fails with NoCapabilitySteps.
     #[test]
-    fn from_strands_empty_input_fails_hard() {
+    fn test1157_from_strands_empty_input_fails_hard() {
         let registry = registry_with(vec![]);
         let err = Machine::from_strands(&[], &registry).unwrap_err();
         assert!(matches!(err, MachineAbstractionError::NoCapabilitySteps));
     }
 
+    // TEST1158: Machine equivalence is strict about strand order and rejects reordered strands.
     #[test]
-    fn machine_is_equivalent_is_strict_positional() {
+    fn test1158_machine_is_equivalent_is_strict_positional() {
         // Same two strands in two different orders are NOT
         // strictly equivalent — strand declaration order is
         // part of the machine's identity.
         let registry = registry_with(vec![extract_cap_def(), embed_cap_def()]);
         let forward =
-            Machine::from_strands(&[pdf_to_txt_strand(), txt_to_vec_strand()], &registry)
-                .unwrap();
+            Machine::from_strands(&[pdf_to_txt_strand(), txt_to_vec_strand()], &registry).unwrap();
         let reversed =
-            Machine::from_strands(&[txt_to_vec_strand(), pdf_to_txt_strand()], &registry)
-                .unwrap();
+            Machine::from_strands(&[txt_to_vec_strand(), pdf_to_txt_strand()], &registry).unwrap();
         assert!(
             !forward.is_equivalent(&reversed),
             "swapping strand order must break strict equivalence"
@@ -718,8 +710,9 @@ mod tests {
         assert!(reversed.is_equivalent(&reversed));
     }
 
+    // TEST1159: MachineStrand equivalence accepts two separately built but structurally identical strands.
     #[test]
-    fn machine_strand_is_equivalent_walks_node_bijection() {
+    fn test1159_machine_strand_is_equivalent_walks_node_bijection() {
         // Two `MachineStrand`s built from the same strand twice
         // are equivalent. The NodeBijection is built on the
         // fly during the walk and confirms that every NodeId
@@ -730,18 +723,14 @@ mod tests {
         assert!(m1.strands()[0].is_equivalent(&m2.strands()[0]));
     }
 
+    // TEST1160: Creating a MachineRun stores the canonical notation and starts in the pending state.
     #[test]
-    fn machine_run_new_stores_canonical_notation() {
+    fn test1160_machine_run_new_stores_canonical_notation() {
         let registry = registry_with(vec![extract_cap_def()]);
         let strand = pdf_to_txt_strand();
         let machine = Machine::from_strand(&strand, &registry).unwrap();
         let canonical = machine.to_machine_notation().unwrap();
-        let run = MachineRun::new(
-            "run-id-1".to_string(),
-            &machine,
-            strand.clone(),
-        )
-        .unwrap();
+        let run = MachineRun::new("run-id-1".to_string(), &machine, strand.clone()).unwrap();
         assert_eq!(run.id, "run-id-1");
         assert_eq!(run.machine_notation, canonical);
         assert_eq!(run.status, MachineRunStatus::Pending);

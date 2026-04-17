@@ -97,12 +97,11 @@ impl CartridgeJson {
             return Err(CartridgeJsonError::NotFound(json_path));
         }
 
-        let contents = std::fs::read_to_string(&json_path).map_err(|e| {
-            CartridgeJsonError::ReadFailed {
+        let contents =
+            std::fs::read_to_string(&json_path).map_err(|e| CartridgeJsonError::ReadFailed {
                 path: json_path.clone(),
                 source: e,
-            }
-        })?;
+            })?;
 
         let cartridge_json: CartridgeJson =
             serde_json::from_str(&contents).map_err(|e| CartridgeJsonError::InvalidJson {
@@ -138,12 +137,11 @@ impl CartridgeJson {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let meta = std::fs::metadata(&entry_path).map_err(|e| {
-                CartridgeJsonError::ReadFailed {
+            let meta =
+                std::fs::metadata(&entry_path).map_err(|e| CartridgeJsonError::ReadFailed {
                     path: json_path.clone(),
                     source: e,
-                }
-            })?;
+                })?;
             if meta.permissions().mode() & 0o111 == 0 {
                 return Err(CartridgeJsonError::EntryPointNotExecutable {
                     path: json_path,
@@ -163,7 +161,8 @@ impl CartridgeJson {
     /// Write this `cartridge.json` to a version directory.
     pub fn write_to_dir(&self, version_dir: &Path) -> Result<(), CartridgeJsonError> {
         let json_path = version_dir.join("cartridge.json");
-        let contents = serde_json::to_string_pretty(self).expect("CartridgeJson serialization cannot fail");
+        let contents =
+            serde_json::to_string_pretty(self).expect("CartridgeJson serialization cannot fail");
         std::fs::write(&json_path, contents.as_bytes()).map_err(|e| {
             CartridgeJsonError::WriteFailed {
                 path: json_path,
@@ -235,15 +234,18 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    // TEST1243: Cartridge JSON round-trips through serde without losing required fields.
     #[test]
-    fn test_roundtrip_serialize_deserialize() {
+    fn test1243_roundtrip_serialize_deserialize() {
         let cj = CartridgeJson {
             name: "pdfcartridge".to_string(),
             version: "0.168.411".to_string(),
             entry: "pdfcartridge".to_string(),
             installed_at: "2026-04-12T10:00:00Z".to_string(),
             installed_from: CartridgeInstallSource::Registry,
-            source_url: "https://machinefabric.com/api/cartridges/packages/pdfcartridge-0.168.411.pkg".to_string(),
+            source_url:
+                "https://machinefabric.com/api/cartridges/packages/pdfcartridge-0.168.411.pkg"
+                    .to_string(),
             package_sha256: "abc123".to_string(),
             package_size: 12345,
         };
@@ -256,8 +258,9 @@ mod tests {
         assert_eq!(parsed.installed_from, CartridgeInstallSource::Registry);
     }
 
+    // TEST1244: Dev-installed cartridge metadata omits registry-only package fields when serialized.
     #[test]
-    fn test_dev_install_omits_optional_fields() {
+    fn test1244_dev_install_omits_optional_fields() {
         let cj = CartridgeJson {
             name: "testcartridge".to_string(),
             version: "0.1.0".to_string(),
@@ -275,8 +278,9 @@ mod tests {
         assert!(!json.contains("package_size"));
     }
 
+    // TEST1245: Reading cartridge metadata fails when the declared entry binary is missing.
     #[test]
-    fn test_read_from_dir_validates_entry_exists() {
+    fn test1245_read_from_dir_validates_entry_exists() {
         let dir = tempfile::tempdir().unwrap();
         let cj = CartridgeJson {
             name: "test".to_string(),
@@ -295,8 +299,9 @@ mod tests {
         assert!(matches!(err, CartridgeJsonError::EntryPointMissing { .. }));
     }
 
+    // TEST1246: Cartridge entry points cannot escape the cartridge directory with relative paths.
     #[test]
-    fn test_read_from_dir_rejects_path_escape() {
+    fn test1246_read_from_dir_rejects_path_escape() {
         let dir = tempfile::tempdir().unwrap();
 
         // Create a binary outside the version dir
@@ -324,8 +329,9 @@ mod tests {
         let _ = std::fs::remove_file(&outside);
     }
 
+    // TEST1247: Valid cartridge directories load successfully and resolve their entry point.
     #[test]
-    fn test_read_from_dir_succeeds_with_valid_cartridge() {
+    fn test1247_read_from_dir_succeeds_with_valid_cartridge() {
         let dir = tempfile::tempdir().unwrap();
         let binary_path = dir.path().join("mycartridge");
         std::fs::write(&binary_path, b"#!/bin/sh\necho hello").unwrap();
@@ -349,8 +355,9 @@ mod tests {
         assert_eq!(loaded.resolve_entry_point(dir.path()), binary_path);
     }
 
+    // TEST1248: Cartridge directory hashes stay stable across metadata changes and change on content edits.
     #[test]
-    fn test_hash_cartridge_directory_is_deterministic() {
+    fn test1248_hash_cartridge_directory_is_deterministic() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("binary"), b"executable content").unwrap();
         std::fs::write(dir.path().join("data.bin"), b"some data").unwrap();
@@ -375,8 +382,9 @@ mod tests {
         assert_ne!(hash1, hash4);
     }
 
+    // TEST1249: A flat single-binary cartridge directory still produces a SHA-256 content hash.
     #[test]
-    fn test_hash_single_binary_matches_flat_layout() {
+    fn test1249_hash_single_binary_matches_flat_layout() {
         // A directory with just one binary should hash consistently
         let dir = tempfile::tempdir().unwrap();
         let content = b"binary content here";

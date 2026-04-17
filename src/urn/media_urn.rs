@@ -172,11 +172,13 @@ pub const MEDIA_MODEL_SPEC_CANDLE_VISION: &str = "media:model-spec;candle;textab
 /// Candle text embeddings model spec (e.g. BERT)
 pub const MEDIA_MODEL_SPEC_CANDLE_EMBEDDINGS: &str = "media:model-spec;candle;textable;embeddings";
 /// Candle image embeddings model spec (e.g. CLIP)
-pub const MEDIA_MODEL_SPEC_CANDLE_IMAGE_EMBEDDINGS: &str = "media:model-spec;candle;image-embeddings;textable";
+pub const MEDIA_MODEL_SPEC_CANDLE_IMAGE_EMBEDDINGS: &str =
+    "media:model-spec;candle;image-embeddings;textable";
 /// Candle LLM model spec (e.g. Mistral-7B safetensors)
 pub const MEDIA_MODEL_SPEC_CANDLE_LLM: &str = "media:model-spec;candle;textable;llm";
 /// Candle transcription model spec (e.g. Whisper)
-pub const MEDIA_MODEL_SPEC_CANDLE_TRANSCRIPTION: &str = "media:model-spec;candle;textable;transcription";
+pub const MEDIA_MODEL_SPEC_CANDLE_TRANSCRIPTION: &str =
+    "media:model-spec;candle;textable;transcription";
 /// Media URN for model repository (input for list-models) - has record marker
 pub const MEDIA_MODEL_REPO: &str = "media:model-repo;record;textable";
 
@@ -289,14 +291,17 @@ impl MediaUrn {
     /// Create a new MediaUrn with an additional or updated tag
     /// Returns error if value is empty (use "*" for wildcard)
     pub fn with_tag(&self, key: &str, value: &str) -> Result<Self, tagged_urn::TaggedUrnError> {
-        Ok(Self(self.0.clone().with_tag(key.to_string(), value.to_string())?))
+        Ok(Self(
+            self.0
+                .clone()
+                .with_tag(key.to_string(), value.to_string())?,
+        ))
     }
 
     /// Create a new MediaUrn without a specific tag
     pub fn without_tag(&self, key: &str) -> Self {
         Self(self.0.clone().without_tag(key))
     }
-
 
     /// Compute the least upper bound (most specific common type) of a set of MediaUrns.
     ///
@@ -312,7 +317,10 @@ impl MediaUrn {
     pub fn least_upper_bound(urns: &[MediaUrn]) -> MediaUrn {
         if urns.is_empty() {
             return MediaUrn::from_string("media:").unwrap_or_else(|_| {
-                MediaUrn(TaggedUrn { prefix: "media".to_string(), tags: std::collections::BTreeMap::new() })
+                MediaUrn(TaggedUrn {
+                    prefix: "media".to_string(),
+                    tags: std::collections::BTreeMap::new(),
+                })
             });
         }
         if urns.len() == 1 {
@@ -323,15 +331,16 @@ impl MediaUrn {
         let mut common_tags = urns[0].0.tags.clone();
 
         for urn in &urns[1..] {
-            common_tags.retain(|key, value| {
-                match urn.0.tags.get(key) {
-                    Some(other_value) if other_value == value => true,
-                    _ => false,
-                }
+            common_tags.retain(|key, value| match urn.0.tags.get(key) {
+                Some(other_value) if other_value == value => true,
+                _ => false,
             });
         }
 
-        MediaUrn(TaggedUrn { prefix: "media".to_string(), tags: common_tags })
+        MediaUrn(TaggedUrn {
+            prefix: "media".to_string(),
+            tags: common_tags,
+        })
     }
 
     /// Serialize just the tags portion (without "media:" prefix)
@@ -522,7 +531,6 @@ impl MediaUrn {
     pub fn is_any_file_path(&self) -> bool {
         self.has_marker_tag("file-path")
     }
-
 }
 
 impl fmt::Display for MediaUrn {
@@ -633,7 +641,9 @@ mod tests {
         assert!(MediaUrn::from_string("media:epub").unwrap().is_binary());
         // Textable types: is_binary is false
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_binary());
-        assert!(!MediaUrn::from_string("media:textable;record").unwrap().is_binary());
+        assert!(!MediaUrn::from_string("media:textable;record")
+            .unwrap()
+            .is_binary());
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_binary());
         assert!(!MediaUrn::from_string(MEDIA_JSON).unwrap().is_binary());
         assert!(!MediaUrn::from_string(MEDIA_MD).unwrap().is_binary());
@@ -644,12 +654,16 @@ mod tests {
     fn test062_is_record() {
         // is_record returns true if record marker tag is present (key-value structure)
         assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_record()); // "media:record;textable"
-        assert!(MediaUrn::from_string("media:custom;record").unwrap().is_record());
+        assert!(MediaUrn::from_string("media:custom;record")
+            .unwrap()
+            .is_record());
         assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_record()); // "media:json;record;textable"
-        // Without record marker, is_record is false
+                                                                         // Without record marker, is_record is false
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_record());
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_record()); // scalar, no record marker
-        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_record()); // list, no record marker
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST)
+            .unwrap()
+            .is_record()); // list, no record marker
     }
 
     // TEST063: Test is_scalar returns true when list marker tag is absent (scalar is default)
@@ -662,9 +676,13 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_scalar()); // no list marker
         assert!(MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_scalar()); // record but scalar
         assert!(MediaUrn::from_string("media:textable").unwrap().is_scalar()); // plain textable is scalar
-        // With list marker, is_scalar is false
-        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_scalar()); // has list marker
-        assert!(!MediaUrn::from_string(MEDIA_OBJECT_LIST).unwrap().is_scalar()); // has list marker
+                                                                               // With list marker, is_scalar is false
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST)
+            .unwrap()
+            .is_scalar()); // has list marker
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT_LIST)
+            .unwrap()
+            .is_scalar()); // has list marker
     }
 
     // TEST064: Test is_list returns true when list marker tag is present indicating ordered collection
@@ -674,7 +692,9 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_list()); // "media:list;textable"
         assert!(MediaUrn::from_string(MEDIA_INTEGER_LIST).unwrap().is_list()); // has list marker
         assert!(MediaUrn::from_string(MEDIA_OBJECT_LIST).unwrap().is_list()); // "media:list;record;textable"
-        assert!(MediaUrn::from_string("media:custom;list").unwrap().is_list());
+        assert!(MediaUrn::from_string("media:custom;list")
+            .unwrap()
+            .is_list());
         // Without list marker, is_list is false
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_list()); // no list marker
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_list()); // record but no list marker
@@ -685,13 +705,17 @@ mod tests {
     fn test065_is_opaque() {
         // is_opaque returns true if NO record marker (opaque is default structure)
         assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_opaque()); // no record marker
-        assert!(MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_opaque()); // list but no record
+        assert!(MediaUrn::from_string(MEDIA_STRING_LIST)
+            .unwrap()
+            .is_opaque()); // list but no record
         assert!(MediaUrn::from_string(MEDIA_PDF).unwrap().is_opaque()); // binary, no record
         assert!(MediaUrn::from_string("media:textable").unwrap().is_opaque()); // no record marker
-        // With record marker, is_opaque is false
+                                                                               // With record marker, is_opaque is false
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_opaque()); // has record marker
         assert!(!MediaUrn::from_string(MEDIA_JSON).unwrap().is_opaque()); // has record marker
-        assert!(!MediaUrn::from_string(MEDIA_OBJECT_LIST).unwrap().is_opaque()); // has record marker
+        assert!(!MediaUrn::from_string(MEDIA_OBJECT_LIST)
+            .unwrap()
+            .is_opaque()); // has record marker
     }
 
     // TEST066: Test is_json returns true only when json marker tag is present for JSON representation
@@ -699,7 +723,9 @@ mod tests {
     fn test066_is_json() {
         // is_json returns true only if "json" marker tag is present (JSON representation)
         assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_json()); // "media:json;textable"
-        assert!(MediaUrn::from_string("media:custom;json").unwrap().is_json());
+        assert!(MediaUrn::from_string("media:custom;json")
+            .unwrap()
+            .is_json());
         // record alone does not mean JSON representation
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_json()); // map structure, not necessarily JSON
         assert!(!MediaUrn::from_string("media:textable").unwrap().is_json());
@@ -712,7 +738,7 @@ mod tests {
         assert!(MediaUrn::from_string(MEDIA_STRING).unwrap().is_text()); // "media:textable"
         assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_text()); // "media:integer;textable;numeric"
         assert!(MediaUrn::from_string(MEDIA_JSON).unwrap().is_text()); // "media:json;record;textable"
-        // Without textable tag, is_text is false
+                                                                       // Without textable tag, is_text is false
         assert!(!MediaUrn::from_string(MEDIA_IDENTITY).unwrap().is_text()); // "media:"
         assert!(!MediaUrn::from_string(MEDIA_PNG).unwrap().is_text()); // "media:image;png"
         assert!(!MediaUrn::from_string(MEDIA_OBJECT).unwrap().is_text()); // "media:record" (no textable)
@@ -775,13 +801,19 @@ mod tests {
         // Test binary_media_urn_for_ext
         let pdf_urn = binary_media_urn_for_ext("pdf");
         let parsed = MediaUrn::from_string(&pdf_urn).unwrap();
-        assert!(parsed.has_tag("ext", "pdf"), "binary ext helper must set ext=pdf");
+        assert!(
+            parsed.has_tag("ext", "pdf"),
+            "binary ext helper must set ext=pdf"
+        );
         assert_eq!(parsed.extension(), Some("pdf"));
 
         // Test text_media_urn_for_ext
         let md_urn = text_media_urn_for_ext("md");
         let parsed = MediaUrn::from_string(&md_urn).unwrap();
-        assert!(parsed.has_tag("ext", "md"), "text ext helper must set ext=md");
+        assert!(
+            parsed.has_tag("ext", "md"),
+            "text ext helper must set ext=md"
+        );
         assert_eq!(parsed.extension(), Some("md"));
     }
 
@@ -792,17 +824,23 @@ mod tests {
         // A more specific URN (media:pdf) conforms to a less specific requirement (media:pdf)
         let pdf_listing = MediaUrn::from_string(MEDIA_PDF).unwrap(); // "media:pdf"
         let pdf_requirement = MediaUrn::from_string("media:pdf").unwrap();
-        assert!(pdf_listing.conforms_to(&pdf_requirement).expect("MediaUrn prefix mismatch impossible"));
+        assert!(pdf_listing
+            .conforms_to(&pdf_requirement)
+            .expect("MediaUrn prefix mismatch impossible"));
 
         // Markdown listing conforms to md requirement (PRIMARY type naming)
         let md_listing = MediaUrn::from_string(MEDIA_MD).unwrap(); // "media:md;textable"
         let md_requirement = MediaUrn::from_string("media:md").unwrap();
-        assert!(md_listing.conforms_to(&md_requirement).expect("MediaUrn prefix mismatch impossible"));
+        assert!(md_listing
+            .conforms_to(&md_requirement)
+            .expect("MediaUrn prefix mismatch impossible"));
 
         // Same URNs should conform to each other
         let string_urn = MediaUrn::from_string(MEDIA_STRING).unwrap();
         let string_req = MediaUrn::from_string(MEDIA_STRING).unwrap();
-        assert!(string_urn.conforms_to(&string_req).expect("MediaUrn prefix mismatch impossible"));
+        assert!(string_urn
+            .conforms_to(&string_req)
+            .expect("MediaUrn prefix mismatch impossible"));
     }
 
     // TEST075: Test accepts with implicit wildcards where handlers with fewer tags can handle more requests
@@ -836,8 +874,18 @@ mod tests {
         let s3 = urn3.specificity();
 
         // At minimum, more tags should not have less specificity
-        assert!(s2 >= s1, "urn2 ({}) should have >= specificity than urn1 ({})", s2, s1);
-        assert!(s3 >= s2, "urn3 ({}) should have >= specificity than urn2 ({})", s3, s2);
+        assert!(
+            s2 >= s1,
+            "urn2 ({}) should have >= specificity than urn1 ({})",
+            s2,
+            s1
+        );
+        assert!(
+            s3 >= s2,
+            "urn3 ({}) should have >= specificity than urn2 ({})",
+            s3,
+            s2
+        );
     }
 
     // TEST077: Test serde roundtrip serializes to JSON string and deserializes back correctly
@@ -854,7 +902,7 @@ mod tests {
 #[cfg(test)]
 mod debug_tests {
     use super::*;
-    use crate::standard::media::{MEDIA_IDENTITY, MEDIA_STRING, MEDIA_OBJECT};
+    use crate::standard::media::{MEDIA_IDENTITY, MEDIA_OBJECT, MEDIA_STRING};
 
     // TEST078: conforms_to behavior between MEDIA_OBJECT and MEDIA_STRING
     #[test]
@@ -862,8 +910,14 @@ mod debug_tests {
         let str_urn = MediaUrn::from_string(MEDIA_STRING).unwrap();
         let obj_urn = MediaUrn::from_string(MEDIA_OBJECT).unwrap();
 
-        assert!(str_urn.conforms_to(&str_urn).unwrap(), "string conforms to string");
-        assert!(obj_urn.conforms_to(&obj_urn).unwrap(), "object conforms to object");
+        assert!(
+            str_urn.conforms_to(&str_urn).unwrap(),
+            "string conforms to string"
+        );
+        assert!(
+            obj_urn.conforms_to(&obj_urn).unwrap(),
+            "object conforms to object"
+        );
         assert!(
             !obj_urn.conforms_to(&str_urn).unwrap(),
             "MEDIA_OBJECT should NOT conform to MEDIA_STRING (missing textable)"
@@ -875,11 +929,17 @@ mod debug_tests {
     fn test304_media_availability_output_constant() {
         let urn = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).expect("must parse");
         assert!(urn.is_text(), "model-availability must be textable");
-        assert!(urn.is_record(), "model-availability must have record marker");
+        assert!(
+            urn.is_record(),
+            "model-availability must have record marker"
+        );
         assert!(!urn.is_binary(), "model-availability must not be binary");
         // to_string() alphabetizes tags, so compare via roundtrip parsing instead
         let reparsed = MediaUrn::from_string(&urn.to_string()).expect("roundtrip must parse");
-        assert!(urn.conforms_to(&reparsed).unwrap(), "roundtrip must conform to original");
+        assert!(
+            urn.conforms_to(&reparsed).unwrap(),
+            "roundtrip must conform to original"
+        );
     }
 
     // TEST305: Test MEDIA_PATH_OUTPUT constant parses as valid media URN with correct tags
@@ -890,14 +950,19 @@ mod debug_tests {
         assert!(urn.is_record(), "model-path must have record marker");
         assert!(!urn.is_binary(), "model-path must not be binary");
         let reparsed = MediaUrn::from_string(&urn.to_string()).expect("roundtrip must parse");
-        assert!(urn.conforms_to(&reparsed).unwrap(), "roundtrip must conform to original");
+        assert!(
+            urn.conforms_to(&reparsed).unwrap(),
+            "roundtrip must conform to original"
+        );
     }
 
     // TEST306: Test MEDIA_AVAILABILITY_OUTPUT and MEDIA_PATH_OUTPUT are distinct URNs
     #[test]
     fn test306_availability_and_path_output_distinct() {
-        assert_ne!(MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
-            "availability and path output must be distinct media URNs");
+        assert_ne!(
+            MEDIA_AVAILABILITY_OUTPUT, MEDIA_PATH_OUTPUT,
+            "availability and path output must be distinct media URNs"
+        );
         let avail = MediaUrn::from_string(MEDIA_AVAILABILITY_OUTPUT).unwrap();
         let path = MediaUrn::from_string(MEDIA_PATH_OUTPUT).unwrap();
         // They must NOT conform to each other (different types)
@@ -911,7 +976,9 @@ mod debug_tests {
     #[test]
     fn test546_is_image() {
         assert!(MediaUrn::from_string(MEDIA_PNG).unwrap().is_image());
-        assert!(MediaUrn::from_string("media:image;thumbnail").unwrap().is_image());
+        assert!(MediaUrn::from_string("media:image;thumbnail")
+            .unwrap()
+            .is_image());
         assert!(MediaUrn::from_string("media:image;jpg").unwrap().is_image());
         // Non-image types
         assert!(!MediaUrn::from_string(MEDIA_PDF).unwrap().is_image());
@@ -924,7 +991,9 @@ mod debug_tests {
     #[test]
     fn test547_is_audio() {
         assert!(MediaUrn::from_string(MEDIA_AUDIO).unwrap().is_audio());
-        assert!(MediaUrn::from_string(MEDIA_AUDIO_SPEECH).unwrap().is_audio());
+        assert!(MediaUrn::from_string(MEDIA_AUDIO_SPEECH)
+            .unwrap()
+            .is_audio());
         assert!(MediaUrn::from_string("media:audio;mp3").unwrap().is_audio());
         // Non-audio types
         assert!(!MediaUrn::from_string(MEDIA_VIDEO).unwrap().is_audio());
@@ -948,8 +1017,12 @@ mod debug_tests {
     fn test549_is_numeric() {
         assert!(MediaUrn::from_string(MEDIA_INTEGER).unwrap().is_numeric());
         assert!(MediaUrn::from_string(MEDIA_NUMBER).unwrap().is_numeric());
-        assert!(MediaUrn::from_string(MEDIA_INTEGER_LIST).unwrap().is_numeric());
-        assert!(MediaUrn::from_string(MEDIA_NUMBER_LIST).unwrap().is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_INTEGER_LIST)
+            .unwrap()
+            .is_numeric());
+        assert!(MediaUrn::from_string(MEDIA_NUMBER_LIST)
+            .unwrap()
+            .is_numeric());
         // Non-numeric types
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_numeric());
         assert!(!MediaUrn::from_string(MEDIA_BOOLEAN).unwrap().is_numeric());
@@ -972,32 +1045,52 @@ mod debug_tests {
     // TEST551: is_file_path returns true for scalar file-path, false for array
     #[test]
     fn test551_is_file_path() {
-        assert!(MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_file_path());
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH)
+            .unwrap()
+            .is_file_path());
         // Array file-path is NOT is_file_path (it's is_file_path_array)
-        assert!(!MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
+            .unwrap()
+            .is_file_path());
         // Non-file-path types
         assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_file_path());
-        assert!(!MediaUrn::from_string(MEDIA_IDENTITY).unwrap().is_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_IDENTITY)
+            .unwrap()
+            .is_file_path());
     }
 
     // TEST552: is_file_path_array returns true for list file-path, false for scalar
     #[test]
     fn test552_is_file_path_array() {
-        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_file_path_array());
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
+            .unwrap()
+            .is_file_path_array());
         // Scalar file-path is NOT is_file_path_array
-        assert!(!MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_file_path_array());
+        assert!(!MediaUrn::from_string(MEDIA_FILE_PATH)
+            .unwrap()
+            .is_file_path_array());
         // Non-file-path types
-        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_file_path_array());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST)
+            .unwrap()
+            .is_file_path_array());
     }
 
     // TEST553: is_any_file_path returns true for both scalar and array file-path
     #[test]
     fn test553_is_any_file_path() {
-        assert!(MediaUrn::from_string(MEDIA_FILE_PATH).unwrap().is_any_file_path());
-        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY).unwrap().is_any_file_path());
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH)
+            .unwrap()
+            .is_any_file_path());
+        assert!(MediaUrn::from_string(MEDIA_FILE_PATH_ARRAY)
+            .unwrap()
+            .is_any_file_path());
         // Non-file-path types
-        assert!(!MediaUrn::from_string(MEDIA_STRING).unwrap().is_any_file_path());
-        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST).unwrap().is_any_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_STRING)
+            .unwrap()
+            .is_any_file_path());
+        assert!(!MediaUrn::from_string(MEDIA_STRING_LIST)
+            .unwrap()
+            .is_any_file_path());
     }
 
     // TEST555: with_tag adds a tag and without_tag removes it
@@ -1023,7 +1116,10 @@ mod debug_tests {
         let jpg_urn = image_media_urn_for_ext("jpg");
         let parsed = MediaUrn::from_string(&jpg_urn).unwrap();
         assert!(parsed.is_image(), "image helper must set image tag");
-        assert!(parsed.is_binary(), "image URN must be binary (no textable tag)");
+        assert!(
+            parsed.is_binary(),
+            "image URN must be binary (no textable tag)"
+        );
         assert_eq!(parsed.extension(), Some("jpg"));
     }
 
@@ -1033,7 +1129,10 @@ mod debug_tests {
         let mp3_urn = audio_media_urn_for_ext("mp3");
         let parsed = MediaUrn::from_string(&mp3_urn).unwrap();
         assert!(parsed.is_audio(), "audio helper must set audio tag");
-        assert!(parsed.is_binary(), "audio URN must be binary (no textable tag)");
+        assert!(
+            parsed.is_binary(),
+            "audio URN must be binary (no textable tag)"
+        );
         assert_eq!(parsed.extension(), Some("mp3"));
     }
 
@@ -1062,7 +1161,10 @@ mod debug_tests {
         assert!(json_urn.is_json());
         assert!(json_urn.is_text());
         assert!(json_urn.is_record());
-        assert!(json_urn.is_scalar(), "MEDIA_JSON is a scalar record (single object)");
+        assert!(
+            json_urn.is_scalar(),
+            "MEDIA_JSON is a scalar record (single object)"
+        );
         assert!(!json_urn.is_binary());
         assert!(!json_urn.is_list());
 
@@ -1070,7 +1172,10 @@ mod debug_tests {
         let void = MediaUrn::from_string(MEDIA_VOID).unwrap();
         assert!(void.is_void());
         assert!(!void.is_text());
-        assert!(void.is_binary(), "void has no textable tag, so is_binary is true");
+        assert!(
+            void.is_binary(),
+            "void has no textable tag, so is_binary is true"
+        );
         assert!(!void.is_numeric());
     }
 
@@ -1089,8 +1194,11 @@ mod debug_tests {
         let png = MediaUrn::from_string("media:png").unwrap();
         let lub = MediaUrn::least_upper_bound(&[pdf, png]);
         let universal = MediaUrn::from_string("media:").unwrap();
-        assert!(lub.is_equivalent(&universal).unwrap(),
-            "LUB of pdf and png should be media: but got {}", lub.to_string());
+        assert!(
+            lub.is_equivalent(&universal).unwrap(),
+            "LUB of pdf and png should be media: but got {}",
+            lub.to_string()
+        );
     }
 
     // TEST854: LUB keeps common tags, drops differing ones
@@ -1100,8 +1208,11 @@ mod debug_tests {
         let csv_text = MediaUrn::from_string("media:csv;textable").unwrap();
         let lub = MediaUrn::least_upper_bound(&[json_text, csv_text]);
         let expected = MediaUrn::from_string("media:textable").unwrap();
-        assert!(lub.is_equivalent(&expected).unwrap(),
-            "LUB should be media:textable but got {}", lub.to_string());
+        assert!(
+            lub.is_equivalent(&expected).unwrap(),
+            "LUB should be media:textable but got {}",
+            lub.to_string()
+        );
     }
 
     // TEST855: LUB of list and non-list drops list tag
@@ -1111,8 +1222,11 @@ mod debug_tests {
         let json_scalar = MediaUrn::from_string("media:json;textable").unwrap();
         let lub = MediaUrn::least_upper_bound(&[json_list, json_scalar]);
         let expected = MediaUrn::from_string("media:json;textable").unwrap();
-        assert!(lub.is_equivalent(&expected).unwrap(),
-            "LUB should drop list tag, got {}", lub.to_string());
+        assert!(
+            lub.is_equivalent(&expected).unwrap(),
+            "LUB should drop list tag, got {}",
+            lub.to_string()
+        );
     }
 
     // TEST856: LUB of empty input returns universal type
@@ -1139,8 +1253,11 @@ mod debug_tests {
         let c = MediaUrn::from_string("media:ndjson;list;textable").unwrap();
         let lub = MediaUrn::least_upper_bound(&[a, b, c]);
         let expected = MediaUrn::from_string("media:list;textable").unwrap();
-        assert!(lub.is_equivalent(&expected).unwrap(),
-            "LUB should be media:list;textable but got {}", lub.to_string());
+        assert!(
+            lub.is_equivalent(&expected).unwrap(),
+            "LUB should be media:list;textable but got {}",
+            lub.to_string()
+        );
     }
 
     // TEST859: LUB with valued tags (non-marker) that differ
@@ -1150,7 +1267,10 @@ mod debug_tests {
         let v2 = MediaUrn::from_string("media:image;format=jpeg").unwrap();
         let lub = MediaUrn::least_upper_bound(&[v1, v2]);
         let expected = MediaUrn::from_string("media:image").unwrap();
-        assert!(lub.is_equivalent(&expected).unwrap(),
-            "LUB should drop conflicting format tag, got {}", lub.to_string());
+        assert!(
+            lub.is_equivalent(&expected).unwrap(),
+            "LUB should drop conflicting format tag, got {}",
+            lub.to_string()
+        );
     }
 }

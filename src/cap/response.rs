@@ -1,9 +1,9 @@
 //! Response wrapper for unified cartridge output handling with validation
 
+use crate::{Cap, ValidationError};
 use anyhow::{anyhow, Result};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
-use crate::{Cap, ValidationError};
 
 /// Unified response wrapper for all cartridge operations
 /// Provides type-safe deserialization of cartridge output
@@ -69,7 +69,8 @@ impl ResponseWrapper {
         }
 
         // Fall back to direct parsing
-        trimmed.parse::<i64>()
+        trimmed
+            .parse::<i64>()
             .map_err(|e| anyhow!("Failed to parse '{}' as integer: {}", trimmed, e))
     }
 
@@ -86,7 +87,8 @@ impl ResponseWrapper {
         }
 
         // Fall back to direct parsing
-        trimmed.parse::<f64>()
+        trimmed
+            .parse::<f64>()
             .map_err(|e| anyhow!("Failed to parse '{}' as float: {}", trimmed, e))
     }
 
@@ -115,18 +117,28 @@ impl ResponseWrapper {
         match self.content_type {
             ResponseContentType::Json => {
                 let text = self.as_string()?;
-                serde_json::from_str(&text)
-                    .map_err(|e| anyhow!("Failed to deserialize JSON response: {}\\nResponse: {}", e, text))
+                serde_json::from_str(&text).map_err(|e| {
+                    anyhow!(
+                        "Failed to deserialize JSON response: {}\\nResponse: {}",
+                        e,
+                        text
+                    )
+                })
             }
             ResponseContentType::Text => {
                 // For text responses, try to deserialize the string directly
                 let text = self.as_string()?;
-                serde_json::from_str(&format!("\"{}\"", text.replace("\"", "\\\"")))
-                    .map_err(|e| anyhow!("Failed to deserialize text response as JSON string: {}\\nResponse: {}", e, text))
+                serde_json::from_str(&format!("\"{}\"", text.replace("\"", "\\\""))).map_err(|e| {
+                    anyhow!(
+                        "Failed to deserialize text response as JSON string: {}\\nResponse: {}",
+                        e,
+                        text
+                    )
+                })
             }
-            ResponseContentType::Binary => {
-                Err(anyhow!("Cannot deserialize binary response to structured type"))
-            }
+            ResponseContentType::Binary => Err(anyhow!(
+                "Cannot deserialize binary response to structured type"
+            )),
         }
     }
 
@@ -151,32 +163,33 @@ impl ResponseWrapper {
         // Convert response to JSON value for validation
         let _json_value = match self.content_type {
             ResponseContentType::Json => {
-                let text = self.as_string().map_err(|e| {
-                    ValidationError::JsonParseError {
+                let text = self
+                    .as_string()
+                    .map_err(|e| ValidationError::JsonParseError {
                         cap_urn: cap.urn_string(),
                         error: format!("Failed to convert response to string: {}", e),
-                    }
-                })?;
+                    })?;
                 serde_json::from_str::<JsonValue>(&text).map_err(|e| {
                     ValidationError::JsonParseError {
                         cap_urn: cap.urn_string(),
                         error: format!("Failed to parse JSON: {}", e),
                     }
                 })?
-            },
+            }
             ResponseContentType::Text => {
-                let text = self.as_string().map_err(|e| {
-                    ValidationError::JsonParseError {
+                let text = self
+                    .as_string()
+                    .map_err(|e| ValidationError::JsonParseError {
                         cap_urn: cap.urn_string(),
                         error: format!("Failed to convert response to string: {}", e),
-                    }
-                })?;
+                    })?;
                 JsonValue::String(text)
-            },
+            }
             ResponseContentType::Binary => {
                 // Binary outputs can't be validated as JSON, validate the response type instead
                 if let Some(output_def) = cap.get_output() {
-                    let is_binary = output_def.is_binary(Some(media_specs), registry)
+                    let is_binary = output_def
+                        .is_binary(Some(media_specs), registry)
                         .await
                         .map_err(|e| ValidationError::InvalidMediaSpec {
                             cap_urn: cap.urn_string(),
@@ -187,8 +200,13 @@ impl ResponseWrapper {
                         return Err(ValidationError::InvalidOutputType {
                             cap_urn: cap.urn_string(),
                             expected_media_spec: output_def.media_urn.clone(),
-                            actual_value: JsonValue::String(format!("{} bytes of binary data", self.raw_bytes.len())),
-                            schema_errors: vec!["Expected non-binary output but received binary data".to_string()],
+                            actual_value: JsonValue::String(format!(
+                                "{} bytes of binary data",
+                                self.raw_bytes.len()
+                            )),
+                            schema_errors: vec![
+                                "Expected non-binary output but received binary data".to_string(),
+                            ],
                         });
                     }
                 }
@@ -217,14 +235,17 @@ impl ResponseWrapper {
         cap: &Cap,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, crate::media::spec::MediaSpecError> {
-        let output_def = cap.get_output()
-            .ok_or_else(|| crate::media::spec::MediaSpecError::UnresolvableMediaUrn(
-                "cap has no output definition".to_string()
-            ))?;
+        let output_def = cap.get_output().ok_or_else(|| {
+            crate::media::spec::MediaSpecError::UnresolvableMediaUrn(
+                "cap has no output definition".to_string(),
+            )
+        })?;
 
         let media_specs = cap.get_media_specs();
         let is_output_binary = output_def.is_binary(Some(media_specs), registry).await?;
-        let is_output_structured = output_def.is_structured(Some(media_specs), registry).await?;
+        let is_output_structured = output_def
+            .is_structured(Some(media_specs), registry)
+            .await?;
 
         Ok(match &self.content_type {
             // JSON response matches structured outputs (map/list)
@@ -342,9 +363,16 @@ mod tests {
     fn test602_as_type_binary_error() {
         let binary = ResponseWrapper::from_binary(vec![0x89, 0x50]);
         let result: Result<TestStruct, _> = binary.as_type();
-        assert!(result.is_err(), "Binary responses must not be deserializable to structured types");
+        assert!(
+            result.is_err(),
+            "Binary responses must not be deserializable to structured types"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("binary"), "Error should mention binary: {}", err);
+        assert!(
+            err.contains("binary"),
+            "Error should mention binary: {}",
+            err
+        );
     }
 
     // TEST603: as_bool handles all accepted truthy/falsy variants and rejects garbage

@@ -8,17 +8,17 @@
 //! `get_reachable_targets()` and `find_paths_to_exact_target()`, then pass the
 //! resulting `Strand` to `build_plan_from_path()` here.
 
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Serialize, Deserialize};
-use serde_json::json;
 
-use crate::{Cap, CapRegistry, MediaUrn, MediaUrnRegistry, MediaValidation};
 use super::argument_binding::{ArgumentBinding, ArgumentBindings};
 use super::cardinality::InputCardinality;
-use super::plan::{ExecutionNodeType, MachinePlanEdge, MachinePlan, MachineNode};
-use super::PlannerError;
 use super::live_cap_graph::Strand;
+use super::plan::{ExecutionNodeType, MachineNode, MachinePlan, MachinePlanEdge};
+use super::PlannerError;
+use crate::{Cap, CapRegistry, MediaUrn, MediaUrnRegistry, MediaValidation};
 
 type PlannerResult<T> = Result<T, PlannerError>;
 
@@ -100,19 +100,25 @@ impl MachinePlanBuilder {
 
         let mut plan = MachinePlan::new(name);
 
-        let caps = self.cap_registry.get_cached_caps().await
+        let caps = self
+            .cap_registry
+            .get_cached_caps()
+            .await
             .map_err(|e| PlannerError::RegistryError(format!("Failed to get caps: {}", e)))?;
 
         // Build a map from cap_urn string to (file-path arg name, stdin-chainable)
         // Only for Cap steps (not cardinality transitions)
-        let file_path_info: HashMap<String, (Option<String>, bool)> = path.steps
+        let file_path_info: HashMap<String, (Option<String>, bool)> = path
+            .steps
             .iter()
             .filter_map(|step| {
                 if let Some(cap_urn) = step.cap_urn() {
                     let cap_urn_str = cap_urn.to_string();
                     let cap = caps.iter().find(|c| c.urn.to_string() == cap_urn_str);
                     let arg_name = cap.and_then(|c| Self::find_file_path_arg(c));
-                    let chainable = cap.map(|c| Self::is_file_path_stdin_chainable(c)).unwrap_or(false);
+                    let chainable = cap
+                        .map(|c| Self::is_file_path_stdin_chainable(c))
+                        .unwrap_or(false);
                     Some((cap_urn_str, (arg_name, chainable)))
                 } else {
                     None
@@ -126,12 +132,18 @@ impl MachinePlanBuilder {
         // Log all incoming path steps for debugging plan construction
         tracing::info!(
             "build_plan_from_path: '{}' with {} steps, {} → {}",
-            name, path.steps.len(), source_spec_str, target_spec_str
+            name,
+            path.steps.len(),
+            source_spec_str,
+            target_spec_str
         );
         for (i, step) in path.steps.iter().enumerate() {
             tracing::info!(
                 "  step[{}]: type={} from={} to={}",
-                i, step.title(), step.from_spec, step.to_spec
+                i,
+                step.title(),
+                step.from_spec,
+                step.to_spec
             );
         }
 
@@ -171,7 +183,9 @@ impl MachinePlanBuilder {
                     // Inside a ForEach body, file paths come from the iteration item, not the original input
                     let is_inside_body = inside_foreach_body.is_some();
 
-                    if let Some((Some(arg_name), stdin_chainable)) = file_path_info.get(&cap_urn_str) {
+                    if let Some((Some(arg_name), stdin_chainable)) =
+                        file_path_info.get(&cap_urn_str)
+                    {
                         if cap_step_count == 0 && !is_inside_body {
                             bindings.add_file_path(arg_name);
                         } else if *stdin_chainable {
@@ -221,7 +235,10 @@ impl MachinePlanBuilder {
 
                     tracing::info!(
                         "  plan_builder: Cap step[{}] '{}' inside_body={} prev_node_id='{}'",
-                        i, node_id, is_inside_body, prev_node_id
+                        i,
+                        node_id,
+                        is_inside_body,
+                        prev_node_id
                     );
 
                     // Track body entry/exit for ForEach
@@ -240,7 +257,9 @@ impl MachinePlanBuilder {
                     // This handles nested ForEach: e.g., disbind → ForEach → make_multiple_decisions → ForEach
                     // where the body cap produces a list and the path walks through a second ForEach
                     // to reach the scalar target.
-                    if let Some((outer_foreach_idx, outer_foreach_node_id)) = inside_foreach_body.take() {
+                    if let Some((outer_foreach_idx, outer_foreach_node_id)) =
+                        inside_foreach_body.take()
+                    {
                         let has_outer_body_entry = body_entry.is_some();
                         let outer_entry = body_entry.take().unwrap_or_else(|| prev_node_id.clone());
                         let outer_exit = body_exit.take().unwrap_or_else(|| prev_node_id.clone());
@@ -269,7 +288,10 @@ impl MachinePlanBuilder {
                             return Err(PlannerError::InvalidPath(format!(
                                 "Outer ForEach at step[{}] ('{}') would create a cycle: \
                                  foreach_input='{}' == body_entry='{}'.",
-                                outer_foreach_idx, outer_foreach_node_id, outer_foreach_input, outer_entry
+                                outer_foreach_idx,
+                                outer_foreach_node_id,
+                                outer_foreach_input,
+                                outer_entry
                             )));
                         }
 
@@ -281,8 +303,14 @@ impl MachinePlanBuilder {
                             &outer_exit,
                         );
                         plan.add_node(foreach_node);
-                        plan.add_edge(MachinePlanEdge::direct(&outer_foreach_input, &outer_foreach_node_id));
-                        plan.add_edge(MachinePlanEdge::iteration(&outer_foreach_node_id, &outer_entry));
+                        plan.add_edge(MachinePlanEdge::direct(
+                            &outer_foreach_input,
+                            &outer_foreach_node_id,
+                        ));
+                        plan.add_edge(MachinePlanEdge::iteration(
+                            &outer_foreach_node_id,
+                            &outer_entry,
+                        ));
 
                         // The outer ForEach is now finalized. prev_node_id stays as body exit.
                         prev_node_id = outer_exit;
@@ -290,7 +318,8 @@ impl MachinePlanBuilder {
 
                     tracing::info!(
                         "  plan_builder: ForEach at step[{}], prev_node_id='{}'",
-                        i, prev_node_id
+                        i,
+                        prev_node_id
                     );
                     inside_foreach_body = Some((i, node_id.clone()));
                     body_entry = None;
@@ -313,12 +342,8 @@ impl MachinePlanBuilder {
                         };
 
                         // Create the ForEach node now that we know the body boundaries
-                        let foreach_node = MachineNode::for_each(
-                            &foreach_node_id,
-                            &foreach_input,
-                            &entry,
-                            &exit,
-                        );
+                        let foreach_node =
+                            MachineNode::for_each(&foreach_node_id, &foreach_input, &entry, &exit);
                         plan.add_node(foreach_node);
                         plan.add_edge(MachinePlanEdge::direct(&foreach_input, &foreach_node_id));
 
@@ -337,19 +362,19 @@ impl MachinePlanBuilder {
                         // annotation changes from scalar to list.
                         tracing::info!(
                             "  plan_builder: standalone Collect at step[{}], prev_node_id='{}'",
-                            i, prev_node_id
+                            i,
+                            prev_node_id
                         );
 
-                        let mut collect_node = MachineNode::collect(
-                            &node_id,
-                            vec![prev_node_id.clone()],
-                        );
+                        let mut collect_node =
+                            MachineNode::collect(&node_id, vec![prev_node_id.clone()]);
                         // Set output_media_urn so plan_converter can register it
                         collect_node.node_type = ExecutionNodeType::Collect {
                             input_nodes: vec![prev_node_id.clone()],
                             output_media_urn: Some(media_spec.to_string()),
                         };
-                        collect_node.description = Some("Collect: scalar to list-of-one".to_string());
+                        collect_node.description =
+                            Some("Collect: scalar to list-of-one".to_string());
                         plan.add_node(collect_node);
                         plan.add_edge(MachinePlanEdge::direct(&prev_node_id, &node_id));
                     }
@@ -394,7 +419,8 @@ impl MachinePlanBuilder {
                     "  plan_builder: skipping terminal ForEach '{}' at step[{}] (no body caps). \
                      This is a terminal unwrap — the preceding cap's list output reaches \
                      the scalar target via this ForEach edge.",
-                    foreach_node_id, foreach_idx
+                    foreach_node_id,
+                    foreach_idx
                 );
                 // Don't create a ForEach node. prev_node_id stays as is.
                 // The plan's output will connect to the node before this ForEach.
@@ -410,12 +436,8 @@ impl MachinePlanBuilder {
                 }
 
                 // Create the ForEach node
-                let foreach_node = MachineNode::for_each(
-                    &foreach_node_id,
-                    &foreach_input,
-                    &entry,
-                    &exit,
-                );
+                let foreach_node =
+                    MachineNode::for_each(&foreach_node_id, &foreach_input, &entry, &exit);
                 plan.add_node(foreach_node);
                 plan.add_edge(MachinePlanEdge::direct(&foreach_input, &foreach_node_id));
 
@@ -447,7 +469,10 @@ impl MachinePlanBuilder {
                  Nodes: {:?}, Edges: {:?}",
                 e,
                 plan.nodes.keys().collect::<Vec<_>>(),
-                plan.edges.iter().map(|e| format!("{}→{} ({:?})", e.from_node, e.to_node, e.edge_type)).collect::<Vec<_>>()
+                plan.edges
+                    .iter()
+                    .map(|e| format!("{}→{} ({:?})", e.from_node, e.to_node, e.edge_type))
+                    .collect::<Vec<_>>()
             );
             return Err(PlannerError::InvalidPath(format!(
                 "Plan construction produced a cycle (not a DAG): {}. \
@@ -458,7 +483,9 @@ impl MachinePlanBuilder {
 
         tracing::info!(
             "build_plan_from_path: successfully built plan '{}' with {} nodes, {} edges",
-            plan.name, plan.nodes.len(), plan.edges.len()
+            plan.name,
+            plan.nodes.len(),
+            plan.edges.len()
         );
 
         Ok(plan)
@@ -466,7 +493,9 @@ impl MachinePlanBuilder {
 
     /// Find ForEach/Collect ranges in a path.
     /// Returns pairs of (foreach_index, collect_index).
-    fn find_foreach_collect_ranges(steps: &[super::live_cap_graph::StrandStep]) -> Vec<(usize, usize)> {
+    fn find_foreach_collect_ranges(
+        steps: &[super::live_cap_graph::StrandStep],
+    ) -> Vec<(usize, usize)> {
         use super::live_cap_graph::StrandStepType;
 
         let mut ranges = Vec::new();
@@ -576,7 +605,10 @@ impl MachinePlanBuilder {
         &self,
         path: &Strand,
     ) -> PlannerResult<PathArgumentRequirements> {
-        let caps = self.cap_registry.get_cached_caps().await
+        let caps = self
+            .cap_registry
+            .get_cached_caps()
+            .await
             .map_err(|e| PlannerError::RegistryError(format!("Failed to get caps: {}", e)))?;
 
         let mut step_requirements = Vec::new();
@@ -591,12 +623,12 @@ impl MachinePlanBuilder {
             };
 
             let cap_urn_str = cap_urn.to_string();
-            let cap = caps.iter()
+            let cap = caps
+                .iter()
                 .find(|c| c.urn.to_string() == cap_urn_str)
-                .ok_or_else(|| PlannerError::NotFound(format!(
-                    "Cap '{}' not found in registry",
-                    cap_urn_str
-                )))?;
+                .ok_or_else(|| {
+                    PlannerError::NotFound(format!("Cap '{}' not found in registry", cap_urn_str))
+                })?;
 
             let in_spec = cap.urn.in_spec();
             let out_spec = cap.urn.out_spec();
@@ -616,8 +648,12 @@ impl MachinePlanBuilder {
 
                 // Resolve validation from media spec
                 let resolved_spec = crate::media::spec::resolve_media_urn(
-                    &arg.media_urn, Some(&cap.media_specs), &self.media_registry
-                ).await.ok();
+                    &arg.media_urn,
+                    Some(&cap.media_specs),
+                    &self.media_registry,
+                )
+                .await
+                .ok();
                 let validation = resolved_spec.and_then(|spec| spec.validation);
 
                 let arg_info = ArgumentInfo {
@@ -730,11 +766,16 @@ impl MachinePlanBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{BTreeMap, HashSet};
     use crate::CapUrn;
+    use std::collections::{BTreeMap, HashSet};
 
     /// Helper to create a test cap with given in/out specs (full media URNs)
-    fn make_test_cap(op: &str, in_spec: &str, out_spec: &str, title: &str) -> Result<Cap, crate::urn::cap_urn::CapUrnError> {
+    fn make_test_cap(
+        op: &str,
+        in_spec: &str,
+        out_spec: &str,
+        title: &str,
+    ) -> Result<Cap, crate::urn::cap_urn::CapUrnError> {
         let mut tags = BTreeMap::new();
         tags.insert("op".to_string(), op.to_string());
         let urn = CapUrn::new(in_spec.to_string(), out_spec.to_string(), tags)?;
@@ -774,13 +815,31 @@ mod tests {
     #[test]
     fn test880_no_duplicates_with_unique_caps() -> Result<(), crate::urn::cap_urn::CapUrnError> {
         let caps = vec![
-            make_test_cap("extract_metadata", "media:pdf", "media:file-metadata;textable;record", "Extract Metadata")?,
-            make_test_cap("extract_outline", "media:pdf", "media:document-outline;textable;record", "Extract Outline")?,
-            make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;list", "Disbind PDF")?,
+            make_test_cap(
+                "extract_metadata",
+                "media:pdf",
+                "media:file-metadata;textable;record",
+                "Extract Metadata",
+            )?,
+            make_test_cap(
+                "extract_outline",
+                "media:pdf",
+                "media:document-outline;textable;record",
+                "Extract Outline",
+            )?,
+            make_test_cap(
+                "disbind",
+                "media:pdf",
+                "media:disbound-pages;textable;list",
+                "Disbind PDF",
+            )?,
         ];
 
         let result = check_for_duplicate_caps(&caps);
-        assert!(result.is_ok(), "Should not detect duplicates for unique caps");
+        assert!(
+            result.is_ok(),
+            "Should not detect duplicates for unique caps"
+        );
         assert_eq!(result.unwrap(), 3, "Should have 3 edges");
         Ok(())
     }
@@ -790,26 +849,59 @@ mod tests {
     #[test]
     fn test991_detects_duplicate_cap_urns() -> Result<(), crate::urn::cap_urn::CapUrnError> {
         let caps = vec![
-            make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;list", "Disbind PDF")?,
-            make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;list", "Disbind PDF Again")?,
+            make_test_cap(
+                "disbind",
+                "media:pdf",
+                "media:disbound-pages;textable;list",
+                "Disbind PDF",
+            )?,
+            make_test_cap(
+                "disbind",
+                "media:pdf",
+                "media:disbound-pages;textable;list",
+                "Disbind PDF Again",
+            )?,
         ];
 
         let result = check_for_duplicate_caps(&caps);
         assert!(result.is_err(), "Should detect duplicate cap URN");
         let err_msg = result.unwrap_err();
-        assert!(err_msg.contains("Duplicate cap_urn detected"), "Error should mention duplicate: {}", err_msg);
-        assert!(err_msg.contains("op=disbind"), "Error should contain the cap URN: {}", err_msg);
-        assert!(err_msg.contains("media:pdf"), "Error should contain the input spec: {}", err_msg);
+        assert!(
+            err_msg.contains("Duplicate cap_urn detected"),
+            "Error should mention duplicate: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("op=disbind"),
+            "Error should contain the cap URN: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("media:pdf"),
+            "Error should contain the input spec: {}",
+            err_msg
+        );
         Ok(())
     }
 
     // TEST992: Tests caps with different operations but same input/output types are not duplicates
     // Verifies that only the complete URN (including op) is used for duplicate detection
     #[test]
-    fn test992_different_ops_same_types_not_duplicates() -> Result<(), crate::urn::cap_urn::CapUrnError> {
+    fn test992_different_ops_same_types_not_duplicates(
+    ) -> Result<(), crate::urn::cap_urn::CapUrnError> {
         let caps = vec![
-            make_test_cap("disbind", "media:pdf", "media:disbound-pages;textable;list", "Disbind")?,
-            make_test_cap("grind", "media:pdf", "media:disbound-pages;textable;list", "Grind")?,
+            make_test_cap(
+                "disbind",
+                "media:pdf",
+                "media:disbound-pages;textable;list",
+                "Disbind",
+            )?,
+            make_test_cap(
+                "grind",
+                "media:pdf",
+                "media:disbound-pages;textable;list",
+                "Grind",
+            )?,
         ];
 
         let result = check_for_duplicate_caps(&caps);
@@ -821,14 +913,28 @@ mod tests {
     // TEST993: Tests caps with same operation but different input types are not duplicates
     // Verifies that input type differences distinguish caps with the same operation name
     #[test]
-    fn test993_same_op_different_input_types_not_duplicates() -> Result<(), crate::urn::cap_urn::CapUrnError> {
+    fn test993_same_op_different_input_types_not_duplicates(
+    ) -> Result<(), crate::urn::cap_urn::CapUrnError> {
         let caps = vec![
-            make_test_cap("extract_metadata", "media:pdf", "media:file-metadata;textable;record", "Extract PDF Metadata")?,
-            make_test_cap("extract_metadata", "media:txt;textable", "media:file-metadata;textable;record", "Extract TXT Metadata")?,
+            make_test_cap(
+                "extract_metadata",
+                "media:pdf",
+                "media:file-metadata;textable;record",
+                "Extract PDF Metadata",
+            )?,
+            make_test_cap(
+                "extract_metadata",
+                "media:txt;textable",
+                "media:file-metadata;textable;record",
+                "Extract TXT Metadata",
+            )?,
         ];
 
         let result = check_for_duplicate_caps(&caps);
-        assert!(result.is_ok(), "Same op with different inputs should not be duplicates");
+        assert!(
+            result.is_ok(),
+            "Same op with different inputs should not be duplicates"
+        );
         assert_eq!(result.unwrap(), 2, "Should have 2 edges");
         Ok(())
     }
@@ -840,22 +946,18 @@ mod tests {
     fn create_test_plan_builder() -> MachinePlanBuilder {
         let cap_registry = CapRegistry::new_for_test();
         let media_registry = MediaUrnRegistry::new_for_test(
-            std::env::temp_dir().join(format!("capdag_test_{}", uuid::Uuid::new_v4()))
-        ).expect("Failed to create test media registry");
-        MachinePlanBuilder::new(
-            Arc::new(cap_registry),
-            Arc::new(media_registry),
+            std::env::temp_dir().join(format!("capdag_test_{}", uuid::Uuid::new_v4())),
         )
+        .expect("Failed to create test media registry");
+        MachinePlanBuilder::new(Arc::new(cap_registry), Arc::new(media_registry))
     }
 
     fn create_test_plan_builder_with_registry(cap_registry: CapRegistry) -> MachinePlanBuilder {
         let media_registry = MediaUrnRegistry::new_for_test(
-            std::env::temp_dir().join(format!("capdag_test_{}", uuid::Uuid::new_v4()))
-        ).expect("Failed to create test media registry");
-        MachinePlanBuilder::new(
-            Arc::new(cap_registry),
-            Arc::new(media_registry),
+            std::env::temp_dir().join(format!("capdag_test_{}", uuid::Uuid::new_v4())),
         )
+        .expect("Failed to create test media registry");
+        MachinePlanBuilder::new(Arc::new(cap_registry), Arc::new(media_registry))
     }
 
     // TEST994: Tests first cap's input argument is automatically resolved from input file
@@ -865,7 +967,8 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(in_spec, in_spec, out_spec, 0, true, &None);
+        let resolution =
+            builder.determine_resolution_with_io_check(in_spec, in_spec, out_spec, 0, true, &None);
         assert_eq!(resolution, ArgumentResolution::FromInputFile);
     }
 
@@ -877,10 +980,12 @@ mod tests {
         let in_spec = "media:pdf";
         let out_spec = "media:png";
 
-        let resolution = builder.determine_resolution_with_io_check(in_spec, in_spec, out_spec, 1, true, &None);
+        let resolution =
+            builder.determine_resolution_with_io_check(in_spec, in_spec, out_spec, 1, true, &None);
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
 
-        let resolution = builder.determine_resolution_with_io_check(in_spec, in_spec, out_spec, 2, true, &None);
+        let resolution =
+            builder.determine_resolution_with_io_check(in_spec, in_spec, out_spec, 2, true, &None);
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
@@ -891,7 +996,8 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(out_spec, in_spec, out_spec, 0, true, &None);
+        let resolution =
+            builder.determine_resolution_with_io_check(out_spec, in_spec, out_spec, 0, true, &None);
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
@@ -902,7 +1008,14 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_FILE_PATH, in_spec, out_spec, 0, true, &None);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_FILE_PATH,
+            in_spec,
+            out_spec,
+            0,
+            true,
+            &None,
+        );
         assert_eq!(resolution, ArgumentResolution::FromInputFile);
     }
 
@@ -913,7 +1026,14 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_FILE_PATH, in_spec, out_spec, 1, true, &None);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_FILE_PATH,
+            in_spec,
+            out_spec,
+            1,
+            true,
+            &None,
+        );
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
@@ -924,10 +1044,24 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_FILE_PATH_ARRAY, in_spec, out_spec, 0, true, &None);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_FILE_PATH_ARRAY,
+            in_spec,
+            out_spec,
+            0,
+            true,
+            &None,
+        );
         assert_eq!(resolution, ArgumentResolution::FromInputFile);
 
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_FILE_PATH_ARRAY, in_spec, out_spec, 1, true, &None);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_FILE_PATH_ARRAY,
+            in_spec,
+            out_spec,
+            1,
+            true,
+            &None,
+        );
         assert_eq!(resolution, ArgumentResolution::FromPreviousOutput);
     }
 
@@ -939,7 +1073,14 @@ mod tests {
         let default = Some(serde_json::json!(200));
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_INTEGER, in_spec, out_spec, 0, true, &default);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_INTEGER,
+            in_spec,
+            out_spec,
+            0,
+            true,
+            &default,
+        );
         assert_eq!(resolution, ArgumentResolution::HasDefault);
     }
 
@@ -950,7 +1091,14 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_STRING, in_spec, out_spec, 0, true, &None);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_STRING,
+            in_spec,
+            out_spec,
+            0,
+            true,
+            &None,
+        );
         assert_eq!(resolution, ArgumentResolution::RequiresUserInput);
     }
 
@@ -962,7 +1110,14 @@ mod tests {
         let default = Some(serde_json::json!(300));
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_INTEGER, in_spec, out_spec, 0, false, &default);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_INTEGER,
+            in_spec,
+            out_spec,
+            0,
+            false,
+            &default,
+        );
         assert_eq!(resolution, ArgumentResolution::HasDefault);
     }
 
@@ -973,7 +1128,14 @@ mod tests {
         let builder = create_test_plan_builder();
         let in_spec = "media:pdf";
         let out_spec = "media:png";
-        let resolution = builder.determine_resolution_with_io_check(crate::MEDIA_BOOLEAN, in_spec, out_spec, 0, false, &None);
+        let resolution = builder.determine_resolution_with_io_check(
+            crate::MEDIA_BOOLEAN,
+            in_spec,
+            out_spec,
+            0,
+            false,
+            &None,
+        );
         assert_eq!(resolution, ArgumentResolution::RequiresUserInput);
     }
 
@@ -1007,7 +1169,10 @@ mod tests {
             allowed_values: None,
         };
         let json = MachinePlanBuilder::validation_to_json(Some(&validation));
-        assert!(json.is_some(), "Validation with constraints should return Some");
+        assert!(
+            json.is_some(),
+            "Validation with constraints should return Some"
+        );
         let json = json.unwrap();
         assert_eq!(json["min"], 50.0);
         assert_eq!(json["max"], 2000.0);
@@ -1041,33 +1206,32 @@ mod tests {
         let requirements = PathArgumentRequirements {
             source_spec: "media:pdf".to_string(),
             target_spec: "media:png".to_string(),
-            steps: vec![
-                StepArgumentRequirements {
-                    cap_urn: "cap:op=generate_thumbnail;in=pdf;out=png".to_string(),
-                    step_index: 0,
-                    title: "Generate Thumbnail".to_string(),
-                    arguments: vec![
-                        ArgumentInfo {
-                            name: "file_path".to_string(),
-                            media_urn: "media:string".to_string(),
-                            description: "Path to file".to_string(),
-                            resolution: ArgumentResolution::FromInputFile,
-                            default_value: None,
-                            is_required: true,
-                            is_sequence: false,
-                            validation: None,
-                        },
-                    ],
-                    slots: vec![],
-                },
-            ],
+            steps: vec![StepArgumentRequirements {
+                cap_urn: "cap:op=generate_thumbnail;in=pdf;out=png".to_string(),
+                step_index: 0,
+                title: "Generate Thumbnail".to_string(),
+                arguments: vec![ArgumentInfo {
+                    name: "file_path".to_string(),
+                    media_urn: "media:string".to_string(),
+                    description: "Path to file".to_string(),
+                    resolution: ArgumentResolution::FromInputFile,
+                    default_value: None,
+                    is_required: true,
+                    is_sequence: false,
+                    validation: None,
+                }],
+                slots: vec![],
+            }],
             can_execute_without_input: true,
         };
 
         assert!(requirements.can_execute_without_input);
         assert_eq!(requirements.steps.len(), 1);
         assert_eq!(requirements.steps[0].slots.len(), 0);
-        assert_eq!(requirements.steps[0].arguments[0].resolution, ArgumentResolution::FromInputFile);
+        assert_eq!(
+            requirements.steps[0].arguments[0].resolution,
+            ArgumentResolution::FromInputFile
+        );
     }
 
     // TEST769: Tests PathArgumentRequirements tracking of required user-input slots
@@ -1077,47 +1241,43 @@ mod tests {
         let requirements = PathArgumentRequirements {
             source_spec: "media:text".to_string(),
             target_spec: "media:translated".to_string(),
-            steps: vec![
-                StepArgumentRequirements {
-                    cap_urn: "cap:op=translate;in=text;out=translated".to_string(),
-                    step_index: 0,
-                    title: "Translate".to_string(),
-                    arguments: vec![
-                        ArgumentInfo {
-                            name: "file_path".to_string(),
-                            media_urn: "media:string".to_string(),
-                            description: "Path to file".to_string(),
-                            resolution: ArgumentResolution::FromInputFile,
-                            default_value: None,
-                            is_required: true,
-                            is_sequence: false,
-                            validation: None,
-                        },
-                        ArgumentInfo {
-                            name: "target_language".to_string(),
-                            media_urn: "media:string".to_string(),
-                            description: "Target language code".to_string(),
-                            resolution: ArgumentResolution::RequiresUserInput,
-                            default_value: None,
-                            is_required: true,
-                            is_sequence: false,
-                            validation: None,
-                        },
-                    ],
-                    slots: vec![
-                        ArgumentInfo {
-                            name: "target_language".to_string(),
-                            media_urn: "media:string".to_string(),
-                            description: "Target language code".to_string(),
-                            resolution: ArgumentResolution::RequiresUserInput,
-                            default_value: None,
-                            is_required: true,
-                            is_sequence: false,
-                            validation: None,
-                        },
-                    ],
-                },
-            ],
+            steps: vec![StepArgumentRequirements {
+                cap_urn: "cap:op=translate;in=text;out=translated".to_string(),
+                step_index: 0,
+                title: "Translate".to_string(),
+                arguments: vec![
+                    ArgumentInfo {
+                        name: "file_path".to_string(),
+                        media_urn: "media:string".to_string(),
+                        description: "Path to file".to_string(),
+                        resolution: ArgumentResolution::FromInputFile,
+                        default_value: None,
+                        is_required: true,
+                        is_sequence: false,
+                        validation: None,
+                    },
+                    ArgumentInfo {
+                        name: "target_language".to_string(),
+                        media_urn: "media:string".to_string(),
+                        description: "Target language code".to_string(),
+                        resolution: ArgumentResolution::RequiresUserInput,
+                        default_value: None,
+                        is_required: true,
+                        is_sequence: false,
+                        validation: None,
+                    },
+                ],
+                slots: vec![ArgumentInfo {
+                    name: "target_language".to_string(),
+                    media_urn: "media:string".to_string(),
+                    description: "Target language code".to_string(),
+                    resolution: ArgumentResolution::RequiresUserInput,
+                    default_value: None,
+                    is_required: true,
+                    is_sequence: false,
+                    validation: None,
+                }],
+            }],
             can_execute_without_input: false,
         };
 
@@ -1138,10 +1298,15 @@ mod tests {
     // This is the root cause fix for caps not matching when cartridges report URNs with
     // different tag ordering than the registry (e.g., "record;textable" vs "textable;record")
     #[test]
-    fn test1100_cap_urn_normalizes_media_urn_tag_order() -> Result<(), crate::urn::cap_urn::CapUrnError> {
+    fn test1100_cap_urn_normalizes_media_urn_tag_order(
+    ) -> Result<(), crate::urn::cap_urn::CapUrnError> {
         // Create two CapUrns with different tag ordering in the output media URN
-        let urn1 = CapUrn::from_string("cap:in=media:pdf;op=extract_metadata;out=\"media:file-metadata;record;textable\"")?;
-        let urn2 = CapUrn::from_string("cap:in=media:pdf;op=extract_metadata;out=\"media:file-metadata;textable;record\"")?;
+        let urn1 = CapUrn::from_string(
+            "cap:in=media:pdf;op=extract_metadata;out=\"media:file-metadata;record;textable\"",
+        )?;
+        let urn2 = CapUrn::from_string(
+            "cap:in=media:pdf;op=extract_metadata;out=\"media:file-metadata;textable;record\"",
+        )?;
 
         // After normalization, both should produce the same canonical string
         assert_eq!(
@@ -1154,7 +1319,8 @@ mod tests {
         let canonical = urn1.to_string();
         assert!(
             canonical.contains("record;textable") || canonical.contains("textable;record"),
-            "Canonical form should contain the tags: {}", canonical
+            "Canonical form should contain the tags: {}",
+            canonical
         );
 
         Ok(())
@@ -1167,13 +1333,11 @@ mod tests {
     #[test]
     fn test1103_is_dispatchable_uses_correct_directionality() {
         // A more specific provider should be dispatchable for a general request
-        let general_request = CapUrn::from_string(
-            "cap:in=media:pdf;op=extract;out=media:text"
-        ).unwrap();
+        let general_request =
+            CapUrn::from_string("cap:in=media:pdf;op=extract;out=media:text").unwrap();
 
-        let specific_provider = CapUrn::from_string(
-            "cap:in=media:pdf;op=extract;out=media:text;version=2"
-        ).unwrap();
+        let specific_provider =
+            CapUrn::from_string("cap:in=media:pdf;op=extract;out=media:text;version=2").unwrap();
 
         // provider.is_dispatchable(&request) should be true: specific provider refines general request
         assert!(
@@ -1192,13 +1356,13 @@ mod tests {
     #[test]
     fn test1104_is_dispatchable_rejects_non_dispatchable() {
         // Request requires specific tag that provider doesn't have
-        let request = CapUrn::from_string(
-            "cap:in=media:pdf;op=extract;out=media:text;required=yes"
-        ).unwrap();
+        let request =
+            CapUrn::from_string("cap:in=media:pdf;op=extract;out=media:text;required=yes").unwrap();
 
         let provider = CapUrn::from_string(
-            "cap:in=media:pdf;op=extract;out=media:text"  // missing required=yes
-        ).unwrap();
+            "cap:in=media:pdf;op=extract;out=media:text", // missing required=yes
+        )
+        .unwrap();
 
         // provider is NOT dispatchable for request (missing required tag that request needs)
         assert!(

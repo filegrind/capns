@@ -7,8 +7,8 @@
 //! The router receives frames (REQ, STREAM_START, CHUNK, STREAM_END, END) and delegates
 //! them to the appropriate target cartridge, then forwards responses back.
 
-use crate::bifaci::host_runtime::{AsyncHostError, ResponseChunk};
 use crate::bifaci::frame::Frame;
+use crate::bifaci::host_runtime::{AsyncHostError, ResponseChunk};
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::Arc;
 
@@ -95,10 +95,8 @@ mod tests {
     fn test638_no_peer_router_rejects_all() {
         let router = NoPeerRouter;
         let req_id = [0u8; 16];
-        let result = router.begin_request(
-            "cap:in=\"media:void\";op=test;out=\"media:void\"",
-            &req_id,
-        );
+        let result =
+            router.begin_request("cap:in=\"media:void\";op=test;out=\"media:void\"", &req_id);
 
         assert!(result.is_err());
         match result {

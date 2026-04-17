@@ -7,7 +7,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::input_resolver::adapter::{AdapterResult, AdapterSelection, MediaAdapter, select_by_structure};
+use crate::input_resolver::adapter::{
+    select_by_structure, AdapterResult, AdapterSelection, MediaAdapter,
+};
 use crate::input_resolver::ContentStructure;
 use crate::media::registry::MediaUrnRegistry;
 use crate::urn::media_urn::MediaUrn;
@@ -54,11 +56,14 @@ impl MediaAdapterRegistry {
         ];
 
         for adapter in adapter_defs {
-            let pattern = MediaUrn::from_string(adapter.pattern_urn())
-                .unwrap_or_else(|e| panic!(
+            let pattern = MediaUrn::from_string(adapter.pattern_urn()).unwrap_or_else(|e| {
+                panic!(
                     "Adapter '{}' has invalid pattern URN '{}': {}",
-                    adapter.name(), adapter.pattern_urn(), e
-                ));
+                    adapter.name(),
+                    adapter.pattern_urn(),
+                    e
+                )
+            });
             adapters.push(RegisteredAdapter { pattern, adapter });
         }
 
@@ -153,7 +158,10 @@ impl MediaAdapterRegistry {
             if reg.adapter.requires_content_inspection() {
                 // Build a slice of conforming candidate refs for the adapter
                 let conforming_refs: Vec<&MediaUrn> = conforming.iter().map(|(_, c)| *c).collect();
-                if let Some(selection) = reg.adapter.select_candidate(&conforming_refs, path, content) {
+                if let Some(selection) =
+                    reg.adapter
+                        .select_candidate(&conforming_refs, path, content)
+                {
                     let selected_urn = &conforming[selection.candidate_index].1;
                     selections.push((
                         reg.adapter.name().to_string(),
@@ -186,10 +194,7 @@ impl MediaAdapterRegistry {
         match selections.len() {
             0 => {
                 // No adapter matched — use least-specific candidate with default structure
-                let least_specific = candidates
-                    .iter()
-                    .min_by_key(|c| c.specificity())
-                    .unwrap(); // candidates is non-empty
+                let least_specific = candidates.iter().min_by_key(|c| c.specificity()).unwrap(); // candidates is non-empty
                 let structure = structure_from_marker_tags(least_specific);
                 AdapterResult {
                     media_urn: least_specific.to_string(),
@@ -252,7 +257,7 @@ mod tests {
 
     // TEST984: YAML sequence detection via MediaAdapterRegistry produces ListOpaque
     #[test]
-    fn test984_yaml_detection_via_adapter_registry() {
+    fn test943_yaml_detection_via_adapter_registry() {
         let (media_registry, _temp) = create_test_registry();
         let adapter_registry = MediaAdapterRegistry::new(media_registry);
 
@@ -265,7 +270,7 @@ mod tests {
 
     // TEST985: CSV detection via MediaAdapterRegistry
     #[test]
-    fn test985_csv_detection_via_adapter_registry() {
+    fn test942_csv_detection_via_adapter_registry() {
         let (media_registry, _temp) = create_test_registry();
         let adapter_registry = MediaAdapterRegistry::new(media_registry);
 
@@ -278,7 +283,7 @@ mod tests {
 
     // TEST986: Unknown extension returns generic media URN
     #[test]
-    fn test986_unknown_extension_returns_generic() {
+    fn test1031_unknown_extension_returns_generic() {
         let (media_registry, _temp) = create_test_registry();
         let adapter_registry = MediaAdapterRegistry::new(media_registry);
 

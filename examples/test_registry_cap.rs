@@ -27,8 +27,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let args = cap.get_args();
             let required_count = args.iter().filter(|a| a.required).count();
             let optional_count = args.iter().filter(|a| !a.required).count();
-            println!("  Arguments: {} required, {} optional", required_count, optional_count);
-        },
+            println!(
+                "  Arguments: {} required, {} optional",
+                required_count, optional_count
+            );
+        }
         Err(e) => {
             println!("Failed to get cap: {}", e);
             return Err(e.into());

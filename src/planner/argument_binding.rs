@@ -7,10 +7,10 @@
 //! 2. **Pure data flow**: Caps receive only declared outputs from predecessors
 //! 3. **Explicit sources**: Arguments come from explicit bindings, no ambient context
 
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 use super::cardinality::InputCardinality;
 use super::PlannerError;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A file presented to a cap for processing.
 ///
@@ -159,7 +159,9 @@ impl CapInputFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ArgumentBinding {
-    InputFile { index: usize },
+    InputFile {
+        index: usize,
+    },
     InputFilePath,
     InputMediaUrn,
     PreviousOutput {
@@ -168,27 +170,39 @@ pub enum ArgumentBinding {
         output_field: Option<String>,
     },
     CapDefault,
-    CapSetting { setting_urn: String },
-    Literal { value: serde_json::Value },
+    CapSetting {
+        setting_urn: String,
+    },
+    Literal {
+        value: serde_json::Value,
+    },
     Slot {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         schema: Option<serde_json::Value>,
     },
-    PlanMetadata { key: String },
+    PlanMetadata {
+        key: String,
+    },
 }
 
 impl ArgumentBinding {
     pub fn literal_string(s: &str) -> Self {
-        Self::Literal { value: serde_json::Value::String(s.to_string()) }
+        Self::Literal {
+            value: serde_json::Value::String(s.to_string()),
+        }
     }
 
     pub fn literal_number(n: i64) -> Self {
-        Self::Literal { value: serde_json::Value::Number(n.into()) }
+        Self::Literal {
+            value: serde_json::Value::Number(n.into()),
+        }
     }
 
     pub fn literal_bool(b: bool) -> Self {
-        Self::Literal { value: serde_json::Value::Bool(b) }
+        Self::Literal {
+            value: serde_json::Value::Bool(b),
+        }
     }
 
     pub fn requires_input(&self) -> bool {
@@ -232,7 +246,8 @@ pub struct ArgumentResolutionContext<'a> {
 }
 
 /// Static empty HashMap for use in context creation
-static EMPTY_OUTPUTS: std::sync::LazyLock<HashMap<String, serde_json::Value>> = std::sync::LazyLock::new(HashMap::new);
+static EMPTY_OUTPUTS: std::sync::LazyLock<HashMap<String, serde_json::Value>> =
+    std::sync::LazyLock::new(HashMap::new);
 
 impl<'a> ArgumentResolutionContext<'a> {
     pub fn with_inputs(input_files: &'a [CapInputFile]) -> Self {
@@ -276,33 +291,43 @@ pub fn resolve_binding(
             let file = context.input_files.get(*index).ok_or_else(|| {
                 PlannerError::Internal(format!(
                     "Input file index {} out of bounds (have {} files)",
-                    index, context.input_files.len()
+                    index,
+                    context.input_files.len()
                 ))
             })?;
-            (file.file_path.as_bytes().to_vec(), ArgumentSource::InputFile)
+            (
+                file.file_path.as_bytes().to_vec(),
+                ArgumentSource::InputFile,
+            )
         }
 
         ArgumentBinding::InputFilePath => {
             let file = context.current_file().ok_or_else(|| {
                 PlannerError::Internal("No current input file available".to_string())
             })?;
-            (file.file_path.as_bytes().to_vec(), ArgumentSource::InputFile)
+            (
+                file.file_path.as_bytes().to_vec(),
+                ArgumentSource::InputFile,
+            )
         }
 
         ArgumentBinding::InputMediaUrn => {
             let file = context.current_file().ok_or_else(|| {
                 PlannerError::Internal("No current input file available".to_string())
             })?;
-            (file.media_urn.as_bytes().to_vec(), ArgumentSource::InputFile)
+            (
+                file.media_urn.as_bytes().to_vec(),
+                ArgumentSource::InputFile,
+            )
         }
 
-        ArgumentBinding::PreviousOutput { node_id, output_field } => {
-            let output = context
-                .previous_outputs
-                .get(node_id)
-                .ok_or_else(|| {
-                    PlannerError::Internal(format!("No output from node '{}'", node_id))
-                })?;
+        ArgumentBinding::PreviousOutput {
+            node_id,
+            output_field,
+        } => {
+            let output = context.previous_outputs.get(node_id).ok_or_else(|| {
+                PlannerError::Internal(format!("No output from node '{}'", node_id))
+            })?;
 
             let json_value = if let Some(field) = output_field {
                 output.get(field).ok_or_else(|| {
@@ -315,24 +340,26 @@ pub fn resolve_binding(
                 output
             };
 
-            (json_value_to_bytes(json_value), ArgumentSource::PreviousOutput)
+            (
+                json_value_to_bytes(json_value),
+                ArgumentSource::PreviousOutput,
+            )
         }
 
         ArgumentBinding::CapDefault => {
-            let value = default_value
-                .ok_or_else(|| {
-                    PlannerError::Internal(format!(
-                        "Cap '{}' has no default value for argument",
-                        cap_urn
-                    ))
-                })?;
+            let value = default_value.ok_or_else(|| {
+                PlannerError::Internal(format!(
+                    "Cap '{}' has no default value for argument",
+                    cap_urn
+                ))
+            })?;
             (json_value_to_bytes(value), ArgumentSource::CapDefault)
         }
 
         ArgumentBinding::CapSetting { setting_urn } => {
-            let cap_settings = context.cap_settings.ok_or_else(|| {
-                PlannerError::Internal("No cap settings available".to_string())
-            })?;
+            let cap_settings = context
+                .cap_settings
+                .ok_or_else(|| PlannerError::Internal("No cap settings available".to_string()))?;
 
             let settings = cap_settings.get(cap_urn).ok_or_else(|| {
                 PlannerError::Internal(format!("No settings for cap '{}'", cap_urn))
@@ -394,9 +421,9 @@ pub fn resolve_binding(
         }
 
         ArgumentBinding::PlanMetadata { key } => {
-            let metadata = context.plan_metadata.ok_or_else(|| {
-                PlannerError::Internal("No plan metadata available".to_string())
-            })?;
+            let metadata = context
+                .plan_metadata
+                .ok_or_else(|| PlannerError::Internal("No plan metadata available".to_string()))?;
 
             let value = metadata.get(key).ok_or_else(|| {
                 PlannerError::Internal(format!("Key '{}' not found in plan metadata", key))
@@ -429,11 +456,13 @@ impl ArgumentBindings {
     }
 
     pub fn add_file_path(&mut self, arg_name: &str) {
-        self.bindings.insert(arg_name.to_string(), ArgumentBinding::InputFilePath);
+        self.bindings
+            .insert(arg_name.to_string(), ArgumentBinding::InputFilePath);
     }
 
     pub fn add_literal(&mut self, arg_name: &str, value: serde_json::Value) {
-        self.bindings.insert(arg_name.to_string(), ArgumentBinding::Literal { value });
+        self.bindings
+            .insert(arg_name.to_string(), ArgumentBinding::Literal { value });
     }
 
     pub fn has_unresolved_slots(&self) -> bool {
@@ -444,7 +473,11 @@ impl ArgumentBindings {
         self.bindings
             .iter()
             .filter_map(|(name, b)| {
-                if b.requires_input() { Some(name.as_str()) } else { None }
+                if b.requires_input() {
+                    Some(name.as_str())
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -461,9 +494,14 @@ impl ArgumentBindings {
 
         for (name, binding) in &self.bindings {
             let default = cap_defaults.and_then(|d| d.get(name));
-            let is_required = arg_required.and_then(|r| r.get(name)).copied().unwrap_or(false);
+            let is_required = arg_required
+                .and_then(|r| r.get(name))
+                .copied()
+                .unwrap_or(false);
 
-            if let Some(mut arg) = resolve_binding(binding, context, cap_urn, node_id, default, is_required)? {
+            if let Some(mut arg) =
+                resolve_binding(binding, context, cap_urn, node_id, default, is_required)?
+            {
                 arg.name = name.clone();
                 resolved.push(arg);
             }
@@ -557,7 +595,10 @@ mod tests {
     // Verifies Slot returns true (needs user input) while Literal returns false
     #[test]
     fn test792_argument_binding_requires_input() {
-        let slot = ArgumentBinding::Slot { name: "width".to_string(), schema: None };
+        let slot = ArgumentBinding::Slot {
+            name: "width".to_string(),
+            schema: None,
+        };
         assert!(slot.requires_input());
         let literal = ArgumentBinding::Literal { value: json!(100) };
         assert!(!literal.requires_input());
@@ -575,7 +616,11 @@ mod tests {
         assert!(json.contains("previous_output"));
         assert!(json.contains("node_0"));
         let deserialized: ArgumentBinding = serde_json::from_str(&json).unwrap();
-        if let ArgumentBinding::PreviousOutput { node_id, output_field } = deserialized {
+        if let ArgumentBinding::PreviousOutput {
+            node_id,
+            output_field,
+        } = deserialized
+        {
             assert_eq!(node_id, "node_0");
             assert_eq!(output_field, Some("result_path".to_string()));
         } else {
@@ -590,7 +635,10 @@ mod tests {
         let mut bindings = ArgumentBindings::new();
         bindings.add_file_path("input");
         assert!(bindings.bindings.contains_key("input"));
-        assert!(matches!(bindings.bindings.get("input"), Some(ArgumentBinding::InputFilePath)));
+        assert!(matches!(
+            bindings.bindings.get("input"),
+            Some(ArgumentBinding::InputFilePath)
+        ));
     }
 
     // TEST795: Tests ArgumentBindings identifies unresolved Slot bindings
@@ -598,8 +646,17 @@ mod tests {
     #[test]
     fn test795_argument_bindings_unresolved_slots() {
         let mut bindings = ArgumentBindings::new();
-        bindings.add("width".to_string(), ArgumentBinding::Slot { name: "width".to_string(), schema: None });
-        bindings.add("height".to_string(), ArgumentBinding::Literal { value: json!(100) });
+        bindings.add(
+            "width".to_string(),
+            ArgumentBinding::Slot {
+                name: "width".to_string(),
+                schema: None,
+            },
+        );
+        bindings.add(
+            "height".to_string(),
+            ArgumentBinding::Literal { value: json!(100) },
+        );
         assert!(bindings.has_unresolved_slots());
         assert_eq!(bindings.get_unresolved_slots(), vec!["width"]);
     }
@@ -608,7 +665,10 @@ mod tests {
     // Verifies InputFilePath binding resolves to file path bytes with InputFile source
     #[test]
     fn test796_resolve_input_file_path() {
-        let files = vec![CapInputFile::new("/path/to/file.pdf".to_string(), "media:pdf".to_string())];
+        let files = vec![CapInputFile::new(
+            "/path/to/file.pdf".to_string(),
+            "media:pdf".to_string(),
+        )];
         let prev_outputs = HashMap::new();
         let context = ArgumentResolutionContext {
             input_files: &files,
@@ -619,7 +679,9 @@ mod tests {
             slot_values: None,
         };
         let binding = ArgumentBinding::InputFilePath;
-        let result = resolve_binding(&binding, &context, "cap:test", "step_0", None, true).unwrap().unwrap();
+        let result = resolve_binding(&binding, &context, "cap:test", "step_0", None, true)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.value, b"/path/to/file.pdf".to_vec());
         assert_eq!(result.source, ArgumentSource::InputFile);
     }
@@ -639,7 +701,9 @@ mod tests {
             slot_values: None,
         };
         let binding = ArgumentBinding::Literal { value: json!(42) };
-        let result = resolve_binding(&binding, &context, "cap:test", "step_0", None, true).unwrap().unwrap();
+        let result = resolve_binding(&binding, &context, "cap:test", "step_0", None, true)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.value, serde_json::to_vec(&json!(42)).unwrap());
         assert_eq!(result.source, ArgumentSource::Literal);
     }
@@ -650,7 +714,10 @@ mod tests {
     fn test798_resolve_previous_output() {
         let files = vec![];
         let mut prev_outputs = HashMap::new();
-        prev_outputs.insert("node_0".to_string(), json!({"result_path": "/output/result.png"}));
+        prev_outputs.insert(
+            "node_0".to_string(),
+            json!({"result_path": "/output/result.png"}),
+        );
         let context = ArgumentResolutionContext {
             input_files: &files,
             current_file_index: 0,
@@ -663,7 +730,9 @@ mod tests {
             node_id: "node_0".to_string(),
             output_field: Some("result_path".to_string()),
         };
-        let result = resolve_binding(&binding, &context, "cap:test", "step_0", None, true).unwrap().unwrap();
+        let result = resolve_binding(&binding, &context, "cap:test", "step_0", None, true)
+            .unwrap()
+            .unwrap();
         assert_eq!(result.value, b"/output/result.png".to_vec());
         assert_eq!(result.source, ArgumentSource::PreviousOutput);
     }
@@ -706,7 +775,11 @@ mod tests {
             }
         ]"#;
         let result: std::result::Result<Vec<CapInputFile>, _> = serde_json::from_str(json_str);
-        assert!(result.is_ok(), "Deserialization should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Deserialization should succeed: {:?}",
+            result.err()
+        );
         let files = result.unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].source_type, Some(SourceEntityType::Listing));
@@ -744,11 +817,15 @@ mod tests {
             schema: None,
         };
         let result = resolve_binding(
-            &binding, &context,
+            &binding,
+            &context,
             "cap:in=\"media:pdf\";op=resize;out=\"media:pdf\"",
             "step_0",
-            None, true,
-        ).unwrap().unwrap();
+            None,
+            true,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(result.value, b"800".to_vec());
         assert_eq!(result.source, ArgumentSource::Slot);
     }
@@ -770,8 +847,16 @@ mod tests {
             schema: None,
         };
         let default = json!(85);
-        let result = resolve_binding(&binding, &context, "cap:op=compress", "step_0", Some(&default), false)
-            .unwrap().unwrap();
+        let result = resolve_binding(
+            &binding,
+            &context,
+            "cap:op=compress",
+            "step_0",
+            Some(&default),
+            false,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(result.value, serde_json::to_vec(&json!(85)).unwrap());
         assert_eq!(result.source, ArgumentSource::CapDefault);
     }
@@ -814,7 +899,8 @@ mod tests {
             name: "media:suffix;textable".to_string(),
             schema: None,
         };
-        let result = resolve_binding(&binding, &context, "cap:op=rename", "step_0", None, false).unwrap();
+        let result =
+            resolve_binding(&binding, &context, "cap:op=rename", "step_0", None, false).unwrap();
         assert!(result.is_none());
     }
 
@@ -843,8 +929,14 @@ mod tests {
         let files = vec![];
         let prev_outputs = HashMap::new();
         let mut slot_values: HashMap<String, Vec<u8>> = HashMap::new();
-        slot_values.insert(format!("step_0:{}", slot_name), b"Is this a contract?".to_vec());
-        slot_values.insert(format!("step_2:{}", slot_name), b"Is this confidential?".to_vec());
+        slot_values.insert(
+            format!("step_0:{}", slot_name),
+            b"Is this a contract?".to_vec(),
+        );
+        slot_values.insert(
+            format!("step_2:{}", slot_name),
+            b"Is this confidential?".to_vec(),
+        );
 
         let context = ArgumentResolutionContext {
             input_files: &files,
@@ -861,13 +953,15 @@ mod tests {
 
         // step_0 resolves to "Is this a contract?"
         let r0 = resolve_binding(&binding, &context, cap_urn, "step_0", None, true)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(r0.value, b"Is this a contract?");
         assert_eq!(r0.source, ArgumentSource::Slot);
 
         // step_2 resolves to "Is this confidential?"
         let r2 = resolve_binding(&binding, &context, cap_urn, "step_2", None, true)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(r2.value, b"Is this confidential?");
         assert_eq!(r2.source, ArgumentSource::Slot);
 
@@ -903,9 +997,11 @@ mod tests {
 
         // Both steps fall through to cap_settings — same value
         let r0 = resolve_binding(&binding, &context, cap_urn, "step_0", None, false)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         let r1 = resolve_binding(&binding, &context, cap_urn, "step_1", None, false)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(r0.value, b"en");
         assert_eq!(r1.value, b"en");
         assert_eq!(r0.source, ArgumentSource::CapSetting);
@@ -945,13 +1041,15 @@ mod tests {
 
         // step_0: slot_value "fr" (priority 1)
         let r0 = resolve_binding(&binding, &context, cap_urn, "step_0", None, false)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(r0.value, b"fr");
         assert_eq!(r0.source, ArgumentSource::Slot);
 
         // step_1: no slot_value → falls to cap_settings "en" (priority 2)
         let r1 = resolve_binding(&binding, &context, cap_urn, "step_1", None, false)
-            .unwrap().unwrap();
+            .unwrap()
+            .unwrap();
         assert_eq!(r1.value, b"en");
         assert_eq!(r1.source, ArgumentSource::CapSetting);
     }
@@ -962,8 +1060,14 @@ mod tests {
         let files = vec![];
         let prev_outputs = HashMap::new();
         let mut slot_values: HashMap<String, Vec<u8>> = HashMap::new();
-        slot_values.insert("step_3:media:width;textable;numeric".to_string(), b"1024".to_vec());
-        slot_values.insert("step_3:media:quality;textable;numeric".to_string(), b"95".to_vec());
+        slot_values.insert(
+            "step_3:media:width;textable;numeric".to_string(),
+            b"1024".to_vec(),
+        );
+        slot_values.insert(
+            "step_3:media:quality;textable;numeric".to_string(),
+            b"95".to_vec(),
+        );
 
         let context = ArgumentResolutionContext {
             input_files: &files,
@@ -975,20 +1079,37 @@ mod tests {
         };
 
         let mut bindings = ArgumentBindings::new();
-        bindings.add("media:width;textable;numeric".to_string(),
-            ArgumentBinding::Slot { name: "media:width;textable;numeric".to_string(), schema: None });
-        bindings.add("media:quality;textable;numeric".to_string(),
-            ArgumentBinding::Slot { name: "media:quality;textable;numeric".to_string(), schema: None });
+        bindings.add(
+            "media:width;textable;numeric".to_string(),
+            ArgumentBinding::Slot {
+                name: "media:width;textable;numeric".to_string(),
+                schema: None,
+            },
+        );
+        bindings.add(
+            "media:quality;textable;numeric".to_string(),
+            ArgumentBinding::Slot {
+                name: "media:quality;textable;numeric".to_string(),
+                schema: None,
+            },
+        );
 
-        let results = bindings.resolve_all(&context, "cap:op=resize", "step_3", None, None)
+        let results = bindings
+            .resolve_all(&context, "cap:op=resize", "step_3", None, None)
             .unwrap();
         assert_eq!(results.len(), 2);
 
-        let width = results.iter().find(|r| r.name == "media:width;textable;numeric").unwrap();
+        let width = results
+            .iter()
+            .find(|r| r.name == "media:width;textable;numeric")
+            .unwrap();
         assert_eq!(width.value, b"1024");
         assert_eq!(width.source, ArgumentSource::Slot);
 
-        let quality = results.iter().find(|r| r.name == "media:quality;textable;numeric").unwrap();
+        let quality = results
+            .iter()
+            .find(|r| r.name == "media:quality;textable;numeric")
+            .unwrap();
         assert_eq!(quality.value, b"95");
         assert_eq!(quality.source, ArgumentSource::Slot);
     }
@@ -1019,6 +1140,9 @@ mod tests {
 
         // Should NOT find the value because the key format is wrong (cap_urn instead of node_id)
         let result = resolve_binding(&binding, &context, cap_urn, "step_0", None, false).unwrap();
-        assert!(result.is_none(), "Old cap_urn-based key must not match node_id-based lookup");
+        assert!(
+            result.is_none(),
+            "Old cap_urn-based key must not match node_id-based lookup"
+        );
     }
 }

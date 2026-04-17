@@ -73,8 +73,9 @@ mod tests {
         }
     }
 
+    // TEST1228: Value adapters can append a more specific marker when both base URN and value match.
     #[test]
-    fn test_value_adapter_refine_match() {
+    fn test1228_value_adapter_refine_match() {
         let adapter = TestValueAdapter;
         let result = adapter.refine("media:test;textable", "something-special");
         assert_eq!(
@@ -85,15 +86,17 @@ mod tests {
         );
     }
 
+    // TEST1229: Value adapters return no refinement when the base media URN is outside their domain.
     #[test]
-    fn test_value_adapter_refine_no_match_base() {
+    fn test1229_value_adapter_refine_no_match_base() {
         let adapter = TestValueAdapter;
         let result = adapter.refine("media:other;textable", "something-special");
         assert_eq!(result, None);
     }
 
+    // TEST1230: Value adapters return no refinement when the inspected value does not match.
     #[test]
-    fn test_value_adapter_refine_no_match_value() {
+    fn test1230_value_adapter_refine_no_match_value() {
         let adapter = TestValueAdapter;
         let result = adapter.refine("media:test;textable", "ordinary-value");
         assert_eq!(result, None);

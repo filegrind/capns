@@ -8,9 +8,9 @@
 //! and `folder_listings` junction table. The structure is constructed on-demand
 //! when a machine needs collection input.
 
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 use super::argument_binding::{CapInputFile, SourceEntityType};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Media URN for a collection input structure (machine internal)
 const COLLECTION_MEDIA_URN: &str = "media:collection;record;textable";
@@ -84,10 +84,7 @@ impl CapInputCollection {
     fn collect_files_recursive(&self, result: &mut Vec<CapInputFile>) {
         // Add files from this folder
         for file in &self.files {
-            let mut input_file = CapInputFile::new(
-                file.file_path.clone(),
-                file.media_urn.clone(),
-            );
+            let mut input_file = CapInputFile::new(file.file_path.clone(), file.media_urn.clone());
             input_file.source_id = Some(file.listing_id.clone());
             input_file.source_type = Some(SourceEntityType::Listing);
             if let Some(ref bookmark) = file.security_bookmark {
@@ -159,10 +156,8 @@ mod tests {
     // Verifies is_empty() returns true and counts are zero for new collection
     #[test]
     fn test716_empty_collection() {
-        let collection = CapInputCollection::new(
-            "folder-123".to_string(),
-            "Test Folder".to_string(),
-        );
+        let collection =
+            CapInputCollection::new("folder-123".to_string(), "Test Folder".to_string());
         assert!(collection.is_empty());
         assert_eq!(collection.total_file_count(), 0);
         assert_eq!(collection.total_folder_count(), 0);
@@ -172,10 +167,8 @@ mod tests {
     // Verifies total_file_count() returns 2 for collection with 2 files, no folders
     #[test]
     fn test717_collection_with_files() {
-        let mut collection = CapInputCollection::new(
-            "folder-123".to_string(),
-            "Test Folder".to_string(),
-        );
+        let mut collection =
+            CapInputCollection::new("folder-123".to_string(), "Test Folder".to_string());
         collection.files.push(CollectionFile::new(
             "listing-1".to_string(),
             "/path/to/file1.pdf".to_string(),
@@ -196,20 +189,15 @@ mod tests {
     // Verifies total_file_count() includes subfolder files and total_folder_count() counts subfolders
     #[test]
     fn test718_nested_collection() {
-        let mut root = CapInputCollection::new(
-            "folder-root".to_string(),
-            "Root".to_string(),
-        );
+        let mut root = CapInputCollection::new("folder-root".to_string(), "Root".to_string());
         root.files.push(CollectionFile::new(
             "listing-1".to_string(),
             "/path/file1.pdf".to_string(),
             "media:pdf".to_string(),
         ));
 
-        let mut subfolder = CapInputCollection::new(
-            "folder-sub".to_string(),
-            "Subfolder".to_string(),
-        );
+        let mut subfolder =
+            CapInputCollection::new("folder-sub".to_string(), "Subfolder".to_string());
         subfolder.files.push(CollectionFile::new(
             "listing-2".to_string(),
             "/path/sub/file2.pdf".to_string(),
@@ -231,20 +219,15 @@ mod tests {
     // Verifies flatten() extracts files from root and all subfolders into flat list
     #[test]
     fn test719_flatten_to_files() {
-        let mut root = CapInputCollection::new(
-            "folder-root".to_string(),
-            "Root".to_string(),
-        );
+        let mut root = CapInputCollection::new("folder-root".to_string(), "Root".to_string());
         root.files.push(CollectionFile::new(
             "listing-1".to_string(),
             "/path/file1.pdf".to_string(),
             "media:pdf".to_string(),
         ));
 
-        let mut subfolder = CapInputCollection::new(
-            "folder-sub".to_string(),
-            "Subfolder".to_string(),
-        );
+        let mut subfolder =
+            CapInputCollection::new("folder-sub".to_string(), "Subfolder".to_string());
         subfolder.files.push(CollectionFile::new(
             "listing-2".to_string(),
             "/path/sub/file2.pdf".to_string(),
@@ -263,16 +246,15 @@ mod tests {
     // Verifies JSON round-trip preserves folder_id, folder_name, files and file metadata
     #[test]
     fn test933_serialization_roundtrip() {
-        let mut collection = CapInputCollection::new(
-            "folder-123".to_string(),
-            "Test Folder".to_string(),
-        );
+        let mut collection =
+            CapInputCollection::new("folder-123".to_string(), "Test Folder".to_string());
         collection.files.push(
             CollectionFile::new(
                 "listing-1".to_string(),
                 "/path/to/file.pdf".to_string(),
                 "media:pdf".to_string(),
-            ).with_title("My Document".to_string())
+            )
+            .with_title("My Document".to_string()),
         );
 
         let json = collection.to_json();

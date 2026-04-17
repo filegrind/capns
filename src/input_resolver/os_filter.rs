@@ -76,16 +76,7 @@ const EXCLUDED_DIRS: &[&str] = &[
 ];
 
 /// File extensions that indicate temp/backup files
-const EXCLUDED_EXTENSIONS: &[&str] = &[
-    "tmp",
-    "temp",
-    "swp",
-    "swo",
-    "swn",
-    "bak",
-    "backup",
-    "orig",
-];
+const EXCLUDED_EXTENSIONS: &[&str] = &["tmp", "temp", "swp", "swo", "swn", "bak", "backup", "orig"];
 
 /// Check if a path should be excluded from input resolution
 ///

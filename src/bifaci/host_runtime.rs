@@ -26,7 +26,7 @@
 //! - Everything else: forwarded to relay (pass-through)
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::bifaci::io::{handshake, verify_identity, FrameReader, FrameWriter, CborError};
+use crate::bifaci::io::{handshake, verify_identity, CborError, FrameReader, FrameWriter};
 use crate::bifaci::relay_switch::InstalledCartridgeIdentity;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -114,7 +114,9 @@ impl CartridgeProcessHandle {
     /// Request that the host kill a specific cartridge process by PID.
     /// Returns `Err(())` if the host's run loop has exited.
     pub fn kill_cartridge(&self, pid: u32) -> Result<(), ()> {
-        self.command_tx.send(HostCommand::KillCartridge { pid }).map_err(|_| ())
+        self.command_tx
+            .send(HostCommand::KillCartridge { pid })
+            .map_err(|_| ())
     }
 }
 
@@ -363,7 +365,11 @@ impl ManagedCartridge {
         let installed_identity = if sha256.is_empty() {
             None
         } else {
-            Some(InstalledCartridgeIdentity { id, version, sha256 })
+            Some(InstalledCartridgeIdentity {
+                id,
+                version,
+                sha256,
+            })
         };
         Self {
             path: entry_point,
@@ -443,7 +449,11 @@ fn installed_cartridge_identity_from_binary(path: &Path) -> Option<InstalledCart
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let sha256 = format!("{:x}", hasher.finalize());
-    Some(InstalledCartridgeIdentity { id, version, sha256 })
+    Some(InstalledCartridgeIdentity {
+        id,
+        version,
+        sha256,
+    })
 }
 
 // =============================================================================
@@ -527,10 +537,11 @@ impl CartridgeHostRuntime {
     /// After spawn + HELLO, the real caps from the manifest replace them.
     pub fn register_cartridge(&mut self, path: &Path, known_caps: &[String]) {
         let cartridge_idx = self.cartridges.len();
-        self.cartridges.push(ManagedCartridge::new_registered_binary(
-            path.to_path_buf(),
-            known_caps.to_vec(),
-        ));
+        self.cartridges
+            .push(ManagedCartridge::new_registered_binary(
+                path.to_path_buf(),
+                known_caps.to_vec(),
+            ));
         for cap in known_caps {
             self.cap_table.push((cap.clone(), cartridge_idx));
         }
@@ -586,7 +597,9 @@ impl CartridgeHostRuntime {
         // Verify identity — proves the protocol stack works end-to-end
         verify_identity(&mut reader, &mut writer)
             .await
-            .map_err(|e| AsyncHostError::Protocol(format!("Identity verification failed: {}", e)))?;
+            .map_err(|e| {
+                AsyncHostError::Protocol(format!("Identity verification failed: {}", e))
+            })?;
 
         let cartridge_idx = self.cartridges.len();
 
@@ -661,8 +674,14 @@ impl CartridgeHostRuntime {
             }
         });
 
-        let mut event_rx = self.event_rx.take().expect("run() must only be called once");
-        let mut command_rx = self.command_rx.take().expect("run() must only be called once");
+        let mut event_rx = self
+            .event_rx
+            .take()
+            .expect("run() must only be called once");
+        let mut command_rx = self
+            .command_rx
+            .take()
+            .expect("run() must only be called once");
 
         let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
         heartbeat_interval.tick().await; // skip initial tick
@@ -673,7 +692,11 @@ impl CartridgeHostRuntime {
             let notify_payload = RelayNotifyCapabilitiesPayload {
                 caps: serde_json::from_slice(&self.capabilities)
                     .expect("BUG: host runtime capabilities must be valid JSON cap array"),
-                installed_cartridges: self.cartridges.iter().filter_map(|cartridge| cartridge.installed_cartridge_identity()).collect(),
+                installed_cartridges: self
+                    .cartridges
+                    .iter()
+                    .filter_map(|cartridge| cartridge.installed_cartridge_identity())
+                    .collect(),
             };
             let notify_bytes = serde_json::to_vec(&notify_payload)
                 .expect("Failed to serialize RelayNotify capabilities payload");
@@ -770,7 +793,13 @@ impl CartridgeHostRuntime {
         resource_fn: &(impl Fn() -> Vec<u8> + Send),
     ) -> Result<(), AsyncHostError> {
         tracing::debug!(target: "host_runtime", "handle_relay_frame: {:?} xid={:?} rid={:?}", frame.frame_type, frame.routing_id, frame.id);
-        tracing::debug!("[CartridgeHostRuntime] handle_relay_frame: {:?} id={:?} cap={:?} xid={:?}", frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        tracing::debug!(
+            "[CartridgeHostRuntime] handle_relay_frame: {:?} id={:?} cap={:?} xid={:?}",
+            frame.frame_type,
+            frame.id,
+            frame.cap,
+            frame.routing_id
+        );
         match frame.frame_type {
             FrameType::Req => {
                 // PATH C: REQ coming FROM relay
@@ -779,7 +808,8 @@ impl CartridgeHostRuntime {
                     Some(xid) => xid.clone(),
                     None => {
                         return Err(AsyncHostError::Protocol(
-                            "REQ from relay missing XID - all frames from relay must have XID".to_string(),
+                            "REQ from relay missing XID - all frames from relay must have XID"
+                                .to_string(),
                         ));
                     }
                 };
@@ -804,7 +834,9 @@ impl CartridgeHostRuntime {
                             &format!("no cartridge handles cap: {}", cap_urn),
                         );
                         err.routing_id = frame.routing_id.clone(); // Copy XID from incoming request
-                        outbound_tx.send(err).map_err(|_| AsyncHostError::SendError)?;
+                        outbound_tx
+                            .send(err)
+                            .map_err(|_| AsyncHostError::SendError)?;
                         return Ok(());
                     }
                 };
@@ -816,23 +848,27 @@ impl CartridgeHostRuntime {
                 }
 
                 // Record in List 2: INCOMING_RXIDS (XID, RID) → cartridge_idx
-                self.incoming_rxids.insert((xid.clone(), frame.id.clone()), cartridge_idx);
+                self.incoming_rxids
+                    .insert((xid.clone(), frame.id.clone()), cartridge_idx);
 
                 // Forward to cartridge WITH XID
                 self.send_to_cartridge(cartridge_idx, frame)
             }
 
-            FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd
-            | FrameType::End | FrameType::Err => {
+            FrameType::StreamStart
+            | FrameType::Chunk
+            | FrameType::StreamEnd
+            | FrameType::End
+            | FrameType::Err => {
                 // PATH C: Continuation frame from relay
                 // MUST have XID (else FATAL)
                 let xid = match frame.routing_id.as_ref() {
                     Some(xid) => xid.clone(),
                     None => {
-                        return Err(AsyncHostError::Protocol(
-                            format!("{:?} from relay missing XID - all frames from relay must have XID",
-                                frame.frame_type),
-                        ));
+                        return Err(AsyncHostError::Protocol(format!(
+                            "{:?} from relay missing XID - all frames from relay must have XID",
+                            frame.frame_type
+                        )));
                     }
                 };
 
@@ -849,7 +885,9 @@ impl CartridgeHostRuntime {
                 //   1. Frames on a single socket are ordered — END is always last
                 //   2. For non-peer requests, no further relay frames arrive after END
                 let key = (xid.clone(), frame.id.clone());
-                let (cartridge_idx, routed_via_incoming) = if let Some(&idx) = self.incoming_rxids.get(&key) {
+                let (cartridge_idx, routed_via_incoming) = if let Some(&idx) =
+                    self.incoming_rxids.get(&key)
+                {
                     tracing::debug!(target: "host_runtime", "Routing {:?} to cartridge {} via incoming_rxids[({:?}, {:?})]", frame.frame_type, idx, xid, frame.id);
                     (idx, true)
                 } else if let Some(&idx) = self.outgoing_rids.get(&frame.id) {
@@ -860,22 +898,28 @@ impl CartridgeHostRuntime {
                     return Ok(()); // Already cleaned up
                 };
 
-                let is_terminal = frame.frame_type == FrameType::End
-                    || frame.frame_type == FrameType::Err;
+                let is_terminal =
+                    frame.frame_type == FrameType::End || frame.frame_type == FrameType::Err;
 
                 // If the cartridge is dead, send ERR to engine and clean up routing.
-                if self.send_to_cartridge(cartridge_idx, frame.clone()).is_err() {
-                    let flow_key = FlowKey { rid: frame.id.clone(), xid: Some(xid.clone()) };
-                    let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                if self
+                    .send_to_cartridge(cartridge_idx, frame.clone())
+                    .is_err()
+                {
+                    let flow_key = FlowKey {
+                        rid: frame.id.clone(),
+                        xid: Some(xid.clone()),
+                    };
+                    let next_seq = self
+                        .outgoing_max_seq
+                        .remove(&flow_key)
+                        .map(|s| s + 1)
+                        .unwrap_or(0);
                     let death_msg = self.cartridges[cartridge_idx]
                         .last_death_message
                         .as_deref()
                         .unwrap_or("Cartridge exited while processing request");
-                    let mut err = Frame::err(
-                        frame.id.clone(),
-                        "CARTRIDGE_DIED",
-                        death_msg,
-                    );
+                    let mut err = Frame::err(frame.id.clone(), "CARTRIDGE_DIED", death_msg);
                     err.routing_id = frame.routing_id.clone();
                     err.seq = next_seq;
                     let _ = outbound_tx.send(err);
@@ -932,35 +976,47 @@ impl CartridgeHostRuntime {
                     if force_kill {
                         // Force kill: set shutdown reason and kill the process
                         tracing::info!("[CartridgeHostRuntime] Cancel force_kill=true for cartridge {} rid={:?}", cartridge_idx, rid);
-                        self.cartridges[cartridge_idx].shutdown_reason = Some(ShutdownReason::Cancelled);
+                        self.cartridges[cartridge_idx].shutdown_reason =
+                            Some(ShutdownReason::Cancelled);
                         if let Some(ref mut child) = self.cartridges[cartridge_idx].process {
                             let _ = child.kill().await;
                         }
                     } else {
                         // Cooperative cancel: forward Cancel frame to the cartridge
-                        tracing::info!("[CartridgeHostRuntime] Cancel cooperative for cartridge {} rid={:?}", cartridge_idx, rid);
+                        tracing::info!(
+                            "[CartridgeHostRuntime] Cancel cooperative for cartridge {} rid={:?}",
+                            cartridge_idx,
+                            rid
+                        );
                         let _ = self.send_to_cartridge(cartridge_idx, frame);
 
                         // Also cascade: send Cancel to relay for each peer call spawned by this request
                         if let Some(peer_rids) = self.incoming_to_peer_rids.get(&key) {
                             for peer_rid in peer_rids.clone() {
-                                tracing::info!("[CartridgeHostRuntime] Cascading Cancel to peer call rid={:?}", peer_rid);
+                                tracing::info!(
+                                    "[CartridgeHostRuntime] Cascading Cancel to peer call rid={:?}",
+                                    peer_rid
+                                );
                                 let cancel = Frame::cancel(peer_rid, false);
                                 let _ = outbound_tx.send(cancel);
                             }
                         }
                     }
                 } else {
-                    tracing::debug!("[CartridgeHostRuntime] Cancel for unknown request ({:?}, {:?}) — ignoring", xid, rid);
+                    tracing::debug!(
+                        "[CartridgeHostRuntime] Cancel for unknown request ({:?}, {:?}) — ignoring",
+                        xid,
+                        rid
+                    );
                 }
                 Ok(())
             }
-            FrameType::RelayNotify | FrameType::RelayState => Err(AsyncHostError::Protocol(
-                format!(
+            FrameType::RelayNotify | FrameType::RelayState => {
+                Err(AsyncHostError::Protocol(format!(
                     "{:?} reached runtime — relay must intercept these, never forward",
                     frame.frame_type
-                ),
-            )),
+                )))
+            }
         }
     }
 
@@ -1011,12 +1067,12 @@ impl CartridgeHostRuntime {
             }
 
             // Relay frames from a cartridge: fatal protocol error.
-            FrameType::RelayNotify | FrameType::RelayState => Err(AsyncHostError::Protocol(
-                format!(
+            FrameType::RelayNotify | FrameType::RelayState => {
+                Err(AsyncHostError::Protocol(format!(
                     "Cartridge {} sent {:?} — cartridges must never send relay frames",
                     cartridge_idx, frame.frame_type
-                ),
-            )),
+                )))
+            }
 
             // PATH A: REQ from cartridge (peer invoke)
             // MUST have RID, MUST NOT have XID (cartridges never send XID)
@@ -1033,8 +1089,11 @@ impl CartridgeHostRuntime {
                 self.outgoing_rids.insert(frame.id.clone(), cartridge_idx);
 
                 // Track parent→child peer call mapping for cancel cascade
-                if let Some(parent_rid) = frame.meta.as_ref().and_then(|m| m.get("parent_rid")).and_then(|v| {
-                    match v {
+                if let Some(parent_rid) = frame
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("parent_rid"))
+                    .and_then(|v| match v {
                         ciborium::Value::Bytes(bytes) if bytes.len() == 16 => {
                             let mut arr = [0u8; 16];
                             arr.copy_from_slice(bytes);
@@ -1045,14 +1104,19 @@ impl CartridgeHostRuntime {
                             Some(MessageId::Uint(n as u64))
                         }
                         _ => None,
-                    }
-                }) {
+                    })
+                {
                     // Find the parent's incoming_rxids entry to get its (xid, rid) key
-                    let parent_key = self.incoming_rxids.keys()
+                    let parent_key = self
+                        .incoming_rxids
+                        .keys()
                         .find(|(_, rid)| *rid == parent_rid)
                         .cloned();
                     if let Some(pk) = parent_key {
-                        self.incoming_to_peer_rids.entry(pk).or_default().push(frame.id.clone());
+                        self.incoming_to_peer_rids
+                            .entry(pk)
+                            .or_default()
+                            .push(frame.id.clone());
                     }
                 }
 
@@ -1077,8 +1141,8 @@ impl CartridgeHostRuntime {
                 // Track max-seen seq for flow, clean up on terminal
                 if frame.is_flow_frame() {
                     let flow_key = FlowKey::from_frame(&frame);
-                    let is_terminal = frame.frame_type == FrameType::End
-                        || frame.frame_type == FrameType::Err;
+                    let is_terminal =
+                        frame.frame_type == FrameType::End || frame.frame_type == FrameType::Err;
                     if is_terminal {
                         self.outgoing_max_seq.remove(&flow_key);
                     } else {
@@ -1132,10 +1196,9 @@ impl CartridgeHostRuntime {
             if let Some(ref mut stderr) = cartridge.stderr_handle {
                 let mut buf = vec![0u8; 4096];
                 loop {
-                    match tokio::time::timeout(
-                        Duration::from_millis(100),
-                        stderr.read(&mut buf)
-                    ).await {
+                    match tokio::time::timeout(Duration::from_millis(100), stderr.read(&mut buf))
+                        .await
+                    {
                         Ok(Ok(0)) => break,
                         Ok(Ok(n)) => {
                             if let Ok(s) = std::str::from_utf8(&buf[..n]) {
@@ -1194,8 +1257,15 @@ impl CartridgeHostRuntime {
             .iter()
             .filter(|(_, &idx)| idx == cartridge_idx)
             .map(|(rid, _)| {
-                let flow_key = FlowKey { rid: rid.clone(), xid: None };
-                let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                let flow_key = FlowKey {
+                    rid: rid.clone(),
+                    xid: None,
+                };
+                let next_seq = self
+                    .outgoing_max_seq
+                    .remove(&flow_key)
+                    .map(|s| s + 1)
+                    .unwrap_or(0);
                 (rid.clone(), next_seq)
             })
             .collect();
@@ -1210,16 +1280,25 @@ impl CartridgeHostRuntime {
             .iter()
             .filter(|(_, &idx)| idx == cartridge_idx)
             .map(|((xid, rid), _)| {
-                let flow_key = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
-                let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                let flow_key = FlowKey {
+                    rid: rid.clone(),
+                    xid: Some(xid.clone()),
+                };
+                let next_seq = self
+                    .outgoing_max_seq
+                    .remove(&flow_key)
+                    .map(|s| s + 1)
+                    .unwrap_or(0);
                 (xid.clone(), rid.clone(), next_seq)
             })
             .collect();
-        self.incoming_rxids.retain(|(_, _), &mut idx| idx != cartridge_idx);
+        self.incoming_rxids
+            .retain(|(_, _), &mut idx| idx != cartridge_idx);
 
         // Clean up incoming_to_peer_rids for all requests from this cartridge
         for (xid, rid, _) in &failed_incoming {
-            self.incoming_to_peer_rids.remove(&(xid.clone(), rid.clone()));
+            self.incoming_to_peer_rids
+                .remove(&(xid.clone(), rid.clone()));
         }
 
         // Determine error code and message based on shutdown reason.
@@ -1228,27 +1307,59 @@ impl CartridgeHostRuntime {
         let err_info: Option<(&str, String)> = match reason {
             None => {
                 // Unexpected death — genuine crash mid-flight
-                let exit_suffix = if exit_info.is_empty() { String::new() } else { format!(" ({})", exit_info) };
-                let error_message = if stderr_content.is_empty() {
-                    format!("Cartridge {} exited unexpectedly{}.", self.cartridges[cartridge_idx].path.display(), exit_suffix)
+                let exit_suffix = if exit_info.is_empty() {
+                    String::new()
                 } else {
-                    format!("Cartridge {} exited unexpectedly{}. stderr:\n{}", self.cartridges[cartridge_idx].path.display(), exit_suffix, stderr_content)
+                    format!(" ({})", exit_info)
+                };
+                let error_message = if stderr_content.is_empty() {
+                    format!(
+                        "Cartridge {} exited unexpectedly{}.",
+                        self.cartridges[cartridge_idx].path.display(),
+                        exit_suffix
+                    )
+                } else {
+                    format!(
+                        "Cartridge {} exited unexpectedly{}. stderr:\n{}",
+                        self.cartridges[cartridge_idx].path.display(),
+                        exit_suffix,
+                        stderr_content
+                    )
                 };
                 Some(("CARTRIDGE_DIED", error_message))
             }
             Some(ShutdownReason::OomKill) => {
                 // OOM watchdog killed the cartridge — callers must be notified
-                let exit_suffix = if exit_info.is_empty() { String::new() } else { format!(" ({})", exit_info) };
-                let error_message = if stderr_content.is_empty() {
-                    format!("Cartridge {} killed by OOM watchdog{}.", self.cartridges[cartridge_idx].path.display(), exit_suffix)
+                let exit_suffix = if exit_info.is_empty() {
+                    String::new()
                 } else {
-                    format!("Cartridge {} killed by OOM watchdog{}. stderr:\n{}", self.cartridges[cartridge_idx].path.display(), exit_suffix, stderr_content)
+                    format!(" ({})", exit_info)
+                };
+                let error_message = if stderr_content.is_empty() {
+                    format!(
+                        "Cartridge {} killed by OOM watchdog{}.",
+                        self.cartridges[cartridge_idx].path.display(),
+                        exit_suffix
+                    )
+                } else {
+                    format!(
+                        "Cartridge {} killed by OOM watchdog{}. stderr:\n{}",
+                        self.cartridges[cartridge_idx].path.display(),
+                        exit_suffix,
+                        stderr_content
+                    )
                 };
                 Some(("OOM_KILLED", error_message))
             }
             Some(ShutdownReason::Cancelled) => {
                 // Cancel-triggered kill — ERR "CANCELLED" for all pending work
-                Some(("CANCELLED", format!("Cartridge {} killed by cancel request.", self.cartridges[cartridge_idx].path.display())))
+                Some((
+                    "CANCELLED",
+                    format!(
+                        "Cartridge {} killed by cancel request.",
+                        self.cartridges[cartridge_idx].path.display()
+                    ),
+                ))
             }
             Some(ShutdownReason::AppExit) => {
                 // Clean shutdown — no ERR frames, relay is closing
@@ -1260,20 +1371,12 @@ impl CartridgeHostRuntime {
             self.cartridges[cartridge_idx].last_death_message = Some(error_message.clone());
 
             for (rid, next_seq) in &failed_outgoing {
-                let mut err_frame = Frame::err(
-                    rid.clone(),
-                    error_code,
-                    &error_message,
-                );
+                let mut err_frame = Frame::err(rid.clone(), error_code, &error_message);
                 err_frame.seq = *next_seq;
                 let _ = outbound_tx.send(err_frame);
             }
             for (xid, rid, next_seq) in &failed_incoming {
-                let mut err_frame = Frame::err(
-                    rid.clone(),
-                    error_code,
-                    &error_message,
-                );
+                let mut err_frame = Frame::err(rid.clone(), error_code, &error_message);
                 err_frame.routing_id = Some(xid.clone());
                 err_frame.seq = *next_seq;
                 let _ = outbound_tx.send(err_frame);
@@ -1379,7 +1482,14 @@ impl CartridgeHostRuntime {
                 let mut reader = tokio::io::BufReader::new(cartridge_stderr);
                 let mut line = String::new();
                 while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
-                    tracing::debug!("[cartridge:{}] {}", cartridge_path.file_name().unwrap_or_default().to_string_lossy(), line.trim());
+                    tracing::debug!(
+                        "[cartridge:{}] {}",
+                        cartridge_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy(),
+                        line.trim()
+                    );
                     line.clear();
                 }
             });
@@ -1454,7 +1564,9 @@ impl CartridgeHostRuntime {
                     snap.push(CartridgeProcessInfo {
                         cartridge_index: idx,
                         pid,
-                        name: cartridge.path.file_name()
+                        name: cartridge
+                            .path
+                            .file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
                             .into_owned(),
@@ -1542,10 +1654,7 @@ impl CartridgeHostRuntime {
     // =========================================================================
 
     /// Send heartbeat probes to all running cartridges and check for timeouts.
-    fn send_heartbeats_and_check_timeouts(
-        &mut self,
-        outbound_tx: &mpsc::UnboundedSender<Frame>,
-    ) {
+    fn send_heartbeats_and_check_timeouts(&mut self, outbound_tx: &mpsc::UnboundedSender<Frame>) {
         let now = Instant::now();
 
         for cartridge_idx in 0..self.cartridges.len() {
@@ -1585,8 +1694,15 @@ impl CartridgeHostRuntime {
                     .collect();
 
                 for (xid, rid) in &failed_incoming_keys {
-                    let flow_key = FlowKey { rid: rid.clone(), xid: Some(xid.clone()) };
-                    let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                    let flow_key = FlowKey {
+                        rid: rid.clone(),
+                        xid: Some(xid.clone()),
+                    };
+                    let next_seq = self
+                        .outgoing_max_seq
+                        .remove(&flow_key)
+                        .map(|s| s + 1)
+                        .unwrap_or(0);
                     let mut err_frame = Frame::err(
                         rid.clone(),
                         "CARTRIDGE_UNHEALTHY",
@@ -1599,8 +1715,15 @@ impl CartridgeHostRuntime {
                 }
 
                 for rid in &failed_outgoing_rids {
-                    let flow_key = FlowKey { rid: rid.clone(), xid: None };
-                    let next_seq = self.outgoing_max_seq.remove(&flow_key).map(|s| s + 1).unwrap_or(0);
+                    let flow_key = FlowKey {
+                        rid: rid.clone(),
+                        xid: None,
+                    };
+                    let next_seq = self
+                        .outgoing_max_seq
+                        .remove(&flow_key)
+                        .map(|s| s + 1)
+                        .unwrap_or(0);
                     let mut err_frame = Frame::err(
                         rid.clone(),
                         "CARTRIDGE_UNHEALTHY",
@@ -1696,14 +1819,18 @@ impl CartridgeHostRuntime {
         }
 
         // For internal use, store as simple JSON array of URN strings
-        self.capabilities = serde_json::to_vec(&cap_urns)
-            .expect("Failed to serialize capability URNs");
+        self.capabilities =
+            serde_json::to_vec(&cap_urns).expect("Failed to serialize capability URNs");
 
         // Send RelayNotify to relay if in relay mode.
         if let Some(tx) = outbound_tx {
             let notify_payload = RelayNotifyCapabilitiesPayload {
                 caps: cap_urns.clone(),
-                installed_cartridges: self.cartridges.iter().filter_map(|cartridge| cartridge.installed_cartridge_identity()).collect(),
+                installed_cartridges: self
+                    .cartridges
+                    .iter()
+                    .filter_map(|cartridge| cartridge.installed_cartridge_identity())
+                    .collect(),
             };
             let notify_bytes = serde_json::to_vec(&notify_payload)
                 .expect("Failed to serialize RelayNotify capabilities payload");
@@ -1842,9 +1969,9 @@ impl Drop for CartridgeHostRuntime {
 /// {"name": "...", "caps": [{"urn": "cap:in=\"media:void\";op=test;out=\"media:void\"", ...}, ...]}
 /// ```
 fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<crate::Cap>, AsyncHostError> {
-    use crate::CapManifest;
-    use crate::urn::cap_urn::CapUrn;
     use crate::standard::caps::CAP_IDENTITY;
+    use crate::urn::cap_urn::CapUrn;
+    use crate::CapManifest;
 
     // Deserialize directly into CapManifest - fail hard if invalid
     let manifest_obj: CapManifest = serde_json::from_slice(manifest).map_err(|e| {
@@ -1852,13 +1979,17 @@ fn parse_caps_from_manifest(manifest: &[u8]) -> Result<Vec<crate::Cap>, AsyncHos
     })?;
 
     // Verify CAP_IDENTITY is declared — mandatory for every cartridge
-    let identity_urn = CapUrn::from_string(CAP_IDENTITY)
-        .expect("BUG: CAP_IDENTITY constant is invalid");
-    let has_identity = manifest_obj.caps.iter().any(|cap| identity_urn.conforms_to(&cap.urn));
+    let identity_urn =
+        CapUrn::from_string(CAP_IDENTITY).expect("BUG: CAP_IDENTITY constant is invalid");
+    let has_identity = manifest_obj
+        .caps
+        .iter()
+        .any(|cap| identity_urn.conforms_to(&cap.urn));
     if !has_identity {
-        return Err(AsyncHostError::Protocol(
-            format!("Cartridge manifest missing required CAP_IDENTITY ({})", CAP_IDENTITY)
-        ));
+        return Err(AsyncHostError::Protocol(format!(
+            "Cartridge manifest missing required CAP_IDENTITY ({})",
+            CAP_IDENTITY
+        )));
     }
 
     // Return the Cap objects directly
@@ -1883,21 +2014,29 @@ mod tests {
         from_runtime: R,
         to_runtime: W,
         manifest: &[u8],
-    ) -> (crate::bifaci::io::FrameReader<BufReader<R>>,
-          crate::bifaci::io::FrameWriter<BufWriter<W>>)
+    ) -> (
+        crate::bifaci::io::FrameReader<BufReader<R>>,
+        crate::bifaci::io::FrameWriter<BufWriter<W>>,
+    )
     where
         R: tokio::io::AsyncRead + Unpin,
         W: tokio::io::AsyncWrite + Unpin,
     {
-        use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
+        use crate::bifaci::io::{handshake_accept, FrameReader, FrameWriter};
 
         let mut reader = FrameReader::new(BufReader::new(from_runtime));
         let mut writer = FrameWriter::new(BufWriter::new(to_runtime));
-        handshake_accept(&mut reader, &mut writer, manifest).await.unwrap();
+        handshake_accept(&mut reader, &mut writer, manifest)
+            .await
+            .unwrap();
 
         // Handle identity verification REQ
         let req = reader.read().await.unwrap().expect("expected identity REQ");
-        assert_eq!(req.frame_type, FrameType::Req, "first frame after handshake must be REQ");
+        assert_eq!(
+            req.frame_type,
+            FrameType::Req,
+            "first frame after handshake must be REQ"
+        );
 
         // Read request body: STREAM_START → CHUNK(s) → STREAM_END → END
         let mut payload = Vec::new();
@@ -1908,13 +2047,21 @@ mod tests {
                 FrameType::Chunk => payload.extend(f.payload.unwrap_or_default()),
                 FrameType::StreamEnd => {}
                 FrameType::End => break,
-                other => panic!("unexpected frame type during identity verification: {:?}", other),
+                other => panic!(
+                    "unexpected frame type during identity verification: {:?}",
+                    other
+                ),
             }
         }
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string(), None);
+        let ss = Frame::stream_start(
+            req.id.clone(),
+            stream_id.clone(),
+            "media:".to_string(),
+            None,
+        );
         writer.write(&ss).await.unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -1933,15 +2080,24 @@ mod tests {
         // Valid manifest but missing CAP_IDENTITY
         let manifest = r#"{"name":"Test","version":"1.0","description":"Test","caps":[{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
         let result = parse_caps_from_manifest(manifest.as_bytes());
-        assert!(result.is_err(), "Manifest without CAP_IDENTITY must be rejected");
+        assert!(
+            result.is_err(),
+            "Manifest without CAP_IDENTITY must be rejected"
+        );
         let err = result.unwrap_err();
-        assert!(format!("{}", err).contains("CAP_IDENTITY"),
-            "Error must mention CAP_IDENTITY, got: {}", err);
+        assert!(
+            format!("{}", err).contains("CAP_IDENTITY"),
+            "Error must mention CAP_IDENTITY, got: {}",
+            err
+        );
 
         // Valid manifest WITH CAP_IDENTITY must succeed
         let manifest_ok = r#"{"name":"Test","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
         let result_ok = parse_caps_from_manifest(manifest_ok.as_bytes());
-        assert!(result_ok.is_ok(), "Manifest with CAP_IDENTITY must be accepted");
+        assert!(
+            result_ok.is_ok(),
+            "Manifest with CAP_IDENTITY must be accepted"
+        );
         assert_eq!(result_ok.unwrap().len(), 2, "Must parse both caps");
     }
 
@@ -1997,8 +2153,20 @@ mod tests {
     #[test]
     fn test239_cartridge_response_streaming() {
         let chunks = vec![
-            ResponseChunk { payload: b"hello".to_vec(), seq: 0, offset: Some(0), len: Some(11), is_eof: false },
-            ResponseChunk { payload: b" world".to_vec(), seq: 1, offset: Some(5), len: None, is_eof: true },
+            ResponseChunk {
+                payload: b"hello".to_vec(),
+                seq: 0,
+                offset: Some(0),
+                len: Some(11),
+                is_eof: false,
+            },
+            ResponseChunk {
+                payload: b" world".to_vec(),
+                seq: 1,
+                offset: Some(5),
+                len: None,
+                is_eof: true,
+            },
         ];
         let response = CartridgeResponse::Streaming(chunks);
         assert_eq!(response.concatenated(), b"hello world");
@@ -2008,8 +2176,20 @@ mod tests {
     #[test]
     fn test240_cartridge_response_streaming_final_payload() {
         let chunks = vec![
-            ResponseChunk { payload: b"first".to_vec(), seq: 0, offset: None, len: None, is_eof: false },
-            ResponseChunk { payload: b"last".to_vec(), seq: 1, offset: None, len: None, is_eof: true },
+            ResponseChunk {
+                payload: b"first".to_vec(),
+                seq: 0,
+                offset: None,
+                len: None,
+                is_eof: false,
+            },
+            ResponseChunk {
+                payload: b"last".to_vec(),
+                seq: 1,
+                offset: None,
+                len: None,
+                is_eof: true,
+            },
         ];
         let response = CartridgeResponse::Streaming(chunks);
         assert_eq!(response.final_payload(), Some(b"last".as_slice()));
@@ -2029,8 +2209,20 @@ mod tests {
         let chunk1_data = vec![0xAA; 1000];
         let chunk2_data = vec![0xBB; 2000];
         let chunks = vec![
-            ResponseChunk { payload: chunk1_data.clone(), seq: 0, offset: None, len: None, is_eof: false },
-            ResponseChunk { payload: chunk2_data.clone(), seq: 1, offset: None, len: None, is_eof: true },
+            ResponseChunk {
+                payload: chunk1_data.clone(),
+                seq: 0,
+                offset: None,
+                len: None,
+                is_eof: false,
+            },
+            ResponseChunk {
+                payload: chunk2_data.clone(),
+                seq: 1,
+                offset: None,
+                len: None,
+                is_eof: true,
+            },
         ];
         let response = CartridgeResponse::Streaming(chunks);
         let result = response.concatenated();
@@ -2042,15 +2234,27 @@ mod tests {
     // TEST243: Test AsyncHostError variants display correct error messages
     #[test]
     fn test243_async_host_error_display() {
-        let err = AsyncHostError::CartridgeError { code: "NOT_FOUND".to_string(), message: "Cap not found".to_string() };
+        let err = AsyncHostError::CartridgeError {
+            code: "NOT_FOUND".to_string(),
+            message: "Cap not found".to_string(),
+        };
         let msg = format!("{}", err);
         assert!(msg.contains("NOT_FOUND"));
         assert!(msg.contains("Cap not found"));
 
         assert_eq!(format!("{}", AsyncHostError::Closed), "Host is closed");
-        assert_eq!(format!("{}", AsyncHostError::ProcessExited), "Cartridge process exited unexpectedly");
-        assert_eq!(format!("{}", AsyncHostError::SendError), "Send error: channel closed");
-        assert_eq!(format!("{}", AsyncHostError::RecvError), "Receive error: channel closed");
+        assert_eq!(
+            format!("{}", AsyncHostError::ProcessExited),
+            "Cartridge process exited unexpectedly"
+        );
+        assert_eq!(
+            format!("{}", AsyncHostError::SendError),
+            "Send error: channel closed"
+        );
+        assert_eq!(
+            format!("{}", AsyncHostError::RecvError),
+            "Receive error: channel closed"
+        );
     }
 
     // TEST244: Test AsyncHostError::from converts CborError to Cbor variant
@@ -2078,7 +2282,10 @@ mod tests {
     // TEST246: Test AsyncHostError Clone implementation produces equal values
     #[test]
     fn test246_async_host_error_clone() {
-        let err = AsyncHostError::CartridgeError { code: "ERR".to_string(), message: "msg".to_string() };
+        let err = AsyncHostError::CartridgeError {
+            code: "ERR".to_string(),
+            message: "msg".to_string(),
+        };
         let cloned = err.clone();
         assert_eq!(format!("{}", err), format!("{}", cloned));
     }
@@ -2086,7 +2293,13 @@ mod tests {
     // TEST247: Test ResponseChunk Clone produces independent copy with same data
     #[test]
     fn test247_response_chunk_clone() {
-        let chunk = ResponseChunk { payload: b"data".to_vec(), seq: 3, offset: Some(100), len: Some(500), is_eof: true };
+        let chunk = ResponseChunk {
+            payload: b"data".to_vec(),
+            seq: 3,
+            offset: Some(100),
+            len: Some(500),
+            is_eof: true,
+        };
         let cloned = chunk.clone();
         assert_eq!(chunk.payload, cloned.payload);
         assert_eq!(chunk.seq, cloned.seq);
@@ -2099,15 +2312,24 @@ mod tests {
     #[test]
     fn test413_register_cartridge_adds_to_cap_table() {
         let mut runtime = CartridgeHostRuntime::new();
-        runtime.register_cartridge(Path::new("/usr/bin/test-cartridge"), &[
-            "cap:in=\"media:void\";op=convert;out=\"media:void\"".to_string(),
-            "cap:in=\"media:void\";op=analyze;out=\"media:void\"".to_string(),
-        ]);
+        runtime.register_cartridge(
+            Path::new("/usr/bin/test-cartridge"),
+            &[
+                "cap:in=\"media:void\";op=convert;out=\"media:void\"".to_string(),
+                "cap:in=\"media:void\";op=analyze;out=\"media:void\"".to_string(),
+            ],
+        );
 
         assert_eq!(runtime.cap_table.len(), 2);
-        assert_eq!(runtime.cap_table[0].0, "cap:in=\"media:void\";op=convert;out=\"media:void\"");
+        assert_eq!(
+            runtime.cap_table[0].0,
+            "cap:in=\"media:void\";op=convert;out=\"media:void\""
+        );
         assert_eq!(runtime.cap_table[0].1, 0);
-        assert_eq!(runtime.cap_table[1].0, "cap:in=\"media:void\";op=analyze;out=\"media:void\"");
+        assert_eq!(
+            runtime.cap_table[1].0,
+            "cap:in=\"media:void\";op=analyze;out=\"media:void\""
+        );
         assert_eq!(runtime.cap_table[1].1, 0);
         assert_eq!(runtime.cartridges.len(), 1);
         assert!(!runtime.cartridges[0].running);
@@ -2117,13 +2339,21 @@ mod tests {
     #[test]
     fn test414_capabilities_empty_initially() {
         let runtime = CartridgeHostRuntime::new();
-        assert!(runtime.capabilities().is_empty(), "No cartridges registered = empty capabilities");
+        assert!(
+            runtime.capabilities().is_empty(),
+            "No cartridges registered = empty capabilities"
+        );
 
         let mut runtime2 = CartridgeHostRuntime::new();
-        runtime2.register_cartridge(Path::new("/usr/bin/test"), &["cap:in=\"media:void\";op=test;out=\"media:void\"".to_string()]);
+        runtime2.register_cartridge(
+            Path::new("/usr/bin/test"),
+            &["cap:in=\"media:void\";op=test;out=\"media:void\"".to_string()],
+        );
         // Cartridge registered but not running — capabilities still empty
-        assert!(runtime2.capabilities().is_empty(),
-            "Registered but not running cartridge should not appear in capabilities");
+        assert!(
+            runtime2.capabilities().is_empty(),
+            "Registered but not running cartridge should not appear in capabilities"
+        );
     }
 
     // TEST415: REQ for known cap triggers spawn attempt (verified by expected spawn error for non-existent binary)
@@ -2158,7 +2388,12 @@ mod tests {
         let send_handle = tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
             let mut writer = FrameWriter::new(engine_write_half);
-            let mut req = Frame::req(MessageId::new_uuid(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                MessageId::new_uuid(),
+                "cap:in=\"media:void\";op=test;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(MessageId::Uint(1)); // XID from RelaySwitch
             seq.assign(&mut req);
             writer.write(&req).await.unwrap();
@@ -2166,7 +2401,9 @@ mod tests {
         });
 
         // Run the runtime — should attempt to spawn, fail (binary doesn't exist)
-        let result = runtime.run(runtime_read_half, runtime_write_half, || vec![]).await;
+        let result = runtime
+            .run(runtime_read_half, runtime_write_half, || vec![])
+            .await;
 
         // The spawn failure is an Io error for the non-existent binary
         assert!(result.is_err(), "Should fail because binary doesn't exist");
@@ -2196,25 +2433,41 @@ mod tests {
         // Cartridge task does handshake + identity verification
         let manifest_bytes = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            cartridge_handshake_with_identity(cartridge_from_runtime, cartridge_to_runtime, &manifest_bytes).await;
+            cartridge_handshake_with_identity(
+                cartridge_from_runtime,
+                cartridge_to_runtime,
+                &manifest_bytes,
+            )
+            .await;
         });
 
         let mut runtime = CartridgeHostRuntime::new();
-        let idx = runtime.attach_cartridge(cartridge_read, cartridge_write).await.unwrap();
+        let idx = runtime
+            .attach_cartridge(cartridge_read, cartridge_write)
+            .await
+            .unwrap();
 
         assert_eq!(idx, 0);
         assert!(runtime.cartridges[0].running);
         // Verify cartridge has identity cap via semantic comparison (not string comparison)
         let identity_urn = crate::CapUrn::from_string(CAP_IDENTITY).unwrap();
-        assert!(runtime.cartridges[0].caps.iter().any(|c| identity_urn.conforms_to(&c.urn)),
-            "Cartridge must have identity cap");
+        assert!(
+            runtime.cartridges[0]
+                .caps
+                .iter()
+                .any(|c| identity_urn.conforms_to(&c.urn)),
+            "Cartridge must have identity cap"
+        );
         assert!(!runtime.capabilities().is_empty());
 
         // Capabilities JSON must include identity
         let caps: Vec<String> = serde_json::from_slice(runtime.capabilities()).unwrap();
-        assert!(caps.iter().any(|s| crate::CapUrn::from_string(s)
-            .map(|u| identity_urn.conforms_to(&u)).unwrap_or(false)),
-            "Capabilities must include identity cap");
+        assert!(
+            caps.iter().any(|s| crate::CapUrn::from_string(s)
+                .map(|u| identity_urn.conforms_to(&u))
+                .unwrap_or(false)),
+            "Capabilities must include identity cap"
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -2244,15 +2497,25 @@ mod tests {
             // Read one REQ and verify cap
             let frame = r.read().await.unwrap().expect("expected REQ");
             assert_eq!(frame.frame_type, FrameType::Req);
-            assert_eq!(frame.cap.as_deref(), Some("cap:in=\"media:void\";op=convert;out=\"media:void\""), "Cartridge A should receive convert REQ");
+            assert_eq!(
+                frame.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=convert;out=\"media:void\""),
+                "Cartridge A should receive convert REQ"
+            );
             // Send END response
             let stream_id = "s1".to_string();
-            let mut ss = Frame::stream_start(frame.id.clone(), stream_id.clone(), "media:".to_string(), None);
+            let mut ss = Frame::stream_start(
+                frame.id.clone(),
+                stream_id.clone(),
+                "media:".to_string(),
+                None,
+            );
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"converted".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            let mut chunk = Frame::chunk(frame.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
+            let mut chunk =
+                Frame::chunk(frame.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
             seq.assign(&mut chunk);
             w.write(&chunk).await.unwrap();
             let mut se = Frame::stream_end(frame.id.clone(), stream_id, 1);
@@ -2261,7 +2524,10 @@ mod tests {
             let mut end = Frame::end(frame.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: frame.id.clone(), xid: None });
+            seq.remove(&FlowKey {
+                rid: frame.id.clone(),
+                xid: None,
+            });
         });
 
         // Cartridge B task
@@ -2298,11 +2564,17 @@ mod tests {
 
             let xid = MessageId::Uint(1);
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=convert;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=convert;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut stream_start =
+                Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2320,14 +2592,21 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
+            seq.remove(&FlowKey {
+                rid: req_id.clone(),
+                xid: Some(xid.clone()),
+            });
 
             let mut payload = Vec::new();
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -2340,7 +2619,11 @@ mod tests {
 
         // Run runtime
         let runtime_result = runtime.run(rt_read_half, rt_write_half, || vec![]).await;
-        assert!(runtime_result.is_ok(), "Runtime should exit cleanly: {:?}", runtime_result);
+        assert!(
+            runtime_result.is_ok(),
+            "Runtime should exit cleanly: {:?}",
+            runtime_result
+        );
 
         let response_payload = engine_task.await.unwrap();
         assert_eq!(response_payload, b"converted");
@@ -2373,7 +2656,11 @@ mod tests {
             w.write(&hb).await.unwrap();
 
             // Read the heartbeat response
-            let response = r.read().await.unwrap().expect("Expected heartbeat response");
+            let response = r
+                .read()
+                .await
+                .unwrap()
+                .expect("Expected heartbeat response");
             assert_eq!(response.frame_type, FrameType::Heartbeat);
             assert_eq!(response.id, hb_id, "Response must echo the same ID");
 
@@ -2446,7 +2733,9 @@ mod tests {
             // Consume incoming streams until END
             loop {
                 let f = r.read().await.unwrap().expect("Expected frame");
-                if f.frame_type == FrameType::End { break; }
+                if f.frame_type == FrameType::End {
+                    break;
+                }
             }
 
             // Send LOG + response (LOG should be forwarded too)
@@ -2454,12 +2743,24 @@ mod tests {
             seq.assign(&mut log);
             w.write(&log).await.unwrap();
             let sid = "rs".to_string();
-            let mut ss = Frame::stream_start(req_id_for_cartridge.clone(), sid.clone(), "media:".to_string(), None);
+            let mut ss = Frame::stream_start(
+                req_id_for_cartridge.clone(),
+                sid.clone(),
+                "media:".to_string(),
+                None,
+            );
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"result".to_vec();
             let checksum = Frame::compute_checksum(&payload);
-            let mut chunk = Frame::chunk(req_id_for_cartridge.clone(), sid.clone(), 0, payload, 0, checksum);
+            let mut chunk = Frame::chunk(
+                req_id_for_cartridge.clone(),
+                sid.clone(),
+                0,
+                payload,
+                0,
+                checksum,
+            );
             seq.assign(&mut chunk);
             w.write(&chunk).await.unwrap();
             let mut se = Frame::stream_end(req_id_for_cartridge.clone(), sid, 1);
@@ -2468,7 +2769,10 @@ mod tests {
             let mut end = Frame::end(req_id_for_cartridge.clone(), None);
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id_for_cartridge.clone(), xid: None });
+            seq.remove(&FlowKey {
+                rid: req_id_for_cartridge.clone(),
+                xid: None,
+            });
             drop(w);
         });
 
@@ -2493,11 +2797,17 @@ mod tests {
 
             let xid = MessageId::Uint(1);
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut req = Frame::req(req_id_send.clone(), "cap:in=\"media:void\";op=fwd;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id_send.clone(),
+                "cap:in=\"media:void\";op=fwd;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id_send.clone(), sid.clone(), "media:".to_string(), None);
+            let mut stream_start =
+                Frame::stream_start(req_id_send.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2509,7 +2819,10 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id_send.clone(), xid: Some(xid.clone()) });
+            seq.remove(&FlowKey {
+                rid: req_id_send.clone(),
+                xid: Some(xid.clone()),
+            });
 
             let mut types = Vec::new();
             loop {
@@ -2517,7 +2830,9 @@ mod tests {
                     Ok(Some(f)) => {
                         let is_end = f.frame_type == FrameType::End;
                         types.push(f.frame_type);
-                        if is_end { break; }
+                        if is_end {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -2533,10 +2848,23 @@ mod tests {
         let received_types = engine_task.await.unwrap();
 
         // Should see: LOG, STREAM_START, CHUNK, STREAM_END, END
-        assert!(received_types.contains(&FrameType::Log), "LOG should be forwarded. Got: {:?}", received_types);
-        assert!(received_types.contains(&FrameType::StreamStart), "STREAM_START should be forwarded");
-        assert!(received_types.contains(&FrameType::Chunk), "CHUNK should be forwarded");
-        assert!(received_types.contains(&FrameType::End), "END should be forwarded");
+        assert!(
+            received_types.contains(&FrameType::Log),
+            "LOG should be forwarded. Got: {:?}",
+            received_types
+        );
+        assert!(
+            received_types.contains(&FrameType::StreamStart),
+            "STREAM_START should be forwarded"
+        );
+        assert!(
+            received_types.contains(&FrameType::Chunk),
+            "CHUNK should be forwarded"
+        );
+        assert!(
+            received_types.contains(&FrameType::End),
+            "END should be forwarded"
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -2574,20 +2902,35 @@ mod tests {
                 if f.frame_type == FrameType::Chunk {
                     data.extend(f.payload.unwrap_or_default());
                 }
-                if f.frame_type == FrameType::End { break; }
-                assert_eq!(f.id, req.id, "All continuation frames must have same req_id");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+                assert_eq!(
+                    f.id, req.id,
+                    "All continuation frames must have same req_id"
+                );
             }
 
             // Verify we got the full sequence
-            assert!(received_types.contains(&FrameType::StreamStart), "Must receive STREAM_START");
-            assert!(received_types.contains(&FrameType::Chunk), "Must receive CHUNK");
-            assert!(received_types.contains(&FrameType::StreamEnd), "Must receive STREAM_END");
+            assert!(
+                received_types.contains(&FrameType::StreamStart),
+                "Must receive STREAM_START"
+            );
+            assert!(
+                received_types.contains(&FrameType::Chunk),
+                "Must receive CHUNK"
+            );
+            assert!(
+                received_types.contains(&FrameType::StreamEnd),
+                "Must receive STREAM_END"
+            );
             assert!(received_types.contains(&FrameType::End), "Must receive END");
             assert_eq!(data, b"payload-data", "Must receive full payload");
 
             // Send response
             let sid = "rs".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut ss =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"ok".to_vec();
@@ -2601,7 +2944,10 @@ mod tests {
             let mut end = Frame::end(req.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req.id.clone(), xid: None });
+            seq.remove(&FlowKey {
+                rid: req.id.clone(),
+                xid: None,
+            });
             drop(w);
         });
 
@@ -2625,12 +2971,18 @@ mod tests {
 
             let xid = MessageId::Uint(1);
             // Send REQ + stream continuation frames
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=cont;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=cont;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut stream_start =
+                Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -2648,15 +3000,22 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
+            seq.remove(&FlowKey {
+                rid: req_id.clone(),
+                xid: Some(xid.clone()),
+            });
 
             // Read response
             let mut payload = Vec::new();
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -2701,10 +3060,16 @@ mod tests {
         // Before death: caps should include the cartridge's cap
         let expected_urn = CapUrn::from_string("cap:in=\"media:void\";op=die;out=\"media:void\"")
             .expect("Expected URN should parse");
-        let caps_before = std::str::from_utf8(runtime.capabilities()).unwrap().to_string();
+        let caps_before = std::str::from_utf8(runtime.capabilities())
+            .unwrap()
+            .to_string();
         let parsed_before: serde_json::Value = serde_json::from_str(&caps_before).unwrap();
-        let urn_strings: Vec<String> = parsed_before.as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap().to_string()).collect();
+        let urn_strings: Vec<String> = parsed_before
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
 
         // Parse each URN and check if any is comparable to expected (on same chain)
         let found = urn_strings.iter().any(|urn_str| {
@@ -2714,7 +3079,11 @@ mod tests {
                 false
             }
         });
-        assert!(found, "Capabilities should contain cartridge's cap. Expected URN with op=die, got: {:?}", urn_strings);
+        assert!(
+            found,
+            "Capabilities should contain cartridge's cap. Expected URN with op=die, got: {:?}",
+            urn_strings
+        );
 
         // Relay (close immediately to let runtime exit after processing death) - tokio sockets
         let (relay_rt_read, _relay_eng_write) = UnixStream::pair().unwrap();
@@ -2733,12 +3102,18 @@ mod tests {
         let caps_after = runtime.capabilities();
         let caps_str = std::str::from_utf8(caps_after).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(caps_str).unwrap();
-        let urn_strings_after: Vec<String> = parsed.as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap().to_string()).collect();
+        let urn_strings_after: Vec<String> = parsed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
 
         // Should have CAP_IDENTITY + cartridge's known caps (identity + op=die)
-        assert!(urn_strings_after.contains(&CAP_IDENTITY.to_string()),
-            "CAP_IDENTITY must always be present");
+        assert!(
+            urn_strings_after.contains(&CAP_IDENTITY.to_string()),
+            "CAP_IDENTITY must always be present"
+        );
         let found_after = urn_strings_after.iter().any(|urn_str| {
             if let Ok(cap_urn) = CapUrn::from_string(urn_str) {
                 expected_urn.is_comparable(&cap_urn)
@@ -2771,7 +3146,11 @@ mod tests {
             let _req = r.read().await.unwrap().expect("Expected REQ");
             loop {
                 match r.read().await {
-                    Ok(Some(f)) => { if f.frame_type == FrameType::End { break; } }
+                    Ok(Some(f)) => {
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
+                    }
                     _ => break,
                 }
             }
@@ -2799,7 +3178,12 @@ mod tests {
 
             let xid = MessageId::Uint(1);
             // Send REQ (cartridge will die after reading it)
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=die;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=die;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
@@ -2807,7 +3191,10 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
+            seq.remove(&FlowKey {
+                rid: req_id.clone(),
+                xid: Some(xid.clone()),
+            });
 
             // Close relay connection after sending request
             // (in real use, engine would implement timeout for pending requests)
@@ -2815,10 +3202,15 @@ mod tests {
         });
 
         // Runtime should handle cartridge death gracefully and exit when relay disconnects
-        let result = tokio::time::timeout(Duration::from_secs(5),
-            runtime.run(rt_read_half, rt_write_half, || vec![])
-        ).await;
-        assert!(result.is_ok(), "Runtime should exit cleanly when cartridge dies and relay disconnects");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            runtime.run(rt_read_half, rt_write_half, || vec![]),
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "Runtime should exit cleanly when cartridge dies and relay disconnects"
+        );
 
         engine_task.await.unwrap();
 
@@ -2848,10 +3240,19 @@ mod tests {
             let mut seq = SeqAssigner::new();
             let (mut r, mut w) = cartridge_handshake_with_identity(pa_from_rt, pa_to_rt, &ma).await;
             let req = r.read().await.unwrap().expect("Expected REQ");
-            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
-            loop { let f = r.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            assert_eq!(
+                req.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=alpha;out=\"media:void\"")
+            );
+            loop {
+                let f = r.read().await.unwrap().expect("f");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+            }
             let sid = "a".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut ss =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"from-A".to_vec();
@@ -2865,7 +3266,10 @@ mod tests {
             let mut end = Frame::end(req.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req.id.clone(), xid: None });
+            seq.remove(&FlowKey {
+                rid: req.id.clone(),
+                xid: None,
+            });
             drop(w);
         });
 
@@ -2874,10 +3278,19 @@ mod tests {
             let mut seq = SeqAssigner::new();
             let (mut r, mut w) = cartridge_handshake_with_identity(pb_from_rt, pb_to_rt, &mb).await;
             let req = r.read().await.unwrap().expect("Expected REQ");
-            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
-            loop { let f = r.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            assert_eq!(
+                req.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=beta;out=\"media:void\"")
+            );
+            loop {
+                let f = r.read().await.unwrap().expect("f");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+            }
             let sid = "b".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut ss =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
             let payload = b"from-B".to_vec();
@@ -2891,7 +3304,10 @@ mod tests {
             let mut end = Frame::end(req.id.clone(), None);
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req.id.clone(), xid: None });
+            seq.remove(&FlowKey {
+                rid: req.id.clone(),
+                xid: None,
+            });
             drop(w);
         });
 
@@ -2920,7 +3336,12 @@ mod tests {
             let xid_alpha = MessageId::Uint(1);
             let xid_beta = MessageId::Uint(2);
             // Send two requests to different caps
-            let mut req_alpha = Frame::req(alpha_c.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
+            let mut req_alpha = Frame::req(
+                alpha_c.clone(),
+                "cap:in=\"media:void\";op=alpha;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req_alpha.routing_id = Some(xid_alpha.clone());
             seq.assign(&mut req_alpha);
             w.write(&req_alpha).await.unwrap();
@@ -2928,8 +3349,16 @@ mod tests {
             end_alpha.routing_id = Some(xid_alpha.clone());
             seq.assign(&mut end_alpha);
             w.write(&end_alpha).await.unwrap();
-            seq.remove(&FlowKey { rid: alpha_c.clone(), xid: Some(xid_alpha.clone()) });
-            let mut req_beta = Frame::req(beta_c.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
+            seq.remove(&FlowKey {
+                rid: alpha_c.clone(),
+                xid: Some(xid_alpha.clone()),
+            });
+            let mut req_beta = Frame::req(
+                beta_c.clone(),
+                "cap:in=\"media:void\";op=beta;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut req_beta);
             w.write(&req_beta).await.unwrap();
@@ -2937,7 +3366,10 @@ mod tests {
             end_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut end_beta);
             w.write(&end_beta).await.unwrap();
-            seq.remove(&FlowKey { rid: beta_c.clone(), xid: Some(xid_beta.clone()) });
+            seq.remove(&FlowKey {
+                rid: beta_c.clone(),
+                xid: Some(xid_beta.clone()),
+            });
 
             // Collect responses by req_id
             let mut alpha_data = Vec::new();
@@ -2947,10 +3379,18 @@ mod tests {
                 match r.read().await {
                     Ok(Some(f)) => {
                         if f.frame_type == FrameType::Chunk {
-                            if f.id == alpha_c { alpha_data.extend(f.payload.unwrap_or_default()); }
-                            else if f.id == beta_c { beta_data.extend(f.payload.unwrap_or_default()); }
+                            if f.id == alpha_c {
+                                alpha_data.extend(f.payload.unwrap_or_default());
+                            } else if f.id == beta_c {
+                                beta_data.extend(f.payload.unwrap_or_default());
+                            }
                         }
-                        if f.frame_type == FrameType::End { ends += 1; if ends >= 2 { break; } }
+                        if f.frame_type == FrameType::End {
+                            ends += 1;
+                            if ends >= 2 {
+                                break;
+                            }
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -2992,11 +3432,16 @@ mod tests {
             loop {
                 let f = r.read().await.unwrap().expect("frame");
                 match f.frame_type {
-                    FrameType::Req => { pending.push(f.id.clone()); active_requests += 1; }
+                    FrameType::Req => {
+                        pending.push(f.id.clone());
+                        active_requests += 1;
+                    }
                     FrameType::End => {
                         // When we've seen END for both requests, respond to both
                         active_requests -= 1;
-                        if active_requests == 0 && pending.len() == 2 { break; }
+                        if active_requests == 0 && pending.len() == 2 {
+                            break;
+                        }
                     }
                     _ => {}
                 }
@@ -3007,7 +3452,8 @@ mod tests {
                 let data = format!("response-{}", i).into_bytes();
                 let checksum = Frame::compute_checksum(&data);
                 let sid = format!("s{}", i);
-                let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+                let mut ss =
+                    Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
                 seq.assign(&mut ss);
                 w.write(&ss).await.unwrap();
                 let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, data, 0, checksum);
@@ -3019,7 +3465,10 @@ mod tests {
                 let mut end = Frame::end(req_id.clone(), None);
                 seq.assign(&mut end);
                 w.write(&end).await.unwrap();
-                seq.remove(&FlowKey { rid: req_id.clone(), xid: None });
+                seq.remove(&FlowKey {
+                    rid: req_id.clone(),
+                    xid: None,
+                });
             }
             drop(w);
         });
@@ -3048,7 +3497,12 @@ mod tests {
             // Send two REQs concurrently (same cap)
             let xid_0 = MessageId::Uint(1);
             let xid_1 = MessageId::Uint(2);
-            let mut req_0 = Frame::req(r0.clone(), "cap:in=\"media:void\";op=conc;out=\"media:void\"", vec![], "text/plain");
+            let mut req_0 = Frame::req(
+                r0.clone(),
+                "cap:in=\"media:void\";op=conc;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req_0.routing_id = Some(xid_0.clone());
             seq.assign(&mut req_0);
             w.write(&req_0).await.unwrap();
@@ -3056,8 +3510,16 @@ mod tests {
             end_0.routing_id = Some(xid_0.clone());
             seq.assign(&mut end_0);
             w.write(&end_0).await.unwrap();
-            seq.remove(&FlowKey { rid: r0.clone(), xid: Some(xid_0.clone()) });
-            let mut req_1 = Frame::req(r1.clone(), "cap:in=\"media:void\";op=conc;out=\"media:void\"", vec![], "text/plain");
+            seq.remove(&FlowKey {
+                rid: r0.clone(),
+                xid: Some(xid_0.clone()),
+            });
+            let mut req_1 = Frame::req(
+                r1.clone(),
+                "cap:in=\"media:void\";op=conc;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req_1.routing_id = Some(xid_1.clone());
             seq.assign(&mut req_1);
             w.write(&req_1).await.unwrap();
@@ -3065,7 +3527,10 @@ mod tests {
             end_1.routing_id = Some(xid_1.clone());
             seq.assign(&mut end_1);
             w.write(&end_1).await.unwrap();
-            seq.remove(&FlowKey { rid: r1.clone(), xid: Some(xid_1.clone()) });
+            seq.remove(&FlowKey {
+                rid: r1.clone(),
+                xid: Some(xid_1.clone()),
+            });
 
             // Collect responses by req_id
             let mut data_0 = Vec::new();
@@ -3075,10 +3540,18 @@ mod tests {
                 match r.read().await {
                     Ok(Some(f)) => {
                         if f.frame_type == FrameType::Chunk {
-                            if f.id == r0 { data_0.extend(f.payload.unwrap_or_default()); }
-                            else if f.id == r1 { data_1.extend(f.payload.unwrap_or_default()); }
+                            if f.id == r0 {
+                                data_0.extend(f.payload.unwrap_or_default());
+                            } else if f.id == r1 {
+                                data_1.extend(f.payload.unwrap_or_default());
+                            }
                         }
-                        if f.frame_type == FrameType::End { ends += 1; if ends >= 2 { break; } }
+                        if f.frame_type == FrameType::End {
+                            ends += 1;
+                            if ends >= 2 {
+                                break;
+                            }
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -3101,9 +3574,16 @@ mod tests {
     #[test]
     fn test425_find_cartridge_for_cap_unknown() {
         let mut runtime = CartridgeHostRuntime::new();
-        runtime.register_cartridge(Path::new("/test"), &["cap:in=\"media:void\";op=known;out=\"media:void\"".to_string()]);
-        assert!(runtime.find_cartridge_for_cap("cap:in=\"media:void\";op=known;out=\"media:void\"").is_some());
-        assert!(runtime.find_cartridge_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\"").is_none());
+        runtime.register_cartridge(
+            Path::new("/test"),
+            &["cap:in=\"media:void\";op=known;out=\"media:void\"".to_string()],
+        );
+        assert!(runtime
+            .find_cartridge_for_cap("cap:in=\"media:void\";op=known;out=\"media:void\"")
+            .is_some());
+        assert!(runtime
+            .find_cartridge_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\"")
+            .is_none());
     }
 
     // =========================================================================
@@ -3130,12 +3610,20 @@ mod tests {
         let mut runtime = CartridgeHostRuntime::new();
         let idx = runtime.attach_cartridge(p_read, p_write).await.unwrap();
         assert_eq!(idx, 0);
-        assert!(runtime.cartridges[0].running, "Cartridge must be running after identity verification");
+        assert!(
+            runtime.cartridges[0].running,
+            "Cartridge must be running after identity verification"
+        );
 
         // Verify both caps are registered (semantic comparison, not string)
         let identity_urn = crate::CapUrn::from_string(CAP_IDENTITY).unwrap();
-        assert!(runtime.cartridges[0].caps.iter().any(|c| identity_urn.conforms_to(&c.urn)),
-            "Must have identity cap");
+        assert!(
+            runtime.cartridges[0]
+                .caps
+                .iter()
+                .any(|c| identity_urn.conforms_to(&c.urn)),
+            "Must have identity cap"
+        );
         assert_eq!(runtime.cartridges[0].caps.len(), 2, "Must have both caps");
 
         cartridge_handle.await.unwrap();
@@ -3155,10 +3643,12 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            use crate::bifaci::io::{FrameReader, FrameWriter, handshake_accept};
+            use crate::bifaci::io::{handshake_accept, FrameReader, FrameWriter};
             let mut reader = FrameReader::new(BufReader::new(p_from_rt));
             let mut writer = FrameWriter::new(BufWriter::new(p_to_rt));
-            handshake_accept(&mut reader, &mut writer, &m).await.unwrap();
+            handshake_accept(&mut reader, &mut writer, &m)
+                .await
+                .unwrap();
 
             // Read identity REQ, respond with ERR (broken identity handler)
             let req = reader.read().await.unwrap().expect("expected identity REQ");
@@ -3169,10 +3659,16 @@ mod tests {
 
         let mut runtime = CartridgeHostRuntime::new();
         let result = runtime.attach_cartridge(p_read, p_write).await;
-        assert!(result.is_err(), "attach_cartridge must fail when identity verification fails");
+        assert!(
+            result.is_err(),
+            "attach_cartridge must fail when identity verification fails"
+        );
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Identity verification failed"),
-            "Error must mention identity verification: {}", err);
+        assert!(
+            err.to_string().contains("Identity verification failed"),
+            "Error must mention identity verification: {}",
+            err
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -3192,7 +3688,10 @@ mod tests {
         // Verify known_caps are in cap_table
         assert_eq!(runtime.cap_table.len(), 2);
         assert_eq!(runtime.cap_table[0].0, "cap:");
-        assert_eq!(runtime.cap_table[1].0, "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\"");
+        assert_eq!(
+            runtime.cap_table[1].0,
+            "cap:in=\"media:pdf\";op=thumbnail;out=\"media:image;png\""
+        );
 
         // Build capabilities (no outbound_tx, so no RelayNotify sent)
         runtime.rebuild_capabilities(None);
@@ -3200,7 +3699,10 @@ mod tests {
         // Verify capabilities include known_caps
         let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
         let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
-        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+        let cap_urns: Vec<&str> = caps
+            .as_array()
+            .unwrap()
+            .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
 
@@ -3231,7 +3733,10 @@ mod tests {
 
         let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
         let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
-        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+        let cap_urns: Vec<&str> = caps
+            .as_array()
+            .unwrap()
+            .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
 
@@ -3260,21 +3765,31 @@ mod tests {
         runtime.update_cap_table();
 
         // Should only have identity cap from the runtime itself, not the broken cartridge
-        let found_broken = runtime.cap_table.iter()
+        let found_broken = runtime
+            .cap_table
+            .iter()
             .any(|(urn, _)| urn.contains("broken"));
-        assert!(!found_broken, "hello_failed cartridge caps should not be in cap_table");
+        assert!(
+            !found_broken,
+            "hello_failed cartridge caps should not be in cap_table"
+        );
 
         // rebuild_capabilities should also exclude hello_failed cartridges
         runtime.rebuild_capabilities(None);
 
         let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
         let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
-        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+        let cap_urns: Vec<&str> = caps
+            .as_array()
+            .unwrap()
+            .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
 
-        assert!(!cap_urns.iter().any(|s| s.contains("broken")),
-            "hello_failed cartridge should not be in capabilities");
+        assert!(
+            !cap_urns.iter().any(|s| s.contains("broken")),
+            "hello_failed cartridge should not be in capabilities"
+        );
     }
 
     // TEST664: Running cartridge uses manifest caps, not known_caps
@@ -3294,7 +3809,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (_r, _w) = cartridge_handshake_with_identity(cartridge_from_rt, cartridge_to_rt, &m).await;
+            let (_r, _w) =
+                cartridge_handshake_with_identity(cartridge_from_rt, cartridge_to_rt, &m).await;
             // Keep alive for test
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         });
@@ -3315,13 +3831,19 @@ mod tests {
         // The running cartridge should use manifest caps, not known_caps
         let caps_json = std::str::from_utf8(runtime.capabilities()).unwrap();
         let caps: serde_json::Value = serde_json::from_str(caps_json).unwrap();
-        let cap_urns: Vec<&str> = caps.as_array().unwrap().iter()
+        let cap_urns: Vec<&str> = caps
+            .as_array()
+            .unwrap()
+            .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
 
         // Should have manifest cap (uppercase), NOT known_cap (extract)
-        assert!(cap_urns.iter().any(|s| s.contains("uppercase")),
-            "Running cartridge should use manifest caps. Got: {:?}", cap_urns);
+        assert!(
+            cap_urns.iter().any(|s| s.contains("uppercase")),
+            "Running cartridge should use manifest caps. Got: {:?}",
+            cap_urns
+        );
 
         // Note: Since we're testing attach_cartridge (not register+spawn), the cartridge is added
         // separately, so we might also see the known_caps from the first registered cartridge
@@ -3347,7 +3869,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (_r, _w) = cartridge_handshake_with_identity(cartridge_from_rt, cartridge_to_rt, &m).await;
+            let (_r, _w) =
+                cartridge_handshake_with_identity(cartridge_from_rt, cartridge_to_rt, &m).await;
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         });
 
@@ -3369,11 +3892,23 @@ mod tests {
         // Cap table should have:
         // - Running cartridge's manifest caps (running-op)
         // - Non-running cartridge's known_caps (not-running-op)
-        let has_running_op = runtime.cap_table.iter().any(|(urn, _)| urn.contains("running-op"));
-        let has_not_running_op = runtime.cap_table.iter().any(|(urn, _)| urn.contains("not-running-op"));
+        let has_running_op = runtime
+            .cap_table
+            .iter()
+            .any(|(urn, _)| urn.contains("running-op"));
+        let has_not_running_op = runtime
+            .cap_table
+            .iter()
+            .any(|(urn, _)| urn.contains("not-running-op"));
 
-        assert!(has_running_op, "Cap table should have running cartridge's manifest caps");
-        assert!(has_not_running_op, "Cap table should have non-running cartridge's known_caps");
+        assert!(
+            has_running_op,
+            "Cap table should have running cartridge's manifest caps"
+        );
+        assert!(
+            has_not_running_op,
+            "Cap table should have non-running cartridge's known_caps"
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -3382,16 +3917,21 @@ mod tests {
     // TEST: CartridgeProcessHandle — snapshot and kill
     // =========================================================================
 
+    // TEST1250: Process snapshots start empty before any cartridges are attached or spawned.
     #[tokio::test]
-    async fn test_process_handle_snapshot_empty_initially() {
+    async fn test1250_process_handle_snapshot_empty_initially() {
         let runtime = CartridgeHostRuntime::new();
         let handle = runtime.process_handle();
         let cartridges = handle.running_cartridges();
-        assert!(cartridges.is_empty(), "Snapshot should be empty before any cartridges are spawned");
+        assert!(
+            cartridges.is_empty(),
+            "Snapshot should be empty before any cartridges are spawned"
+        );
     }
 
+    // TEST1251: Attached cartridges without child PIDs are excluded from process snapshots.
     #[tokio::test]
-    async fn test_process_handle_snapshot_excludes_attached_cartridges() {
+    async fn test1251_process_handle_snapshot_excludes_attached_cartridges() {
         // Attached cartridges are connected via socketpair, not spawned as separate
         // processes — they have no PID and should not appear in the process snapshot.
         let (runtime_sock, cartridge_sock) = UnixStream::pair().unwrap();
@@ -3401,7 +3941,8 @@ mod tests {
         let manifest = r#"{"name":"SnapCartridge","version":"1.0","description":"Snapshot test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=snap;out=\"media:void\"","title":"Test","command":"test","args":[]}]}"#;
 
         let cartridge_handle = tokio::spawn(async move {
-            let (_reader, _writer) = cartridge_handshake_with_identity(p_read, p_write, manifest.as_bytes()).await;
+            let (_reader, _writer) =
+                cartridge_handshake_with_identity(p_read, p_write, manifest.as_bytes()).await;
             tokio::time::sleep(Duration::from_millis(100)).await;
         });
 
@@ -3412,21 +3953,23 @@ mod tests {
 
         // Attached cartridges have process=None → no PID → excluded from snapshot
         let cartridges = handle.running_cartridges();
-        assert!(cartridges.is_empty(), "Attached cartridges have no PID and should not appear in process snapshot");
+        assert!(
+            cartridges.is_empty(),
+            "Attached cartridges have no PID and should not appear in process snapshot"
+        );
 
         cartridge_handle.await.unwrap();
     }
 
+    // TEST1252: Cartridge process handles remain usable after clone-and-send across tasks.
     #[tokio::test]
-    async fn test_process_handle_is_clone_and_send() {
+    async fn test1252_process_handle_is_clone_and_send() {
         let runtime = CartridgeHostRuntime::new();
         let handle = runtime.process_handle();
         let handle2 = handle.clone();
 
         // Verify Send + Sync by moving to another task
-        let join = tokio::spawn(async move {
-            handle2.running_cartridges()
-        });
+        let join = tokio::spawn(async move { handle2.running_cartridges() });
         let result = join.await.unwrap();
         assert!(result.is_empty());
 
@@ -3434,8 +3977,9 @@ mod tests {
         assert!(handle.running_cartridges().is_empty());
     }
 
+    // TEST1253: Killing an unknown PID is accepted as an asynchronous no-op command.
     #[tokio::test]
-    async fn test_process_handle_kill_unknown_pid_is_noop() {
+    async fn test1253_process_handle_kill_unknown_pid_is_noop() {
         let runtime = CartridgeHostRuntime::new();
         let handle = runtime.process_handle();
 
@@ -3443,16 +3987,16 @@ mod tests {
         // but do nothing (the run loop would handle it as a no-op).
         // Since run() hasn't been called, the command sits in the channel.
         let result = handle.kill_cartridge(99999);
-        assert!(result.is_ok(), "kill_cartridge should succeed even if PID is unknown — command is async");
+        assert!(
+            result.is_ok(),
+            "kill_cartridge should succeed even if PID is unknown — command is async"
+        );
     }
 
-    // OOM kill sends ERR frames with OOM_KILLED code for all pending requests.
-    // This is the core fix: prior to this change, ordered_shutdown=true suppressed
-    // ERR frames even when the cartridge was actively processing requests, causing
-    // the conversation view and task system to hang indefinitely.
+    // TEST1254: OOM shutdowns emit OOM_KILLED ERR frames for in-flight requests.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "OOM death detection for attached cartridges not yet implemented"]
-    async fn test_oom_kill_sends_err_with_oom_killed_code() {
+    async fn test1254_oom_kill_sends_err_with_oom_killed_code() {
         let manifest = r#"{"name":"OomCartridge","version":"1.0","description":"OOM test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=oom;out=\"media:void\"","title":"OOM","command":"oom","args":[]}]}"#;
 
         // Cartridge pipe pair
@@ -3470,7 +4014,11 @@ mod tests {
             let _req = r.read().await.unwrap().expect("Expected REQ");
             loop {
                 match r.read().await {
-                    Ok(Some(f)) => { if f.frame_type == FrameType::End { break; } }
+                    Ok(Some(f)) => {
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
+                    }
                     _ => break,
                 }
             }
@@ -3506,7 +4054,12 @@ mod tests {
 
             let xid = MessageId::Uint(1);
             // Send REQ
-            let mut req = Frame::req(req_id_clone.clone(), "cap:in=\"media:void\";op=oom;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id_clone.clone(),
+                "cap:in=\"media:void\";op=oom;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
@@ -3514,7 +4067,10 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id_clone.clone(), xid: Some(xid) });
+            seq.remove(&FlowKey {
+                rid: req_id_clone.clone(),
+                xid: Some(xid),
+            });
 
             // Read frames from relay — should get ERR with OOM_KILLED
             let mut got_oom_err = false;
@@ -3541,10 +4097,15 @@ mod tests {
                     }
                     Ok(Ok(None)) => break, // EOF
                     Ok(Err(_)) => break,   // Read error
-                    Err(_) => panic!("Timed out waiting for OOM_KILLED ERR frame — this is the bug we're fixing"),
+                    Err(_) => panic!(
+                        "Timed out waiting for OOM_KILLED ERR frame — this is the bug we're fixing"
+                    ),
                 }
             }
-            assert!(got_oom_err, "Must receive ERR frame with OOM_KILLED code after OOM kill");
+            assert!(
+                got_oom_err,
+                "Must receive ERR frame with OOM_KILLED code after OOM kill"
+            );
 
             drop(w); // Close relay to let runtime exit
         });
@@ -3552,18 +4113,17 @@ mod tests {
         let result = tokio::time::timeout(
             Duration::from_secs(10),
             runtime.run(rt_read_half, rt_write_half, || vec![]),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok(), "Runtime should exit cleanly");
 
         engine_task.await.unwrap();
         cartridge_handle.await.unwrap();
     }
 
-    // AppExit suppresses ERR frames — regression test to ensure clean shutdown
-    // does NOT generate spurious errors. The relay connection closes anyway
-    // during app exit, so ERR frames would be wasteful noise.
+    // TEST1255: App-exit shutdowns suppress ERR frames and close cleanly without noise.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_app_exit_suppresses_err_frames() {
+    async fn test1255_app_exit_suppresses_err_frames() {
         let manifest = r#"{"name":"ExitCartridge","version":"1.0","description":"Exit test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]},{"urn":"cap:in=\"media:void\";op=exit;out=\"media:void\"","title":"Exit","command":"exit","args":[]}]}"#;
 
         // Cartridge pipe pair
@@ -3581,7 +4141,11 @@ mod tests {
             let _req = r.read().await.unwrap().expect("Expected REQ");
             loop {
                 match r.read().await {
-                    Ok(Some(f)) => { if f.frame_type == FrameType::End { break; } }
+                    Ok(Some(f)) => {
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
+                    }
                     _ => break,
                 }
             }
@@ -3612,7 +4176,12 @@ mod tests {
             let mut r = FrameReader::new(eng_read_half);
 
             let xid = MessageId::Uint(1);
-            let mut req = Frame::req(req_id_clone.clone(), "cap:in=\"media:void\";op=exit;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id_clone.clone(),
+                "cap:in=\"media:void\";op=exit;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
@@ -3620,7 +4189,10 @@ mod tests {
             end.routing_id = Some(xid.clone());
             seq.assign(&mut end);
             w.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: req_id_clone.clone(), xid: Some(xid) });
+            seq.remove(&FlowKey {
+                rid: req_id_clone.clone(),
+                xid: Some(xid),
+            });
 
             // Read frames — should NOT get any ERR frame.
             // We expect only RelayNotify (cap table rebuild) and then EOF.
@@ -3648,7 +4220,8 @@ mod tests {
         let result = tokio::time::timeout(
             Duration::from_secs(10),
             runtime.run(rt_read_half, rt_write_half, || vec![]),
-        ).await;
+        )
+        .await;
         assert!(result.is_ok(), "Runtime should exit cleanly");
 
         engine_task.await.unwrap();

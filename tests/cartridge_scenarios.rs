@@ -8,11 +8,8 @@
 //! - Cartridge binaries will be auto-built if missing or outdated
 //! - ML-dependent tests require pre-downloaded models
 
+use capdag::orchestrator::{execute_dag, parse_machine_to_cap_dag, NodeData};
 use capdag::{CapProgressFn, CapRegistry};
-use capdag::orchestrator::{
-    execute_dag, NodeData,
-    parse_machine_to_cap_dag,
-};
 use serial_test::serial;
 use std::collections::HashMap;
 use std::env;
@@ -24,7 +21,10 @@ use tempfile::TempDir;
 /// Write directly to /dev/tty, bypassing cargo test's stderr capture.
 /// Returns None if no TTY is available (e.g., CI).
 fn tty_writer() -> Option<std::fs::File> {
-    std::fs::OpenOptions::new().write(true).open("/dev/tty").ok()
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/tty")
+        .ok()
 }
 
 /// Initialize tracing subscriber that writes to /dev/tty (bypasses cargo capture).
@@ -65,7 +65,11 @@ struct ProgressState {
 
 impl ProgressState {
     fn new() -> Self {
-        Self { caps: Vec::new(), done: false, last_global_pct: 0.0 }
+        Self {
+            caps: Vec::new(),
+            done: false,
+            last_global_pct: 0.0,
+        }
     }
 
     /// Extract a short label from a cap URN (the op= value).
@@ -80,7 +84,11 @@ impl ProgressState {
             let end = after.find(';').unwrap_or(after.len());
             return after[..end].to_string();
         }
-        if cap_urn.len() > 24 { cap_urn[..24].to_string() } else { cap_urn.to_string() }
+        if cap_urn.len() > 24 {
+            cap_urn[..24].to_string()
+        } else {
+            cap_urn.to_string()
+        }
     }
 
     fn update(&mut self, global_pct: f32, cap_urn: &str, msg: &str) {
@@ -88,7 +96,11 @@ impl ProgressState {
 
         if msg == "Completed" {
             // Group finished — mark this cap as done
-            if let Some(entry) = self.caps.iter_mut().find(|c| c.label == label && c.pct < 1.0) {
+            if let Some(entry) = self
+                .caps
+                .iter_mut()
+                .find(|c| c.label == label && c.pct < 1.0)
+            {
                 entry.pct = 1.0;
                 entry.global_end = global_pct;
                 entry.last_msg = "done".to_string();
@@ -107,7 +119,11 @@ impl ProgressState {
         }
 
         // Sub-progress — find or create entry for this cap
-        if let Some(entry) = self.caps.iter_mut().find(|c| c.label == label && c.pct < 1.0) {
+        if let Some(entry) = self
+            .caps
+            .iter_mut()
+            .find(|c| c.label == label && c.pct < 1.0)
+        {
             let range = entry.global_end - entry.global_base;
             if range > 0.0 {
                 entry.pct = ((global_pct - entry.global_base) / range).clamp(0.0, 0.999);
@@ -155,7 +171,11 @@ fn render_progress(f: &mut std::fs::File, state: &ProgressState) {
 
             let elapsed = cap.start.elapsed().as_secs_f64();
             let bar_w: usize = 16;
-            let label = if cap.label.len() > 24 { &cap.label[..24] } else { &cap.label };
+            let label = if cap.label.len() > 24 {
+                &cap.label[..24]
+            } else {
+                &cap.label
+            };
 
             if cap.pct >= 1.0 {
                 let _ = write!(
@@ -167,7 +187,11 @@ fn render_progress(f: &mut std::fs::File, state: &ProgressState) {
                 let pct = cap.pct * 100.0;
                 let filled = (cap.pct * bar_w as f32) as usize;
                 let empty = bar_w.saturating_sub(filled + 1);
-                let m = if cap.last_msg.len() > 36 { &cap.last_msg[..36] } else { &cap.last_msg };
+                let m = if cap.last_msg.len() > 36 {
+                    &cap.last_msg[..36]
+                } else {
+                    &cap.last_msg
+                };
                 let _ = write!(
                     f,
                     "  \x1b[36m{label:<24}\x1b[0m [\x1b[32m{}\x1b[0m▸{}] \x1b[36m{pct:>5.1}%\x1b[0m {elapsed:5.1}s  {m}",
@@ -193,12 +217,12 @@ fn test_progress_fn() -> CapProgressFn {
     // Refresh thread — keeps elapsed timers ticking
     if let Some(mut tty) = tty_writer() {
         let bg_state = Arc::clone(&state);
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                let s = bg_state.lock().unwrap();
-                render_progress(&mut tty, &s);
-                if s.done { break; }
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let s = bg_state.lock().unwrap();
+            render_progress(&mut tty, &s);
+            if s.done {
+                break;
             }
         });
     }
@@ -230,7 +254,8 @@ fn test_progress_fn() -> CapProgressFn {
 /// production uses — no hand-built test doubles.
 static STANDARD_REGISTRY: LazyLock<Arc<CapRegistry>> = LazyLock::new(|| {
     let registry = CapRegistry::new_for_test();
-    let standard_caps = registry.get_standard_caps()
+    let standard_caps = registry
+        .get_standard_caps()
         .expect("Failed to load standard caps from bundled definitions");
     registry.add_caps_to_cache(standard_caps);
     Arc::new(registry)
@@ -270,10 +295,7 @@ fn cartridge_dir(name: &str) -> Option<PathBuf> {
 #[cfg(target_os = "macos")]
 fn has_metal_support(binary_path: &PathBuf) -> bool {
     // Use otool to check if binary links against Metal.framework
-    let output = Command::new("otool")
-        .arg("-L")
-        .arg(binary_path)
-        .output();
+    let output = Command::new("otool").arg("-L").arg(binary_path).output();
 
     match output {
         Ok(out) => {
@@ -296,7 +318,10 @@ fn needs_rebuild(name: &str, binary_path: &PathBuf) -> bool {
     if GPU_CARTRIDGES.contains(&name) {
         if let Some(feature) = gpu_feature_for_platform() {
             if feature == "metal" && !has_metal_support(binary_path) {
-                eprintln!("[CartridgeTest] {} binary missing Metal GPU support, will rebuild", name);
+                eprintln!(
+                    "[CartridgeTest] {} binary missing Metal GPU support, will rebuild",
+                    name
+                );
                 return true;
             }
         }
@@ -405,9 +430,10 @@ fn gpu_feature_for_platform() -> Option<&'static str> {
         // On Linux/Windows, try CUDA if available
         // For now, we don't auto-detect CUDA, so return None
         // Users can set CAPDAG_GPU_FEATURE=cuda to enable
-        std::env::var("CAPDAG_GPU_FEATURE").ok().and_then(|v| {
-            if v == "cuda" { Some("cuda") } else { None }
-        }).or(None)
+        std::env::var("CAPDAG_GPU_FEATURE")
+            .ok()
+            .and_then(|v| if v == "cuda" { Some("cuda") } else { None })
+            .or(None)
     } else {
         None
     }
@@ -415,8 +441,8 @@ fn gpu_feature_for_platform() -> Option<&'static str> {
 
 /// Build a cartridge in release mode with appropriate features
 fn build_cartridge(name: &str) -> Result<(), String> {
-    let cart_dir = cartridge_dir(name)
-        .ok_or_else(|| format!("Cartridge directory not found for {}", name))?;
+    let cart_dir =
+        cartridge_dir(name).ok_or_else(|| format!("Cartridge directory not found for {}", name))?;
 
     // Determine if this cartridge supports GPU and what feature to use
     // Only use the feature if the cartridge actually defines it in Cargo.toml
@@ -431,15 +457,22 @@ fn build_cartridge(name: &str) -> Result<(), String> {
 
     if let Some(feature) = gpu_feature {
         cmd.arg("--features").arg(feature);
-        eprintln!("[CartridgeTest] Building {} in release mode with {} GPU acceleration...", name, feature);
-        eprintln!("[CartridgeTest]   Running: cargo build --release --features {}", feature);
+        eprintln!(
+            "[CartridgeTest] Building {} in release mode with {} GPU acceleration...",
+            name, feature
+        );
+        eprintln!(
+            "[CartridgeTest]   Running: cargo build --release --features {}",
+            feature
+        );
     } else {
         eprintln!("[CartridgeTest] Building {} in release mode...", name);
         eprintln!("[CartridgeTest]   Running: cargo build --release");
     }
     eprintln!("[CartridgeTest]   Directory: {:?}", cart_dir);
 
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to run cargo build for {}: {}", name, e))?;
 
     // Print stdout if any
@@ -459,7 +492,11 @@ fn build_cartridge(name: &str) -> Result<(), String> {
     }
 
     if !output.status.success() {
-        return Err(format!("Failed to build {} (exit code: {:?})", name, output.status.code()));
+        return Err(format!(
+            "Failed to build {} (exit code: {:?})",
+            name,
+            output.status.code()
+        ));
     }
 
     eprintln!("[CartridgeTest] Successfully built {}", name);
@@ -477,7 +514,11 @@ fn find_cartridge_binary(name: &str) -> Option<PathBuf> {
     let release_dir = if name == "testcartridge" {
         manifest_path.join(name).join("target").join("release")
     } else {
-        manifest_path.parent()?.join(name).join("target").join("release")
+        manifest_path
+            .parent()?
+            .join(name)
+            .join("target")
+            .join("release")
     };
 
     if !release_dir.exists() {
@@ -497,13 +538,11 @@ fn find_cartridge_binary(name: &str) -> Option<PathBuf> {
         .map(|e| e.path())
         .filter(|p| {
             p.is_file()
-                && p.file_name()
-                    .and_then(|f| f.to_str())
-                    .map_or(false, |f| {
-                        f.starts_with(&format!("{}-", name))
-                            && !f.ends_with(".d")
-                            && !f.ends_with(".dSYM")
-                    })
+                && p.file_name().and_then(|f| f.to_str()).map_or(false, |f| {
+                    f.starts_with(&format!("{}-", name))
+                        && !f.ends_with(".d")
+                        && !f.ends_with(".dSYM")
+                })
         })
         .collect();
 
@@ -536,8 +575,7 @@ fn ensure_cartridge_binary(name: &str) -> Result<PathBuf, String> {
     }
 
     // Now find the binary (should exist after build)
-    find_cartridge_binary(name)
-        .ok_or_else(|| format!("{} binary not found after build", name))
+    find_cartridge_binary(name).ok_or_else(|| format!("{} binary not found after build", name))
 }
 
 /// Require specific cartridge binaries. Builds them if missing or outdated.
@@ -762,17 +800,19 @@ async fn load_and_parse_scenario(name: &str) -> (String, capdag::orchestrator::R
 /// Generate a PNG diagram from a resolved graph if mmdc is available.
 /// Writes to scenarios/{name}.png alongside the .machine file.
 fn generate_diagram(name: &str, graph: &capdag::orchestrator::ResolvedGraph) {
-    static MMDC_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
-        Command::new("mmdc").arg("--version").output().is_ok()
-    });
+    static MMDC_AVAILABLE: LazyLock<bool> =
+        LazyLock::new(|| Command::new("mmdc").arg("--version").output().is_ok());
 
     if !*MMDC_AVAILABLE {
         return;
     }
 
     let mermaid = graph.to_mermaid();
-	let rendered_dir = scenarios_dir().join("rendered");
-	Command::new("mkdir").args(["-p", rendered_dir.to_str().unwrap()]).output().ok();
+    let rendered_dir = scenarios_dir().join("rendered");
+    Command::new("mkdir")
+        .args(["-p", rendered_dir.to_str().unwrap()])
+        .output()
+        .ok();
     let png_path = rendered_dir.join(format!("{}.png", name));
 
     let mut child = match Command::new("mmdc")
@@ -811,7 +851,8 @@ fn generate_diagram(name: &str, graph: &capdag::orchestrator::ResolvedGraph) {
 // =============================================================================
 
 const MODEL_BERT: &str = "hf:sentence-transformers/all-MiniLM-L6-v2?include=*.json,*.safetensors";
-const MODEL_CLIP: &str = "hf:openai/clip-vit-base-patch32?include=*.json,*.safetensors,pytorch_model.bin";
+const MODEL_CLIP: &str =
+    "hf:openai/clip-vit-base-patch32?include=*.json,*.safetensors,pytorch_model.bin";
 const MODEL_BLIP: &str = "hf:Salesforce/blip-image-captioning-large?include=*.json,*.safetensors";
 const MODEL_WHISPER: &str = "hf:openai/whisper-base?include=*.json,*.safetensors";
 
@@ -847,7 +888,10 @@ async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf)
     std::fs::create_dir_all(&cartridge_dir).expect("cartridge dir");
 
     let mut inputs = HashMap::new();
-    inputs.insert("model_spec".to_string(), NodeData::Text(model_spec.to_string()));
+    inputs.insert(
+        "model_spec".to_string(),
+        NodeData::Text(model_spec.to_string()),
+    );
 
     match execute_dag(
         &graph,
@@ -863,11 +907,18 @@ async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf)
         Ok(outputs) => {
             if let Some((node, NodeData::Bytes(b))) = outputs.iter().next() {
                 let result = String::from_utf8_lossy(b);
-                eprintln!("[PreDownload] {}: {}", node, &result[..result.len().min(200)]);
+                eprintln!(
+                    "[PreDownload] {}: {}",
+                    node,
+                    &result[..result.len().min(200)]
+                );
             }
         }
         Err(e) => {
-            panic!("[PreDownload] Model download failed for '{}': {}", model_spec, e);
+            panic!(
+                "[PreDownload] Model download failed for '{}': {}",
+                model_spec, e
+            );
         }
     }
 }
@@ -884,7 +935,10 @@ fn setup_test_env(dev_binaries: Vec<PathBuf>) -> (TempDir, PathBuf, Vec<PathBuf>
 }
 
 fn extract_bytes(outputs: &HashMap<String, NodeData>, node: &str) -> Vec<u8> {
-    match outputs.get(node).unwrap_or_else(|| panic!("Missing node '{}'", node)) {
+    match outputs
+        .get(node)
+        .unwrap_or_else(|| panic!("Missing node '{}'", node))
+    {
         NodeData::Bytes(b) => b.clone(),
         other => panic!("Expected Bytes at node '{}', got {:?}", node, other),
     }
@@ -911,7 +965,10 @@ async fn test1069_pdf_document_intelligence() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -927,7 +984,10 @@ async fn test1069_pdf_document_intelligence() {
 
     // Verify metadata is JSON with expected keys
     let metadata_text = extract_text(&outputs, "metadata");
-    eprintln!("[TEST014] metadata: {}", &metadata_text[..metadata_text.len().min(200)]);
+    eprintln!(
+        "[TEST014] metadata: {}",
+        &metadata_text[..metadata_text.len().min(200)]
+    );
     assert!(
         metadata_text.contains("page_count") || metadata_text.contains("pages"),
         "Metadata should contain page information"
@@ -935,7 +995,10 @@ async fn test1069_pdf_document_intelligence() {
 
     // Verify outline is JSON
     let outline_text = extract_text(&outputs, "outline");
-    eprintln!("[TEST014] outline: {}", &outline_text[..outline_text.len().min(200)]);
+    eprintln!(
+        "[TEST014] outline: {}",
+        &outline_text[..outline_text.len().min(200)]
+    );
     // Outline might be empty for a blank PDF, but should be valid
     assert!(!outline_text.is_empty(), "Outline should not be empty");
 
@@ -943,7 +1006,8 @@ async fn test1069_pdf_document_intelligence() {
     let thumbnail_bytes = extract_bytes(&outputs, "thumbnail");
     eprintln!("[TEST014] thumbnail: {} bytes", thumbnail_bytes.len());
     assert!(
-        thumbnail_bytes.len() >= 8 && thumbnail_bytes[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        thumbnail_bytes.len() >= 8
+            && thumbnail_bytes[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
         "Thumbnail should be valid PNG (signature check)"
     );
 }
@@ -961,9 +1025,11 @@ async fn test1070_pdf_thumbnail_to_image_embedding() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
     // Pre-download CLIP model needed for image embeddings
-    let modelcartridge_bin = &dev_binaries.iter().find(|p| {
-        p.to_str().map_or(false, |s| s.contains("modelcartridge"))
-    }).expect("modelcartridge binary required").clone();
+    let modelcartridge_bin = &dev_binaries
+        .iter()
+        .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
+        .expect("modelcartridge binary required")
+        .clone();
     ensure_model_downloaded(MODEL_CLIP, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test949_pdf_thumbnail_to_image_embedding").await;
@@ -971,7 +1037,10 @@ async fn test1070_pdf_thumbnail_to_image_embedding() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1010,9 +1079,11 @@ async fn test881_pdf_full_intelligence_pipeline() {
     let dev_binaries = require_binaries(&["pdfcartridge", "candlecartridge", "modelcartridge"]);
 
     // Pre-download CLIP model needed for image embeddings
-    let modelcartridge_bin = &dev_binaries.iter().find(|p| {
-        p.to_str().map_or(false, |s| s.contains("modelcartridge"))
-    }).expect("modelcartridge binary required").clone();
+    let modelcartridge_bin = &dev_binaries
+        .iter()
+        .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
+        .expect("modelcartridge binary required")
+        .clone();
     ensure_model_downloaded(MODEL_CLIP, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test950_pdf_full_intelligence_pipeline").await;
@@ -1021,7 +1092,10 @@ async fn test881_pdf_full_intelligence_pipeline() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1038,7 +1112,10 @@ async fn test881_pdf_full_intelligence_pipeline() {
     // All 4 output nodes should have data
     assert!(outputs.contains_key("metadata"), "Missing metadata output");
     assert!(outputs.contains_key("outline"), "Missing outline output");
-    assert!(outputs.contains_key("thumbnail"), "Missing thumbnail output");
+    assert!(
+        outputs.contains_key("thumbnail"),
+        "Missing thumbnail output"
+    );
     assert!(
         outputs.contains_key("img_embedding"),
         "Missing img_embedding output"
@@ -1128,7 +1205,10 @@ async fn test1072_multi_format_document_processing() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
     inputs.insert(
         "md_input".to_string(),
         NodeData::Bytes(generate_test_markdown()),
@@ -1166,8 +1246,7 @@ async fn test1072_multi_format_document_processing() {
     for node in &["pdf_thumbnail", "md_thumbnail"] {
         let thumb = extract_bytes(&outputs, node);
         assert!(
-            thumb.len() >= 8
-                && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+            thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
             "{} must be valid PNG",
             node
         );
@@ -1190,9 +1269,11 @@ async fn test885_model_plus_dimensions() {
     let dev_binaries = require_binaries(&["modelcartridge", "candlecartridge"]);
 
     // Pre-download BERT model needed for embeddings dimensions
-    let modelcartridge_bin = &dev_binaries.iter().find(|p| {
-        p.to_str().map_or(false, |s| s.contains("modelcartridge"))
-    }).expect("modelcartridge binary required").clone();
+    let modelcartridge_bin = &dev_binaries
+        .iter()
+        .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
+        .expect("modelcartridge binary required")
+        .clone();
     ensure_model_downloaded(MODEL_BERT, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test953_model_plus_dimensions").await;
@@ -1287,9 +1368,11 @@ async fn test883_text_embedding() {
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
     // Pre-download BERT model needed for text embeddings
-    let modelcartridge_bin = &dev_binaries.iter().find(|p| {
-        p.to_str().map_or(false, |s| s.contains("modelcartridge"))
-    }).expect("modelcartridge binary required").clone();
+    let modelcartridge_bin = &dev_binaries
+        .iter()
+        .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
+        .expect("modelcartridge binary required")
+        .clone();
     ensure_model_downloaded(MODEL_BERT, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test955_text_embedding").await;
@@ -1337,9 +1420,11 @@ async fn test882_candle_describe_image() {
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
     // Pre-download BLIP model needed for image description
-    let modelcartridge_bin = &dev_binaries.iter().find(|p| {
-        p.to_str().map_or(false, |s| s.contains("modelcartridge"))
-    }).expect("modelcartridge binary required").clone();
+    let modelcartridge_bin = &dev_binaries
+        .iter()
+        .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
+        .expect("modelcartridge binary required")
+        .clone();
     ensure_model_downloaded(MODEL_BLIP, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test956_candle_describe_image").await;
@@ -1381,9 +1466,11 @@ async fn test1032_audio_transcription() {
     let dev_binaries = require_binaries(&["candlecartridge", "modelcartridge"]);
 
     // Pre-download Whisper model needed for audio transcription
-    let modelcartridge_bin = &dev_binaries.iter().find(|p| {
-        p.to_str().map_or(false, |s| s.contains("modelcartridge"))
-    }).expect("modelcartridge binary required").clone();
+    let modelcartridge_bin = &dev_binaries
+        .iter()
+        .find(|p| p.to_str().map_or(false, |s| s.contains("modelcartridge")))
+        .expect("modelcartridge binary required")
+        .clone();
     ensure_model_downloaded(MODEL_WHISPER, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test957_audio_transcription").await;
@@ -1433,7 +1520,10 @@ async fn test1034_pdf_complete_analysis() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1449,7 +1539,11 @@ async fn test1034_pdf_complete_analysis() {
 
     // All 4 output nodes must exist
     for node in &["metadata", "outline", "thumbnail", "pages"] {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     // Metadata is JSON with page info
@@ -1518,7 +1612,11 @@ async fn test1035_model_full_inspection() {
     .expect("Execution failed");
 
     for node in &["availability", "status", "contents", "path"] {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     // Availability should indicate local presence
@@ -1533,7 +1631,10 @@ async fn test1035_model_full_inspection() {
 
     // Contents should list model files
     let contents = extract_text(&outputs, "contents");
-    eprintln!("[TEST025] contents: {}", &contents[..contents.len().min(300)]);
+    eprintln!(
+        "[TEST025] contents: {}",
+        &contents[..contents.len().min(300)]
+    );
     assert!(!contents.is_empty());
 
     // Path should contain filesystem path
@@ -1560,7 +1661,10 @@ async fn test1037_two_format_full_analysis() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
     inputs.insert(
         "md_input".to_string(),
         NodeData::Bytes(generate_test_markdown()),
@@ -1580,11 +1684,20 @@ async fn test1037_two_format_full_analysis() {
 
     // All 7 output nodes must exist
     let expected_nodes = [
-        "pdf_metadata", "pdf_outline", "pdf_thumbnail", "pdf_pages",
-        "md_metadata", "md_outline", "md_thumbnail",
+        "pdf_metadata",
+        "pdf_outline",
+        "pdf_thumbnail",
+        "pdf_pages",
+        "md_metadata",
+        "md_outline",
+        "md_thumbnail",
     ];
     for node in &expected_nodes {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     // Both thumbnails must be PNG
@@ -1632,7 +1745,10 @@ async fn test1038_model_plus_pdf_combined() {
         "model_spec".to_string(),
         NodeData::Text(MODEL_BERT.to_string()),
     );
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1647,7 +1763,11 @@ async fn test1038_model_plus_pdf_combined() {
     .expect("Execution failed");
 
     for node in &["availability", "status", "metadata", "outline", "thumbnail"] {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     // Model outputs
@@ -1693,7 +1813,10 @@ async fn test1040_three_cartridge_pipeline() {
         "model_spec".to_string(),
         NodeData::Text(MODEL_BERT.to_string()),
     );
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
     inputs.insert(
         "md_input".to_string(),
         NodeData::Bytes(generate_test_markdown()),
@@ -1712,12 +1835,19 @@ async fn test1040_three_cartridge_pipeline() {
     .expect("Execution failed");
 
     let expected = [
-        "availability", "status",
-        "pdf_metadata", "pdf_thumbnail",
-        "md_metadata", "md_thumbnail",
+        "availability",
+        "status",
+        "pdf_metadata",
+        "pdf_thumbnail",
+        "md_metadata",
+        "md_thumbnail",
     ];
     for node in &expected {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     // Both thumbnails are PNG
@@ -1732,7 +1862,11 @@ async fn test1040_three_cartridge_pipeline() {
 
     // All text outputs non-empty
     for node in &["availability", "status", "pdf_metadata", "md_metadata"] {
-        assert!(!extract_text(&outputs, node).is_empty(), "{} must not be empty", node);
+        assert!(
+            !extract_text(&outputs, node).is_empty(),
+            "{} must not be empty",
+            node
+        );
     }
 
     eprintln!(
@@ -1811,7 +1945,10 @@ async fn test1041_txt_document_intelligence() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("txt_input".to_string(), NodeData::Bytes(generate_test_txt()));
+    inputs.insert(
+        "txt_input".to_string(),
+        NodeData::Bytes(generate_test_txt()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1853,7 +1990,10 @@ async fn test1042_rst_document_intelligence() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("rst_input".to_string(), NodeData::Bytes(generate_test_rst()));
+    inputs.insert(
+        "rst_input".to_string(),
+        NodeData::Bytes(generate_test_rst()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1899,7 +2039,10 @@ async fn test1043_log_document_intelligence() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("log_input".to_string(), NodeData::Bytes(generate_test_log()));
+    inputs.insert(
+        "log_input".to_string(),
+        NodeData::Bytes(generate_test_log()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1943,10 +2086,22 @@ async fn test1044_all_text_formats_intelligence() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("txt_input".to_string(), NodeData::Bytes(generate_test_txt()));
-    inputs.insert("rst_input".to_string(), NodeData::Bytes(generate_test_rst()));
-    inputs.insert("log_input".to_string(), NodeData::Bytes(generate_test_log()));
-    inputs.insert("md_input".to_string(), NodeData::Bytes(generate_test_markdown()));
+    inputs.insert(
+        "txt_input".to_string(),
+        NodeData::Bytes(generate_test_txt()),
+    );
+    inputs.insert(
+        "rst_input".to_string(),
+        NodeData::Bytes(generate_test_rst()),
+    );
+    inputs.insert(
+        "log_input".to_string(),
+        NodeData::Bytes(generate_test_log()),
+    );
+    inputs.insert(
+        "md_input".to_string(),
+        NodeData::Bytes(generate_test_markdown()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -1962,17 +2117,32 @@ async fn test1044_all_text_formats_intelligence() {
 
     // 10 output nodes must have data (outline only for md and rst)
     let expected_nodes = [
-        "txt_metadata", "txt_thumbnail",
-        "rst_metadata", "rst_outline", "rst_thumbnail",
-        "log_metadata", "log_thumbnail",
-        "md_metadata", "md_outline", "md_thumbnail",
+        "txt_metadata",
+        "txt_thumbnail",
+        "rst_metadata",
+        "rst_outline",
+        "rst_thumbnail",
+        "log_metadata",
+        "log_thumbnail",
+        "md_metadata",
+        "md_outline",
+        "md_thumbnail",
     ];
     for node in &expected_nodes {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     // All thumbnails must be valid PNG
-    for node in &["txt_thumbnail", "rst_thumbnail", "log_thumbnail", "md_thumbnail"] {
+    for node in &[
+        "txt_thumbnail",
+        "rst_thumbnail",
+        "log_thumbnail",
+        "md_thumbnail",
+    ] {
         let thumb = extract_bytes(&outputs, node);
         assert!(
             thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
@@ -1982,8 +2152,17 @@ async fn test1044_all_text_formats_intelligence() {
     }
 
     // All metadata outputs must be non-empty
-    for node in &["txt_metadata", "rst_metadata", "log_metadata", "md_metadata"] {
-        assert!(!extract_text(&outputs, node).is_empty(), "{} must not be empty", node);
+    for node in &[
+        "txt_metadata",
+        "rst_metadata",
+        "log_metadata",
+        "md_metadata",
+    ] {
+        assert!(
+            !extract_text(&outputs, node).is_empty(),
+            "{} must not be empty",
+            node
+        );
     }
 
     eprintln!("[TEST032] All 10 outputs verified across 4 text formats");
@@ -2073,9 +2252,15 @@ async fn test1048_gguf_embeddings_dimensions() {
     let dim_text = extract_text(&outputs, "dimensions");
     eprintln!("[TEST034] dimensions: {}", dim_text);
     // Should be a positive integer (embedding dim for nomic-embed is 768)
-    let dim: usize = dim_text.trim().parse()
+    let dim: usize = dim_text
+        .trim()
+        .parse()
         .unwrap_or_else(|_| panic!("Dimensions output must be a number, got: {}", dim_text));
-    assert!(dim > 0, "Embedding dimensions must be positive, got: {}", dim);
+    assert!(
+        dim > 0,
+        "Embedding dimensions must be positive, got: {}",
+        dim
+    );
 }
 
 // =============================================================================
@@ -2167,7 +2352,10 @@ async fn test1050_gguf_llm_vocab() {
     .expect("Execution failed");
 
     let vocab = extract_text(&outputs, "vocab");
-    eprintln!("[TEST036] vocab (first 300): {}", &vocab[..vocab.len().min(300)]);
+    eprintln!(
+        "[TEST036] vocab (first 300): {}",
+        &vocab[..vocab.len().min(300)]
+    );
     assert!(!vocab.is_empty(), "Vocab output must not be empty");
     assert!(
         vocab.contains("vocab") || vocab.contains("vocab_size"),
@@ -2216,7 +2404,10 @@ async fn test1051_gguf_model_info_plus_vocab() {
     .await
     .expect("Execution failed");
 
-    assert!(outputs.contains_key("model_info"), "Missing model_info output");
+    assert!(
+        outputs.contains_key("model_info"),
+        "Missing model_info output"
+    );
     assert!(outputs.contains_key("vocab"), "Missing vocab output");
 
     let info = extract_text(&outputs, "model_info");
@@ -2224,7 +2415,10 @@ async fn test1051_gguf_model_info_plus_vocab() {
     assert!(!info.is_empty());
 
     let vocab = extract_text(&outputs, "vocab");
-    eprintln!("[TEST037] vocab (first 200): {}", &vocab[..vocab.len().min(200)]);
+    eprintln!(
+        "[TEST037] vocab (first 200): {}",
+        &vocab[..vocab.len().min(200)]
+    );
     assert!(!vocab.is_empty());
 }
 
@@ -2271,8 +2465,14 @@ async fn test1052_gguf_llm_inference() {
     .expect("Execution failed");
 
     let generation = extract_text(&outputs, "generation");
-    eprintln!("[TEST038] generation: {}", &generation[..generation.len().min(300)]);
-    assert!(!generation.is_empty(), "Generation output must not be empty");
+    eprintln!(
+        "[TEST038] generation: {}",
+        &generation[..generation.len().min(300)]
+    );
+    assert!(
+        !generation.is_empty(),
+        "Generation output must not be empty"
+    );
 }
 
 // =============================================================================
@@ -2318,8 +2518,14 @@ async fn test1053_gguf_llm_inference_constrained() {
     .expect("Execution failed");
 
     let generation = extract_text(&outputs, "generation");
-    eprintln!("[TEST039] constrained generation: {}", &generation[..generation.len().min(300)]);
-    assert!(!generation.is_empty(), "Constrained generation output must not be empty");
+    eprintln!(
+        "[TEST039] constrained generation: {}",
+        &generation[..generation.len().min(300)]
+    );
+    assert!(
+        !generation.is_empty(),
+        "Constrained generation output must not be empty"
+    );
 }
 
 // =============================================================================
@@ -2373,7 +2579,10 @@ async fn test1054_gguf_generate_embeddings() {
         "[TEST040] embedding: {}",
         &embedding[..embedding.len().min(200)]
     );
-    assert!(!embedding.is_empty(), "GGUF embedding output must not be empty");
+    assert!(
+        !embedding.is_empty(),
+        "GGUF embedding output must not be empty"
+    );
     assert!(
         embedding.contains("embeddings") || embedding.contains("embedding"),
         "Output should contain embedding vector data"
@@ -2425,8 +2634,14 @@ async fn test1057_gguf_describe_image() {
     .expect("Execution failed");
 
     let description = extract_text(&outputs, "description");
-    eprintln!("[TEST041] description: {}", &description[..description.len().min(300)]);
-    assert!(!description.is_empty(), "Vision description output must not be empty");
+    eprintln!(
+        "[TEST041] description: {}",
+        &description[..description.len().min(300)]
+    );
+    assert!(
+        !description.is_empty(),
+        "Vision description output must not be empty"
+    );
 }
 
 // =============================================================================
@@ -2438,8 +2653,7 @@ async fn test1057_gguf_describe_image() {
 #[tokio::test]
 #[serial]
 async fn test1058_pdf_thumbnail_to_gguf_vision() {
-    let dev_binaries =
-        require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
+    let dev_binaries = require_binaries(&["pdfcartridge", "ggufcartridge", "modelcartridge"]);
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2453,7 +2667,10 @@ async fn test1058_pdf_thumbnail_to_gguf_vision() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
     inputs.insert(
         "model_spec".to_string(),
         NodeData::Text(MODEL_GGUF_VISION.to_string()),
@@ -2471,7 +2688,10 @@ async fn test1058_pdf_thumbnail_to_gguf_vision() {
     .await
     .expect("Execution failed");
 
-    assert!(outputs.contains_key("thumbnail"), "Missing thumbnail output");
+    assert!(
+        outputs.contains_key("thumbnail"),
+        "Missing thumbnail output"
+    );
     assert!(outputs.contains_key("analysis"), "Missing analysis output");
 
     let thumb = extract_bytes(&outputs, "thumbnail");
@@ -2481,8 +2701,14 @@ async fn test1058_pdf_thumbnail_to_gguf_vision() {
     );
 
     let analysis = extract_text(&outputs, "analysis");
-    eprintln!("[TEST042] analysis: {}", &analysis[..analysis.len().min(300)]);
-    assert!(!analysis.is_empty(), "Vision analysis output must not be empty");
+    eprintln!(
+        "[TEST042] analysis: {}",
+        &analysis[..analysis.len().min(300)]
+    );
+    assert!(
+        !analysis.is_empty(),
+        "Vision analysis output must not be empty"
+    );
 }
 
 // =============================================================================
@@ -2530,9 +2756,18 @@ async fn test1059_gguf_all_llm_ops() {
     .await
     .expect("Execution failed");
 
-    let expected = ["model_info", "vocab", "generation", "constrained_generation"];
+    let expected = [
+        "model_info",
+        "vocab",
+        "generation",
+        "constrained_generation",
+    ];
     for node in &expected {
-        assert!(outputs.contains_key(*node), "Missing output node '{}'", node);
+        assert!(
+            outputs.contains_key(*node),
+            "Missing output node '{}'",
+            node
+        );
     }
 
     let info = extract_text(&outputs, "model_info");
@@ -2540,7 +2775,10 @@ async fn test1059_gguf_all_llm_ops() {
     assert!(!info.is_empty());
 
     let vocab = extract_text(&outputs, "vocab");
-    eprintln!("[TEST043] vocab (first 100): {}", &vocab[..vocab.len().min(100)]);
+    eprintln!(
+        "[TEST043] vocab (first 100): {}",
+        &vocab[..vocab.len().min(100)]
+    );
     assert!(!vocab.is_empty());
 
     let gen = extract_text(&outputs, "generation");
@@ -2598,7 +2836,10 @@ async fn test1060_mlx_generate_text() {
     .expect("Execution failed");
 
     let generated = extract_text(&outputs, "generated_text");
-    eprintln!("[TEST044] generated_text: {}", &generated[..generated.len().min(300)]);
+    eprintln!(
+        "[TEST044] generated_text: {}",
+        &generated[..generated.len().min(300)]
+    );
     assert!(!generated.is_empty(), "Generated text must not be empty");
 }
 
@@ -2639,8 +2880,14 @@ async fn test1061_mlx_describe_image() {
     .expect("Execution failed");
 
     let description = extract_text(&outputs, "description");
-    eprintln!("[TEST045] description: {}", &description[..description.len().min(300)]);
-    assert!(!description.is_empty(), "Image description must not be empty");
+    eprintln!(
+        "[TEST045] description: {}",
+        &description[..description.len().min(300)]
+    );
+    assert!(
+        !description.is_empty(),
+        "Image description must not be empty"
+    );
 }
 
 /// TEST046: MLX generate embeddings
@@ -2680,7 +2927,10 @@ async fn test1062_mlx_generate_embeddings() {
     .expect("Execution failed");
 
     let embedding = extract_text(&outputs, "embedding");
-    eprintln!("[TEST046] embedding (first 200): {}", &embedding[..embedding.len().min(200)]);
+    eprintln!(
+        "[TEST046] embedding (first 200): {}",
+        &embedding[..embedding.len().min(200)]
+    );
     assert!(!embedding.is_empty(), "Embedding must not be empty");
 }
 
@@ -2760,7 +3010,10 @@ async fn test1064_model_download() {
     .expect("Execution failed");
 
     let result = extract_text(&outputs, "download_result");
-    eprintln!("[TEST048] download_result: {}", &result[..result.len().min(300)]);
+    eprintln!(
+        "[TEST048] download_result: {}",
+        &result[..result.len().min(300)]
+    );
     assert!(!result.is_empty(), "Download result must not be empty");
 }
 
@@ -2784,12 +3037,16 @@ async fn test1066_pdf_to_thumbnail_to_describe_to_embed() {
     ensure_model_downloaded(MODEL_BLIP, &modelcartridge_bin).await;
     ensure_model_downloaded(MODEL_BERT, &modelcartridge_bin).await;
 
-    let (_route, graph) = load_and_parse_scenario("test983_pdf_to_thumbnail_to_describe_to_embed").await;
+    let (_route, graph) =
+        load_and_parse_scenario("test983_pdf_to_thumbnail_to_describe_to_embed").await;
     assert_eq!(graph.edges.len(), 3, "3-step chain");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -2809,7 +3066,10 @@ async fn test1066_pdf_to_thumbnail_to_describe_to_embed() {
     assert!(outputs.contains_key("embedding"), "Missing embedding");
 
     let embedding = extract_text(&outputs, "embedding");
-    eprintln!("[TEST049] embedding (first 200): {}", &embedding[..embedding.len().min(200)]);
+    eprintln!(
+        "[TEST049] embedding (first 200): {}",
+        &embedding[..embedding.len().min(200)]
+    );
     assert!(!embedding.is_empty());
 
     eprintln!("[TEST049] 3-step chain complete: PDF → thumbnail → describe → embed");
@@ -2830,13 +3090,17 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
         .clone();
     ensure_model_downloaded(MODEL_GGUF_VISION, &modelcartridge_bin).await;
 
-    let (_route, graph) = load_and_parse_scenario("test984_pdf_thumbnail_to_gguf_describe_fanin").await;
+    let (_route, graph) =
+        load_and_parse_scenario("test984_pdf_thumbnail_to_gguf_describe_fanin").await;
     // 3 edges: pdf→thumbnail, thumbnail→description, model_spec→description
     assert_eq!(graph.edges.len(), 3, "Chain + fan-in pattern");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
     inputs.insert(
         "model_spec".to_string(),
         NodeData::Bytes(MODEL_GGUF_VISION.as_bytes().to_vec()),
@@ -2855,7 +3119,10 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
     .expect("Execution failed");
 
     let description = extract_text(&outputs, "description");
-    eprintln!("[TEST050] description: {}", &description[..description.len().min(300)]);
+    eprintln!(
+        "[TEST050] description: {}",
+        &description[..description.len().min(300)]
+    );
     assert!(!description.is_empty());
 
     eprintln!("[TEST050] Chain + fan-in complete");
@@ -2881,7 +3148,10 @@ async fn test985_audio_transcribe_to_embed() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("audio_input".to_string(), NodeData::Bytes(generate_test_wav()));
+    inputs.insert(
+        "audio_input".to_string(),
+        NodeData::Bytes(generate_test_wav()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -2895,9 +3165,15 @@ async fn test985_audio_transcribe_to_embed() {
     .await
     .expect("Execution failed");
 
-    assert!(outputs.contains_key("transcription"), "Missing transcription");
+    assert!(
+        outputs.contains_key("transcription"),
+        "Missing transcription"
+    );
     let transcription = extract_text(&outputs, "transcription");
-    eprintln!("[TEST051] transcription: {}", &transcription[..transcription.len().min(300)]);
+    eprintln!(
+        "[TEST051] transcription: {}",
+        &transcription[..transcription.len().min(300)]
+    );
 
     eprintln!("[TEST051] Audio transcription complete");
 }
@@ -2922,7 +3198,10 @@ async fn test986_pdf_fanout_with_chain() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -2942,7 +3221,10 @@ async fn test986_pdf_fanout_with_chain() {
     }
 
     let embedding = extract_text(&outputs, "img_embedding");
-    eprintln!("[TEST052] img_embedding (first 200): {}", &embedding[..embedding.len().min(200)]);
+    eprintln!(
+        "[TEST052] img_embedding (first 200): {}",
+        &embedding[..embedding.len().min(200)]
+    );
     assert!(!embedding.is_empty());
 
     eprintln!("[TEST052] Fan-out with chain complete");
@@ -2954,7 +3236,12 @@ async fn test986_pdf_fanout_with_chain() {
 #[tokio::test]
 #[serial]
 async fn test987_multi_format_parallel_chains() {
-    let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge", "candlecartridge", "modelcartridge"]);
+    let dev_binaries = require_binaries(&[
+        "pdfcartridge",
+        "txtcartridge",
+        "candlecartridge",
+        "modelcartridge",
+    ]);
 
     let modelcartridge_bin = dev_binaries
         .iter()
@@ -2968,7 +3255,10 @@ async fn test987_multi_format_parallel_chains() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
     inputs.insert(
         "md_input".to_string(),
         NodeData::Bytes(b"# Test Document\n\nHello, world!".to_vec()),
@@ -2986,7 +3276,12 @@ async fn test987_multi_format_parallel_chains() {
     .await
     .expect("Execution failed");
 
-    let expected = ["pdf_thumbnail", "pdf_img_embed", "md_thumbnail", "md_img_embed"];
+    let expected = [
+        "pdf_thumbnail",
+        "pdf_img_embed",
+        "md_thumbnail",
+        "md_img_embed",
+    ];
     for node in &expected {
         assert!(outputs.contains_key(*node), "Missing output '{}'", node);
     }
@@ -3016,7 +3311,10 @@ async fn test988_deep_chain_with_parallel() {
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -3030,15 +3328,27 @@ async fn test988_deep_chain_with_parallel() {
     .await
     .expect("Execution failed");
 
-    let expected = ["metadata", "thumbnail", "description", "desc_embedding", "img_embedding"];
+    let expected = [
+        "metadata",
+        "thumbnail",
+        "description",
+        "desc_embedding",
+        "img_embedding",
+    ];
     for node in &expected {
         assert!(outputs.contains_key(*node), "Missing output '{}'", node);
     }
 
     let desc_embed = extract_text(&outputs, "desc_embedding");
     let img_embed = extract_text(&outputs, "img_embedding");
-    eprintln!("[TEST054] desc_embedding (first 100): {}", &desc_embed[..desc_embed.len().min(100)]);
-    eprintln!("[TEST054] img_embedding (first 100): {}", &img_embed[..img_embed.len().min(100)]);
+    eprintln!(
+        "[TEST054] desc_embedding (first 100): {}",
+        &desc_embed[..desc_embed.len().min(100)]
+    );
+    eprintln!(
+        "[TEST054] img_embedding (first 100): {}",
+        &img_embed[..img_embed.len().min(100)]
+    );
     assert!(!desc_embed.is_empty() && !img_embed.is_empty());
 
     eprintln!("[TEST054] Deep chain with parallel branches complete");
@@ -3069,7 +3379,10 @@ async fn test989_five_cartridge_chain() {
         "model_spec".to_string(),
         NodeData::Bytes(MODEL_BERT.as_bytes().to_vec()),
     );
-    inputs.insert("pdf_input".to_string(), NodeData::Bytes(generate_test_pdf()));
+    inputs.insert(
+        "pdf_input".to_string(),
+        NodeData::Bytes(generate_test_pdf()),
+    );
 
     let outputs = execute_dag(
         &graph,
@@ -3083,7 +3396,13 @@ async fn test989_five_cartridge_chain() {
     .await
     .expect("Execution failed");
 
-    let expected = ["availability", "status", "thumbnail", "description", "embedding"];
+    let expected = [
+        "availability",
+        "status",
+        "thumbnail",
+        "description",
+        "embedding",
+    ];
     for node in &expected {
         assert!(outputs.contains_key(*node), "Missing output '{}'", node);
     }
@@ -3141,10 +3460,14 @@ async fn test990_all_text_formats_to_image_embeds() {
     .expect("Execution failed");
 
     let expected = [
-        "txt_thumbnail", "txt_img_embed",
-        "md_thumbnail", "md_img_embed",
-        "rst_thumbnail", "rst_img_embed",
-        "log_thumbnail", "log_img_embed",
+        "txt_thumbnail",
+        "txt_img_embed",
+        "md_thumbnail",
+        "md_img_embed",
+        "rst_thumbnail",
+        "rst_img_embed",
+        "log_thumbnail",
+        "log_img_embed",
     ];
     for node in &expected {
         assert!(outputs.contains_key(*node), "Missing output '{}'", node);

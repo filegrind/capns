@@ -116,11 +116,20 @@ impl ResolvedGraph {
             let esc_urn = mermaid_escape(media_urn);
 
             if is_input {
-                out.push_str(&format!("    {}([\"{}<br/><small>{}</small>\"])\n", name, esc_name, esc_urn));
+                out.push_str(&format!(
+                    "    {}([\"{}<br/><small>{}</small>\"])\n",
+                    name, esc_name, esc_urn
+                ));
             } else if is_output {
-                out.push_str(&format!("    {}(((\"{}<br/><small>{}</small>\")))\n", name, esc_name, esc_urn));
+                out.push_str(&format!(
+                    "    {}(((\"{}<br/><small>{}</small>\")))\n",
+                    name, esc_name, esc_urn
+                ));
             } else {
-                out.push_str(&format!("    {}[\"{}<br/><small>{}</small>\"]\n", name, esc_name, esc_urn));
+                out.push_str(&format!(
+                    "    {}[\"{}<br/><small>{}</small>\"]\n",
+                    name, esc_name, esc_urn
+                ));
             }
         }
 
@@ -134,7 +143,10 @@ impl ResolvedGraph {
             }
             let title = mermaid_escape(&edge.cap.title);
             let urn = mermaid_escape(&edge.cap_urn);
-            out.push_str(&format!("    {} -->|\"{}<br/><small>{}</small>\"| {}\n", edge.from, title, urn, edge.to));
+            out.push_str(&format!(
+                "    {} -->|\"{}<br/><small>{}</small>\"| {}\n",
+                edge.from, title, urn, edge.to
+            ));
         }
 
         out
@@ -158,3 +170,80 @@ fn mermaid_escape(s: &str) -> String {
 // itself takes `&CapRegistry` to compute source-to-arg
 // matching. Tests use `CapRegistry::new_for_test()` +
 // `add_caps_to_cache(...)` instead of a hand-built mock.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::urn::cap_urn::CapUrn;
+    use std::collections::HashMap;
+
+    fn make_test_cap(urn: &str, title: &str) -> Cap {
+        Cap::new(
+            CapUrn::from_string(urn).expect("valid cap urn"),
+            title.to_string(),
+            "test-command".to_string(),
+        )
+    }
+
+    #[test]
+    fn test1142_resolved_graph_to_mermaid_renders_shapes_dedupes_edges_and_escapes() {
+        let cap = make_test_cap(
+            r#"cap:in="media:pdf";op=extract;out="media:txt;textable""#,
+            r#"Extract "Title" <One>\path"#,
+        );
+        let second_cap = make_test_cap(
+            r#"cap:in="media:txt;textable";op=embed;out="media:embedding;record""#,
+            "Embed",
+        );
+
+        let graph = ResolvedGraph {
+            nodes: HashMap::from([
+                ("input".to_string(), r#"media:pdf"#.to_string()),
+                ("middle".to_string(), r#"media:txt;textable"#.to_string()),
+                (
+                    "output".to_string(),
+                    r#"media:embedding;record"#.to_string(),
+                ),
+            ]),
+            edges: vec![
+                ResolvedEdge {
+                    from: "input".to_string(),
+                    to: "middle".to_string(),
+                    cap_urn: cap.urn.to_string(),
+                    cap: cap.clone(),
+                    in_media: "media:pdf".to_string(),
+                    out_media: "media:txt;textable".to_string(),
+                },
+                ResolvedEdge {
+                    from: "input".to_string(),
+                    to: "middle".to_string(),
+                    cap_urn: cap.urn.to_string(),
+                    cap,
+                    in_media: "media:pdf".to_string(),
+                    out_media: "media:txt;textable".to_string(),
+                },
+                ResolvedEdge {
+                    from: "middle".to_string(),
+                    to: "output".to_string(),
+                    cap_urn: second_cap.urn.to_string(),
+                    cap: second_cap,
+                    in_media: "media:txt;textable".to_string(),
+                    out_media: "media:embedding;record".to_string(),
+                },
+            ],
+            graph_name: Some("demo".to_string()),
+        };
+
+        let mermaid = graph.to_mermaid();
+
+        assert!(mermaid.starts_with("graph LR\n"));
+        assert!(mermaid.contains(r#"input(["input<br/><small>media:pdf</small>"])"#));
+        assert!(mermaid.contains(r#"middle["middle<br/><small>media:txt;textable</small>"]"#));
+        assert!(
+            mermaid.contains(r#"output((("output<br/><small>media:embedding;record</small>")))"#)
+        );
+        assert!(mermaid.contains(r#"input -->|"Extract #quot;Title#quot; &lt;One&gt;\\path"#));
+        assert!(mermaid.contains(r#"<small>cap:"#));
+        assert_eq!(mermaid.matches("input -->|").count(), 1);
+    }
+}

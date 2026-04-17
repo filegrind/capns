@@ -1,7 +1,7 @@
 //! Core types for InputResolver
 
-use std::path::PathBuf;
 use std::fmt;
+use std::path::PathBuf;
 
 /// A single input specification from the user
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,14 +57,19 @@ pub enum ContentStructure {
 impl ContentStructure {
     /// Returns true if this structure has the `list` marker
     pub fn is_list(&self) -> bool {
-        matches!(self, ContentStructure::ListOpaque | ContentStructure::ListRecord)
+        matches!(
+            self,
+            ContentStructure::ListOpaque | ContentStructure::ListRecord
+        )
     }
 
     /// Returns true if this structure has the `record` marker
     pub fn is_record(&self) -> bool {
-        matches!(self, ContentStructure::ScalarRecord | ContentStructure::ListRecord)
+        matches!(
+            self,
+            ContentStructure::ScalarRecord | ContentStructure::ListRecord
+        )
     }
-
 }
 
 impl fmt::Display for ContentStructure {
@@ -137,17 +142,21 @@ impl ResolvedInputSet {
         // Check if all files share an equivalent media URN via proper URN parsing.
         // Two URNs are "common" if they are equivalent (same tags in any order).
         let first = crate::urn::media_urn::MediaUrn::from_string(&files[0].media_urn)
-            .unwrap_or_else(|e| panic!(
-                "ResolvedInputSet: invalid media URN '{}': {}",
-                files[0].media_urn, e
-            ));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "ResolvedInputSet: invalid media URN '{}': {}",
+                    files[0].media_urn, e
+                )
+            });
 
         for file in files.iter().skip(1) {
             let other = crate::urn::media_urn::MediaUrn::from_string(&file.media_urn)
-                .unwrap_or_else(|e| panic!(
-                    "ResolvedInputSet: invalid media URN '{}': {}",
-                    file.media_urn, e
-                ));
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "ResolvedInputSet: invalid media URN '{}': {}",
+                        file.media_urn, e
+                    )
+                });
             if !first.is_equivalent(&other).unwrap_or(false) {
                 return None;
             }
@@ -182,10 +191,7 @@ pub enum InputResolverError {
     PermissionDenied(PathBuf),
 
     /// Invalid glob pattern
-    InvalidGlob {
-        pattern: String,
-        reason: String,
-    },
+    InvalidGlob { pattern: String, reason: String },
 
     /// IO error during resolution
     IoError {
@@ -194,10 +200,7 @@ pub enum InputResolverError {
     },
 
     /// Content inspection failed
-    InspectionFailed {
-        path: PathBuf,
-        reason: String,
-    },
+    InspectionFailed { path: PathBuf, reason: String },
 
     /// Empty input (no paths provided)
     EmptyInput,
@@ -206,9 +209,7 @@ pub enum InputResolverError {
     NoFilesResolved,
 
     /// Symlink cycle detected
-    SymlinkCycle {
-        path: PathBuf,
-    },
+    SymlinkCycle { path: PathBuf },
 }
 
 impl fmt::Display for InputResolverError {
@@ -227,7 +228,12 @@ impl fmt::Display for InputResolverError {
                 write!(f, "IO error at {}: {}", path.display(), error)
             }
             InputResolverError::InspectionFailed { path, reason } => {
-                write!(f, "Content inspection failed for {}: {}", path.display(), reason)
+                write!(
+                    f,
+                    "Content inspection failed for {}: {}",
+                    path.display(),
+                    reason
+                )
             }
             InputResolverError::EmptyInput => {
                 write!(f, "No input paths provided")
@@ -248,5 +254,97 @@ impl std::error::Error for InputResolverError {
             InputResolverError::IoError { error, .. } => Some(error),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error;
+    use std::io;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test1143_input_item_from_string_distinguishes_glob_directory_and_file() {
+        let dir = tempdir().expect("temp dir");
+        let dir_item = InputItem::from_string(dir.path().to_str().expect("utf8 path"));
+        assert_eq!(dir_item, InputItem::Directory(dir.path().to_path_buf()));
+
+        let file_path = dir.path().join("missing.txt");
+        let file_item = InputItem::from_string(file_path.to_str().expect("utf8 path"));
+        assert_eq!(file_item, InputItem::File(file_path));
+
+        let glob_item = InputItem::from_string("fixtures/**/*.pdf");
+        assert_eq!(glob_item, InputItem::Glob("fixtures/**/*.pdf".to_string()));
+    }
+
+    #[test]
+    fn test1144_content_structure_helpers_and_display() {
+        assert!(!ContentStructure::ScalarOpaque.is_list());
+        assert!(!ContentStructure::ScalarOpaque.is_record());
+        assert_eq!(ContentStructure::ScalarOpaque.to_string(), "scalar/opaque");
+
+        assert!(ContentStructure::ListRecord.is_list());
+        assert!(ContentStructure::ListRecord.is_record());
+        assert_eq!(ContentStructure::ListRecord.to_string(), "list/record");
+    }
+
+    #[test]
+    fn test1145_resolved_input_set_uses_equivalent_media_and_file_count_cardinality() {
+        let single_list_file = ResolvedInputSet::new(vec![ResolvedFile {
+            path: PathBuf::from("/tmp/items.json"),
+            media_urn: "media:application;json;list;record".to_string(),
+            size_bytes: 42,
+            content_structure: ContentStructure::ListRecord,
+        }]);
+        assert!(!single_list_file.is_sequence);
+        assert!(single_list_file.is_homogeneous());
+        assert_eq!(
+            single_list_file.common_media.as_deref(),
+            Some("media:application;json;list;record")
+        );
+
+        let equivalent_ordering = ResolvedInputSet::new(vec![
+            ResolvedFile {
+                path: PathBuf::from("/tmp/a.json"),
+                media_urn: "media:application;json;record;textable".to_string(),
+                size_bytes: 10,
+                content_structure: ContentStructure::ScalarRecord,
+            },
+            ResolvedFile {
+                path: PathBuf::from("/tmp/b.json"),
+                media_urn: "media:application;record;textable;json".to_string(),
+                size_bytes: 11,
+                content_structure: ContentStructure::ScalarRecord,
+            },
+        ]);
+        assert!(equivalent_ordering.is_sequence);
+        assert!(equivalent_ordering.is_homogeneous());
+        assert_eq!(
+            equivalent_ordering.common_media.as_deref(),
+            Some("media:application;json;record;textable")
+        );
+    }
+
+    #[test]
+    fn test1146_input_resolver_error_display_and_source() {
+        let io_error = InputResolverError::IoError {
+            path: PathBuf::from("/tmp/data.bin"),
+            error: io::Error::new(io::ErrorKind::PermissionDenied, "no access"),
+        };
+        assert!(io_error
+            .to_string()
+            .contains("IO error at /tmp/data.bin: no access"));
+        assert!(io_error.source().is_some());
+
+        let invalid_glob = InputResolverError::InvalidGlob {
+            pattern: "[".to_string(),
+            reason: "unclosed character class".to_string(),
+        };
+        assert_eq!(
+            invalid_glob.to_string(),
+            "Invalid glob pattern '[': unclosed character class"
+        );
+        assert!(invalid_glob.source().is_none());
     }
 }

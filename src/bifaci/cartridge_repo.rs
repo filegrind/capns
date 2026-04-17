@@ -8,9 +8,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::{Duration, Instant};
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 /// Cartridge repository errors
 #[derive(Debug, Error)]
@@ -29,7 +29,9 @@ pub type Result<T> = std::result::Result<T, CartridgeRepoError>;
 
 /// Deserialize a possibly-null string as an empty string.
 /// Handles API responses where string fields may be `null` instead of absent.
-fn null_as_empty_string<'de, D: Deserializer<'de>>(deserializer: D) -> std::result::Result<String, D::Error> {
+fn null_as_empty_string<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<String, D::Error> {
     Option::<String>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
 }
 
@@ -193,13 +195,16 @@ impl CartridgeInfo {
 
     /// Get the build for a specific platform from the latest version.
     pub fn build_for_platform(&self, platform: &str) -> Option<&CartridgeBuild> {
-        self.versions.get(&self.version)
+        self.versions
+            .get(&self.version)
             .and_then(|v| v.builds.iter().find(|b| b.platform == platform))
     }
 
     /// Get all platforms available across all versions.
     pub fn available_platforms(&self) -> Vec<String> {
-        let mut platforms: Vec<String> = self.versions.values()
+        let mut platforms: Vec<String> = self
+            .versions
+            .values()
             .flat_map(|v| v.builds.iter().map(|b| b.platform.clone()))
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
@@ -235,29 +240,31 @@ impl CartridgeRepo {
     async fn fetch_registry(&self, repo_url: &str) -> Result<CartridgeRegistryResponse> {
         if self.offline_flag.load(Ordering::Relaxed) {
             return Err(CartridgeRepoError::NetworkBlocked(format!(
-                "Network access blocked by policy — cannot fetch cartridge registry '{}'", repo_url
+                "Network access blocked by policy — cannot fetch cartridge registry '{}'",
+                repo_url
             )));
         }
-        let response = self.http_client
-            .get(repo_url)
-            .send()
-            .await
-            .map_err(|e| CartridgeRepoError::HttpError(format!("Failed to fetch from {}: {}", repo_url, e)))?;
+        let response = self.http_client.get(repo_url).send().await.map_err(|e| {
+            CartridgeRepoError::HttpError(format!("Failed to fetch from {}: {}", repo_url, e))
+        })?;
 
         if !response.status().is_success() {
             return Err(CartridgeRepoError::StatusError(response.status().as_u16()));
         }
 
-        let registry: CartridgeRegistryResponse = response
-            .json()
-            .await
-            .map_err(|e| CartridgeRepoError::ParseError(format!("Failed to parse from {}: {}", repo_url, e)))?;
+        let registry: CartridgeRegistryResponse = response.json().await.map_err(|e| {
+            CartridgeRepoError::ParseError(format!("Failed to parse from {}: {}", repo_url, e))
+        })?;
 
         Ok(registry)
     }
 
     /// Update cache from a registry response
-    fn update_cache(caches: &mut HashMap<String, CartridgeRepoCache>, repo_url: &str, registry: CartridgeRegistryResponse) {
+    fn update_cache(
+        caches: &mut HashMap<String, CartridgeRepoCache>,
+        repo_url: &str,
+        registry: CartridgeRegistryResponse,
+    ) {
         let mut cartridges: HashMap<String, CartridgeInfo> = HashMap::new();
         let mut cap_to_cartridges: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -272,12 +279,15 @@ impl CartridgeRepo {
             cartridges.insert(cartridge_id, cartridge_info);
         }
 
-        caches.insert(repo_url.to_string(), CartridgeRepoCache {
-            cartridges,
-            cap_to_cartridges,
-            last_updated: Instant::now(),
-            repo_url: repo_url.to_string(),
-        });
+        caches.insert(
+            repo_url.to_string(),
+            CartridgeRepoCache {
+                cartridges,
+                cap_to_cartridges,
+                last_updated: Instant::now(),
+                repo_url: repo_url.to_string(),
+            },
+        );
     }
 
     /// Sync cartridge data from the given repository URLs
@@ -434,7 +444,11 @@ impl CartridgeRepoServer {
     }
 
     /// Validate version data has all required fields
-    fn validate_version_data(id: &str, version: &str, version_data: &CartridgeVersionData) -> Result<()> {
+    fn validate_version_data(
+        id: &str,
+        version: &str,
+        version_data: &CartridgeVersionData,
+    ) -> Result<()> {
         if version_data.builds.is_empty() {
             return Err(CartridgeRepoError::ParseError(format!(
                 "Cartridge {} v{}: no builds",
@@ -479,7 +493,9 @@ impl CartridgeRepoServer {
     }
 
     /// Build changelog map from versions
-    fn build_changelog_map(versions: &HashMap<String, CartridgeVersionData>) -> HashMap<String, Vec<String>> {
+    fn build_changelog_map(
+        versions: &HashMap<String, CartridgeVersionData>,
+    ) -> HashMap<String, Vec<String>> {
         let mut changelog = HashMap::new();
         for (version, data) in versions {
             if !data.changelog.is_empty() {
@@ -495,11 +511,12 @@ impl CartridgeRepoServer {
 
         for (id, entry) in &self.registry.cartridges {
             let latest_version = &entry.latest_version;
-            let version_data = entry.versions.get(latest_version)
-                .ok_or_else(|| CartridgeRepoError::ParseError(format!(
+            let version_data = entry.versions.get(latest_version).ok_or_else(|| {
+                CartridgeRepoError::ParseError(format!(
                     "Cartridge {}: latest version {} not found in versions",
                     id, latest_version
-                )))?;
+                ))
+            })?;
 
             // Validate required fields - fail hard
             Self::validate_version_data(id, latest_version, version_data)?;
@@ -551,27 +568,38 @@ impl CartridgeRepoServer {
         let all = self.transform_to_cartridge_array()?;
         let lower_query = query.to_lowercase();
 
-        Ok(all.into_iter().filter(|p| {
-            p.name.to_lowercase().contains(&lower_query)
-                || p.description.to_lowercase().contains(&lower_query)
-                || p.tags.iter().any(|t| t.to_lowercase().contains(&lower_query))
-                || p.caps.iter().any(|c| {
-                    c.urn.to_lowercase().contains(&lower_query)
-                        || c.title.to_lowercase().contains(&lower_query)
-                })
-        }).collect())
+        Ok(all
+            .into_iter()
+            .filter(|p| {
+                p.name.to_lowercase().contains(&lower_query)
+                    || p.description.to_lowercase().contains(&lower_query)
+                    || p.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&lower_query))
+                    || p.caps.iter().any(|c| {
+                        c.urn.to_lowercase().contains(&lower_query)
+                            || c.title.to_lowercase().contains(&lower_query)
+                    })
+            })
+            .collect())
     }
 
     /// Get cartridges by category
     pub fn get_cartridges_by_category(&self, category: &str) -> Result<Vec<CartridgeInfo>> {
         let all = self.transform_to_cartridge_array()?;
-        Ok(all.into_iter().filter(|p| p.categories.contains(&category.to_string())).collect())
+        Ok(all
+            .into_iter()
+            .filter(|p| p.categories.contains(&category.to_string()))
+            .collect())
     }
 
     /// Get cartridges that provide a specific cap
     pub fn get_cartridges_by_cap(&self, cap_urn: &str) -> Result<Vec<CartridgeInfo>> {
         let all = self.transform_to_cartridge_array()?;
-        Ok(all.into_iter().filter(|p| p.caps.iter().any(|c| c.urn == cap_urn)).collect())
+        Ok(all
+            .into_iter()
+            .filter(|p| p.caps.iter().any(|c| c.urn == cap_urn))
+            .collect())
     }
 }
 
@@ -597,7 +625,8 @@ mod tests {
     // TEST632: Verify CartridgeCapSummary deserializes null description as empty string
     #[test]
     fn test632_deserialize_cap_summary_with_null_description() {
-        let json = r#"{"urn": "media:text;llm;gen", "title": "Generate Text", "description": null}"#;
+        let json =
+            r#"{"urn": "media:text;llm;gen", "title": "Generate Text", "description": null}"#;
         let cap: CartridgeCapSummary = serde_json::from_str(json).unwrap();
         assert_eq!(cap.urn, "media:text;llm;gen");
         assert_eq!(cap.title, "Generate Text");
@@ -712,8 +741,14 @@ mod tests {
         assert_eq!(cartridge.id, "pdfcartridge");
         assert_eq!(cartridge.team_id, "P336JK947M");
         assert_eq!(cartridge.signed_at, "2026-02-07T16:40:28Z");
-        assert!(!cartridge.team_id.is_empty(), "Cartridge must have team_id for signature verification");
-        assert!(!cartridge.signed_at.is_empty(), "Cartridge must have signed_at timestamp");
+        assert!(
+            !cartridge.team_id.is_empty(),
+            "Cartridge must have team_id for signature verification"
+        );
+        assert!(
+            !cartridge.signed_at.is_empty(),
+            "Cartridge must have signed_at timestamp"
+        );
     }
 
     // TEST320-335: CartridgeRepoServer and CartridgeRepoClient tests
@@ -735,19 +770,22 @@ mod tests {
             categories: vec!["test".to_string()],
             tags: vec!["testing".to_string()],
             caps: vec![],
-            versions: HashMap::from([("1.0.0".to_string(), CartridgeVersionData {
-                release_date: "2026-02-07".to_string(),
-                changelog: vec![],
-                min_app_version: "1.0.0".to_string(),
-                builds: vec![CartridgeBuild {
-                    platform: "darwin-arm64".to_string(),
-                    package: CartridgeDistributionInfo {
-                        name: "test-1.0.0.pkg".to_string(),
-                        sha256: "abc123".to_string(),
-                        size: 1000,
-                    },
-                }],
-            })]),
+            versions: HashMap::from([(
+                "1.0.0".to_string(),
+                CartridgeVersionData {
+                    release_date: "2026-02-07".to_string(),
+                    changelog: vec![],
+                    min_app_version: "1.0.0".to_string(),
+                    builds: vec![CartridgeBuild {
+                        platform: "darwin-arm64".to_string(),
+                        package: CartridgeDistributionInfo {
+                            name: "test-1.0.0.pkg".to_string(),
+                            sha256: "abc123".to_string(),
+                            size: 1000,
+                        },
+                    }],
+                },
+            )]),
             available_versions: vec!["1.0.0".to_string()],
         };
 
@@ -804,19 +842,22 @@ mod tests {
             categories: vec![],
             tags: vec![],
             caps: vec![],
-            versions: HashMap::from([("1.0.0".to_string(), CartridgeVersionData {
-                release_date: "2026-02-07".to_string(),
-                changelog: vec![],
-                min_app_version: String::new(),
-                builds: vec![CartridgeBuild {
-                    platform: "darwin-arm64".to_string(),
-                    package: CartridgeDistributionInfo {
-                        name: "test-1.0.0.pkg".to_string(),
-                        sha256: "abc123".to_string(),
-                        size: 1000,
-                    },
-                }],
-            })]),
+            versions: HashMap::from([(
+                "1.0.0".to_string(),
+                CartridgeVersionData {
+                    release_date: "2026-02-07".to_string(),
+                    changelog: vec![],
+                    min_app_version: String::new(),
+                    builds: vec![CartridgeBuild {
+                        platform: "darwin-arm64".to_string(),
+                        package: CartridgeDistributionInfo {
+                            name: "test-1.0.0.pkg".to_string(),
+                            sha256: "abc123".to_string(),
+                            size: 1000,
+                        },
+                    }],
+                },
+            )]),
             available_versions: vec!["1.0.0".to_string()],
         };
 
@@ -880,33 +921,39 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec!["Initial release".to_string()],
-            min_app_version: "1.0.0".to_string(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "test-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec!["Initial release".to_string()],
+                min_app_version: "1.0.0".to_string(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
-        cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
-            name: "Test Cartridge".to_string(),
-            description: "A test cartridge".to_string(),
-            author: "Test Author".to_string(),
-            page_url: "https://example.com".to_string(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: "1.0.0".to_string(),
-            caps: vec![],
-            categories: vec!["test".to_string()],
-            tags: vec!["testing".to_string()],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "testcartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "Test Cartridge".to_string(),
+                description: "A test cartridge".to_string(),
+                author: "Test Author".to_string(),
+                page_url: "https://example.com".to_string(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: "1.0.0".to_string(),
+                caps: vec![],
+                categories: vec!["test".to_string()],
+                tags: vec!["testing".to_string()],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),
@@ -931,33 +978,39 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec![],
-            min_app_version: String::new(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "test-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
-        cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
-            name: "Test Cartridge".to_string(),
-            description: "A test cartridge".to_string(),
-            author: "Test Author".to_string(),
-            page_url: String::new(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: String::new(),
-            caps: vec![],
-            categories: vec![],
-            tags: vec![],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "testcartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "Test Cartridge".to_string(),
+                description: "A test cartridge".to_string(),
+                author: "Test Author".to_string(),
+                page_url: String::new(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: String::new(),
+                caps: vec![],
+                categories: vec![],
+                tags: vec![],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),
@@ -977,33 +1030,39 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec![],
-            min_app_version: String::new(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "test-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
-        cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
-            name: "Test Cartridge".to_string(),
-            description: "A test cartridge".to_string(),
-            author: "Test Author".to_string(),
-            page_url: String::new(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: String::new(),
-            caps: vec![],
-            categories: vec![],
-            tags: vec![],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "testcartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "Test Cartridge".to_string(),
+                description: "A test cartridge".to_string(),
+                author: "Test Author".to_string(),
+                page_url: String::new(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: String::new(),
+                caps: vec![],
+                categories: vec![],
+                tags: vec![],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),
@@ -1026,33 +1085,39 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec![],
-            min_app_version: String::new(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "pdf-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "pdf-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
-        cartridges_map.insert("pdfcartridge".to_string(), CartridgeRegistryEntry {
-            name: "PDF Cartridge".to_string(),
-            description: "Process PDF documents".to_string(),
-            author: "Test Author".to_string(),
-            page_url: String::new(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: String::new(),
-            caps: vec![],
-            categories: vec![],
-            tags: vec!["document".to_string()],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "pdfcartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "PDF Cartridge".to_string(),
+                description: "Process PDF documents".to_string(),
+                author: "Test Author".to_string(),
+                page_url: String::new(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: String::new(),
+                caps: vec![],
+                categories: vec![],
+                tags: vec!["document".to_string()],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),
@@ -1075,33 +1140,39 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec![],
-            min_app_version: String::new(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "test-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
-        cartridges_map.insert("doccartridge".to_string(), CartridgeRegistryEntry {
-            name: "Doc Cartridge".to_string(),
-            description: "Process documents".to_string(),
-            author: "Test Author".to_string(),
-            page_url: String::new(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: String::new(),
-            caps: vec![],
-            categories: vec!["document".to_string()],
-            tags: vec![],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "doccartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "Doc Cartridge".to_string(),
+                description: "Process documents".to_string(),
+                author: "Test Author".to_string(),
+                page_url: String::new(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: String::new(),
+                caps: vec![],
+                categories: vec!["document".to_string()],
+                tags: vec![],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),
@@ -1124,38 +1195,44 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec![],
-            min_app_version: String::new(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "test-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
         let cap_urn = r#"cap:in="media:pdf";op=disbind;out="media:disbound-page;textable;list""#;
-        cartridges_map.insert("pdfcartridge".to_string(), CartridgeRegistryEntry {
-            name: "PDF Cartridge".to_string(),
-            description: "Process PDFs".to_string(),
-            author: "Test Author".to_string(),
-            page_url: String::new(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: String::new(),
-            caps: vec![CartridgeCapSummary {
-                urn: cap_urn.to_string(),
-                title: "Disbind PDF".to_string(),
-                description: "Extract pages".to_string(),
-            }],
-            categories: vec![],
-            tags: vec![],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "pdfcartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "PDF Cartridge".to_string(),
+                description: "Process PDFs".to_string(),
+                author: "Test Author".to_string(),
+                page_url: String::new(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: String::new(),
+                caps: vec![CartridgeCapSummary {
+                    urn: cap_urn.to_string(),
+                    title: "Disbind PDF".to_string(),
+                    description: "Extract pages".to_string(),
+                }],
+                categories: vec![],
+                tags: vec![],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),
@@ -1179,25 +1256,23 @@ mod tests {
 
         // Create a mock registry response
         let registry = CartridgeRegistryResponse {
-            cartridges: vec![
-                CartridgeInfo {
-                    id: "testcartridge".to_string(),
-                    name: "Test Cartridge".to_string(),
-                    version: "1.0.0".to_string(),
-                    description: String::new(),
-                    author: String::new(),
-                    homepage: String::new(),
-                    team_id: "TEAM123".to_string(),
-                    signed_at: "2026-02-07".to_string(),
-                    min_app_version: String::new(),
-                    page_url: String::new(),
-                    categories: vec![],
-                    tags: vec![],
-                    caps: vec![],
-                    versions: HashMap::new(),
-                    available_versions: vec![],
-                }
-            ],
+            cartridges: vec![CartridgeInfo {
+                id: "testcartridge".to_string(),
+                name: "Test Cartridge".to_string(),
+                version: "1.0.0".to_string(),
+                description: String::new(),
+                author: String::new(),
+                homepage: String::new(),
+                team_id: "TEAM123".to_string(),
+                signed_at: "2026-02-07".to_string(),
+                min_app_version: String::new(),
+                page_url: String::new(),
+                categories: vec![],
+                tags: vec![],
+                caps: vec![],
+                versions: HashMap::new(),
+                available_versions: vec![],
+            }],
         };
 
         // Update cache directly (simulating a fetch)
@@ -1218,29 +1293,27 @@ mod tests {
 
         let cap_urn = r#"cap:in="media:pdf";op=disbind;out="media:disbound-page;textable;list""#;
         let registry = CartridgeRegistryResponse {
-            cartridges: vec![
-                CartridgeInfo {
-                    id: "pdfcartridge".to_string(),
-                    name: "PDF Cartridge".to_string(),
-                    version: "1.0.0".to_string(),
-                    description: "Process PDFs".to_string(),
-                    author: String::new(),
-                    homepage: String::new(),
-                    team_id: "TEAM123".to_string(),
-                    signed_at: "2026-02-07".to_string(),
-                    min_app_version: String::new(),
-                    page_url: "https://example.com/pdf".to_string(),
-                    categories: vec![],
-                    tags: vec![],
-                    caps: vec![CartridgeCapSummary {
-                        urn: cap_urn.to_string(),
-                        title: "Disbind PDF".to_string(),
-                        description: "Extract pages".to_string(),
-                    }],
-                    versions: HashMap::new(),
-                    available_versions: vec![],
-                }
-            ],
+            cartridges: vec![CartridgeInfo {
+                id: "pdfcartridge".to_string(),
+                name: "PDF Cartridge".to_string(),
+                version: "1.0.0".to_string(),
+                description: "Process PDFs".to_string(),
+                author: String::new(),
+                homepage: String::new(),
+                team_id: "TEAM123".to_string(),
+                signed_at: "2026-02-07".to_string(),
+                min_app_version: String::new(),
+                page_url: "https://example.com/pdf".to_string(),
+                categories: vec![],
+                tags: vec![],
+                caps: vec![CartridgeCapSummary {
+                    urn: cap_urn.to_string(),
+                    title: "Disbind PDF".to_string(),
+                    description: "Extract pages".to_string(),
+                }],
+                versions: HashMap::new(),
+                available_versions: vec![],
+            }],
         };
 
         let mut caches = repo.caches.write().await;
@@ -1259,25 +1332,23 @@ mod tests {
         let repo = CartridgeRepo::new(3600);
 
         let registry = CartridgeRegistryResponse {
-            cartridges: vec![
-                CartridgeInfo {
-                    id: "testcartridge".to_string(),
-                    name: "Test Cartridge".to_string(),
-                    version: "1.0.0".to_string(),
-                    description: String::new(),
-                    author: String::new(),
-                    homepage: String::new(),
-                    team_id: String::new(),
-                    signed_at: String::new(),
-                    min_app_version: String::new(),
-                    page_url: String::new(),
-                    categories: vec![],
-                    tags: vec![],
-                    caps: vec![],
-                    versions: HashMap::new(),
-                    available_versions: vec![],
-                }
-            ],
+            cartridges: vec![CartridgeInfo {
+                id: "testcartridge".to_string(),
+                name: "Test Cartridge".to_string(),
+                version: "1.0.0".to_string(),
+                description: String::new(),
+                author: String::new(),
+                homepage: String::new(),
+                team_id: String::new(),
+                signed_at: String::new(),
+                min_app_version: String::new(),
+                page_url: String::new(),
+                categories: vec![],
+                tags: vec![],
+                caps: vec![],
+                versions: HashMap::new(),
+                available_versions: vec![],
+            }],
         };
 
         let mut caches = repo.caches.write().await;
@@ -1298,7 +1369,8 @@ mod tests {
         let repo = CartridgeRepo::new(3600);
 
         let cap1 = "cap:in=\"media:pdf\";op=disbind;out=\"media:disbound-page;textable;list\"";
-        let cap2 = "cap:in=\"media:txt;textable\";op=disbind;out=\"media:disbound-page;textable;list\"";
+        let cap2 =
+            "cap:in=\"media:txt;textable\";op=disbind;out=\"media:disbound-page;textable;list\"";
 
         let registry = CartridgeRegistryResponse {
             cartridges: vec![
@@ -1343,7 +1415,7 @@ mod tests {
                     }],
                     versions: HashMap::new(),
                     available_versions: vec![],
-                }
+                },
             ],
         };
 
@@ -1382,38 +1454,44 @@ mod tests {
         let mut cartridges_map = HashMap::new();
         let mut versions = HashMap::new();
 
-        versions.insert("1.0.0".to_string(), CartridgeVersionData {
-            release_date: "2026-02-07".to_string(),
-            changelog: vec![],
-            min_app_version: String::new(),
-            builds: vec![CartridgeBuild {
-                platform: "darwin-arm64".to_string(),
-                package: CartridgeDistributionInfo {
-                    name: "test-1.0.0.pkg".to_string(),
-                    sha256: "abc123".to_string(),
-                    size: 1000,
-                },
-            }],
-        });
+        versions.insert(
+            "1.0.0".to_string(),
+            CartridgeVersionData {
+                release_date: "2026-02-07".to_string(),
+                changelog: vec![],
+                min_app_version: String::new(),
+                builds: vec![CartridgeBuild {
+                    platform: "darwin-arm64".to_string(),
+                    package: CartridgeDistributionInfo {
+                        name: "test-1.0.0.pkg".to_string(),
+                        sha256: "abc123".to_string(),
+                        size: 1000,
+                    },
+                }],
+            },
+        );
 
         let cap_urn = "cap:in=\"media:test\";op=test;out=\"media:result\"";
-        cartridges_map.insert("testcartridge".to_string(), CartridgeRegistryEntry {
-            name: "Test Cartridge".to_string(),
-            description: "A test cartridge".to_string(),
-            author: "Test Author".to_string(),
-            page_url: "https://example.com".to_string(),
-            team_id: "TEAM123".to_string(),
-            min_app_version: String::new(),
-            caps: vec![CartridgeCapSummary {
-                urn: cap_urn.to_string(),
-                title: "Test Cap".to_string(),
-                description: "Test capability".to_string(),
-            }],
-            categories: vec!["test".to_string()],
-            tags: vec![],
-            latest_version: "1.0.0".to_string(),
-            versions,
-        });
+        cartridges_map.insert(
+            "testcartridge".to_string(),
+            CartridgeRegistryEntry {
+                name: "Test Cartridge".to_string(),
+                description: "A test cartridge".to_string(),
+                author: "Test Author".to_string(),
+                page_url: "https://example.com".to_string(),
+                team_id: "TEAM123".to_string(),
+                min_app_version: String::new(),
+                caps: vec![CartridgeCapSummary {
+                    urn: cap_urn.to_string(),
+                    title: "Test Cap".to_string(),
+                    description: "Test capability".to_string(),
+                }],
+                categories: vec!["test".to_string()],
+                tags: vec![],
+                latest_version: "1.0.0".to_string(),
+                versions,
+            },
+        );
 
         let registry = CartridgeRegistry {
             schema_version: "4.0".to_string(),

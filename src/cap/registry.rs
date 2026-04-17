@@ -272,13 +272,12 @@ impl CapRegistry {
                 if let Ok(mut cached_caps) = self.cached_caps.lock() {
                     cached_caps.insert(normalized_urn.clone(), cap);
                 }
-
             }
         }
 
         Ok(())
     }
-    
+
     /// Get all bundled standard capabilities without network access
     pub fn get_standard_caps(&self) -> Result<Vec<Cap>, RegistryError> {
         let mut caps = Vec::new();
@@ -290,7 +289,9 @@ impl CapRegistry {
                 continue;
             }
 
-            let filename = file.path().file_name()
+            let filename = file
+                .path()
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("<unknown>");
 
@@ -319,20 +320,21 @@ impl CapRegistry {
     /// Get a cap from in-memory cache or fetch from registry
     pub async fn get_cap(&self, urn: &str) -> Result<Cap, RegistryError> {
         let normalized_urn = normalize_cap_urn(urn);
-        
+
         // Check in-memory cache first
         {
-            let cached_caps = self.cached_caps.lock().map_err(|e| {
-                RegistryError::CacheError(format!("Failed to lock cache: {}", e))
-            })?;
+            let cached_caps = self
+                .cached_caps
+                .lock()
+                .map_err(|e| RegistryError::CacheError(format!("Failed to lock cache: {}", e)))?;
             if let Some(cap) = cached_caps.get(&normalized_urn) {
                 return Ok(cap.clone());
             }
         }
-        
+
         // Not in cache, fetch from registry and update in-memory cache
         let cap = self.fetch_from_registry(urn).await?;
-        
+
         // Update in-memory cache
         {
             let mut cached_caps = self.cached_caps.lock().map_err(|e| {
@@ -340,7 +342,7 @@ impl CapRegistry {
             })?;
             cached_caps.insert(normalized_urn.clone(), cap.clone());
         }
-        
+
         Ok(cap)
     }
 
@@ -407,10 +409,13 @@ impl CapRegistry {
         let mut error_count = 0;
 
         if !cache_dir.exists() {
-            tracing::info!("[CapRegistry] Cache directory does not exist: {:?}", cache_dir);
+            tracing::info!(
+                "[CapRegistry] Cache directory does not exist: {:?}",
+                cache_dir
+            );
             return Ok(caps);
         }
-        
+
         for entry in fs::read_dir(cache_dir).map_err(|e| {
             RegistryError::CacheError(format!("Failed to read cache directory: {}", e))
         })? {
@@ -497,13 +502,16 @@ impl CapRegistry {
     async fn fetch_from_registry(&self, urn: &str) -> Result<Cap, RegistryError> {
         if self.offline_flag.load(Ordering::Relaxed) {
             return Err(RegistryError::NetworkBlocked(format!(
-                "Network access blocked by policy — cannot fetch cap '{}'", urn
+                "Network access blocked by policy — cannot fetch cap '{}'",
+                urn
             )));
         }
         let normalized_urn = normalize_cap_urn(urn);
         // URL-encode only the tags part (after "cap:") since the path prefix must be literal
         // The path is /cap:... where "cap:" is literal and the rest is URL-encoded
-        let tags_part = normalized_urn.strip_prefix("cap:").unwrap_or(&normalized_urn);
+        let tags_part = normalized_urn
+            .strip_prefix("cap:")
+            .unwrap_or(&normalized_urn);
         let encoded_tags = urlencoding::encode(tags_part);
         let url = format!("{}/cap:{}", self.config.registry_base_url, encoded_tags);
         let response = self.client.get(&url).send().await.map_err(|e| {
@@ -513,12 +521,16 @@ impl CapRegistry {
         if !response.status().is_success() {
             return Err(RegistryError::NotFound(format!(
                 "Cap '{}' not found in registry (HTTP {})",
-                urn, response.status()
+                urn,
+                response.status()
             )));
         }
 
         let cap: Cap = response.json().await.map_err(|e| {
-            RegistryError::ParseError(format!("Failed to parse registry response for '{}': {}", urn, e))
+            RegistryError::ParseError(format!(
+                "Failed to parse registry response for '{}': {}",
+                urn, e
+            ))
         })?;
 
         // Cache the result
@@ -530,7 +542,6 @@ impl CapRegistry {
     /// Validate a local cap against its canonical definition
     pub async fn validate_cap(&self, cap: &Cap) -> Result<(), RegistryError> {
         let canonical_cap = self.get_cap(&cap.urn_string()).await?;
-
 
         if cap.command != canonical_cap.command {
             return Err(RegistryError::ValidationError(format!(
@@ -568,8 +579,9 @@ impl CapRegistry {
 
         // Clear filesystem cache
         if self.cache_dir.exists() {
-            fs::remove_dir_all(&self.cache_dir)
-                .map_err(|e| RegistryError::CacheError(format!("Failed to clear cache directory: {}", e)))?;
+            fs::remove_dir_all(&self.cache_dir).map_err(|e| {
+                RegistryError::CacheError(format!("Failed to clear cache directory: {}", e))
+            })?;
             fs::create_dir_all(&self.cache_dir).map_err(|e| {
                 RegistryError::CacheError(format!("Failed to recreate cache directory: {}", e))
             })?;
@@ -653,8 +665,8 @@ pub enum RegistryError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio;
     use tempfile::TempDir;
+    use tokio;
 
     // Helper to create registry with a temporary cache directory
     async fn registry_with_temp_cache() -> (CapRegistry, TempDir) {
@@ -689,8 +701,10 @@ mod tests {
     async fn test136_cache_key_generation() {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
         // Use URNs with required in/out (new media URN format)
-        let key1 = registry.cache_key("cap:in=media:void;op=extract;out=media:record;target=metadata");
-        let key2 = registry.cache_key("cap:in=media:void;op=extract;out=media:record;target=metadata");
+        let key1 =
+            registry.cache_key("cap:in=media:void;op=extract;out=media:record;target=metadata");
+        let key2 =
+            registry.cache_key("cap:in=media:void;op=extract;out=media:record;target=metadata");
         let key3 = registry.cache_key("cap:in=media:void;op=different;out=media:object");
 
         assert_eq!(key1, key2);
@@ -706,11 +720,17 @@ mod tests {
         registry.set_offline(true);
 
         // Try to fetch a non-cached cap — should fail with NetworkBlocked, not an HTTP error
-        let result = registry.get_cap("cap:in=media:void;op=nonexistent;out=media:void").await;
+        let result = registry
+            .get_cap("cap:in=media:void;op=nonexistent;out=media:void")
+            .await;
         assert!(result.is_err());
         match result.unwrap_err() {
             RegistryError::NetworkBlocked(msg) => {
-                assert!(msg.contains("Network access blocked"), "Error should mention blocking: {}", msg);
+                assert!(
+                    msg.contains("Network access blocked"),
+                    "Error should mention blocking: {}",
+                    msg
+                );
             }
             other => panic!("Expected NetworkBlocked, got: {:?}", other),
         }
@@ -730,8 +750,13 @@ mod tests {
         registry.set_offline(true);
 
         // Should still be able to get the cached cap
-        let result = registry.get_cap("cap:in=media:void;op=test_offline;out=media:void").await;
-        assert!(result.is_ok(), "Cached cap should be accessible when offline");
+        let result = registry
+            .get_cap("cap:in=media:void;op=test_offline;out=media:void")
+            .await;
+        assert!(
+            result.is_ok(),
+            "Cached cap should be accessible when offline"
+        );
         assert_eq!(result.unwrap().title, "Test Cap");
     }
 
@@ -743,14 +768,18 @@ mod tests {
         registry.set_offline(true);
 
         // Verify blocked
-        let result = registry.get_cap("cap:in=media:void;op=nonexistent;out=media:void").await;
+        let result = registry
+            .get_cap("cap:in=media:void;op=nonexistent;out=media:void")
+            .await;
         assert!(matches!(result, Err(RegistryError::NetworkBlocked(_))));
 
         // Restore online
         registry.set_offline(false);
 
         // Now should attempt HTTP (which will fail with HttpError or NotFound, not NetworkBlocked)
-        let result = registry.get_cap("cap:in=media:void;op=nonexistent;out=media:void").await;
+        let result = registry
+            .get_cap("cap:in=media:void;op=nonexistent;out=media:void")
+            .await;
         assert!(result.is_err());
         assert!(
             !matches!(result, Err(RegistryError::NetworkBlocked(_))),
@@ -806,8 +835,14 @@ mod url_encoding_tests {
         let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
         // URL must start with literal "cap:" not "cap%3A"
-        assert!(url.contains("/cap:"), "URL must contain literal '/cap:' not encoded");
-        assert!(!url.contains("cap%3A"), "URL must not encode 'cap:' as 'cap%3A'");
+        assert!(
+            url.contains("/cap:"),
+            "URL must contain literal '/cap:' not encoded"
+        );
+        assert!(
+            !url.contains("cap%3A"),
+            "URL must not encode 'cap:' as 'cap%3A'"
+        );
     }
 
     /// Test that media URNs in cap URNs are properly URL-encoded
@@ -823,7 +858,10 @@ mod url_encoding_tests {
         let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
         // Equals must be encoded as %3D
-        assert!(url.contains("%3D"), "Equals signs must be URL-encoded as %3D");
+        assert!(
+            url.contains("%3D"),
+            "Equals signs must be URL-encoded as %3D"
+        );
         // Semicolons must be encoded as %3B
         assert!(url.contains("%3B"), "Semicolons must be URL-encoded as %3B");
         // Colons in media URNs must be encoded as %3A
@@ -843,8 +881,14 @@ mod url_encoding_tests {
         let url = format!("{}/cap:{}", config.registry_base_url, encoded_tags);
 
         // Verify URL contains the encoded media URNs
-        assert!(url.contains("media%3Alisting-id"), "URL should contain encoded in media URN");
-        assert!(url.contains("media%3Atask"), "URL should contain encoded out media URN");
+        assert!(
+            url.contains("media%3Alisting-id"),
+            "URL should contain encoded in media URN"
+        );
+        assert!(
+            url.contains("media%3Atask"),
+            "URL should contain encoded out media URN"
+        );
     }
 
     /// Test that normalization handles various input formats
@@ -858,7 +902,10 @@ mod url_encoding_tests {
         let normalized1 = normalize_cap_urn(urn1);
         let normalized2 = normalize_cap_urn(urn2);
 
-        assert_eq!(normalized1, normalized2, "Different tag orders should normalize to same form");
+        assert_eq!(
+            normalized1, normalized2,
+            "Different tag orders should normalize to same form"
+        );
     }
 }
 
@@ -871,18 +918,21 @@ mod config_tests {
     fn test143_default_config() {
         let config = RegistryConfig::default();
         // Default should use capdag.com (unless env var is set)
-        assert!(config.registry_base_url.contains("capdag.com") ||
-                env::var("CAPDAG_REGISTRY_URL").is_ok(),
-                "Default registry URL should be capdag.com or from env var");
-        assert!(config.schema_base_url.contains("/schema"),
-                "Schema URL should contain /schema");
+        assert!(
+            config.registry_base_url.contains("capdag.com")
+                || env::var("CAPDAG_REGISTRY_URL").is_ok(),
+            "Default registry URL should be capdag.com or from env var"
+        );
+        assert!(
+            config.schema_base_url.contains("/schema"),
+            "Schema URL should contain /schema"
+        );
     }
 
     // TEST144: Test custom registry URL updates both registry and schema base URLs
     #[test]
     fn test144_custom_registry_url() {
-        let config = RegistryConfig::new()
-            .with_registry_url("https://localhost:8888");
+        let config = RegistryConfig::new().with_registry_url("https://localhost:8888");
         assert_eq!(config.registry_base_url, "https://localhost:8888");
         assert_eq!(config.schema_base_url, "https://localhost:8888/schema");
     }
@@ -911,9 +961,11 @@ mod config_tests {
     // TEST147: Test registry for test with custom config creates registry with specified URLs
     #[test]
     fn test147_registry_for_test_with_config() {
-        let config = RegistryConfig::new()
-            .with_registry_url("https://test-registry.local");
+        let config = RegistryConfig::new().with_registry_url("https://test-registry.local");
         let registry = CapRegistry::new_for_test_with_config(config);
-        assert_eq!(registry.config().registry_base_url, "https://test-registry.local");
+        assert_eq!(
+            registry.config().registry_base_url,
+            "https://test-registry.local"
+        );
     }
 }

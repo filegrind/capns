@@ -1,11 +1,11 @@
 //! Unified cap-based manifest interface
-//! 
+//!
 //! This module defines the unified manifest interface with standardized cap-based declarations.
 //! This replaces the separate ProviderManifest and CartridgeManifest types with a single canonical format.
 
-use crate::Cap;
-use crate::urn::cap_urn::CapUrn;
 use crate::standard::caps::CAP_IDENTITY;
+use crate::urn::cap_urn::CapUrn;
+use crate::Cap;
 use serde::{Deserialize, Serialize};
 
 /// Unified cap manifest for --manifest output
@@ -34,12 +34,7 @@ pub struct CapManifest {
 
 impl CapManifest {
     /// Create a new cap manifest
-    pub fn new(
-        name: String,
-        version: String,
-        description: String,
-        caps: Vec<Cap>,
-    ) -> Self {
+    pub fn new(name: String, version: String, description: String, caps: Vec<Cap>) -> Self {
         Self {
             name,
             version,
@@ -67,9 +62,15 @@ impl CapManifest {
     pub fn validate(&self) -> Result<(), String> {
         let identity_urn = CapUrn::from_string(CAP_IDENTITY)
             .map_err(|e| format!("BUG: CAP_IDENTITY constant is invalid: {}", e))?;
-        let has_identity = self.caps.iter().any(|cap| identity_urn.conforms_to(&cap.urn));
+        let has_identity = self
+            .caps
+            .iter()
+            .any(|cap| identity_urn.conforms_to(&cap.urn));
         if !has_identity {
-            return Err(format!("Manifest missing required CAP_IDENTITY ({})", CAP_IDENTITY));
+            return Err(format!(
+                "Manifest missing required CAP_IDENTITY ({})",
+                CAP_IDENTITY
+            ));
         }
         Ok(())
     }
@@ -79,7 +80,7 @@ impl CapManifest {
 pub trait ComponentMetadata {
     /// Get component manifest
     fn component_manifest(&self) -> CapManifest;
-    
+
     /// Get component caps
     fn caps(&self) -> Vec<Cap> {
         self.component_manifest().caps
@@ -89,7 +90,7 @@ pub trait ComponentMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CapUrn, Cap};
+    use crate::{Cap, CapUrn};
     use std::collections::HashMap;
 
     // Helper to create test URN with required in/out specs
@@ -101,7 +102,11 @@ mod tests {
     #[test]
     fn test148_cap_manifest_creation() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
-        let cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
+        let cap = Cap::new(
+            urn,
+            "Extract Metadata".to_string(),
+            "extract-metadata".to_string(),
+        );
 
         let manifest = CapManifest::new(
             "TestComponent".to_string(),
@@ -121,14 +126,19 @@ mod tests {
     #[test]
     fn test149_cap_manifest_with_author() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
-        let cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
+        let cap = Cap::new(
+            urn,
+            "Extract Metadata".to_string(),
+            "extract-metadata".to_string(),
+        );
 
         let manifest = CapManifest::new(
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             "A test component for validation".to_string(),
             vec![cap],
-        ).with_author("Test Author".to_string());
+        )
+        .with_author("Test Author".to_string());
 
         assert_eq!(manifest.author, Some("Test Author".to_string()));
     }
@@ -136,16 +146,22 @@ mod tests {
     // TEST150: Test cap manifest JSON serialization and deserialization roundtrip
     #[test]
     fn test150_cap_manifest_json_serialization() {
-        use crate::{CapArg, ArgSource};
+        use crate::{ArgSource, CapArg};
 
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
-        let mut cap = Cap::new(urn, "Extract Metadata".to_string(), "extract-metadata".to_string());
+        let mut cap = Cap::new(
+            urn,
+            "Extract Metadata".to_string(),
+            "extract-metadata".to_string(),
+        );
 
         // Add stdin via args architecture
         let stdin_arg = CapArg::new(
             "media:pdf",
             true,
-            vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
+            vec![ArgSource::Stdin {
+                stdin: "media:pdf".to_string(),
+            }],
         );
         cap.add_arg(stdin_arg);
 
@@ -154,7 +170,8 @@ mod tests {
             "0.1.0".to_string(),
             "A test component for validation".to_string(),
             vec![cap],
-        ).with_author("Test Author".to_string());
+        )
+        .with_author("Test Author".to_string());
 
         // Test serialization
         let json = serde_json::to_string(&manifest).unwrap();
@@ -170,7 +187,10 @@ mod tests {
         assert_eq!(deserialized.description, manifest.description);
         assert_eq!(deserialized.author, manifest.author);
         assert_eq!(deserialized.caps.len(), manifest.caps.len());
-        assert_eq!(deserialized.caps[0].get_stdin_media_urn(), manifest.caps[0].get_stdin_media_urn());
+        assert_eq!(
+            deserialized.caps[0].get_stdin_media_urn(),
+            manifest.caps[0].get_stdin_media_urn()
+        );
     }
 
     // TEST151: Test cap manifest deserialization fails when required fields are missing
@@ -190,12 +210,21 @@ mod tests {
     #[test]
     fn test152_cap_manifest_with_multiple_caps() {
         let id1 = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
-        let cap1 = Cap::new(id1, "Extract Metadata".to_string(), "extract-metadata".to_string());
+        let cap1 = Cap::new(
+            id1,
+            "Extract Metadata".to_string(),
+            "extract-metadata".to_string(),
+        );
 
         let id2 = CapUrn::from_string(&test_urn("op=extract;target=outline")).unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("supports_outline".to_string(), "true".to_string());
-        let cap2 = Cap::with_metadata(id2, "Extract Outline".to_string(), "extract-outline".to_string(), metadata);
+        let cap2 = Cap::with_metadata(
+            id2,
+            "Extract Outline".to_string(),
+            "extract-outline".to_string(),
+            metadata,
+        );
 
         let manifest = CapManifest::new(
             "MultiCapComponent".to_string(),
@@ -301,7 +330,10 @@ mod tests {
             "Test".to_string(),
             vec![cap],
         );
-        assert!(manifest.validate().is_ok(), "Manifest with CAP_IDENTITY must validate");
+        assert!(
+            manifest.validate().is_ok(),
+            "Manifest with CAP_IDENTITY must validate"
+        );
     }
 
     // TEST476: CapManifest::validate() fails when CAP_IDENTITY is missing
@@ -316,8 +348,13 @@ mod tests {
             vec![cap],
         );
         let result = manifest.validate();
-        assert!(result.is_err(), "Manifest without CAP_IDENTITY must fail validation");
-        assert!(result.unwrap_err().contains("CAP_IDENTITY"),
-            "Error message must mention CAP_IDENTITY");
+        assert!(
+            result.is_err(),
+            "Manifest without CAP_IDENTITY must fail validation"
+        );
+        assert!(
+            result.unwrap_err().contains("CAP_IDENTITY"),
+            "Error message must mention CAP_IDENTITY"
+        );
     }
 }

@@ -11,21 +11,20 @@
 //! - **machfab**: via `CapService.execute_cap()` through the relay
 //! - **macino**: by spawning cartridge binaries
 
-use std::collections::HashMap;
-use std::time::Instant;
-use serde_json::json;
-use crate::CapArgumentValue;
 use super::{
-    PlannerError, PlannerResult, CapExecutor, CapSettingsProvider,
     argument_binding::{
-        ArgumentBinding, ArgumentResolutionContext, ArgumentSource,
-        CapInputFile, resolve_binding,
+        resolve_binding, ArgumentBinding, ArgumentResolutionContext, ArgumentSource, CapInputFile,
     },
     plan::{
-        MachineResult, MachinePlan, MachineNode, EdgeType,
-        ExecutionNodeType, NodeExecutionResult, NodeId,
+        EdgeType, ExecutionNodeType, MachineNode, MachinePlan, MachineResult, NodeExecutionResult,
+        NodeId,
     },
+    CapExecutor, CapSettingsProvider, PlannerError, PlannerResult,
 };
+use crate::CapArgumentValue;
+use serde_json::json;
+use std::collections::HashMap;
+use std::time::Instant;
 
 /// Generic plan executor parameterized by a cap execution backend.
 pub struct MachineExecutor<E: CapExecutor> {
@@ -38,11 +37,7 @@ pub struct MachineExecutor<E: CapExecutor> {
 
 impl<E: CapExecutor> MachineExecutor<E> {
     /// Create a new plan executor.
-    pub fn new(
-        executor: E,
-        plan: MachinePlan,
-        input_files: Vec<CapInputFile>,
-    ) -> Self {
+    pub fn new(executor: E, plan: MachinePlan, input_files: Vec<CapInputFile>) -> Self {
         Self {
             executor,
             plan,
@@ -68,18 +63,20 @@ impl<E: CapExecutor> MachineExecutor<E> {
     pub async fn execute(&self) -> PlannerResult<MachineResult> {
         let start = Instant::now();
 
-        self.plan.validate().map_err(|e| PlannerError::Internal(e.to_string()))?;
+        self.plan
+            .validate()
+            .map_err(|e| PlannerError::Internal(e.to_string()))?;
 
-        let ordered_nodes = self.plan.topological_order()
+        let ordered_nodes = self
+            .plan
+            .topological_order()
             .map_err(|e| PlannerError::Internal(e.to_string()))?;
 
         let mut node_results: HashMap<NodeId, NodeExecutionResult> = HashMap::new();
         let mut node_outputs: HashMap<NodeId, serde_json::Value> = HashMap::new();
 
         for node in ordered_nodes.iter() {
-            let result = self
-                .execute_node(node, &node_results, &node_outputs)
-                .await;
+            let result = self.execute_node(node, &node_results, &node_outputs).await;
 
             match result {
                 Ok((exec_result, output)) => {
@@ -143,7 +140,11 @@ impl<E: CapExecutor> MachineExecutor<E> {
         let start = Instant::now();
 
         match &node.node_type {
-            ExecutionNodeType::Cap { cap_urn, arg_bindings, preferred_cap } => {
+            ExecutionNodeType::Cap {
+                cap_urn,
+                arg_bindings,
+                preferred_cap,
+            } => {
                 self.execute_cap_node(
                     &node.id,
                     cap_urn,
@@ -161,12 +162,16 @@ impl<E: CapExecutor> MachineExecutor<E> {
                         "media_urn": self.input_files[0].media_urn,
                     })
                 } else {
-                    json!(self.input_files.iter().map(|f| {
-                        json!({
-                            "file_path": f.file_path,
-                            "media_urn": f.media_urn,
+                    json!(self
+                        .input_files
+                        .iter()
+                        .map(|f| {
+                            json!({
+                                "file_path": f.file_path,
+                                "media_urn": f.media_urn,
+                            })
                         })
-                    }).collect::<Vec<_>>())
+                        .collect::<Vec<_>>())
                 };
 
                 Ok((
@@ -205,7 +210,11 @@ impl<E: CapExecutor> MachineExecutor<E> {
                 ))
             }
 
-            ExecutionNodeType::ForEach { input_node, body_entry, body_exit } => {
+            ExecutionNodeType::ForEach {
+                input_node,
+                body_entry,
+                body_exit,
+            } => {
                 let input = node_outputs.get(input_node);
                 let items: Vec<serde_json::Value> = if let Some(input) = input {
                     if let Some(arr) = input.as_array() {
@@ -241,7 +250,10 @@ impl<E: CapExecutor> MachineExecutor<E> {
                 ))
             }
 
-            ExecutionNodeType::Collect { input_nodes, output_media_urn } => {
+            ExecutionNodeType::Collect {
+                input_nodes,
+                output_media_urn,
+            } => {
                 // Collect works in two contexts:
                 // 1. After ForEach: input_nodes lists body exit nodes, collect their results
                 // 2. Standalone: pass-through, forward predecessor output unchanged
@@ -249,7 +261,10 @@ impl<E: CapExecutor> MachineExecutor<E> {
 
                 if output_media_urn.is_some() && input_nodes.len() == 1 {
                     // Standalone Collect: pass-through — find predecessor output and forward
-                    let predecessor_output = self.plan.edges.iter()
+                    let predecessor_output = self
+                        .plan
+                        .edges
+                        .iter()
                         .find(|e| e.to_node == node.id)
                         .and_then(|e| node_outputs.get(&e.from_node))
                         .cloned();
@@ -305,7 +320,10 @@ impl<E: CapExecutor> MachineExecutor<E> {
                 }
             }
 
-            ExecutionNodeType::Merge { input_nodes, merge_strategy } => {
+            ExecutionNodeType::Merge {
+                input_nodes,
+                merge_strategy,
+            } => {
                 let mut merged: Vec<serde_json::Value> = Vec::new();
                 for input_id in input_nodes {
                     if let Some(output) = node_outputs.get(input_id) {
@@ -335,7 +353,10 @@ impl<E: CapExecutor> MachineExecutor<E> {
                 ))
             }
 
-            ExecutionNodeType::Split { input_node, output_count } => {
+            ExecutionNodeType::Split {
+                input_node,
+                output_count,
+            } => {
                 let input = node_outputs.get(input_node);
                 let output = json!({
                     "input": input,
@@ -358,7 +379,6 @@ impl<E: CapExecutor> MachineExecutor<E> {
                     Some(output),
                 ))
             }
-
         }
     }
 
@@ -399,7 +419,9 @@ impl<E: CapExecutor> MachineExecutor<E> {
         let arg_defaults: HashMap<String, serde_json::Value> = cap_args
             .iter()
             .filter_map(|arg| {
-                arg.default_value.as_ref().map(|v| (arg.media_urn.clone(), v.clone()))
+                arg.default_value
+                    .as_ref()
+                    .map(|v| (arg.media_urn.clone(), v.clone()))
             })
             .collect();
 
@@ -412,7 +434,8 @@ impl<E: CapExecutor> MachineExecutor<E> {
         let cap_settings_map = if let Some(ref provider) = self.settings_provider {
             match provider.get_settings(cap_urn).await {
                 Ok(settings) if !settings.is_empty() => {
-                    let mut map: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+                    let mut map: HashMap<String, HashMap<String, serde_json::Value>> =
+                        HashMap::new();
                     map.insert(cap_urn.to_string(), settings);
                     map
                 }
@@ -428,8 +451,16 @@ impl<E: CapExecutor> MachineExecutor<E> {
             current_file_index: 0,
             previous_outputs: node_outputs,
             plan_metadata: self.plan.metadata.as_ref(),
-            cap_settings: if cap_settings_map.is_empty() { None } else { Some(&cap_settings_map) },
-            slot_values: if self.slot_values.is_empty() { None } else { Some(&self.slot_values) },
+            cap_settings: if cap_settings_map.is_empty() {
+                None
+            } else {
+                Some(&cap_settings_map)
+            },
+            slot_values: if self.slot_values.is_empty() {
+                None
+            } else {
+                Some(&self.slot_values)
+            },
         };
 
         // Build arguments
@@ -438,7 +469,14 @@ impl<E: CapExecutor> MachineExecutor<E> {
         for (name, binding) in &arg_bindings.bindings {
             let is_required = arg_required.get(name).copied().unwrap_or(false);
 
-            match resolve_binding(binding, &context, cap_urn, node_id, arg_defaults.get(name), is_required) {
+            match resolve_binding(
+                binding,
+                &context,
+                cap_urn,
+                node_id,
+                arg_defaults.get(name),
+                is_required,
+            ) {
                 Ok(Some(resolved)) => {
                     let arg_media_urn = if resolved.source == ArgumentSource::InputFile {
                         crate::MEDIA_FILE_PATH.to_string()
@@ -461,14 +499,22 @@ impl<E: CapExecutor> MachineExecutor<E> {
 
         // Check if we need to pass file content as stdin argument
         let stdin_arg_already_bound = cap_def.get_args().iter().any(|arg| {
-            let has_stdin_source = arg.sources.iter().any(|s| matches!(s, crate::ArgSource::Stdin { .. }));
+            let has_stdin_source = arg
+                .sources
+                .iter()
+                .any(|s| matches!(s, crate::ArgSource::Stdin { .. }));
             has_stdin_source && arg_bindings.bindings.contains_key(&arg.media_urn)
         });
-        let has_file_path_binding = arg_bindings.bindings.values().any(|b| {
-            matches!(b, ArgumentBinding::InputFilePath)
-        });
+        let has_file_path_binding = arg_bindings
+            .bindings
+            .values()
+            .any(|b| matches!(b, ArgumentBinding::InputFilePath));
 
-        if !self.input_files.is_empty() && cap_def.accepts_stdin() && !stdin_arg_already_bound && !has_file_path_binding {
+        if !self.input_files.is_empty()
+            && cap_def.accepts_stdin()
+            && !stdin_arg_already_bound
+            && !has_file_path_binding
+        {
             let input_file = &self.input_files[0];
             let stdin_media_urn = cap_def
                 .get_stdin_media_urn()
@@ -489,7 +535,10 @@ impl<E: CapExecutor> MachineExecutor<E> {
         }
 
         // Execute the cap
-        let result = self.executor.execute_cap(cap_urn, &arguments, preferred_cap).await;
+        let result = self
+            .executor
+            .execute_cap(cap_urn, &arguments, preferred_cap)
+            .await;
         let duration_ms = start.elapsed().as_millis() as u64;
 
         match result {
@@ -544,14 +593,9 @@ pub fn apply_edge_type(
     match edge_type {
         EdgeType::Direct => Ok(source_output.clone()),
 
-        EdgeType::JsonField { field } => {
-            source_output.get(field).cloned().ok_or_else(|| {
-                PlannerError::Internal(format!(
-                    "Field '{}' not found in source output",
-                    field
-                ))
-            })
-        }
+        EdgeType::JsonField { field } => source_output.get(field).cloned().ok_or_else(|| {
+            PlannerError::Internal(format!("Field '{}' not found in source output", field))
+        }),
 
         EdgeType::JsonPath { path } => extract_json_path(source_output, path),
 
@@ -561,10 +605,7 @@ pub fn apply_edge_type(
 }
 
 /// Extract a value using a simple JSON path expression.
-pub fn extract_json_path(
-    json: &serde_json::Value,
-    path: &str,
-) -> PlannerResult<serde_json::Value> {
+pub fn extract_json_path(json: &serde_json::Value, path: &str) -> PlannerResult<serde_json::Value> {
     let mut current = json.clone();
 
     for segment in path.split('.') {
@@ -595,7 +636,7 @@ pub fn extract_json_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planner::plan::{MachinePlan, EdgeType};
+    use crate::planner::plan::{EdgeType, MachinePlan};
 
     // TEST804: Tests basic JSON path extraction with dot notation for nested objects
     // Verifies that simple paths like "data.message" correctly extract values from nested JSON structures
@@ -652,7 +693,12 @@ mod tests {
     #[test]
     fn test808_apply_edge_type_json_field() {
         let value = json!({"test": "value", "other": "data"});
-        let result = apply_edge_type(&value, &EdgeType::JsonField { field: "test".to_string() });
+        let result = apply_edge_type(
+            &value,
+            &EdgeType::JsonField {
+                field: "test".to_string(),
+            },
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!("value"));
     }
@@ -662,7 +708,12 @@ mod tests {
     #[test]
     fn test809_apply_edge_type_json_field_missing() {
         let value = json!({"test": "value"});
-        let result = apply_edge_type(&value, &EdgeType::JsonField { field: "missing".to_string() });
+        let result = apply_edge_type(
+            &value,
+            &EdgeType::JsonField {
+                field: "missing".to_string(),
+            },
+        );
         assert!(result.is_err());
     }
 
@@ -671,7 +722,12 @@ mod tests {
     #[test]
     fn test810_apply_edge_type_json_path() {
         let value = json!({"data": {"nested": {"value": 42}}});
-        let result = apply_edge_type(&value, &EdgeType::JsonPath { path: "data.nested.value".to_string() });
+        let result = apply_edge_type(
+            &value,
+            &EdgeType::JsonPath {
+                path: "data.nested.value".to_string(),
+            },
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), json!(42));
     }
@@ -750,7 +806,10 @@ mod tests {
         });
         let result = extract_json_path(&json, "data.message");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), json!("hello \"world\" with 'quotes' and \\ backslashes"));
+        assert_eq!(
+            result.unwrap(),
+            json!("hello \"world\" with 'quotes' and \\ backslashes")
+        );
     }
 
     // TEST817: Tests JSON path extraction correctly handles explicit null values
@@ -799,8 +858,14 @@ mod tests {
                 "disabled": false
             }
         });
-        assert_eq!(extract_json_path(&json, "flags.enabled").unwrap(), json!(true));
-        assert_eq!(extract_json_path(&json, "flags.disabled").unwrap(), json!(false));
+        assert_eq!(
+            extract_json_path(&json, "flags.enabled").unwrap(),
+            json!(true)
+        );
+        assert_eq!(
+            extract_json_path(&json, "flags.disabled").unwrap(),
+            json!(false)
+        );
     }
 
     // TEST821: Tests JSON path extraction with multi-dimensional arrays (matrix access)

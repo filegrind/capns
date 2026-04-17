@@ -1,11 +1,11 @@
 //! Path resolution — expands files, directories, and globs to file lists
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::input_resolver::{InputItem, InputResolverError};
 use crate::input_resolver::os_filter::{should_exclude, should_exclude_dir};
+use crate::input_resolver::{InputItem, InputResolverError};
 
 /// Maximum depth for directory recursion (prevent infinite loops)
 const MAX_RECURSION_DEPTH: usize = 100;
@@ -106,7 +106,9 @@ fn resolve_directory_recursive(
     depth: usize,
 ) -> Result<(), InputResolverError> {
     if depth > MAX_RECURSION_DEPTH {
-        return Err(InputResolverError::SymlinkCycle { path: dir.to_path_buf() });
+        return Err(InputResolverError::SymlinkCycle {
+            path: dir.to_path_buf(),
+        });
     }
 
     // Canonicalize for cycle detection
@@ -196,7 +198,10 @@ fn resolve_glob(pattern: &str) -> Result<Vec<PathBuf>, InputResolverError> {
 }
 
 /// Resolve symlinks with cycle detection
-fn resolve_symlink(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<PathBuf, InputResolverError> {
+fn resolve_symlink(
+    path: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<PathBuf, InputResolverError> {
     let canonical = path.canonicalize().map_err(|e| {
         if e.kind() == std::io::ErrorKind::PermissionDenied {
             InputResolverError::PermissionDenied(path.to_path_buf())
@@ -209,7 +214,9 @@ fn resolve_symlink(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<PathBu
     })?;
 
     if visited.contains(&canonical) {
-        return Err(InputResolverError::SymlinkCycle { path: path.to_path_buf() });
+        return Err(InputResolverError::SymlinkCycle {
+            path: path.to_path_buf(),
+        });
     }
     visited.insert(canonical.clone());
 
@@ -244,8 +251,8 @@ fn expand_tilde_string(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
+    use tempfile::TempDir;
 
     fn create_test_dir() -> TempDir {
         TempDir::new().unwrap()
@@ -378,7 +385,10 @@ mod tests {
     #[test]
     fn test1011_invalid_glob() {
         let result = resolve_glob("[unclosed");
-        assert!(matches!(result, Err(InputResolverError::InvalidGlob { .. })));
+        assert!(matches!(
+            result,
+            Err(InputResolverError::InvalidGlob { .. })
+        ));
     }
 
     // TEST1013: Empty input array

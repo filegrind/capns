@@ -31,8 +31,8 @@
 //! }
 //! ```
 
-use crate::urn::cap_urn::CapUrn;
 use crate::media::spec::{resolve_media_urn, MediaSpecDef, MediaSpecError, ResolvedMediaSpec};
+use crate::urn::cap_urn::CapUrn;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
@@ -211,7 +211,9 @@ impl CapArg {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.is_binary())
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.is_binary())
     }
 
     /// Check if argument is JSON based on resolved media spec
@@ -221,7 +223,9 @@ impl CapArg {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.is_json())
     }
 
     /// Check if argument is structured (map or list) based on resolved media spec
@@ -231,7 +235,9 @@ impl CapArg {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.is_structured())
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.is_structured())
     }
 
     /// Get the media type from resolved spec
@@ -240,7 +246,9 @@ impl CapArg {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<String, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.media_type)
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
@@ -249,7 +257,9 @@ impl CapArg {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<String>, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.profile_uri)
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
@@ -258,7 +268,9 @@ impl CapArg {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<serde_json::Value>, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.schema)
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.schema)
     }
 
     /// Get metadata JSON
@@ -362,7 +374,9 @@ impl CapOutput {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.is_binary())
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.is_binary())
     }
 
     /// Check if output is JSON based on resolved media spec
@@ -372,7 +386,9 @@ impl CapOutput {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.is_json())
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.is_json())
     }
 
     /// Check if output is structured (map or list) based on resolved media spec
@@ -382,7 +398,9 @@ impl CapOutput {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<bool, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.is_structured())
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.is_structured())
     }
 
     /// Get the media type from resolved spec
@@ -391,7 +409,9 @@ impl CapOutput {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<String, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.media_type)
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.media_type)
     }
 
     /// Get the profile URI from resolved spec
@@ -400,7 +420,9 @@ impl CapOutput {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<String>, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.profile_uri)
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.profile_uri)
     }
 
     /// Get the schema from resolved spec (if any)
@@ -409,7 +431,9 @@ impl CapOutput {
         media_specs: Option<&[MediaSpecDef]>,
         registry: &crate::media::registry::MediaUrnRegistry,
     ) -> Result<Option<serde_json::Value>, MediaSpecError> {
-        self.resolve(media_specs, registry).await.map(|ms| ms.schema)
+        self.resolve(media_specs, registry)
+            .await
+            .map(|ms| ms.schema)
     }
 
     /// Get metadata JSON
@@ -619,7 +643,12 @@ impl Cap {
     }
 
     /// Create a new cap with description
-    pub fn with_description(urn: CapUrn, title: String, command: String, description: String) -> Self {
+    pub fn with_description(
+        urn: CapUrn,
+        title: String,
+        command: String,
+        description: String,
+    ) -> Self {
         Self {
             urn,
             title,
@@ -640,7 +669,7 @@ impl Cap {
         urn: CapUrn,
         title: String,
         command: String,
-        metadata: HashMap<String, String>
+        metadata: HashMap<String, String>,
     ) -> Self {
         Self {
             urn,
@@ -681,12 +710,7 @@ impl Cap {
     }
 
     /// Create a new cap with args
-    pub fn with_args(
-        urn: CapUrn,
-        title: String,
-        command: String,
-        args: Vec<CapArg>,
-    ) -> Self {
+    pub fn with_args(urn: CapUrn, title: String, command: String, args: Vec<CapArg>) -> Self {
         Self {
             urn,
             title,
@@ -905,7 +929,6 @@ impl Cap {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -918,8 +941,13 @@ mod tests {
     // TEST108: Test creating new cap with URN, title, and command verifies correct initialization
     #[test]
     fn test108_cap_creation() {
-        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
-        let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
+        let urn =
+            CapUrn::from_string(&test_urn("op=transform;format=json;data_processing")).unwrap();
+        let cap = Cap::new(
+            urn,
+            "Transform JSON Data".to_string(),
+            "test-command".to_string(),
+        );
 
         assert!(cap.urn_string().contains("op=transform"));
         // Check that in/out specs are present (format may vary due to canonicalization)
@@ -937,13 +965,24 @@ mod tests {
         let urn = CapUrn::from_string(&test_urn("op=arithmetic;compute;subtype=math")).unwrap();
         let mut metadata = HashMap::new();
         metadata.insert("precision".to_string(), "double".to_string());
-        metadata.insert("operations".to_string(), "add,subtract,multiply,divide".to_string());
+        metadata.insert(
+            "operations".to_string(),
+            "add,subtract,multiply,divide".to_string(),
+        );
 
-        let cap = Cap::with_metadata(urn, "Perform Mathematical Operations".to_string(), "test-command".to_string(), metadata);
+        let cap = Cap::with_metadata(
+            urn,
+            "Perform Mathematical Operations".to_string(),
+            "test-command".to_string(),
+            metadata,
+        );
 
         assert_eq!(cap.title, "Perform Mathematical Operations");
         assert_eq!(cap.get_metadata("precision"), Some(&"double".to_string()));
-        assert_eq!(cap.get_metadata("operations"), Some(&"add,subtract,multiply,divide".to_string()));
+        assert_eq!(
+            cap.get_metadata("operations"),
+            Some(&"add,subtract,multiply,divide".to_string())
+        );
         assert!(cap.has_metadata("precision"));
         assert!(!cap.has_metadata("nonexistent"));
     }
@@ -952,8 +991,13 @@ mod tests {
     #[test]
     fn test110_cap_matching() {
         // Use type=data_processing key-value instead of flag for proper matching
-        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing")).unwrap();
-        let cap = Cap::new(urn, "Transform JSON Data".to_string(), "test-command".to_string());
+        let urn = CapUrn::from_string(&test_urn("op=transform;format=json;type=data_processing"))
+            .unwrap();
+        let cap = Cap::new(
+            urn,
+            "Transform JSON Data".to_string(),
+            "test-command".to_string(),
+        );
 
         assert!(cap.accepts_request(&test_urn("op=transform;format=json;type=data_processing")));
         assert!(cap.accepts_request(&test_urn("op=transform;format=*;type=data_processing")));
@@ -965,7 +1009,11 @@ mod tests {
     #[test]
     fn test111_cap_title() {
         let urn = CapUrn::from_string(&test_urn("op=extract;target=metadata")).unwrap();
-        let mut cap = Cap::new(urn, "Extract Document Metadata".to_string(), "extract-metadata".to_string());
+        let mut cap = Cap::new(
+            urn,
+            "Extract Document Metadata".to_string(),
+            "extract-metadata".to_string(),
+        );
 
         assert_eq!(cap.get_title(), &"Extract Document Metadata".to_string());
         assert_eq!(cap.title, "Extract Document Metadata");
@@ -981,9 +1029,21 @@ mod tests {
         let urn1 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
         let urn2 = CapUrn::from_string(&test_urn("op=transform;format=json")).unwrap();
 
-        let cap1 = Cap::new(urn1, "Transform JSON Data".to_string(), "transform".to_string());
-        let cap2 = Cap::new(urn2.clone(), "Transform JSON Data".to_string(), "transform".to_string());
-        let cap3 = Cap::new(urn2, "Convert JSON Format".to_string(), "transform".to_string());
+        let cap1 = Cap::new(
+            urn1,
+            "Transform JSON Data".to_string(),
+            "transform".to_string(),
+        );
+        let cap2 = Cap::new(
+            urn2.clone(),
+            "Transform JSON Data".to_string(),
+            "transform".to_string(),
+        );
+        let cap3 = Cap::new(
+            urn2,
+            "Convert JSON Format".to_string(),
+            "transform".to_string(),
+        );
 
         assert_eq!(cap1, cap2);
         assert_ne!(cap1, cap3);
@@ -994,7 +1054,11 @@ mod tests {
     #[test]
     fn test113_cap_stdin() {
         let urn = CapUrn::from_string(&test_urn("op=generate;target=embeddings")).unwrap();
-        let mut cap = Cap::new(urn, "Generate Embeddings".to_string(), "generate".to_string());
+        let mut cap = Cap::new(
+            urn,
+            "Generate Embeddings".to_string(),
+            "generate".to_string(),
+        );
 
         // By default, caps should not accept stdin
         assert!(!cap.accepts_stdin());
@@ -1005,7 +1069,9 @@ mod tests {
             media_urn: "media:textable".to_string(),
             required: true,
             is_sequence: false,
-            sources: vec![ArgSource::Stdin { stdin: "media:textable".to_string() }],
+            sources: vec![ArgSource::Stdin {
+                stdin: "media:textable".to_string(),
+            }],
             arg_description: Some("Input text".to_string()),
             default_value: None,
             metadata: None,
@@ -1028,7 +1094,9 @@ mod tests {
     #[test]
     fn test114_arg_source_types() {
         // Test stdin source
-        let stdin_source = ArgSource::Stdin { stdin: "media:text".to_string() };
+        let stdin_source = ArgSource::Stdin {
+            stdin: "media:text".to_string(),
+        };
         assert_eq!(stdin_source.get_type(), "stdin");
         assert_eq!(stdin_source.stdin_media_urn(), Some("media:text"));
         assert_eq!(stdin_source.position(), None);
@@ -1042,7 +1110,9 @@ mod tests {
         assert_eq!(position_source.cli_flag(), None);
 
         // Test cli_flag source
-        let cli_flag_source = ArgSource::CliFlag { cli_flag: "--input".to_string() };
+        let cli_flag_source = ArgSource::CliFlag {
+            cli_flag: "--input".to_string(),
+        };
         assert_eq!(cli_flag_source.get_type(), "cli_flag");
         assert_eq!(cli_flag_source.stdin_media_urn(), None);
         assert_eq!(cli_flag_source.position(), None);
@@ -1057,7 +1127,9 @@ mod tests {
             required: true,
             is_sequence: false,
             sources: vec![
-                ArgSource::CliFlag { cli_flag: "--name".to_string() },
+                ArgSource::CliFlag {
+                    cli_flag: "--name".to_string(),
+                },
                 ArgSource::Position { position: 0 },
             ],
             arg_description: Some("The name argument".to_string()),
@@ -1082,7 +1154,9 @@ mod tests {
         let arg = CapArg::new(
             "media:string",
             true,
-            vec![ArgSource::CliFlag { cli_flag: "--name".to_string() }],
+            vec![ArgSource::CliFlag {
+                cli_flag: "--name".to_string(),
+            }],
         );
         assert_eq!(arg.media_urn, "media:string");
         assert!(arg.required);
@@ -1202,8 +1276,18 @@ mod tests {
     fn test595_with_args_constructor() {
         let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
         let args = vec![
-            CapArg::new("media:string", true, vec![ArgSource::Position { position: 0 }]),
-            CapArg::new("media:integer", false, vec![ArgSource::CliFlag { cli_flag: "--count".to_string() }]),
+            CapArg::new(
+                "media:string",
+                true,
+                vec![ArgSource::Position { position: 0 }],
+            ),
+            CapArg::new(
+                "media:integer",
+                false,
+                vec![ArgSource::CliFlag {
+                    cli_flag: "--count".to_string(),
+                }],
+            ),
         ];
 
         let cap = Cap::with_args(urn, "Test".to_string(), "cmd".to_string(), args);
@@ -1225,9 +1309,15 @@ mod tests {
         let json_meta = serde_json::json!({"v": 1});
 
         let cap = Cap::with_full_definition(
-            urn, "Full Cap".to_string(), Some("Description".to_string()),
-            metadata, "full-cmd".to_string(), Vec::new(), args,
-            Some(output), Some(json_meta.clone()),
+            urn,
+            "Full Cap".to_string(),
+            Some("Description".to_string()),
+            metadata,
+            "full-cmd".to_string(),
+            Vec::new(),
+            args,
+            Some(output),
+            Some(json_meta.clone()),
         );
 
         assert_eq!(cap.title, "Full Cap");
@@ -1249,8 +1339,12 @@ mod tests {
         let meta = serde_json::json!({"hint": "enter name"});
 
         let arg = CapArg::with_full_definition(
-            "media:string", true, false,
-            vec![ArgSource::CliFlag { cli_flag: "--name".to_string() }],
+            "media:string",
+            true,
+            false,
+            vec![ArgSource::CliFlag {
+                cli_flag: "--name".to_string(),
+            }],
             Some("User name".to_string()),
             Some(default_val.clone()),
             Some(meta.clone()),
@@ -1291,7 +1385,10 @@ mod tests {
 
         // CapOutput with_full_definition
         let output2 = CapOutput::with_full_definition(
-            "media:json", "JSON output", false, Some(serde_json::json!({"v": 2})),
+            "media:json",
+            "JSON output",
+            false,
+            Some(serde_json::json!({"v": 2})),
         );
         assert_eq!(output2.get_media_urn(), "media:json");
         assert!(output2.get_metadata().is_some());
@@ -1319,14 +1416,19 @@ mod tests {
         // A non-trivial markdown body — multi-line, headings, code blocks,
         // backticks, embedded quotes, and a literal CRLF and Unicode dingbat
         // (★) — to make sure escaping is end-to-end correct.
-        let body = "# Documented Cap\r\n\nDoes the thing.\n\n```bash\necho \"hi\"\n```\n\nSee also: ★\n";
+        let body =
+            "# Documented Cap\r\n\nDoes the thing.\n\n```bash\necho \"hi\"\n```\n\nSee also: ★\n";
         cap.set_documentation(body);
         assert_eq!(cap.get_documentation(), Some(body));
 
         let serialized = serde_json::to_string(&cap).unwrap();
         // The serializer must emit the documentation field; if it doesn't,
         // the JSON regression test for the absent case will mask this.
-        assert!(serialized.contains("\"documentation\""), "documentation field absent in JSON output: {}", serialized);
+        assert!(
+            serialized.contains("\"documentation\""),
+            "documentation field absent in JSON output: {}",
+            serialized
+        );
 
         let deserialized: Cap = serde_json::from_str(&serialized).unwrap();
         assert_eq!(
@@ -1349,7 +1451,11 @@ mod tests {
     #[test]
     fn test1128_cap_documentation_omitted_when_none() {
         let urn = CapUrn::from_string(&test_urn("op=undocumented")).unwrap();
-        let cap = Cap::new(urn, "Undocumented Cap".to_string(), "undocumented".to_string());
+        let cap = Cap::new(
+            urn,
+            "Undocumented Cap".to_string(),
+            "undocumented".to_string(),
+        );
         assert!(cap.get_documentation().is_none());
 
         let serialized = serde_json::to_string(&cap).unwrap();
@@ -1381,7 +1487,8 @@ mod tests {
             "cap_description": "short",
             "documentation": "## Heading\n\nbody text",
             "metadata": {}
-        }).to_string();
+        })
+        .to_string();
         let cap: Cap = serde_json::from_str(&json).expect("must parse capgraph-shaped JSON");
         assert_eq!(cap.get_documentation(), Some("## Heading\n\nbody text"));
         assert_eq!(cap.cap_description.as_deref(), Some("short"));

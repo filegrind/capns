@@ -28,36 +28,22 @@
 //! Both registries follow the same pattern: base media URN + content inspection →
 //! refined media URN with additional marker tags.
 
-mod types;
-mod os_filter;
-pub(crate) mod path_resolver;
 mod adapter;
 mod adapters;
+mod os_filter;
+pub(crate) mod path_resolver;
 mod resolver;
+mod types;
 pub mod value_adapter;
 pub mod value_adapter_registry;
 
-pub use types::{
-    InputItem,
-    ContentStructure,
-    ResolvedFile,
-    ResolvedInputSet,
-    InputResolverError,
-};
+pub use types::{ContentStructure, InputItem, InputResolverError, ResolvedFile, ResolvedInputSet};
 
-pub use adapter::{
-    MediaAdapter,
-    AdapterResult,
-    AdapterSelection,
-};
+pub use adapter::{AdapterResult, AdapterSelection, MediaAdapter};
 
 pub use resolver::{
-    resolve_input,
-    resolve_inputs,
-    resolve_paths,
-    detect_file,
-    detect_file_with_media_registry,
-    discriminate_candidates_by_validation,
+    detect_file, detect_file_with_media_registry, discriminate_candidates_by_validation,
+    resolve_input, resolve_inputs, resolve_paths,
 };
 
 pub use path_resolver::resolve_directory;

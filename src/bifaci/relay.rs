@@ -8,7 +8,7 @@
 //!
 //! All other frames pass through transparently in both directions.
 
-use crate::bifaci::frame::{Frame, FlowKey, FrameType, Limits, ReorderBuffer};
+use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, ReorderBuffer};
 use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -58,7 +58,10 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
     ///
     /// Runs until one side closes or an error occurs.
     /// Consumes self to split local reader/writer across tasks.
-    pub async fn run<SR: AsyncRead + Unpin + Send + 'static, SW: AsyncWrite + Unpin + Send + 'static>(
+    pub async fn run<
+        SR: AsyncRead + Unpin + Send + 'static,
+        SW: AsyncWrite + Unpin + Send + 'static,
+    >(
         self,
         mut socket_read: FrameReader<SR>,
         mut socket_write: FrameWriter<SW>,
@@ -68,11 +71,17 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
         R: Send + 'static,
         W: Send + 'static,
     {
-        tracing::info!("[RelaySlave] run() starting, initial_notify={}", initial_notify.is_some());
+        tracing::info!(
+            "[RelaySlave] run() starting, initial_notify={}",
+            initial_notify.is_some()
+        );
 
         // Send initial RelayNotify if provided
         let max_reorder = if let Some((manifest, limits)) = initial_notify {
-            tracing::info!("[RelaySlave] sending initial RelayNotify, manifest_len={}", manifest.len());
+            tracing::info!(
+                "[RelaySlave] sending initial RelayNotify, manifest_len={}",
+                manifest.len()
+            );
             let notify = Frame::relay_notify(manifest, limits);
             socket_write.write(&notify).await?;
             limits.max_reorder_buffer
@@ -85,7 +94,8 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
         let mut local_writer = self.local_writer;
         let mut local_reader = self.local_reader;
 
-        let first_error: Arc<tokio::sync::Mutex<Option<CborError>>> = Arc::new(tokio::sync::Mutex::new(None));
+        let first_error: Arc<tokio::sync::Mutex<Option<CborError>>> =
+            Arc::new(tokio::sync::Mutex::new(None));
 
         // Task 1: socket → local (master sends frames to slave's CartridgeHost)
         let err1 = Arc::clone(&first_error);
@@ -96,7 +106,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
             loop {
                 match socket_read.read().await {
                     Ok(Some(frame)) => {
-                        tracing::debug!("[RelaySlave] t1 received from socket: type={:?} id={}", frame.frame_type, frame.id);
+                        tracing::debug!(
+                            "[RelaySlave] t1 received from socket: type={:?} id={}",
+                            frame.frame_type,
+                            frame.id
+                        );
                         if frame.frame_type == FrameType::RelayState {
                             if let Some(payload) = frame.payload {
                                 *rs1.lock().unwrap() = payload;
@@ -121,7 +135,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
                                 }
                             }
                             for f in ready_frames {
-                                tracing::debug!("[RelaySlave] t1 forwarding to local: type={:?} id={}", f.frame_type, f.id);
+                                tracing::debug!(
+                                    "[RelaySlave] t1 forwarding to local: type={:?} id={}",
+                                    f.frame_type,
+                                    f.id
+                                );
                                 if let Err(e) = local_writer.write(&f).await {
                                     tracing::error!("[RelaySlave] t1 local_writer error: {}", e);
                                     let mut guard = err1.lock().await;
@@ -157,7 +175,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
             loop {
                 match local_reader.read().await {
                     Ok(Some(frame)) => {
-                        tracing::debug!("[RelaySlave] t2 received from local: type={:?} id={}", frame.frame_type, frame.id);
+                        tracing::debug!(
+                            "[RelaySlave] t2 received from local: type={:?} id={}",
+                            frame.frame_type,
+                            frame.id
+                        );
                         // Forward all frames, including RelayNotify (capability updates)
                         // RelayState is still dropped (deprecated/unused)
                         if frame.frame_type == FrameType::RelayState {
@@ -180,7 +202,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> RelaySlave<R, W> {
                                 }
                             }
                             for f in ready_frames {
-                                tracing::debug!("[RelaySlave] t2 forwarding to socket: type={:?} id={}", f.frame_type, f.id);
+                                tracing::debug!(
+                                    "[RelaySlave] t2 forwarding to socket: type={:?} id={}",
+                                    f.frame_type,
+                                    f.id
+                                );
                                 if let Err(e) = socket_write.write(&f).await {
                                     tracing::error!("[RelaySlave] t2 socket_write error: {}", e);
                                     let mut guard = err2.lock().await;
@@ -267,19 +293,20 @@ impl RelayMaster {
 
         let manifest = frame
             .relay_notify_manifest()
-            .ok_or_else(|| {
-                CborError::Protocol("RelayNotify missing manifest".to_string())
-            })?
+            .ok_or_else(|| CborError::Protocol("RelayNotify missing manifest".to_string()))?
             .to_vec();
 
         let limits = frame
             .relay_notify_limits()
-            .ok_or_else(|| {
-                CborError::Protocol("RelayNotify missing limits".to_string())
-            })?;
+            .ok_or_else(|| CborError::Protocol("RelayNotify missing limits".to_string()))?;
 
         let reorder = ReorderBuffer::new(limits.max_reorder_buffer);
-        Ok(Self { manifest, limits, reorder, ready_queue: std::collections::VecDeque::new() })
+        Ok(Self {
+            manifest,
+            limits,
+            reorder,
+            ready_queue: std::collections::VecDeque::new(),
+        })
     }
 
     /// Get the aggregate manifest from the slave.
@@ -343,7 +370,6 @@ impl RelayMaster {
     }
 }
 
-
 // =============================================================================
 // TESTS
 // =============================================================================
@@ -373,8 +399,7 @@ mod tests {
 
         // Slave sends initial notify through socket_write
         let slave_handle = tokio::spawn(async move {
-            let mut socket_writer =
-                FrameWriter::new(BufWriter::new(slave_write_stream));
+            let mut socket_writer = FrameWriter::new(BufWriter::new(slave_write_stream));
             RelaySlave::<tokio::io::Empty, Vec<u8>>::send_notify(
                 &mut socket_writer,
                 manifest,
@@ -386,7 +411,11 @@ mod tests {
 
         // Master reads it
         let mut socket_reader = FrameReader::new(BufReader::new(master_read_stream));
-        let frame = socket_reader.read().await.unwrap().expect("should have frame");
+        let frame = socket_reader
+            .read()
+            .await
+            .unwrap()
+            .expect("should have frame");
 
         assert_eq!(frame.frame_type, FrameType::RelayNotify);
         assert_eq!(frame.relay_notify_manifest(), Some(manifest.as_slice()));
@@ -443,7 +472,9 @@ mod tests {
         // Master sends RelayState
         let master_handle = tokio::spawn(async move {
             let mut writer = FrameWriter::new(BufWriter::new(master_socket_write));
-            RelayMaster::send_state(&mut writer, resources).await.unwrap();
+            RelayMaster::send_state(&mut writer, resources)
+                .await
+                .unwrap();
             drop(writer); // Close to signal EOF
         });
 
@@ -456,7 +487,11 @@ mod tests {
             let mut socket_reader = FrameReader::new(BufReader::new(slave_socket_read));
 
             // Read one frame — should be RelayState
-            let frame = socket_reader.read().await.unwrap().expect("should have frame");
+            let frame = socket_reader
+                .read()
+                .await
+                .unwrap()
+                .expect("should have frame");
             assert_eq!(frame.frame_type, FrameType::RelayState);
             if let Some(payload) = frame.payload {
                 *slave.resource_state.lock().unwrap() = payload;
@@ -528,12 +563,20 @@ mod tests {
             let mut local_writer = FrameWriter::new(BufWriter::new(slave_local_write));
 
             // Socket → local: read REQ, forward to local
-            let from_socket = socket_reader.read().await.unwrap().expect("should have frame");
+            let from_socket = socket_reader
+                .read()
+                .await
+                .unwrap()
+                .expect("should have frame");
             assert_eq!(from_socket.frame_type, FrameType::Req);
             local_writer.write(&from_socket).await.unwrap();
 
             // Local → socket: read CHUNK, forward to socket
-            let from_local = local_reader.read().await.unwrap().expect("should have frame");
+            let from_local = local_reader
+                .read()
+                .await
+                .unwrap()
+                .expect("should have frame");
             assert_eq!(from_local.frame_type, FrameType::Chunk);
             socket_writer.write(&from_local).await.unwrap();
         });
@@ -543,7 +586,10 @@ mod tests {
             let mut reader = FrameReader::new(BufReader::new(runtime_read_from_slave));
             let frame = reader.read().await.unwrap().expect("should have frame");
             assert_eq!(frame.frame_type, FrameType::Req);
-            assert_eq!(frame.cap.as_deref(), Some("cap:in=\"media:void\";op=test;out=\"media:void\""));
+            assert_eq!(
+                frame.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=test;out=\"media:void\"")
+            );
             assert_eq!(frame.payload, Some(b"hello".to_vec()));
         });
 
@@ -593,7 +639,11 @@ mod tests {
             let resource_state: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
 
             // Read first frame — RelayState, should NOT be forwarded
-            let frame1 = socket_reader.read().await.unwrap().expect("should have frame");
+            let frame1 = socket_reader
+                .read()
+                .await
+                .unwrap()
+                .expect("should have frame");
             assert_eq!(frame1.frame_type, FrameType::RelayState);
             if let Some(payload) = frame1.payload {
                 *resource_state.lock().unwrap() = payload;
@@ -601,7 +651,11 @@ mod tests {
             // Do NOT forward to local_writer
 
             // Read second frame — REQ, should be forwarded
-            let frame2 = socket_reader.read().await.unwrap().expect("should have frame");
+            let frame2 = socket_reader
+                .read()
+                .await
+                .unwrap()
+                .expect("should have frame");
             assert_eq!(frame2.frame_type, FrameType::Req);
             local_writer.write(&frame2).await.unwrap();
 
@@ -669,7 +723,9 @@ mod tests {
             assert_eq!(f1.frame_type, FrameType::RelayNotify);
             assert_eq!(
                 f1.relay_notify_manifest(),
-                Some(b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\"]}".as_slice())
+                Some(
+                    b"{\"caps\":[\"cap:in=\"media:void\";op=test;out=\"media:void\"\"]}".as_slice()
+                )
             );
 
             // Read CHUNK (passed through)
@@ -705,7 +761,10 @@ mod tests {
             let mut seq = SeqAssigner::new();
 
             // Initial RelayNotify
-            let initial = Frame::relay_notify(b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\"]}", &limits);
+            let initial = Frame::relay_notify(
+                b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\"]}",
+                &limits,
+            );
             writer.write(&initial).await.unwrap();
 
             // Normal frame
@@ -713,7 +772,10 @@ mod tests {
             let mut end = Frame::end(end_id.clone(), None);
             seq.assign(&mut end);
             writer.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: end_id, xid: None });
+            seq.remove(&FlowKey {
+                rid: end_id,
+                xid: None,
+            });
 
             // Updated RelayNotify
             let updated_limits = Limits {
@@ -729,7 +791,10 @@ mod tests {
             let mut end2 = Frame::end(end2_id.clone(), None);
             seq.assign(&mut end2);
             writer.write(&end2).await.unwrap();
-            seq.remove(&FlowKey { rid: end2_id, xid: None });
+            seq.remove(&FlowKey {
+                rid: end2_id,
+                xid: None,
+            });
 
             drop(writer);
         });
@@ -739,15 +804,26 @@ mod tests {
             let mut master = RelayMaster::connect(&mut reader).await.unwrap();
 
             // Initial state
-            assert_eq!(master.manifest(), b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\"]}");
+            assert_eq!(
+                master.manifest(),
+                b"{\"caps\":[\"cap:in=\"media:void\";op=a;out=\"media:void\"\"]}"
+            );
             assert_eq!(master.limits().max_frame, 2_000_000);
 
             // First non-relay frame
-            let f1 = master.read_frame(&mut reader).await.unwrap().expect("frame 1");
+            let f1 = master
+                .read_frame(&mut reader)
+                .await
+                .unwrap()
+                .expect("frame 1");
             assert_eq!(f1.frame_type, FrameType::End);
 
             // read_frame should have intercepted the updated RelayNotify
-            let f2 = master.read_frame(&mut reader).await.unwrap().expect("frame 2");
+            let f2 = master
+                .read_frame(&mut reader)
+                .await
+                .unwrap()
+                .expect("frame 2");
             assert_eq!(f2.frame_type, FrameType::End);
 
             // Manifest and limits should be updated
@@ -821,8 +897,18 @@ mod tests {
         let master_write = tokio::spawn(async move {
             let mut writer = FrameWriter::new(BufWriter::new(master_socket_write));
             let mut seq = SeqAssigner::new();
-            let mut req1 = Frame::req(req_id1_clone, "cap:in=\"media:void\";op=a;out=\"media:void\"", b"data-a".to_vec(), "text/plain");
-            let mut req2 = Frame::req(req_id2_clone, "cap:in=\"media:void\";op=b;out=\"media:void\"", b"data-b".to_vec(), "text/plain");
+            let mut req1 = Frame::req(
+                req_id1_clone,
+                "cap:in=\"media:void\";op=a;out=\"media:void\"",
+                b"data-a".to_vec(),
+                "text/plain",
+            );
+            let mut req2 = Frame::req(
+                req_id2_clone,
+                "cap:in=\"media:void\";op=b;out=\"media:void\"",
+                b"data-b".to_vec(),
+                "text/plain",
+            );
             seq.assign(&mut req1);
             writer.write(&req1).await.unwrap();
             seq.assign(&mut req2);
@@ -844,7 +930,10 @@ mod tests {
             let mut end = Frame::end(resp_id1.clone(), None);
             seq.assign(&mut end);
             writer.write(&end).await.unwrap();
-            seq.remove(&FlowKey { rid: resp_id1, xid: None });
+            seq.remove(&FlowKey {
+                rid: resp_id1,
+                xid: None,
+            });
             drop(writer);
         });
 

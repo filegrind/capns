@@ -12,16 +12,16 @@
 //! 3. Content-inspecting adapters select the best candidate based on structure
 //! 4. Non-inspecting adapters let the registry pick the most specific candidate
 
-mod registry;
+pub(crate) mod archives;
+pub(crate) mod audio;
+pub(crate) mod code;
 pub(crate) mod data;
-pub(crate) mod text;
 pub(crate) mod documents;
 pub(crate) mod images;
-pub(crate) mod audio;
-pub(crate) mod video;
-pub(crate) mod code;
-pub(crate) mod archives;
 pub(crate) mod other;
+mod registry;
+pub(crate) mod text;
+pub(crate) mod video;
 
 pub use registry::MediaAdapterRegistry;
 

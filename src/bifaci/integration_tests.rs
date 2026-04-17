@@ -6,9 +6,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::bifaci::frame::{FlowKey, Frame, FrameType, MessageId, SeqAssigner};
-    use crate::bifaci::io::{FrameReader, FrameWriter, handshake, handshake_accept};
     use crate::bifaci::cartridge_runtime::CartridgeRuntime;
+    use crate::bifaci::frame::{FlowKey, Frame, FrameType, MessageId, SeqAssigner};
+    use crate::bifaci::io::{handshake, handshake_accept, FrameReader, FrameWriter};
     use crate::standard::caps::CAP_IDENTITY;
     use tokio::io::{BufReader, BufWriter};
 
@@ -19,9 +19,9 @@ mod tests {
     // TEST293: Test CartridgeRuntime Op registration and lookup by exact and non-existent cap URN
     #[test]
     fn test293_cartridge_runtime_handler_registration() {
-        use crate::bifaci::cartridge_runtime::{Request, WET_KEY_REQUEST, IdentityOp};
-        use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
+        use crate::bifaci::cartridge_runtime::{IdentityOp, Request, WET_KEY_REQUEST};
         use async_trait::async_trait;
+        use ops::{DryContext, Op, OpError, OpMetadata, OpResult, WetContext};
         use std::sync::Arc;
 
         /// Test Op: serializes JSON input to CBOR bytes and emits
@@ -30,17 +30,24 @@ mod tests {
         #[async_trait]
         impl Op<()> for JsonEchoOp {
             async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                let req: Arc<Request> = wet
+                    .get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let input = req.take_input()
+                let input = req
+                    .take_input()
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let bytes = input.collect_all_bytes().await
+                let bytes = input
+                    .collect_all_bytes()
+                    .await
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                req.output().emit_cbor(&ciborium::Value::Bytes(bytes))
+                req.output()
+                    .emit_cbor(&ciborium::Value::Bytes(bytes))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 Ok(())
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("JsonEchoOp").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("JsonEchoOp").build()
+            }
         }
 
         /// Test Op: emits fixed "transformed" bytes
@@ -49,27 +56,38 @@ mod tests {
         #[async_trait]
         impl Op<()> for TransformOp {
             async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                let req: Arc<Request> = wet
+                    .get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let _input = req.take_input()
+                let _input = req
+                    .take_input()
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                req.output().emit_cbor(&ciborium::Value::Bytes(b"transformed".to_vec()))
+                req.output()
+                    .emit_cbor(&ciborium::Value::Bytes(b"transformed".to_vec()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 Ok(())
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("TransformOp").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("TransformOp").build()
+            }
         }
 
         let mut runtime = CartridgeRuntime::new(TEST_MANIFEST.as_bytes());
         runtime.register_op_type::<JsonEchoOp>(CAP_IDENTITY);
-        runtime.register_op_type::<TransformOp>("cap:in=\"media:void\";op=transform;out=\"media:void\"");
+        runtime.register_op_type::<TransformOp>(
+            "cap:in=\"media:void\";op=transform;out=\"media:void\"",
+        );
 
         // Exact match
         assert!(runtime.find_handler(CAP_IDENTITY).is_some());
-        assert!(runtime.find_handler("cap:in=\"media:void\";op=transform;out=\"media:void\"").is_some());
+        assert!(runtime
+            .find_handler("cap:in=\"media:void\";op=transform;out=\"media:void\"")
+            .is_some());
 
         // Non-existent
-        assert!(runtime.find_handler("cap:in=\"media:void\";op=unknown;out=\"media:void\"").is_none());
+        assert!(runtime
+            .find_handler("cap:in=\"media:void\";op=unknown;out=\"media:void\"")
+            .is_none());
     }
 
     /// Helper: create async socket pairs for relay (engine↔runtime).
@@ -79,9 +97,16 @@ mod tests {
         tokio::net::UnixStream,
         tokio::net::UnixStream,
     ) {
-        let (relay_rt_read_std, relay_eng_write_std) = std::os::unix::net::UnixStream::pair().unwrap();
-        let (relay_eng_read_std, relay_rt_write_std) = std::os::unix::net::UnixStream::pair().unwrap();
-        for s in [&relay_rt_read_std, &relay_rt_write_std, &relay_eng_write_std, &relay_eng_read_std] {
+        let (relay_rt_read_std, relay_eng_write_std) =
+            std::os::unix::net::UnixStream::pair().unwrap();
+        let (relay_eng_read_std, relay_rt_write_std) =
+            std::os::unix::net::UnixStream::pair().unwrap();
+        for s in [
+            &relay_rt_read_std,
+            &relay_rt_write_std,
+            &relay_eng_write_std,
+            &relay_eng_read_std,
+        ] {
             s.set_nonblocking(true).unwrap();
         }
         let rt_read = tokio::net::UnixStream::from_std(relay_rt_read_std).unwrap();
@@ -109,10 +134,15 @@ mod tests {
         from_runtime: tokio::net::UnixStream,
         to_runtime: tokio::net::UnixStream,
         manifest: &[u8],
-    ) -> (FrameReader<BufReader<tokio::net::UnixStream>>, FrameWriter<BufWriter<tokio::net::UnixStream>>) {
+    ) -> (
+        FrameReader<BufReader<tokio::net::UnixStream>>,
+        FrameWriter<BufWriter<tokio::net::UnixStream>>,
+    ) {
         let mut reader = FrameReader::new(BufReader::new(from_runtime));
         let mut writer = FrameWriter::new(BufWriter::new(to_runtime));
-        let limits = handshake_accept(&mut reader, &mut writer, manifest).await.unwrap();
+        let limits = handshake_accept(&mut reader, &mut writer, manifest)
+            .await
+            .unwrap();
         reader.set_limits(limits);
         writer.set_limits(limits);
         (reader, writer)
@@ -123,12 +153,24 @@ mod tests {
         from_runtime: tokio::net::UnixStream,
         to_runtime: tokio::net::UnixStream,
         manifest: &[u8],
-    ) -> (FrameReader<BufReader<tokio::net::UnixStream>>, FrameWriter<BufWriter<tokio::net::UnixStream>>) {
-        let (mut reader, mut writer) = cartridge_handshake(from_runtime, to_runtime, manifest).await;
+    ) -> (
+        FrameReader<BufReader<tokio::net::UnixStream>>,
+        FrameWriter<BufWriter<tokio::net::UnixStream>>,
+    ) {
+        let (mut reader, mut writer) =
+            cartridge_handshake(from_runtime, to_runtime, manifest).await;
 
         // Handle identity verification REQ
-        let req = reader.read().await.unwrap().expect("expected identity REQ after handshake");
-        assert_eq!(req.frame_type, FrameType::Req, "first frame after handshake must be identity REQ");
+        let req = reader
+            .read()
+            .await
+            .unwrap()
+            .expect("expected identity REQ after handshake");
+        assert_eq!(
+            req.frame_type,
+            FrameType::Req,
+            "first frame after handshake must be identity REQ"
+        );
         let mut payload = Vec::new();
         loop {
             let f = reader.read().await.unwrap().expect("expected frame");
@@ -137,11 +179,19 @@ mod tests {
                 FrameType::Chunk => payload.extend(f.payload.unwrap_or_default()),
                 FrameType::StreamEnd => {}
                 FrameType::End => break,
-                other => panic!("unexpected frame type during identity verification: {:?}", other),
+                other => panic!(
+                    "unexpected frame type during identity verification: {:?}",
+                    other
+                ),
             }
         }
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string(), None);
+        let ss = Frame::stream_start(
+            req.id.clone(),
+            stream_id.clone(),
+            "media:".to_string(),
+            None,
+        );
         writer.write(&ss).await.unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -166,7 +216,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
 
             let req = reader.read().await.unwrap().expect("Expected REQ");
             assert_eq!(req.frame_type, FrameType::Req);
@@ -184,7 +235,8 @@ mod tests {
 
             let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut start =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut start);
             writer.write(&start).await.unwrap();
             let checksum = Frame::compute_checksum(&arg_data);
@@ -217,7 +269,8 @@ mod tests {
             req_frame.routing_id = Some(xid.clone());
             seq.assign(&mut req_frame);
             w.write(&req_frame).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut stream_start =
+                Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -242,8 +295,12 @@ mod tests {
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -258,7 +315,10 @@ mod tests {
         assert!(result.is_ok(), "Runtime should exit cleanly: {:?}", result);
 
         let response = engine_task.await.unwrap();
-        assert_eq!(response, b"hello world", "Cartridge should echo back the argument data");
+        assert_eq!(
+            response, b"hello world",
+            "Cartridge should echo back the argument data"
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -275,7 +335,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
 
             let req = reader.read().await.unwrap().expect("Expected REQ");
             let mut seq = SeqAssigner::new();
@@ -296,7 +357,12 @@ mod tests {
 
             let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=fail;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=fail;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
@@ -350,7 +416,8 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
 
             let req = reader.read().await.unwrap().expect("Expected REQ");
 
@@ -371,7 +438,8 @@ mod tests {
 
             let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut start =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut start);
             writer.write(&start).await.unwrap();
             let checksum = Frame::compute_checksum(&received);
@@ -399,11 +467,17 @@ mod tests {
             let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=binary;out=\"media:void\"", vec![], "application/octet-stream");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=binary;out=\"media:void\"",
+                vec![],
+                "application/octet-stream",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
-            let mut stream_start = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut stream_start =
+                Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             stream_start.routing_id = Some(xid.clone());
             seq.assign(&mut stream_start);
             w.write(&stream_start).await.unwrap();
@@ -426,8 +500,12 @@ mod tests {
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -461,18 +539,22 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
 
             let req = reader.read().await.unwrap().expect("Expected REQ");
 
             loop {
                 let f = reader.read().await.unwrap().expect("frame");
-                if f.frame_type == FrameType::End { break; }
+                if f.frame_type == FrameType::End {
+                    break;
+                }
             }
 
             let sid = "resp".to_string();
             let mut seq = SeqAssigner::new();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut start =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut start);
             writer.write(&start).await.unwrap();
             for idx in 0u64..5 {
@@ -501,7 +583,12 @@ mod tests {
 
             let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=stream;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=stream;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
@@ -518,7 +605,9 @@ mod tests {
                         if f.frame_type == FrameType::Chunk {
                             chunks.push((f.seq, f.payload.unwrap_or_default()));
                         }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -534,8 +623,16 @@ mod tests {
         let chunks = engine_task.await.unwrap();
         assert_eq!(chunks.len(), 5, "All 5 chunks must arrive");
         for (i, (seq, data)) in chunks.iter().enumerate() {
-            assert_eq!(*seq, (i + 1) as u64, "Chunk seq must be contiguous from 1 (StreamStart takes seq 0)");
-            assert_eq!(data, &format!("chunk{}", i).into_bytes(), "Chunk data must match");
+            assert_eq!(
+                *seq,
+                (i + 1) as u64,
+                "Chunk seq must be contiguous from 1 (StreamStart takes seq 0)"
+            );
+            assert_eq!(
+                data,
+                &format!("chunk{}", i).into_bytes(),
+                "Chunk data must match"
+            );
         }
 
         cartridge_handle.await.unwrap();
@@ -559,13 +656,24 @@ mod tests {
 
         let ma = manifest_a.as_bytes().to_vec();
         let cartridge_a = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(ca_from_rt, ca_to_rt, &ma).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(ca_from_rt, ca_to_rt, &ma).await;
             let req = reader.read().await.unwrap().expect("Expected REQ");
-            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""), "Cartridge A must receive alpha REQ");
-            loop { let f = reader.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            assert_eq!(
+                req.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""),
+                "Cartridge A must receive alpha REQ"
+            );
+            loop {
+                let f = reader.read().await.unwrap().expect("f");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+            }
             let mut seq = SeqAssigner::new();
             let sid = "a".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut start =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut start);
             writer.write(&start).await.unwrap();
             let payload = b"from-alpha".to_vec();
@@ -585,13 +693,24 @@ mod tests {
 
         let mb = manifest_b.as_bytes().to_vec();
         let cartridge_b = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(cb_from_rt, cb_to_rt, &mb).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(cb_from_rt, cb_to_rt, &mb).await;
             let req = reader.read().await.unwrap().expect("Expected REQ");
-            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""), "Cartridge B must receive beta REQ");
-            loop { let f = reader.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            assert_eq!(
+                req.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=beta;out=\"media:void\""),
+                "Cartridge B must receive beta REQ"
+            );
+            loop {
+                let f = reader.read().await.unwrap().expect("f");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+            }
             let mut seq = SeqAssigner::new();
             let sid = "b".to_string();
-            let mut start = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut start =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut start);
             writer.write(&start).await.unwrap();
             let payload = b"from-beta".to_vec();
@@ -625,7 +744,12 @@ mod tests {
             let mut seq = SeqAssigner::new();
             let xid_alpha = MessageId::Uint(1);
             let xid_beta = MessageId::Uint(2);
-            let mut req_alpha = Frame::req(alpha_id_c.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
+            let mut req_alpha = Frame::req(
+                alpha_id_c.clone(),
+                "cap:in=\"media:void\";op=alpha;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req_alpha.routing_id = Some(xid_alpha.clone());
             seq.assign(&mut req_alpha);
             w.write(&req_alpha).await.unwrap();
@@ -634,7 +758,12 @@ mod tests {
             seq.assign(&mut end_alpha);
             w.write(&end_alpha).await.unwrap();
             seq.remove(&FlowKey::from_frame(&end_alpha));
-            let mut req_beta = Frame::req(beta_id_c.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
+            let mut req_beta = Frame::req(
+                beta_id_c.clone(),
+                "cap:in=\"media:void\";op=beta;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req_beta.routing_id = Some(xid_beta.clone());
             seq.assign(&mut req_beta);
             w.write(&req_beta).await.unwrap();
@@ -651,12 +780,17 @@ mod tests {
                 match r.read().await {
                     Ok(Some(f)) => {
                         if f.frame_type == FrameType::Chunk {
-                            if f.id == alpha_id_c { alpha_data.extend(f.payload.unwrap_or_default()); }
-                            else if f.id == beta_id_c { beta_data.extend(f.payload.unwrap_or_default()); }
+                            if f.id == alpha_id_c {
+                                alpha_data.extend(f.payload.unwrap_or_default());
+                            } else if f.id == beta_id_c {
+                                beta_data.extend(f.payload.unwrap_or_default());
+                            }
                         }
                         if f.frame_type == FrameType::End {
                             ends_received += 1;
-                            if ends_received >= 2 { break; }
+                            if ends_received >= 2 {
+                                break;
+                            }
                         }
                     }
                     Ok(None) => break,
@@ -671,8 +805,14 @@ mod tests {
         let _ = runtime.run(rt_relay_read, rt_relay_write, || vec![]).await;
 
         let (alpha_data, beta_data) = engine_task.await.unwrap();
-        assert_eq!(alpha_data, b"from-alpha", "Alpha response must come from Cartridge A");
-        assert_eq!(beta_data, b"from-beta", "Beta response must come from Cartridge B");
+        assert_eq!(
+            alpha_data, b"from-alpha",
+            "Alpha response must come from Cartridge A"
+        );
+        assert_eq!(
+            beta_data, b"from-beta",
+            "Beta response must come from Cartridge B"
+        );
 
         cartridge_a.await.unwrap();
         cartridge_b.await.unwrap();
@@ -691,7 +831,8 @@ mod tests {
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
             tracing::info!("[TEST/cartridge] Starting cartridge thread");
-            let (mut reader, _writer) = cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
+            let (mut reader, _writer) =
+                cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
             tracing::info!("[TEST/cartridge] Handshake complete, waiting for EOF...");
             // Cartridge waits for EOF — no REQ should arrive since cap is unknown
             match reader.read().await {
@@ -699,8 +840,14 @@ mod tests {
                     tracing::info!("[TEST/cartridge] Got EOF, cartridge exiting normally");
                 }
                 Ok(Some(f)) => {
-                    tracing::error!("[TEST/cartridge] ERROR: Got frame {:?}, expected EOF!", f.frame_type);
-                    panic!("Cartridge should not receive frames for unknown cap, got {:?}", f.frame_type)
+                    tracing::error!(
+                        "[TEST/cartridge] ERROR: Got frame {:?}, expected EOF!",
+                        f.frame_type
+                    );
+                    panic!(
+                        "Cartridge should not receive frames for unknown cap, got {:?}",
+                        f.frame_type
+                    )
                 }
                 Err(e) => {
                     tracing::error!("[TEST/cartridge] Got error: {:?}, treating as EOF", e);
@@ -718,7 +865,12 @@ mod tests {
             let mut w = FrameWriter::new(eng_write);
             let mut seq = SeqAssigner::new();
             let xid = MessageId::Uint(1);
-            let mut req = Frame::req(req_id_clone.clone(), "cap:in=\"media:void\";op=unknown;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id_clone.clone(),
+                "cap:in=\"media:void\";op=unknown;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
@@ -738,22 +890,38 @@ mod tests {
             tracing::info!("[TEST/engine_recv] First frame: {:?}", frame.frame_type);
             if frame.frame_type == FrameType::RelayNotify {
                 tracing::info!("[TEST/engine_recv] Got RelayNotify, reading second frame...");
-                frame = r.read().await.unwrap().expect("Expected ERR frame after RelayNotify");
+                frame = r
+                    .read()
+                    .await
+                    .unwrap()
+                    .expect("Expected ERR frame after RelayNotify");
                 tracing::info!("[TEST/engine_recv] Second frame: {:?}", frame.frame_type);
             }
             tracing::info!("[TEST/engine_recv] Asserting frame is ERR...");
-            assert_eq!(frame.frame_type, FrameType::Err, "Should get ERR for unknown cap");
-            assert_eq!(frame.id, req_id, "ERR should reference the original request ID");
+            assert_eq!(
+                frame.frame_type,
+                FrameType::Err,
+                "Should get ERR for unknown cap"
+            );
+            assert_eq!(
+                frame.id, req_id,
+                "ERR should reference the original request ID"
+            );
             let meta = frame.meta.as_ref().expect("ERR should have meta");
             let code = meta.get("code").and_then(|v| v.as_text()).unwrap_or("");
-            assert_eq!(code, "NO_HANDLER", "Error code should be NO_HANDLER, got: {}", code);
+            assert_eq!(
+                code, "NO_HANDLER",
+                "Error code should be NO_HANDLER, got: {}",
+                code
+            );
             tracing::info!("[TEST/engine_recv] All assertions passed, task completing!");
         });
 
         // Host run should NOT return an error — it sends ERR frame and continues
-        let run_handle = tokio::spawn(async move {
-            runtime.run(rt_relay_read, rt_relay_write, || vec![]).await
-        });
+        let run_handle =
+            tokio::spawn(
+                async move { runtime.run(rt_relay_read, rt_relay_write, || vec![]).await },
+            );
 
         tracing::info!("[TEST] Waiting for engine_send to complete...");
         engine_send.await.unwrap();
@@ -787,7 +955,9 @@ mod tests {
         let cartridge_handle = tokio::spawn(async move {
             let mut reader = FrameReader::new(BufReader::new(cartridge_read));
             let mut writer = FrameWriter::new(BufWriter::new(cartridge_write));
-            let limits = handshake_accept(&mut reader, &mut writer, &manifest).await.unwrap();
+            let limits = handshake_accept(&mut reader, &mut writer, &manifest)
+                .await
+                .unwrap();
             assert!(limits.max_frame > 0);
             assert!(limits.max_chunk > 0);
             limits
@@ -814,7 +984,8 @@ mod tests {
 
         let manifest = TEST_MANIFEST.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
 
             let frame = reader.read().await.unwrap().unwrap();
             assert_eq!(frame.frame_type, FrameType::Req);
@@ -837,7 +1008,12 @@ mod tests {
 
         let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        let mut req = Frame::req(request_id.clone(), CAP_IDENTITY, b"hello".to_vec(), "application/json");
+        let mut req = Frame::req(
+            request_id.clone(),
+            CAP_IDENTITY,
+            b"hello".to_vec(),
+            "application/json",
+        );
         seq.assign(&mut req);
         writer.write(&req).await.unwrap();
 
@@ -856,20 +1032,29 @@ mod tests {
 
         let manifest = TEST_MANIFEST.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
 
             let frame = reader.read().await.unwrap().unwrap();
             let request_id = frame.id.clone();
 
             let sid = "response".to_string();
             let mut seq = SeqAssigner::new();
-            let mut start = Frame::stream_start(request_id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut start =
+                Frame::stream_start(request_id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut start);
             writer.write(&start).await.unwrap();
             for (idx, data) in [b"chunk1", b"chunk2", b"chunk3"].iter().enumerate() {
                 let payload = data.to_vec();
                 let checksum = Frame::compute_checksum(&payload);
-                let mut chunk = Frame::chunk(request_id.clone(), sid.clone(), 0, payload, idx as u64, checksum);
+                let mut chunk = Frame::chunk(
+                    request_id.clone(),
+                    sid.clone(),
+                    0,
+                    payload,
+                    idx as u64,
+                    checksum,
+                );
                 seq.assign(&mut chunk);
                 writer.write(&chunk).await.unwrap();
             }
@@ -890,7 +1075,12 @@ mod tests {
 
         let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=stream;out=\"media:void\"", b"go".to_vec(), "application/json");
+        let mut req = Frame::req(
+            request_id.clone(),
+            "cap:in=\"media:void\";op=stream;out=\"media:void\"",
+            b"go".to_vec(),
+            "application/json",
+        );
         seq.assign(&mut req);
         writer.write(&req).await.unwrap();
 
@@ -922,7 +1112,8 @@ mod tests {
 
         let manifest = TEST_MANIFEST.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
 
             let frame = reader.read().await.unwrap().unwrap();
             assert_eq!(frame.frame_type, FrameType::Heartbeat);
@@ -965,7 +1156,9 @@ mod tests {
         let cartridge_handle = tokio::spawn(async move {
             let mut reader = FrameReader::new(BufReader::new(cartridge_from_host));
             let mut writer = FrameWriter::new(BufWriter::new(cartridge_to_host));
-            handshake_accept(&mut reader, &mut writer, &manifest).await.unwrap()
+            handshake_accept(&mut reader, &mut writer, &manifest)
+                .await
+                .unwrap()
         });
 
         let mut reader = FrameReader::new(BufReader::new(host_from_cartridge));
@@ -992,7 +1185,8 @@ mod tests {
 
         let manifest = TEST_MANIFEST.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
 
             let frame = reader.read().await.unwrap().unwrap();
             let payload = frame.payload.unwrap();
@@ -1018,7 +1212,12 @@ mod tests {
 
         let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=binary;out=\"media:void\"", binary_clone, "application/octet-stream");
+        let mut req = Frame::req(
+            request_id.clone(),
+            "cap:in=\"media:void\";op=binary;out=\"media:void\"",
+            binary_clone,
+            "application/octet-stream",
+        );
         seq.assign(&mut req);
         writer.write(&req).await.unwrap();
 
@@ -1046,7 +1245,8 @@ mod tests {
 
         let manifest = TEST_MANIFEST.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
 
             let mut seq = SeqAssigner::new();
             for _ in 0..3 {
@@ -1069,7 +1269,12 @@ mod tests {
         let mut seq = SeqAssigner::new();
         for _ in 0..3 {
             let request_id = MessageId::new_uuid();
-            let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "application/json");
+            let mut req = Frame::req(
+                request_id.clone(),
+                "cap:in=\"media:void\";op=test;out=\"media:void\"",
+                vec![],
+                "application/json",
+            );
             seq.assign(&mut req);
             writer.write(&req).await.unwrap();
             reader.read().await.unwrap().unwrap();
@@ -1094,11 +1299,14 @@ mod tests {
 
         let manifest = TEST_MANIFEST.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake(cartridge_from_host, cartridge_to_host, &manifest).await;
 
             let frame = reader.read().await.unwrap().unwrap();
-            assert!(frame.payload.is_none() || frame.payload.as_ref().unwrap().is_empty(),
-                    "empty payload must arrive empty");
+            assert!(
+                frame.payload.is_none() || frame.payload.as_ref().unwrap().is_empty(),
+                "empty payload must arrive empty"
+            );
 
             let mut seq = SeqAssigner::new();
             let mut end = Frame::end(frame.id, Some(vec![]));
@@ -1116,7 +1324,12 @@ mod tests {
 
         let mut seq = SeqAssigner::new();
         let request_id = MessageId::new_uuid();
-        let mut req = Frame::req(request_id.clone(), "cap:in=\"media:void\";op=empty;out=\"media:void\"", vec![], "application/json");
+        let mut req = Frame::req(
+            request_id.clone(),
+            "cap:in=\"media:void\";op=empty;out=\"media:void\"",
+            vec![],
+            "application/json",
+        );
         seq.assign(&mut req);
         writer.write(&req).await.unwrap();
 
@@ -1145,22 +1358,34 @@ mod tests {
 
         let m = manifest.as_bytes().to_vec();
         let cartridge_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(c_from_rt, c_to_rt, &m).await;
 
             // After identity verification, handle a real request
-            let req = reader.read().await.unwrap().expect("Expected REQ after identity verification");
-            assert_eq!(req.frame_type, FrameType::Req, "Must receive real REQ after identity handshake");
+            let req = reader
+                .read()
+                .await
+                .unwrap()
+                .expect("Expected REQ after identity verification");
+            assert_eq!(
+                req.frame_type,
+                FrameType::Req,
+                "Must receive real REQ after identity handshake"
+            );
 
             // Consume request body
             loop {
                 let f = reader.read().await.unwrap().expect("Expected frame");
-                if f.frame_type == FrameType::End { break; }
+                if f.frame_type == FrameType::End {
+                    break;
+                }
             }
 
             // Send response
             let mut seq = SeqAssigner::new();
             let sid = "resp".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut ss =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
             seq.assign(&mut ss);
             writer.write(&ss).await.unwrap();
             let payload = b"verified-and-working".to_vec();
@@ -1180,7 +1405,10 @@ mod tests {
         let (_, c_write_half) = c_write.into_split();
 
         let mut runtime = CartridgeHostRuntime::new();
-        runtime.attach_cartridge(c_read_half, c_write_half).await.unwrap();
+        runtime
+            .attach_cartridge(c_read_half, c_write_half)
+            .await
+            .unwrap();
 
         let (rt_read_half, _) = rt_relay_read.into_split();
         let (_, rt_write_half) = rt_relay_write.into_split();
@@ -1196,12 +1424,18 @@ mod tests {
             let xid = MessageId::Uint(1);
             let sid = uuid::Uuid::new_v4().to_string();
 
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain");
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=test;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
             req.routing_id = Some(xid.clone());
             seq.assign(&mut req);
             w.write(&req).await.unwrap();
 
-            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+            let mut ss =
+                Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
             ss.routing_id = Some(xid.clone());
             seq.assign(&mut ss);
             w.write(&ss).await.unwrap();
@@ -1228,8 +1462,12 @@ mod tests {
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -1243,7 +1481,10 @@ mod tests {
         assert!(result.is_ok(), "Runtime should exit cleanly: {:?}", result);
 
         let response = engine_task.await.unwrap();
-        assert_eq!(response, b"verified-and-working", "Cartridge must respond after identity verification");
+        assert_eq!(
+            response, b"verified-and-working",
+            "Cartridge must respond after identity verification"
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -1265,42 +1506,74 @@ mod tests {
 
         let ma = manifest_a.as_bytes().to_vec();
         let pa_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(ca_from_rt, ca_to_rt, &ma).await;
-            let req = reader.read().await.unwrap().expect("Expected REQ for alpha");
-            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=alpha;out=\"media:void\""));
-            loop { let f = reader.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(ca_from_rt, ca_to_rt, &ma).await;
+            let req = reader
+                .read()
+                .await
+                .unwrap()
+                .expect("Expected REQ for alpha");
+            assert_eq!(
+                req.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=alpha;out=\"media:void\"")
+            );
+            loop {
+                let f = reader.read().await.unwrap().expect("f");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+            }
             let mut seq = SeqAssigner::new();
             let sid = "a".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
-            seq.assign(&mut ss); writer.write(&ss).await.unwrap();
+            let mut ss =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            seq.assign(&mut ss);
+            writer.write(&ss).await.unwrap();
             let payload = b"from-alpha".to_vec();
             let checksum = Frame::compute_checksum(&payload);
             let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
-            seq.assign(&mut chunk); writer.write(&chunk).await.unwrap();
+            seq.assign(&mut chunk);
+            writer.write(&chunk).await.unwrap();
             let mut se = Frame::stream_end(req.id.clone(), sid, 1);
-            seq.assign(&mut se); writer.write(&se).await.unwrap();
+            seq.assign(&mut se);
+            writer.write(&se).await.unwrap();
             let mut end = Frame::end(req.id.clone(), None);
-            seq.assign(&mut end); writer.write(&end).await.unwrap();
+            seq.assign(&mut end);
+            writer.write(&end).await.unwrap();
         });
 
         let mb = manifest_b.as_bytes().to_vec();
         let pb_handle = tokio::spawn(async move {
-            let (mut reader, mut writer) = cartridge_handshake_with_identity(cb_from_rt, cb_to_rt, &mb).await;
+            let (mut reader, mut writer) =
+                cartridge_handshake_with_identity(cb_from_rt, cb_to_rt, &mb).await;
             let req = reader.read().await.unwrap().expect("Expected REQ for beta");
-            assert_eq!(req.cap.as_deref(), Some("cap:in=\"media:void\";op=beta;out=\"media:void\""));
-            loop { let f = reader.read().await.unwrap().expect("f"); if f.frame_type == FrameType::End { break; } }
+            assert_eq!(
+                req.cap.as_deref(),
+                Some("cap:in=\"media:void\";op=beta;out=\"media:void\"")
+            );
+            loop {
+                let f = reader.read().await.unwrap().expect("f");
+                if f.frame_type == FrameType::End {
+                    break;
+                }
+            }
             let mut seq = SeqAssigner::new();
             let sid = "b".to_string();
-            let mut ss = Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
-            seq.assign(&mut ss); writer.write(&ss).await.unwrap();
+            let mut ss =
+                Frame::stream_start(req.id.clone(), sid.clone(), "media:".to_string(), None);
+            seq.assign(&mut ss);
+            writer.write(&ss).await.unwrap();
             let payload = b"from-beta".to_vec();
             let checksum = Frame::compute_checksum(&payload);
             let mut chunk = Frame::chunk(req.id.clone(), sid.clone(), 0, payload, 0, checksum);
-            seq.assign(&mut chunk); writer.write(&chunk).await.unwrap();
+            seq.assign(&mut chunk);
+            writer.write(&chunk).await.unwrap();
             let mut se = Frame::stream_end(req.id.clone(), sid, 1);
-            seq.assign(&mut se); writer.write(&se).await.unwrap();
+            seq.assign(&mut se);
+            writer.write(&se).await.unwrap();
             let mut end = Frame::end(req.id.clone(), None);
-            seq.assign(&mut end); writer.write(&end).await.unwrap();
+            seq.assign(&mut end);
+            writer.write(&end).await.unwrap();
         });
 
         let (ca_read_half, _) = ca_read.into_split();
@@ -1309,8 +1582,14 @@ mod tests {
         let (_, cb_write_half) = cb_write.into_split();
 
         let mut runtime = CartridgeHostRuntime::new();
-        runtime.attach_cartridge(ca_read_half, ca_write_half).await.unwrap();
-        runtime.attach_cartridge(cb_read_half, cb_write_half).await.unwrap();
+        runtime
+            .attach_cartridge(ca_read_half, ca_write_half)
+            .await
+            .unwrap();
+        runtime
+            .attach_cartridge(cb_read_half, cb_write_half)
+            .await
+            .unwrap();
 
         let (rt_read_half, _) = rt_relay_read.into_split();
         let (_, rt_write_half) = rt_relay_write.into_split();
@@ -1326,25 +1605,45 @@ mod tests {
             // Send alpha request
             let req_id = MessageId::new_uuid();
             let sid = uuid::Uuid::new_v4().to_string();
-            let mut req = Frame::req(req_id.clone(), "cap:in=\"media:void\";op=alpha;out=\"media:void\"", vec![], "text/plain");
-            req.routing_id = Some(xid.clone()); seq.assign(&mut req); w.write(&req).await.unwrap();
-            let mut ss = Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
-            ss.routing_id = Some(xid.clone()); seq.assign(&mut ss); w.write(&ss).await.unwrap();
+            let mut req = Frame::req(
+                req_id.clone(),
+                "cap:in=\"media:void\";op=alpha;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
+            req.routing_id = Some(xid.clone());
+            seq.assign(&mut req);
+            w.write(&req).await.unwrap();
+            let mut ss =
+                Frame::stream_start(req_id.clone(), sid.clone(), "media:".to_string(), None);
+            ss.routing_id = Some(xid.clone());
+            seq.assign(&mut ss);
+            w.write(&ss).await.unwrap();
             let payload_a = b"alpha-data".to_vec();
             let checksum = Frame::compute_checksum(&payload_a);
             let mut chunk = Frame::chunk(req_id.clone(), sid.clone(), 0, payload_a, 0, checksum);
-            chunk.routing_id = Some(xid.clone()); seq.assign(&mut chunk); w.write(&chunk).await.unwrap();
+            chunk.routing_id = Some(xid.clone());
+            seq.assign(&mut chunk);
+            w.write(&chunk).await.unwrap();
             let mut se = Frame::stream_end(req_id.clone(), sid, 1);
-            se.routing_id = Some(xid.clone()); seq.assign(&mut se); w.write(&se).await.unwrap();
+            se.routing_id = Some(xid.clone());
+            seq.assign(&mut se);
+            w.write(&se).await.unwrap();
             let mut end = Frame::end(req_id.clone(), None);
-            end.routing_id = Some(xid.clone()); seq.assign(&mut end); w.write(&end).await.unwrap();
+            end.routing_id = Some(xid.clone());
+            seq.assign(&mut end);
+            w.write(&end).await.unwrap();
 
             let mut payload = Vec::new();
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -1355,25 +1654,46 @@ mod tests {
             let req_id2 = MessageId::new_uuid();
             let xid2 = MessageId::Uint(2);
             let sid2 = uuid::Uuid::new_v4().to_string();
-            let mut req2 = Frame::req(req_id2.clone(), "cap:in=\"media:void\";op=beta;out=\"media:void\"", vec![], "text/plain");
-            req2.routing_id = Some(xid2.clone()); seq.assign(&mut req2); w.write(&req2).await.unwrap();
-            let mut ss2 = Frame::stream_start(req_id2.clone(), sid2.clone(), "media:".to_string(), None);
-            ss2.routing_id = Some(xid2.clone()); seq.assign(&mut ss2); w.write(&ss2).await.unwrap();
+            let mut req2 = Frame::req(
+                req_id2.clone(),
+                "cap:in=\"media:void\";op=beta;out=\"media:void\"",
+                vec![],
+                "text/plain",
+            );
+            req2.routing_id = Some(xid2.clone());
+            seq.assign(&mut req2);
+            w.write(&req2).await.unwrap();
+            let mut ss2 =
+                Frame::stream_start(req_id2.clone(), sid2.clone(), "media:".to_string(), None);
+            ss2.routing_id = Some(xid2.clone());
+            seq.assign(&mut ss2);
+            w.write(&ss2).await.unwrap();
             let payload_b = b"beta-data".to_vec();
             let checksum2 = Frame::compute_checksum(&payload_b);
-            let mut chunk2 = Frame::chunk(req_id2.clone(), sid2.clone(), 0, payload_b, 0, checksum2);
-            chunk2.routing_id = Some(xid2.clone()); seq.assign(&mut chunk2); w.write(&chunk2).await.unwrap();
+            let mut chunk2 =
+                Frame::chunk(req_id2.clone(), sid2.clone(), 0, payload_b, 0, checksum2);
+            chunk2.routing_id = Some(xid2.clone());
+            seq.assign(&mut chunk2);
+            w.write(&chunk2).await.unwrap();
             let mut se2 = Frame::stream_end(req_id2.clone(), sid2, 1);
-            se2.routing_id = Some(xid2.clone()); seq.assign(&mut se2); w.write(&se2).await.unwrap();
+            se2.routing_id = Some(xid2.clone());
+            seq.assign(&mut se2);
+            w.write(&se2).await.unwrap();
             let mut end2 = Frame::end(req_id2.clone(), None);
-            end2.routing_id = Some(xid2); seq.assign(&mut end2); w.write(&end2).await.unwrap();
+            end2.routing_id = Some(xid2);
+            seq.assign(&mut end2);
+            w.write(&end2).await.unwrap();
 
             let mut payload2 = Vec::new();
             loop {
                 match r.read().await {
                     Ok(Some(f)) => {
-                        if f.frame_type == FrameType::Chunk { payload2.extend(f.payload.unwrap_or_default()); }
-                        if f.frame_type == FrameType::End { break; }
+                        if f.frame_type == FrameType::Chunk {
+                            payload2.extend(f.payload.unwrap_or_default());
+                        }
+                        if f.frame_type == FrameType::End {
+                            break;
+                        }
                     }
                     Ok(None) => break,
                     Err(_) => break,
@@ -1388,8 +1708,14 @@ mod tests {
         assert!(result.is_ok(), "Runtime should exit cleanly: {:?}", result);
 
         let (resp_alpha, resp_beta) = engine_task.await.unwrap();
-        assert_eq!(resp_alpha, b"from-alpha", "Alpha cartridge must respond correctly after identity verification");
-        assert_eq!(resp_beta, b"from-beta", "Beta cartridge must respond correctly after identity verification");
+        assert_eq!(
+            resp_alpha, b"from-alpha",
+            "Alpha cartridge must respond correctly after identity verification"
+        );
+        assert_eq!(
+            resp_beta, b"from-beta",
+            "Beta cartridge must respond correctly after identity verification"
+        );
 
         pa_handle.await.unwrap();
         pb_handle.await.unwrap();

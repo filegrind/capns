@@ -84,7 +84,10 @@ pub enum MachineSyntaxError {
 
     /// Two header statements define the same alias.
     #[error("duplicate alias '{alias}' (first defined at statement {first_position})")]
-    DuplicateAlias { alias: String, first_position: usize },
+    DuplicateAlias {
+        alias: String,
+        first_position: usize,
+    },
 
     /// A wiring statement has invalid structure (wrong number of
     /// arrows, missing parts).
@@ -127,4 +130,57 @@ pub enum MachineParseError {
 
     #[error(transparent)]
     Resolution(#[from] MachineAbstractionError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test1147_machine_syntax_error_display_is_specific() {
+        let err = MachineSyntaxError::InvalidWiring {
+            position: 7,
+            details: "expected source -> cap -> target".to_string(),
+        };
+
+        assert_eq!(
+            err.to_string(),
+            "invalid wiring at statement 7: expected source -> cap -> target"
+        );
+    }
+
+    #[test]
+    fn test1148_machine_parse_error_from_syntax_preserves_variant() {
+        let parse_error: MachineParseError = MachineSyntaxError::UndefinedAlias {
+            alias: "extract".to_string(),
+        }
+        .into();
+
+        match parse_error {
+            MachineParseError::Syntax(MachineSyntaxError::UndefinedAlias { alias }) => {
+                assert_eq!(alias, "extract");
+            }
+            other => panic!("expected syntax undefined alias, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test1149_machine_parse_error_from_resolution_preserves_variant() {
+        let parse_error: MachineParseError = MachineAbstractionError::AmbiguousMachineNotation {
+            strand_index: 2,
+            cap_urn: "cap:in=media:pdf;out=media:text".to_string(),
+        }
+        .into();
+
+        match parse_error {
+            MachineParseError::Resolution(MachineAbstractionError::AmbiguousMachineNotation {
+                strand_index,
+                cap_urn,
+            }) => {
+                assert_eq!(strand_index, 2);
+                assert_eq!(cap_urn, "cap:in=media:pdf;out=media:text");
+            }
+            other => panic!("expected ambiguous resolution error, got {other:?}"),
+        }
+    }
 }

@@ -22,8 +22,8 @@
 //!
 //! Design principle: URN handling uses proper parsing via MediaUrn, never string comparison.
 
-use serde::{Serialize, Deserialize};
 use crate::MediaUrn;
+use serde::{Deserialize, Serialize};
 
 /// Cardinality of cap inputs/outputs
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +187,8 @@ impl InputStructure {
                     base_urn.to_string()
                 } else {
                     // Add record marker (wildcard value)
-                    media_urn.with_tag("record", "*")
+                    media_urn
+                        .with_tag("record", "*")
                         .unwrap_or_else(|e| panic!("Failed to add record marker: {}", e))
                         .to_string()
                 }
@@ -388,12 +389,24 @@ impl CapShapeInfo {
             (InputCardinality::Single, InputCardinality::Single) => CardinalityPattern::OneToOne,
             (InputCardinality::Single, InputCardinality::Sequence) => CardinalityPattern::OneToMany,
             (InputCardinality::Sequence, InputCardinality::Single) => CardinalityPattern::ManyToOne,
-            (InputCardinality::Sequence, InputCardinality::Sequence) => CardinalityPattern::ManyToMany,
-            (InputCardinality::AtLeastOne, InputCardinality::Single) => CardinalityPattern::OneToOne,
-            (InputCardinality::AtLeastOne, InputCardinality::Sequence) => CardinalityPattern::OneToMany,
-            (InputCardinality::Single, InputCardinality::AtLeastOne) => CardinalityPattern::OneToOne,
-            (InputCardinality::Sequence, InputCardinality::AtLeastOne) => CardinalityPattern::ManyToMany,
-            (InputCardinality::AtLeastOne, InputCardinality::AtLeastOne) => CardinalityPattern::OneToOne,
+            (InputCardinality::Sequence, InputCardinality::Sequence) => {
+                CardinalityPattern::ManyToMany
+            }
+            (InputCardinality::AtLeastOne, InputCardinality::Single) => {
+                CardinalityPattern::OneToOne
+            }
+            (InputCardinality::AtLeastOne, InputCardinality::Sequence) => {
+                CardinalityPattern::OneToMany
+            }
+            (InputCardinality::Single, InputCardinality::AtLeastOne) => {
+                CardinalityPattern::OneToOne
+            }
+            (InputCardinality::Sequence, InputCardinality::AtLeastOne) => {
+                CardinalityPattern::ManyToMany
+            }
+            (InputCardinality::AtLeastOne, InputCardinality::AtLeastOne) => {
+                CardinalityPattern::OneToOne
+            }
         }
     }
 
@@ -555,28 +568,40 @@ mod tests {
     // Verifies Direct compatibility when both input and output are Single
     #[test]
     fn test690_compatibility_single_to_single() {
-        assert_eq!(InputCardinality::Single.is_compatible_with(InputCardinality::Single), CardinalityCompatibility::Direct);
+        assert_eq!(
+            InputCardinality::Single.is_compatible_with(InputCardinality::Single),
+            CardinalityCompatibility::Direct
+        );
     }
 
     // TEST691: Tests cardinality compatibility when wrapping single value into array
     // Verifies WrapInArray compatibility when Sequence expects Single input
     #[test]
     fn test691_compatibility_single_to_vector() {
-        assert_eq!(InputCardinality::Sequence.is_compatible_with(InputCardinality::Single), CardinalityCompatibility::WrapInArray);
+        assert_eq!(
+            InputCardinality::Sequence.is_compatible_with(InputCardinality::Single),
+            CardinalityCompatibility::WrapInArray
+        );
     }
 
     // TEST692: Tests cardinality compatibility when unwrapping array to singles
     // Verifies RequiresFanOut compatibility when Single expects Sequence input
     #[test]
     fn test692_compatibility_vector_to_single() {
-        assert_eq!(InputCardinality::Single.is_compatible_with(InputCardinality::Sequence), CardinalityCompatibility::RequiresFanOut);
+        assert_eq!(
+            InputCardinality::Single.is_compatible_with(InputCardinality::Sequence),
+            CardinalityCompatibility::RequiresFanOut
+        );
     }
 
     // TEST693: Tests cardinality compatibility for sequence-to-sequence data flow
     // Verifies Direct compatibility when both input and output are Sequence
     #[test]
     fn test693_compatibility_vector_to_vector() {
-        assert_eq!(InputCardinality::Sequence.is_compatible_with(InputCardinality::Sequence), CardinalityCompatibility::Direct);
+        assert_eq!(
+            InputCardinality::Sequence.is_compatible_with(InputCardinality::Sequence),
+            CardinalityCompatibility::Direct
+        );
     }
 
     // ==================== CapShapeInfo Cardinality Pattern Tests ====================
@@ -606,18 +631,26 @@ mod tests {
     #[test]
     fn test699_cap_shape_info_list_urn_still_single_cardinality() {
         // URN parsing always yields Single — the "list" tag is a structure marker, not cardinality
-        let from_urn = CapShapeInfo::from_cap_specs("cap:merge-pdfs", "media:list;pdf", "media:pdf");
+        let from_urn =
+            CapShapeInfo::from_cap_specs("cap:merge-pdfs", "media:list;pdf", "media:pdf");
         assert_eq!(from_urn.input.cardinality, InputCardinality::Single);
         assert_eq!(from_urn.output.cardinality, InputCardinality::Single);
         assert_eq!(from_urn.cardinality_pattern(), CardinalityPattern::OneToOne);
 
         // With is_sequence=true on input, cardinality becomes ManyToOne
         let with_seq = CapShapeInfo::from_cap_specs_with_sequence(
-            "cap:merge-pdfs", "media:list;pdf", "media:pdf", true, false,
+            "cap:merge-pdfs",
+            "media:list;pdf",
+            "media:pdf",
+            true,
+            false,
         );
         assert_eq!(with_seq.input.cardinality, InputCardinality::Sequence);
         assert_eq!(with_seq.output.cardinality, InputCardinality::Single);
-        assert_eq!(with_seq.cardinality_pattern(), CardinalityPattern::ManyToOne);
+        assert_eq!(
+            with_seq.cardinality_pattern(),
+            CardinalityPattern::ManyToOne
+        );
     }
 
     // ==================== CardinalityPattern Tests ====================
@@ -663,7 +696,13 @@ mod tests {
     #[test]
     fn test712_strand_shape_analysis_with_fan_out() {
         let infos = vec![
-            CapShapeInfo::from_cap_specs_with_sequence("cap:pdf-to-pages", "media:pdf", "media:png", false, true),
+            CapShapeInfo::from_cap_specs_with_sequence(
+                "cap:pdf-to-pages",
+                "media:pdf",
+                "media:png",
+                false,
+                true,
+            ),
             CapShapeInfo::from_cap_specs("cap:thumbnail", "media:png", "media:png"),
         ];
         let analysis = StrandShapeAnalysis::analyze(infos);
@@ -711,22 +750,46 @@ mod tests {
     // Verifies that URNs without record marker are parsed as Opaque
     #[test]
     fn test720_from_media_urn_opaque() {
-        assert_eq!(InputStructure::from_media_urn("media:pdf"), InputStructure::Opaque);
-        assert_eq!(InputStructure::from_media_urn("media:textable"), InputStructure::Opaque);
-        assert_eq!(InputStructure::from_media_urn("media:integer"), InputStructure::Opaque);
+        assert_eq!(
+            InputStructure::from_media_urn("media:pdf"),
+            InputStructure::Opaque
+        );
+        assert_eq!(
+            InputStructure::from_media_urn("media:textable"),
+            InputStructure::Opaque
+        );
+        assert_eq!(
+            InputStructure::from_media_urn("media:integer"),
+            InputStructure::Opaque
+        );
         // List marker doesn't affect structure
-        assert_eq!(InputStructure::from_media_urn("media:file-path;list"), InputStructure::Opaque);
+        assert_eq!(
+            InputStructure::from_media_urn("media:file-path;list"),
+            InputStructure::Opaque
+        );
     }
 
     // TEST721: Tests InputStructure correctly identifies record media URNs
     // Verifies that URNs with record marker tag are parsed as Record
     #[test]
     fn test721_from_media_urn_record() {
-        assert_eq!(InputStructure::from_media_urn("media:json;record"), InputStructure::Record);
-        assert_eq!(InputStructure::from_media_urn("media:record;textable"), InputStructure::Record);
-        assert_eq!(InputStructure::from_media_urn("media:file-metadata;record;textable"), InputStructure::Record);
+        assert_eq!(
+            InputStructure::from_media_urn("media:json;record"),
+            InputStructure::Record
+        );
+        assert_eq!(
+            InputStructure::from_media_urn("media:record;textable"),
+            InputStructure::Record
+        );
+        assert_eq!(
+            InputStructure::from_media_urn("media:file-metadata;record;textable"),
+            InputStructure::Record
+        );
         // List of records
-        assert_eq!(InputStructure::from_media_urn("media:json;list;record"), InputStructure::Record);
+        assert_eq!(
+            InputStructure::from_media_urn("media:json;list;record"),
+            InputStructure::Record
+        );
     }
 
     // TEST722: Tests structure compatibility for opaque-to-opaque data flow
@@ -812,10 +875,22 @@ mod tests {
         let list_record = MediaShape::list_record();
 
         // Same shape = Direct
-        assert_eq!(scalar_opaque.is_compatible_with(scalar_opaque), ShapeCompatibility::Direct);
-        assert_eq!(scalar_record.is_compatible_with(scalar_record), ShapeCompatibility::Direct);
-        assert_eq!(list_opaque.is_compatible_with(list_opaque), ShapeCompatibility::Direct);
-        assert_eq!(list_record.is_compatible_with(list_record), ShapeCompatibility::Direct);
+        assert_eq!(
+            scalar_opaque.is_compatible_with(scalar_opaque),
+            ShapeCompatibility::Direct
+        );
+        assert_eq!(
+            scalar_record.is_compatible_with(scalar_record),
+            ShapeCompatibility::Direct
+        );
+        assert_eq!(
+            list_opaque.is_compatible_with(list_opaque),
+            ShapeCompatibility::Direct
+        );
+        assert_eq!(
+            list_record.is_compatible_with(list_record),
+            ShapeCompatibility::Direct
+        );
     }
 
     // TEST732: Tests MediaShape compatibility for cardinality changes with matching structure
@@ -827,12 +902,24 @@ mod tests {
         let list_record = MediaShape::list_record();
 
         // Scalar to list (same structure) = WrapInArray
-        assert_eq!(list_opaque.is_compatible_with(scalar_opaque), ShapeCompatibility::WrapInArray);
-        assert_eq!(list_record.is_compatible_with(scalar_record), ShapeCompatibility::WrapInArray);
+        assert_eq!(
+            list_opaque.is_compatible_with(scalar_opaque),
+            ShapeCompatibility::WrapInArray
+        );
+        assert_eq!(
+            list_record.is_compatible_with(scalar_record),
+            ShapeCompatibility::WrapInArray
+        );
 
         // List to scalar (same structure) = RequiresFanOut
-        assert_eq!(scalar_opaque.is_compatible_with(list_opaque), ShapeCompatibility::RequiresFanOut);
-        assert_eq!(scalar_record.is_compatible_with(list_record), ShapeCompatibility::RequiresFanOut);
+        assert_eq!(
+            scalar_opaque.is_compatible_with(list_opaque),
+            ShapeCompatibility::RequiresFanOut
+        );
+        assert_eq!(
+            scalar_record.is_compatible_with(list_record),
+            ShapeCompatibility::RequiresFanOut
+        );
     }
 
     // TEST733: Tests MediaShape incompatibility when structures don't match
@@ -859,11 +946,7 @@ mod tests {
     // TEST740: Tests CapShapeInfo correctly parses cap specs
     #[test]
     fn test740_cap_shape_info_from_specs() {
-        let info = CapShapeInfo::from_cap_specs(
-            "cap:test",
-            "media:textable",
-            "media:json;record"
-        );
+        let info = CapShapeInfo::from_cap_specs("cap:test", "media:textable", "media:json;record");
         assert_eq!(info.input.cardinality, InputCardinality::Single);
         assert_eq!(info.input.structure, InputStructure::Opaque);
         assert_eq!(info.output.cardinality, InputCardinality::Single);
@@ -880,7 +963,10 @@ mod tests {
             false,
             true,
         );
-        assert_eq!(one_to_many.cardinality_pattern(), CardinalityPattern::OneToMany);
+        assert_eq!(
+            one_to_many.cardinality_pattern(),
+            CardinalityPattern::OneToMany
+        );
     }
 
     // ==================== StrandShapeAnalysis Tests ====================
@@ -916,7 +1002,13 @@ mod tests {
     #[test]
     fn test752_strand_shape_with_fanout() {
         let infos = vec![
-            CapShapeInfo::from_cap_specs_with_sequence("cap:disbind", "media:pdf", "media:page;textable", false, true),
+            CapShapeInfo::from_cap_specs_with_sequence(
+                "cap:disbind",
+                "media:pdf",
+                "media:page;textable",
+                false,
+                true,
+            ),
             CapShapeInfo::from_cap_specs("cap:process", "media:textable", "media:result;textable"),
         ];
         let analysis = StrandShapeAnalysis::analyze(infos);
@@ -932,12 +1024,12 @@ mod tests {
             CapShapeInfo::from_cap_specs(
                 "cap:parse_csv",
                 "media:csv;textable",
-                "media:json;list;record"
+                "media:json;list;record",
             ),
             CapShapeInfo::from_cap_specs(
                 "cap:transform",
                 "media:json;list;record",
-                "media:result;list;record"
+                "media:result;list;record",
             ),
         ];
         let analysis = StrandShapeAnalysis::analyze(infos);

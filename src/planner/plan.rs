@@ -9,11 +9,11 @@
 //! - Fan-out (ForEach) for sequence -> single transitions
 //! - Fan-in (Collect) for gathering results back into sequences
 
-use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, VecDeque};
 use super::argument_binding::ArgumentBindings;
 use super::cardinality::InputCardinality;
 use super::PlannerError;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 
 /// Unique identifier for a node in the execution plan
 pub type NodeId = String;
@@ -160,7 +160,12 @@ impl MachineNode {
     }
 
     /// Create a cap node with argument bindings and routing preference
-    pub fn cap_with_preference(id: &str, cap_urn: &str, bindings: ArgumentBindings, preferred_cap: Option<String>) -> Self {
+    pub fn cap_with_preference(
+        id: &str,
+        cap_urn: &str,
+        bindings: ArgumentBindings,
+        preferred_cap: Option<String>,
+    ) -> Self {
         Self {
             id: id.to_string(),
             node_type: ExecutionNodeType::Cap {
@@ -198,7 +203,12 @@ impl MachineNode {
     }
 
     /// Create an input slot node
-    pub fn input_slot(id: &str, slot_name: &str, media_urn: &str, cardinality: InputCardinality) -> Self {
+    pub fn input_slot(
+        id: &str,
+        slot_name: &str,
+        media_urn: &str,
+        cardinality: InputCardinality,
+    ) -> Self {
         Self {
             id: id.to_string(),
             node_type: ExecutionNodeType::InputSlot {
@@ -321,7 +331,9 @@ impl MachinePlanEdge {
         Self {
             from_node: from.to_string(),
             to_node: to.to_string(),
-            edge_type: EdgeType::JsonField { field: field.to_string() },
+            edge_type: EdgeType::JsonField {
+                field: field.to_string(),
+            },
         }
     }
 
@@ -330,7 +342,9 @@ impl MachinePlanEdge {
         Self {
             from_node: from.to_string(),
             to_node: to.to_string(),
-            edge_type: EdgeType::JsonPath { path: path.to_string() },
+            edge_type: EdgeType::JsonPath {
+                path: path.to_string(),
+            },
         }
     }
 }
@@ -493,7 +507,12 @@ impl MachinePlan {
 
     /// Create a plan for a single cap execution.
     /// `file_path_arg_name` is the name of the argument that receives the input file path.
-    pub fn single_cap(cap_urn: &str, input_media: &str, _output_media: &str, file_path_arg_name: &str) -> Self {
+    pub fn single_cap(
+        cap_urn: &str,
+        input_media: &str,
+        _output_media: &str,
+        file_path_arg_name: &str,
+    ) -> Self {
         let mut plan = Self::new(&format!("Single cap: {}", cap_urn));
 
         // Add input slot
@@ -540,9 +559,9 @@ impl MachinePlan {
     /// nodes (scalar→list without ForEach) are pass-throughs handled by
     /// plan_converter and do NOT require decomposition.
     pub fn has_foreach(&self) -> bool {
-        self.nodes.values().any(|n| {
-            matches!(n.node_type, ExecutionNodeType::ForEach { .. })
-        })
+        self.nodes
+            .values()
+            .any(|n| matches!(n.node_type, ExecutionNodeType::ForEach { .. }))
     }
 
     /// Check whether this plan contains any Collect nodes paired with ForEach.
@@ -550,8 +569,14 @@ impl MachinePlan {
     /// A Collect node following a ForEach marks the re-assembly point.
     /// Standalone Collect nodes (no ForEach) are pass-throughs.
     pub fn has_foreach_collect_pair(&self) -> bool {
-        let has_foreach = self.nodes.values().any(|n| matches!(n.node_type, ExecutionNodeType::ForEach { .. }));
-        let has_collect = self.nodes.values().any(|n| matches!(n.node_type, ExecutionNodeType::Collect { .. }));
+        let has_foreach = self
+            .nodes
+            .values()
+            .any(|n| matches!(n.node_type, ExecutionNodeType::ForEach { .. }));
+        let has_collect = self
+            .nodes
+            .values()
+            .any(|n| matches!(n.node_type, ExecutionNodeType::Collect { .. }));
         has_foreach && has_collect
     }
 
@@ -566,7 +591,8 @@ impl MachinePlan {
     pub fn extract_prefix_to(&self, target_node_id: &str) -> Result<Self, PlannerError> {
         if !self.nodes.contains_key(target_node_id) {
             return Err(PlannerError::Internal(format!(
-                "Target node '{}' not found in plan", target_node_id
+                "Target node '{}' not found in plan",
+                target_node_id
             )));
         }
 
@@ -579,7 +605,8 @@ impl MachinePlan {
         // Build reverse adjacency: to_node -> [from_node]
         let mut reverse_adj: HashMap<&str, Vec<&str>> = HashMap::new();
         for edge in &self.edges {
-            reverse_adj.entry(edge.to_node.as_str())
+            reverse_adj
+                .entry(edge.to_node.as_str())
                 .or_default()
                 .push(edge.from_node.as_str());
         }
@@ -595,7 +622,8 @@ impl MachinePlan {
         }
 
         // Build the sub-plan with only ancestor nodes
-        let mut sub_plan = MachinePlan::new(&format!("{} [prefix to {}]", self.name, target_node_id));
+        let mut sub_plan =
+            MachinePlan::new(&format!("{} [prefix to {}]", self.name, target_node_id));
 
         for node_id in &ancestors {
             if let Some(node) = self.nodes.get(node_id) {
@@ -610,10 +638,12 @@ impl MachinePlan {
         // Add edges where both endpoints are in the ancestor set and not Output nodes
         for edge in &self.edges {
             if ancestors.contains(&edge.from_node) && ancestors.contains(&edge.to_node) {
-                let from_is_output = self.nodes.get(&edge.from_node)
-                    .map_or(false, |n| matches!(n.node_type, ExecutionNodeType::Output { .. }));
-                let to_is_output = self.nodes.get(&edge.to_node)
-                    .map_or(false, |n| matches!(n.node_type, ExecutionNodeType::Output { .. }));
+                let from_is_output = self.nodes.get(&edge.from_node).map_or(false, |n| {
+                    matches!(n.node_type, ExecutionNodeType::Output { .. })
+                });
+                let to_is_output = self.nodes.get(&edge.to_node).map_or(false, |n| {
+                    matches!(n.node_type, ExecutionNodeType::Output { .. })
+                });
                 if !from_is_output && !to_is_output {
                     sub_plan.add_edge(edge.clone());
                 }
@@ -622,7 +652,11 @@ impl MachinePlan {
 
         // Add synthetic Output node connected to the target
         let output_id = format!("{}_prefix_output", target_node_id);
-        sub_plan.add_node(MachineNode::output(&output_id, "prefix_result", target_node_id));
+        sub_plan.add_node(MachineNode::output(
+            &output_id,
+            "prefix_result",
+            target_node_id,
+        ));
         sub_plan.add_edge(MachinePlanEdge::direct(target_node_id, &output_id));
 
         sub_plan.validate()?;
@@ -647,12 +681,15 @@ impl MachinePlan {
         })?;
 
         let (body_entry, body_exit) = match &foreach_node.node_type {
-            ExecutionNodeType::ForEach { body_entry, body_exit, .. } => {
-                (body_entry.clone(), body_exit.clone())
-            }
+            ExecutionNodeType::ForEach {
+                body_entry,
+                body_exit,
+                ..
+            } => (body_entry.clone(), body_exit.clone()),
             _ => {
                 return Err(PlannerError::Internal(format!(
-                    "Node '{}' is not a ForEach node", foreach_node_id
+                    "Node '{}' is not a ForEach node",
+                    foreach_node_id
                 )));
             }
         };
@@ -667,7 +704,8 @@ impl MachinePlan {
         // Build forward adjacency: from_node -> [(to_node, edge)]
         let mut forward_adj: HashMap<&str, Vec<&str>> = HashMap::new();
         for edge in &self.edges {
-            forward_adj.entry(edge.from_node.as_str())
+            forward_adj
+                .entry(edge.from_node.as_str())
                 .or_default()
                 .push(edge.to_node.as_str());
         }
@@ -681,7 +719,10 @@ impl MachinePlan {
                 for &child in children {
                     // Don't include Output or Collect nodes from the original plan
                     if let Some(child_node) = self.nodes.get(child) {
-                        if matches!(child_node.node_type, ExecutionNodeType::Output { .. } | ExecutionNodeType::Collect { .. }) {
+                        if matches!(
+                            child_node.node_type,
+                            ExecutionNodeType::Output { .. } | ExecutionNodeType::Collect { .. }
+                        ) {
                             // Include body_exit but stop here
                             if child == body_exit {
                                 body_nodes.insert(child.to_string());
@@ -700,9 +741,8 @@ impl MachinePlan {
         body_nodes.insert(body_exit.clone());
 
         // Build the body sub-plan
-        let mut body_plan = MachinePlan::new(
-            &format!("{} [foreach body {}]", self.name, foreach_node_id)
-        );
+        let mut body_plan =
+            MachinePlan::new(&format!("{} [foreach body {}]", self.name, foreach_node_id));
 
         // Add synthetic InputSlot for the per-item input
         let input_id = format!("{}_body_input", foreach_node_id);
@@ -757,7 +797,8 @@ impl MachinePlan {
     ) -> Result<Self, PlannerError> {
         if !self.nodes.contains_key(source_node_id) {
             return Err(PlannerError::Internal(format!(
-                "Source node '{}' not found in plan", source_node_id
+                "Source node '{}' not found in plan",
+                source_node_id
             )));
         }
 
@@ -769,7 +810,8 @@ impl MachinePlan {
 
         let mut forward_adj: HashMap<&str, Vec<&str>> = HashMap::new();
         for edge in &self.edges {
-            forward_adj.entry(edge.from_node.as_str())
+            forward_adj
+                .entry(edge.from_node.as_str())
                 .or_default()
                 .push(edge.to_node.as_str());
         }
@@ -784,9 +826,8 @@ impl MachinePlan {
             }
         }
 
-        let mut sub_plan = MachinePlan::new(
-            &format!("{} [suffix from {}]", self.name, source_node_id)
-        );
+        let mut sub_plan =
+            MachinePlan::new(&format!("{} [suffix from {}]", self.name, source_node_id));
 
         // Add synthetic InputSlot to feed into source_node
         let input_id = format!("{}_suffix_input", source_node_id);
@@ -830,7 +871,12 @@ impl MachinePlan {
 
     /// Create a linear chain of caps (each output feeds into next input).
     /// `file_path_arg_names` provides the argument name for each cap in the chain.
-    pub fn linear_chain(cap_urns: &[&str], input_media: &str, _output_media: &str, file_path_arg_names: &[&str]) -> Self {
+    pub fn linear_chain(
+        cap_urns: &[&str],
+        input_media: &str,
+        _output_media: &str,
+        file_path_arg_names: &[&str],
+    ) -> Self {
         let mut plan = Self::new("Linear machine");
 
         if cap_urns.is_empty() {
@@ -991,7 +1037,7 @@ mod tests {
             "cap:test",
             "media:pdf",
             "media:png",
-            "input_file",  // file-path argument name for this cap
+            "input_file", // file-path argument name for this cap
         );
         assert_eq!(plan.nodes.len(), 3); // input_slot, cap, output
         assert_eq!(plan.entry_nodes.len(), 1);
@@ -1007,7 +1053,7 @@ mod tests {
             &["cap:a", "cap:b", "cap:c"],
             "media:pdf",
             "media:png",
-            &["input_a", "input_b", "input_c"],  // file-path argument names for each cap
+            &["input_a", "input_b", "input_c"], // file-path argument names for each cap
         );
         assert_eq!(plan.nodes.len(), 5); // input_slot, 3 caps, output
         assert_eq!(plan.edges.len(), 4);
@@ -1048,11 +1094,10 @@ mod tests {
     #[test]
     fn test924_validate_invalid_edge() {
         let mut plan = MachinePlan::new("invalid");
-        plan.nodes.insert(
-            "node_0".to_string(),
-            MachineNode::cap("node_0", "cap:test"),
-        );
-        plan.edges.push(MachinePlanEdge::direct("node_0", "nonexistent"));
+        plan.nodes
+            .insert("node_0".to_string(), MachineNode::cap("node_0", "cap:test"));
+        plan.edges
+            .push(MachinePlanEdge::direct("node_0", "nonexistent"));
 
         let result = plan.validate();
         assert!(result.is_err());
@@ -1067,10 +1112,14 @@ mod tests {
         // Diamond: A -> B, A -> C, B -> D, C -> D
         let mut plan = MachinePlan::new("diamond");
 
-        plan.nodes.insert("A".to_string(), MachineNode::cap("A", "cap:a"));
-        plan.nodes.insert("B".to_string(), MachineNode::cap("B", "cap:b"));
-        plan.nodes.insert("C".to_string(), MachineNode::cap("C", "cap:c"));
-        plan.nodes.insert("D".to_string(), MachineNode::cap("D", "cap:d"));
+        plan.nodes
+            .insert("A".to_string(), MachineNode::cap("A", "cap:a"));
+        plan.nodes
+            .insert("B".to_string(), MachineNode::cap("B", "cap:b"));
+        plan.nodes
+            .insert("C".to_string(), MachineNode::cap("C", "cap:c"));
+        plan.nodes
+            .insert("D".to_string(), MachineNode::cap("D", "cap:d"));
 
         plan.edges.push(MachinePlanEdge::direct("A", "B"));
         plan.edges.push(MachinePlanEdge::direct("A", "C"));
@@ -1093,9 +1142,12 @@ mod tests {
         // Cycle: A -> B -> C -> A
         let mut plan = MachinePlan::new("cyclic");
 
-        plan.nodes.insert("A".to_string(), MachineNode::cap("A", "cap:a"));
-        plan.nodes.insert("B".to_string(), MachineNode::cap("B", "cap:b"));
-        plan.nodes.insert("C".to_string(), MachineNode::cap("C", "cap:c"));
+        plan.nodes
+            .insert("A".to_string(), MachineNode::cap("A", "cap:a"));
+        plan.nodes
+            .insert("B".to_string(), MachineNode::cap("B", "cap:b"));
+        plan.nodes
+            .insert("C".to_string(), MachineNode::cap("C", "cap:c"));
 
         plan.edges.push(MachinePlanEdge::direct("A", "B"));
         plan.edges.push(MachinePlanEdge::direct("B", "C"));
@@ -1171,11 +1223,10 @@ mod tests {
     #[test]
     fn test928_validate_invalid_from_node() {
         let mut plan = MachinePlan::new("invalid");
-        plan.nodes.insert(
-            "node_0".to_string(),
-            MachineNode::cap("node_0", "cap:test"),
-        );
-        plan.edges.push(MachinePlanEdge::direct("nonexistent", "node_0"));
+        plan.nodes
+            .insert("node_0".to_string(), MachineNode::cap("node_0", "cap:test"));
+        plan.edges
+            .push(MachinePlanEdge::direct("nonexistent", "node_0"));
 
         let result = plan.validate();
         assert!(result.is_err());
@@ -1188,10 +1239,8 @@ mod tests {
     #[test]
     fn test929_validate_invalid_entry_node() {
         let mut plan = MachinePlan::new("invalid_entry");
-        plan.nodes.insert(
-            "cap_0".to_string(),
-            MachineNode::cap("cap_0", "cap:test"),
-        );
+        plan.nodes
+            .insert("cap_0".to_string(), MachineNode::cap("cap_0", "cap:test"));
         // Manually add invalid entry node reference
         plan.entry_nodes.push("nonexistent_entry".to_string());
 
@@ -1206,10 +1255,8 @@ mod tests {
     #[test]
     fn test930_validate_invalid_output_node() {
         let mut plan = MachinePlan::new("invalid_output");
-        plan.nodes.insert(
-            "cap_0".to_string(),
-            MachineNode::cap("cap_0", "cap:test"),
-        );
+        plan.nodes
+            .insert("cap_0".to_string(), MachineNode::cap("cap_0", "cap:test"));
         // Manually add invalid output node reference
         plan.output_nodes.push("nonexistent_output".to_string());
 
@@ -1226,7 +1273,8 @@ mod tests {
         // Self-loop: A -> A
         let mut plan = MachinePlan::new("self_loop");
 
-        plan.nodes.insert("A".to_string(), MachineNode::cap("A", "cap:a"));
+        plan.nodes
+            .insert("A".to_string(), MachineNode::cap("A", "cap:a"));
         plan.edges.push(MachinePlanEdge::direct("A", "A"));
 
         let result = plan.topological_order();
@@ -1242,10 +1290,14 @@ mod tests {
         // Multiple entry points: A -> C, B -> C, C -> D
         let mut plan = MachinePlan::new("multi_entry");
 
-        plan.nodes.insert("A".to_string(), MachineNode::cap("A", "cap:a"));
-        plan.nodes.insert("B".to_string(), MachineNode::cap("B", "cap:b"));
-        plan.nodes.insert("C".to_string(), MachineNode::cap("C", "cap:c"));
-        plan.nodes.insert("D".to_string(), MachineNode::cap("D", "cap:d"));
+        plan.nodes
+            .insert("A".to_string(), MachineNode::cap("A", "cap:a"));
+        plan.nodes
+            .insert("B".to_string(), MachineNode::cap("B", "cap:b"));
+        plan.nodes
+            .insert("C".to_string(), MachineNode::cap("C", "cap:c"));
+        plan.nodes
+            .insert("D".to_string(), MachineNode::cap("D", "cap:d"));
 
         plan.edges.push(MachinePlanEdge::direct("A", "C"));
         plan.edges.push(MachinePlanEdge::direct("B", "C"));
@@ -1319,7 +1371,7 @@ mod tests {
             &["cap:only"],
             "media:pdf",
             "media:png",
-            &["source_file"],  // file-path argument name
+            &["source_file"], // file-path argument name
         );
         assert_eq!(plan.nodes.len(), 3); // input_slot, 1 cap, output
         assert_eq!(plan.edges.len(), 2);
@@ -1334,7 +1386,7 @@ mod tests {
             &[],
             "media:pdf",
             "media:png",
-            &[],  // no caps, no arg names
+            &[], // no caps, no arg names
         );
         assert_eq!(plan.nodes.len(), 0);
         assert_eq!(plan.edges.len(), 0);
@@ -1413,7 +1465,9 @@ mod tests {
         let deserialized: EdgeType = serde_json::from_str(&json).unwrap();
         assert!(matches!(deserialized, EdgeType::Direct));
 
-        let json_field = EdgeType::JsonField { field: "data".to_string() };
+        let json_field = EdgeType::JsonField {
+            field: "data".to_string(),
+        };
         let json = serde_json::to_string(&json_field).unwrap();
         assert!(json.contains("json_field"));
         assert!(json.contains("data"));
@@ -1449,7 +1503,7 @@ mod tests {
             "cap:test",
             "media:pdf",
             "media:png",
-            "input_file",  // file-path argument name
+            "input_file", // file-path argument name
         );
 
         let json = serde_json::to_string(&plan).unwrap();
@@ -1481,7 +1535,10 @@ mod tests {
     fn test746_cap_node_output() {
         let output = MachineNode::output("out", "result", "source");
         match &output.node_type {
-            ExecutionNodeType::Output { output_name, source_node } => {
+            ExecutionNodeType::Output {
+                output_name,
+                source_node,
+            } => {
                 assert_eq!(output_name, "result");
                 assert_eq!(source_node, "source");
             }
@@ -1505,8 +1562,10 @@ mod tests {
             description: Some("Merge outputs".to_string()),
         };
 
-        plan.nodes.insert("a".to_string(), MachineNode::cap("a", "cap:a"));
-        plan.nodes.insert("b".to_string(), MachineNode::cap("b", "cap:b"));
+        plan.nodes
+            .insert("a".to_string(), MachineNode::cap("a", "cap:a"));
+        plan.nodes
+            .insert("b".to_string(), MachineNode::cap("b", "cap:b"));
         plan.nodes.insert("merge".to_string(), merge_node);
         plan.edges.push(MachinePlanEdge::direct("a", "merge"));
         plan.edges.push(MachinePlanEdge::direct("b", "merge"));
@@ -1528,7 +1587,10 @@ mod tests {
         };
 
         match &split_node.node_type {
-            ExecutionNodeType::Split { input_node, output_count } => {
+            ExecutionNodeType::Split {
+                input_node,
+                output_count,
+            } => {
                 assert_eq!(input_node, "input");
                 assert_eq!(*output_count, 3);
             }
@@ -1544,7 +1606,7 @@ mod tests {
             "cap:test",
             "media:pdf",
             "media:png",
-            "doc_path",  // file-path argument name
+            "doc_path", // file-path argument name
         );
 
         assert!(plan.get_node("cap_0").is_some());
@@ -1559,13 +1621,38 @@ mod tests {
         let mut plan = MachinePlan::new("ForEach test plan");
 
         // input_slot → cap_0 → foreach --iteration--> body_cap_0 → body_cap_1 --collection--> collect → cap_post → output
-        plan.add_node(MachineNode::input_slot("input_slot", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;out=\"media:pdf-page;list\""));  // disbind
-        plan.add_node(MachineNode::for_each("foreach_0", "cap_0", "body_cap_0", "body_cap_1"));
-        plan.add_node(MachineNode::cap("body_cap_0", "cap:in=media:pdf-page;out=\"media:text;textable\""));
-        plan.add_node(MachineNode::cap("body_cap_1", "cap:in=\"media:text;textable\";out=\"media:decision;json;record;textable\""));
-        plan.add_node(MachineNode::collect("collect_0", vec!["body_cap_1".to_string()]));
-        plan.add_node(MachineNode::cap("cap_post", "cap:in=\"media:decision;json;record;textable\";out=\"media:json;textable\""));
+        plan.add_node(MachineNode::input_slot(
+            "input_slot",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:pdf;out=\"media:pdf-page;list\"",
+        )); // disbind
+        plan.add_node(MachineNode::for_each(
+            "foreach_0",
+            "cap_0",
+            "body_cap_0",
+            "body_cap_1",
+        ));
+        plan.add_node(MachineNode::cap(
+            "body_cap_0",
+            "cap:in=media:pdf-page;out=\"media:text;textable\"",
+        ));
+        plan.add_node(MachineNode::cap(
+            "body_cap_1",
+            "cap:in=\"media:text;textable\";out=\"media:decision;json;record;textable\"",
+        ));
+        plan.add_node(MachineNode::collect(
+            "collect_0",
+            vec!["body_cap_1".to_string()],
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_post",
+            "cap:in=\"media:decision;json;record;textable\";out=\"media:json;textable\"",
+        ));
         plan.add_node(MachineNode::output("output", "result", "cap_post"));
 
         plan.add_edge(MachinePlanEdge::direct("input_slot", "cap_0"));
@@ -1584,10 +1671,26 @@ mod tests {
     fn build_foreach_plan_unclosed() -> MachinePlan {
         let mut plan = MachinePlan::new("Unclosed ForEach test plan");
 
-        plan.add_node(MachineNode::input_slot("input_slot", "input", "media:pdf", InputCardinality::Single));
-        plan.add_node(MachineNode::cap("cap_0", "cap:in=media:pdf;out=\"media:pdf-page;list\""));
-        plan.add_node(MachineNode::for_each("foreach_0", "cap_0", "body_cap_0", "body_cap_0"));
-        plan.add_node(MachineNode::cap("body_cap_0", "cap:in=media:pdf-page;out=\"media:decision;json;record;textable\""));
+        plan.add_node(MachineNode::input_slot(
+            "input_slot",
+            "input",
+            "media:pdf",
+            InputCardinality::Single,
+        ));
+        plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:pdf;out=\"media:pdf-page;list\"",
+        ));
+        plan.add_node(MachineNode::for_each(
+            "foreach_0",
+            "cap_0",
+            "body_cap_0",
+            "body_cap_0",
+        ));
+        plan.add_node(MachineNode::cap(
+            "body_cap_0",
+            "cap:in=media:pdf-page;out=\"media:decision;json;record;textable\"",
+        ));
         plan.add_node(MachineNode::output("output", "result", "body_cap_0"));
 
         plan.add_edge(MachinePlanEdge::direct("input_slot", "cap_0"));
@@ -1622,20 +1725,30 @@ mod tests {
     #[test]
     fn test936_has_foreach() {
         let foreach_plan = build_foreach_plan_with_collect();
-        assert!(foreach_plan.has_foreach(), "Plan with ForEach+Collect should detect ForEach");
-
-        let linear_plan = MachinePlan::linear_chain(
-            &["cap:a"],
-            "media:pdf",
-            "media:png",
-            &["input_a"],
+        assert!(
+            foreach_plan.has_foreach(),
+            "Plan with ForEach+Collect should detect ForEach"
         );
-        assert!(!linear_plan.has_foreach(), "Linear plan should not detect ForEach");
+
+        let linear_plan =
+            MachinePlan::linear_chain(&["cap:a"], "media:pdf", "media:png", &["input_a"]);
+        assert!(
+            !linear_plan.has_foreach(),
+            "Linear plan should not detect ForEach"
+        );
 
         // Standalone Collect (no ForEach) should NOT trigger has_foreach
         let mut standalone_collect_plan = MachinePlan::new("collect_only");
-        standalone_collect_plan.add_node(MachineNode::input_slot("input", "input", "media:textable", crate::planner::cardinality::InputCardinality::Single));
-        standalone_collect_plan.add_node(MachineNode::cap("cap_0", "cap:in=media:textable;op=summarize;out=media:summary"));
+        standalone_collect_plan.add_node(MachineNode::input_slot(
+            "input",
+            "input",
+            "media:textable",
+            crate::planner::cardinality::InputCardinality::Single,
+        ));
+        standalone_collect_plan.add_node(MachineNode::cap(
+            "cap_0",
+            "cap:in=media:textable;op=summarize;out=media:summary",
+        ));
         let mut collect_node = MachineNode::collect("collect_0", vec!["cap_0".to_string()]);
         collect_node.node_type = ExecutionNodeType::Collect {
             input_nodes: vec!["cap_0".to_string()],
@@ -1643,8 +1756,10 @@ mod tests {
         };
         standalone_collect_plan.add_node(collect_node);
         standalone_collect_plan.add_node(MachineNode::output("output", "result", "collect_0"));
-        assert!(!standalone_collect_plan.has_foreach(),
-            "Plan with standalone Collect (no ForEach) should NOT trigger has_foreach");
+        assert!(
+            !standalone_collect_plan.has_foreach(),
+            "Plan with standalone Collect (no ForEach) should NOT trigger has_foreach"
+        );
     }
 
     // TEST937: extract_prefix_to extracts input_slot -> cap_0 as a standalone plan
@@ -1682,7 +1797,9 @@ mod tests {
     fn test755_extract_foreach_body() {
         let plan = build_foreach_plan_with_collect();
 
-        let body = plan.extract_foreach_body("foreach_0", "media:pdf-page").unwrap();
+        let body = plan
+            .extract_foreach_body("foreach_0", "media:pdf-page")
+            .unwrap();
 
         // Should have: synthetic input, body_cap_0, body_cap_1, synthetic output
         assert_eq!(body.nodes.len(), 4);
@@ -1700,7 +1817,11 @@ mod tests {
         // Verify the synthetic InputSlot has the item media URN
         if let Some(input_node) = body.get_node("foreach_0_body_input") {
             match &input_node.node_type {
-                ExecutionNodeType::InputSlot { expected_media_urn, cardinality, .. } => {
+                ExecutionNodeType::InputSlot {
+                    expected_media_urn,
+                    cardinality,
+                    ..
+                } => {
                     assert_eq!(expected_media_urn, "media:pdf-page");
                     assert!(matches!(cardinality, InputCardinality::Single));
                 }
@@ -1718,7 +1839,9 @@ mod tests {
     fn test756_extract_foreach_body_unclosed() {
         let plan = build_foreach_plan_unclosed();
 
-        let body = plan.extract_foreach_body("foreach_0", "media:pdf-page").unwrap();
+        let body = plan
+            .extract_foreach_body("foreach_0", "media:pdf-page")
+            .unwrap();
 
         // Should have: synthetic input, body_cap_0, synthetic output
         assert_eq!(body.nodes.len(), 3);
@@ -1744,7 +1867,9 @@ mod tests {
     fn test758_extract_suffix_from() {
         let plan = build_foreach_plan_with_collect();
 
-        let suffix = plan.extract_suffix_from("collect_0", "media:decision;json;record;textable").unwrap();
+        let suffix = plan
+            .extract_suffix_from("collect_0", "media:decision;json;record;textable")
+            .unwrap();
 
         // Should have: synthetic input, cap_post, output
         assert_eq!(suffix.nodes.len(), 3);
@@ -1773,26 +1898,38 @@ mod tests {
         let plan = build_foreach_plan_with_collect();
 
         // Get all original cap node IDs
-        let original_caps: std::collections::HashSet<String> = plan.nodes.values()
+        let original_caps: std::collections::HashSet<String> = plan
+            .nodes
+            .values()
             .filter(|n| n.is_cap())
             .map(|n| n.id.clone())
             .collect();
         assert_eq!(original_caps.len(), 4); // cap_0, body_cap_0, body_cap_1, cap_post
 
         let prefix = plan.extract_prefix_to("cap_0").unwrap();
-        let body = plan.extract_foreach_body("foreach_0", "media:pdf-page").unwrap();
-        let suffix = plan.extract_suffix_from("collect_0", "media:decision;json;record;textable").unwrap();
+        let body = plan
+            .extract_foreach_body("foreach_0", "media:pdf-page")
+            .unwrap();
+        let suffix = plan
+            .extract_suffix_from("collect_0", "media:decision;json;record;textable")
+            .unwrap();
 
         // Collect cap nodes from each sub-plan
-        let prefix_caps: std::collections::HashSet<String> = prefix.nodes.values()
+        let prefix_caps: std::collections::HashSet<String> = prefix
+            .nodes
+            .values()
             .filter(|n| n.is_cap())
             .map(|n| n.id.clone())
             .collect();
-        let body_caps: std::collections::HashSet<String> = body.nodes.values()
+        let body_caps: std::collections::HashSet<String> = body
+            .nodes
+            .values()
             .filter(|n| n.is_cap())
             .map(|n| n.id.clone())
             .collect();
-        let suffix_caps: std::collections::HashSet<String> = suffix.nodes.values()
+        let suffix_caps: std::collections::HashSet<String> = suffix
+            .nodes
+            .values()
             .filter(|n| n.is_cap())
             .map(|n| n.id.clone())
             .collect();
@@ -1801,9 +1938,12 @@ mod tests {
         let mut all_caps = prefix_caps;
         all_caps.extend(body_caps);
         all_caps.extend(suffix_caps);
-        assert_eq!(all_caps, original_caps,
+        assert_eq!(
+            all_caps,
+            original_caps,
             "Decomposition should cover all cap nodes. Missing: {:?}",
-            original_caps.difference(&all_caps).collect::<Vec<_>>());
+            original_caps.difference(&all_caps).collect::<Vec<_>>()
+        );
     }
 
     // TEST761: Prefix sub-plan can be topologically sorted (is a valid DAG)
@@ -1818,7 +1958,9 @@ mod tests {
     #[test]
     fn test762_body_is_dag() {
         let plan = build_foreach_plan_with_collect();
-        let body = plan.extract_foreach_body("foreach_0", "media:pdf-page").unwrap();
+        let body = plan
+            .extract_foreach_body("foreach_0", "media:pdf-page")
+            .unwrap();
         assert!(body.topological_order().is_ok());
     }
 
@@ -1826,7 +1968,9 @@ mod tests {
     #[test]
     fn test763_suffix_is_dag() {
         let plan = build_foreach_plan_with_collect();
-        let suffix = plan.extract_suffix_from("collect_0", "media:decision;json;record;textable").unwrap();
+        let suffix = plan
+            .extract_suffix_from("collect_0", "media:decision;json;record;textable")
+            .unwrap();
         assert!(suffix.topological_order().is_ok());
     }
 

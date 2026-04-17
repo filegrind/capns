@@ -70,9 +70,7 @@ pub fn assemble_cbor_array(items: &[Vec<u8>]) -> Result<Vec<u8>, CborUtilError> 
     let mut values = Vec::with_capacity(items.len());
     for (i, item) in items.iter().enumerate() {
         let value: ciborium::Value = ciborium::de::from_reader(item.as_slice())
-            .map_err(|e| CborUtilError::DeserializeError(
-                format!("Item {}: {}", i, e)
-            ))?;
+            .map_err(|e| CborUtilError::DeserializeError(format!("Item {}: {}", i, e)))?;
         values.push(value);
     }
 
@@ -170,12 +168,14 @@ mod tests {
     // TEST955: split_cbor_array with nested maps
     #[test]
     fn test955_split_map_array() {
-        let map1 = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("name".to_string()), ciborium::Value::Text("Alice".to_string())),
-        ]);
-        let map2 = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("name".to_string()), ciborium::Value::Text("Bob".to_string())),
-        ]);
+        let map1 = ciborium::Value::Map(vec![(
+            ciborium::Value::Text("name".to_string()),
+            ciborium::Value::Text("Alice".to_string()),
+        )]);
+        let map2 = ciborium::Value::Map(vec![(
+            ciborium::Value::Text("name".to_string()),
+            ciborium::Value::Text("Bob".to_string()),
+        )]);
         let array = ciborium::Value::Array(vec![map1.clone(), map2.clone()]);
         let data = cbor_encode(&array);
 
@@ -375,9 +375,10 @@ mod tests {
         let seq = build_cbor_sequence(&[
             ciborium::Value::Bytes(vec![1, 2, 3]),
             ciborium::Value::Text("mixed".to_string()),
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("key".to_string()), ciborium::Value::Integer(42.into())),
-            ]),
+            ciborium::Value::Map(vec![(
+                ciborium::Value::Text("key".to_string()),
+                ciborium::Value::Integer(42.into()),
+            )]),
             ciborium::Value::Integer(99.into()),
         ]);
 
@@ -393,9 +394,7 @@ mod tests {
     // TEST967: split_cbor_sequence single-item sequence
     #[test]
     fn test967_split_sequence_single() {
-        let seq = build_cbor_sequence(&[
-            ciborium::Value::Bytes(vec![0xDE, 0xAD]),
-        ]);
+        let seq = build_cbor_sequence(&[ciborium::Value::Bytes(vec![0xDE, 0xAD])]);
 
         let items = split_cbor_sequence(&seq).unwrap();
         assert_eq!(items.len(), 1);
@@ -433,7 +432,10 @@ mod tests {
         let items = split_cbor_sequence(&seq).unwrap();
         let reassembled = assemble_cbor_sequence(&items).unwrap();
 
-        assert_eq!(reassembled, seq, "split then assemble must preserve bytes exactly");
+        assert_eq!(
+            reassembled, seq,
+            "split then assemble must preserve bytes exactly"
+        );
     }
 
     // TEST970: split_cbor_sequence rejects empty data
@@ -447,16 +449,17 @@ mod tests {
     #[test]
     fn test971_split_sequence_truncated() {
         // Build a valid CBOR Bytes value, then truncate it
-        let mut seq = build_cbor_sequence(&[
-            ciborium::Value::Bytes(b"complete".to_vec()),
-        ]);
+        let mut seq = build_cbor_sequence(&[ciborium::Value::Bytes(b"complete".to_vec())]);
         // Add a truncated CBOR item: major type 2 (bytes), length 10, but only 3 bytes of content
         seq.push(0x4A); // bytes(10)
         seq.extend_from_slice(&[0x01, 0x02, 0x03]); // only 3 of 10 bytes
 
         let result = split_cbor_sequence(&seq);
-        assert!(matches!(result, Err(CborUtilError::DeserializeError(_))),
-            "truncated CBOR at end must produce DeserializeError, got {:?}", result);
+        assert!(
+            matches!(result, Err(CborUtilError::DeserializeError(_))),
+            "truncated CBOR at end must produce DeserializeError, got {:?}",
+            result
+        );
     }
 
     // TEST972: assemble_cbor_sequence rejects invalid CBOR item
@@ -475,7 +478,10 @@ mod tests {
     #[test]
     fn test973_assemble_sequence_empty() {
         let assembled = assemble_cbor_sequence(&[]).unwrap();
-        assert!(assembled.is_empty(), "empty sequence must produce empty bytes");
+        assert!(
+            assembled.is_empty(),
+            "empty sequence must produce empty bytes"
+        );
     }
 
     // TEST974: CBOR sequence is NOT a CBOR array — split_cbor_array rejects a sequence
@@ -489,8 +495,11 @@ mod tests {
         // A CBOR sequence with >1 items is not a single CBOR value,
         // so from_reader will read only the first item (which is Bytes, not Array)
         let result = split_cbor_array(&seq);
-        assert!(matches!(result, Err(CborUtilError::NotAnArray)),
-            "CBOR sequence must not be parseable as a CBOR array, got {:?}", result);
+        assert!(
+            matches!(result, Err(CborUtilError::NotAnArray)),
+            "CBOR sequence must not be parseable as a CBOR array, got {:?}",
+            result
+        );
     }
 
     // TEST975: split_cbor_sequence works on data that is also a valid CBOR array (single top-level value)

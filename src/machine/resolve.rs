@@ -133,9 +133,7 @@ pub fn resolve_strand(
                     {
                         // Same data position. If from_spec
                         // is more specific, refine the node.
-                        if step.from_spec.specificity()
-                            > nodes[pt as usize].specificity()
-                        {
+                        if step.from_spec.specificity() > nodes[pt as usize].specificity() {
                             nodes[pt as usize] = step.from_spec.clone();
                         }
                         pt
@@ -280,12 +278,10 @@ pub fn resolve_pre_interned(
                 _ => None,
             });
             if let Some(stdin_str) = stdin_urn_str {
-                let stdin_urn = MediaUrn::from_string(&stdin_str).expect(
-                    "cap registry invariant: every Stdin source URN is a valid MediaUrn",
-                );
-                let slot_urn = MediaUrn::from_string(&arg.media_urn).expect(
-                    "cap registry invariant: every cap arg media_urn is a valid MediaUrn",
-                );
+                let stdin_urn = MediaUrn::from_string(&stdin_str)
+                    .expect("cap registry invariant: every Stdin source URN is a valid MediaUrn");
+                let slot_urn = MediaUrn::from_string(&arg.media_urn)
+                    .expect("cap registry invariant: every cap arg media_urn is a valid MediaUrn");
                 stdin_arg_urns.push(stdin_urn);
                 stdin_arg_slot_urns.push(slot_urn);
             }
@@ -305,12 +301,8 @@ pub fn resolve_pre_interned(
         // `matched_arg_urn` is the stdin URN that the source
         // was assigned to. We then translate each matched
         // stdin URN back to its slot identity for the binding.
-        let sorted_assignment = match_sources_to_args(
-            &source_urns,
-            &stdin_arg_urns,
-            &wiring.cap_urn,
-            strand_index,
-        )?;
+        let sorted_assignment =
+            match_sources_to_args(&source_urns, &stdin_arg_urns, &wiring.cap_urn, strand_index)?;
 
         // Build the bindings. The `cap_arg_media_urn` field
         // on each binding records the **slot identity**
@@ -323,8 +315,7 @@ pub fn resolve_pre_interned(
         // position in `wiring.source_node_ids`, walking the
         // unconsumed positions to handle the case where two
         // source NodeIds happen to share a URN.
-        let mut bindings: Vec<EdgeAssignmentBinding> =
-            Vec::with_capacity(sorted_assignment.len());
+        let mut bindings: Vec<EdgeAssignmentBinding> = Vec::with_capacity(sorted_assignment.len());
         let mut consumed_positions: Vec<bool> = vec![false; wiring.source_node_ids.len()];
         for (matched_stdin_urn, source_urn) in &sorted_assignment {
             // Find the slot identity for this matched stdin URN.
@@ -333,9 +324,7 @@ pub fn resolve_pre_interned(
                 .zip(stdin_arg_slot_urns.iter())
                 .find(|(stdin, _)| stdin.is_equivalent(matched_stdin_urn).unwrap_or(false))
                 .map(|(_, slot)| slot.clone())
-                .expect(
-                    "matching returned a stdin URN that isn't in the cap's stdin args list",
-                );
+                .expect("matching returned a stdin URN that isn't in the cap's stdin args list");
 
             // Find the source NodeId position by URN equivalence.
             let mut chosen_pos: Option<usize> = None;
@@ -747,8 +736,9 @@ mod tests {
 
     // ----- match_sources_to_args -------------------------------------------
 
+    // TEST1178: One source is assigned to the single compatible cap argument.
     #[test]
-    fn match_single_source_picks_unique_arg() {
+    fn test1178_match_single_source_picks_unique_arg() {
         // Single source `media:pdf` against a one-arg cap. Trivial
         // bipartite matching: one source, one arg, exact tag-set
         // equivalence → distance 0 → unique → assignment is the
@@ -763,8 +753,9 @@ mod tests {
         assert!(pairs[0].1.is_equivalent(&media("media:pdf")).unwrap());
     }
 
+    // TEST1179: Source-to-arg matching assigns a more specific source to a compatible general argument.
     #[test]
-    fn match_more_specific_source_assigned_to_general_arg() {
+    fn test1179_match_more_specific_source_assigned_to_general_arg() {
         // The cap declares `media:textable`. The source is the
         // more-specific `media:page;textable`. The source must
         // conform (it does, page;textable ⪯ textable) and get
@@ -775,11 +766,15 @@ mod tests {
         let pairs = match_sources_to_args(&sources, &args, &cap_urn, 0)
             .expect("more-specific source must be matched to its arg");
         assert!(pairs[0].0.is_equivalent(&media("media:textable")).unwrap());
-        assert!(pairs[0].1.is_equivalent(&media("media:page;textable")).unwrap());
+        assert!(pairs[0]
+            .1
+            .is_equivalent(&media("media:page;textable"))
+            .unwrap());
     }
 
+    // TEST1180: Matching fails when a source does not conform to any cap input argument.
     #[test]
-    fn match_unmatched_source_fails_hard() {
+    fn test1180_match_unmatched_source_fails_hard() {
         // The source URN does not conform to any of the cap's
         // args. Must surface as `UnmatchedSourceInCapArgs` —
         // never as a silent zero-cost or random pairing.
@@ -801,8 +796,9 @@ mod tests {
         }
     }
 
+    // TEST1181: Two sources are matched deterministically when specificity breaks the tie.
     #[test]
-    fn match_two_sources_disambiguated_by_specificity() {
+    fn test1181_match_two_sources_disambiguated_by_specificity() {
         // Two sources, two args. One source perfectly matches one
         // arg with distance 0; the other can only conform to the
         // remaining arg. The resolver picks the unique minimum-
@@ -818,7 +814,8 @@ mod tests {
         // Unique optimum: (image;png → image;png), (model-spec;textable → textable)
         let sources = vec![media("media:image;png"), media("media:model-spec;textable")];
         let args = vec![media("media:image;png"), media("media:textable")];
-        let cap_urn = cap("cap:in=\"media:image;png\";op=describe;out=\"media:image-description;textable\"");
+        let cap_urn =
+            cap("cap:in=\"media:image;png\";op=describe;out=\"media:image-description;textable\"");
         let pairs = match_sources_to_args(&sources, &args, &cap_urn, 0).unwrap();
         assert_eq!(pairs.len(), 2);
         // Pairs are sorted by cap_arg_media_urn structurally.
@@ -833,15 +830,18 @@ mod tests {
                 assert!(src.is_equivalent(&media("media:image;png")).unwrap());
                 found_image = true;
             } else if arg.is_equivalent(&media("media:textable")).unwrap() {
-                assert!(src.is_equivalent(&media("media:model-spec;textable")).unwrap());
+                assert!(src
+                    .is_equivalent(&media("media:model-spec;textable"))
+                    .unwrap());
                 found_text = true;
             }
         }
         assert!(found_image && found_text, "both arg slots must be assigned");
     }
 
+    // TEST1182: Matching fails as ambiguous when two sources can be swapped at equal minimum cost.
     #[test]
-    fn match_ambiguous_when_two_sources_could_swap() {
+    fn test1182_match_ambiguous_when_two_sources_could_swap() {
         // Two sources that can both feed both args at exactly
         // the same total cost. The minimum-cost matching is not
         // unique → AmbiguousMachineNotation.
@@ -854,14 +854,18 @@ mod tests {
         let cap_urn = cap("cap:in=media:textable;op=t;out=media:textable");
         let err = match_sources_to_args(&sources, &args, &cap_urn, 0).unwrap_err();
         assert!(
-            matches!(err, MachineAbstractionError::AmbiguousMachineNotation { .. }),
+            matches!(
+                err,
+                MachineAbstractionError::AmbiguousMachineNotation { .. }
+            ),
             "expected ambiguous, got {:?}",
             err
         );
     }
 
+    // TEST1183: Matching fails when more sources are provided than the cap has input arguments.
     #[test]
-    fn match_more_sources_than_args_fails_hard() {
+    fn test1183_match_more_sources_than_args_fails_hard() {
         let sources = vec![media("media:pdf"), media("media:pdf"), media("media:pdf")];
         let args = vec![media("media:pdf"), media("media:pdf")];
         let cap_urn = cap("cap:in=media:pdf;op=t;out=media:pdf");
@@ -874,8 +878,9 @@ mod tests {
 
     // ----- resolve_strand (planner path) -----------------------------------
 
+    // TEST1184: Resolving a strand with one cap produces one resolved machine edge.
     #[test]
-    fn resolve_strand_single_cap_produces_one_edge() {
+    fn test1184_resolve_strand_single_cap_produces_one_edge() {
         let extract_cap = build_cap(
             "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
             "extract",
@@ -910,11 +915,14 @@ mod tests {
         assert_eq!(inputs.len(), 1);
         assert_eq!(outputs.len(), 1);
         assert!(inputs[0].is_equivalent(&media("media:pdf")).unwrap());
-        assert!(outputs[0].is_equivalent(&media("media:txt;textable")).unwrap());
+        assert!(outputs[0]
+            .is_equivalent(&media("media:txt;textable"))
+            .unwrap());
     }
 
+    // TEST1185: Resolving a chained strand reuses the intermediate node between adjacent caps.
     #[test]
-    fn resolve_strand_chained_caps_share_intermediate_node() {
+    fn test1185_resolve_strand_chained_caps_share_intermediate_node() {
         // Two-step strand: pdf → extract → txt → embed → vec.
         // The intermediate node `media:txt;textable` is produced
         // by extract and consumed by embed. The resolver must
@@ -975,11 +983,14 @@ mod tests {
         assert_eq!(inputs.len(), 1);
         assert_eq!(outputs.len(), 1);
         assert!(inputs[0].is_equivalent(&media("media:pdf")).unwrap());
-        assert!(outputs[0].is_equivalent(&media("media:vec;record")).unwrap());
+        assert!(outputs[0]
+            .is_equivalent(&media("media:vec;record"))
+            .unwrap());
     }
 
+    // TEST1186: Resolving a strand with ForEach marks the following cap edge as a loop.
     #[test]
-    fn resolve_strand_foreach_marks_following_cap_as_loop() {
+    fn test1186_resolve_strand_foreach_marks_following_cap_as_loop() {
         // ForEach immediately followed by a cap. The cap's edge
         // must have is_loop=true. Collect at the end is elided.
         let disbind = build_cap(
@@ -1058,8 +1069,9 @@ mod tests {
         );
     }
 
+    // TEST1187: Strand resolution fails when a referenced cap is not found in the registry.
     #[test]
-    fn resolve_strand_unknown_cap_fails_hard() {
+    fn test1187_resolve_strand_unknown_cap_fails_hard() {
         let registry = registry_with(vec![]);
         let strand = strand_from_steps(
             vec![cap_step(
@@ -1074,8 +1086,9 @@ mod tests {
         assert!(matches!(err, MachineAbstractionError::UnknownCap { .. }));
     }
 
+    // TEST1188: Strand resolution fails when the strand contains no capability steps.
     #[test]
-    fn resolve_strand_no_cap_steps_fails_hard() {
+    fn test1188_resolve_strand_no_cap_steps_fails_hard() {
         let registry = registry_with(vec![]);
         let strand = strand_from_steps(
             vec![for_each_step("media:pdf"), collect_step("media:pdf")],
@@ -1085,8 +1098,9 @@ mod tests {
         assert!(matches!(err, MachineAbstractionError::NoCapabilitySteps));
     }
 
+    // TEST1189: Strand resolution keeps canonical anchor ordering stable across equivalent inputs.
     #[test]
-    fn resolve_strand_canonical_anchor_order_is_stable() {
+    fn test1189_resolve_strand_canonical_anchor_order_is_stable() {
         // Two strands built from identical caps in identical
         // positions must produce byte-identical canonical
         // anchor URN order. This pins the structural sort.
@@ -1116,8 +1130,9 @@ mod tests {
         }
     }
 
+    // TEST1190: Inverse format converters resolve without introducing a cycle in the strand graph.
     #[test]
-    fn resolve_strand_inverse_format_converters_no_cycle() {
+    fn test1190_resolve_strand_inverse_format_converters_no_cycle() {
         // A strand that visits two inverse format converters
         // (numeric;textable → integer;numeric;textable →
         // numeric;textable). Under positional interning, each
@@ -1179,8 +1194,9 @@ mod tests {
         assert_eq!(int_target, num_source);
     }
 
+    // TEST1191: Disbinding a PDF with a file-path slot preserves the expected identity of the slot binding.
     #[test]
-    fn resolve_strand_disbind_pdf_with_file_path_slot_identity() {
+    fn test1191_resolve_strand_disbind_pdf_with_file_path_slot_identity() {
         // Regression: a cap whose arg slot identity differs
         // from its stdin source URN. The disbind cap declares
         // `media:file-path;textable` as the slot identity but
@@ -1213,9 +1229,8 @@ mod tests {
             "pdf to pages",
         );
 
-        let resolved = resolve_strand(&strand, &registry, 0).expect(
-            "disbind strand must resolve via stdin URN matching, not slot identity",
-        );
+        let resolved = resolve_strand(&strand, &registry, 0)
+            .expect("disbind strand must resolve via stdin URN matching, not slot identity");
         assert_eq!(resolved.edges().len(), 1);
         let binding = &resolved.edges()[0].assignment[0];
 

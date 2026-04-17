@@ -4,11 +4,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+use crate::input_resolver::adapters::MediaAdapterRegistry;
+use crate::input_resolver::path_resolver;
 use crate::input_resolver::{
     ContentStructure, InputItem, InputResolverError, ResolvedFile, ResolvedInputSet,
 };
-use crate::input_resolver::adapters::MediaAdapterRegistry;
-use crate::input_resolver::path_resolver;
 use crate::media::registry::MediaUrnRegistry;
 
 /// Maximum content to read for inspection (64 KB)
@@ -37,11 +37,12 @@ pub fn discriminate_candidates_by_validation(
     let content_str = std::str::from_utf8(content).ok();
     let content_len = content.len();
 
-    let baseline = crate::urn::media_urn::MediaUrn::from_string(baseline_urn)
-        .unwrap_or_else(|e| panic!(
+    let baseline = crate::urn::media_urn::MediaUrn::from_string(baseline_urn).unwrap_or_else(|e| {
+        panic!(
             "discriminate_candidates_by_validation: invalid baseline URN '{}': {}",
             baseline_urn, e
-        ));
+        )
+    });
 
     candidate_urns
         .iter()
@@ -82,7 +83,8 @@ pub fn discriminate_candidates_by_validation(
                                 tracing::error!(
                                     "Media spec '{}' has invalid validation pattern '{}' — \
                                      fix the TOML definition in capgraph/src/media",
-                                    urn, pattern
+                                    urn,
+                                    pattern
                                 );
                             }
                         }
@@ -132,10 +134,9 @@ fn get_registry() -> &'static MediaAdapterRegistry {
     static REGISTRY: OnceLock<MediaAdapterRegistry> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         // Create MediaUrnRegistry synchronously for bundled specs
-        let media_registry = MediaUrnRegistry::new_for_test(
-            std::env::temp_dir().join("capdag_media_registry"),
-        )
-        .expect("Failed to create MediaUrnRegistry");
+        let media_registry =
+            MediaUrnRegistry::new_for_test(std::env::temp_dir().join("capdag_media_registry"))
+                .expect("Failed to create MediaUrnRegistry");
         MediaAdapterRegistry::new(Arc::new(media_registry))
     })
 }
@@ -331,7 +332,10 @@ mod tests {
         let result = resolve_paths(&[path.to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 1);
-        assert!(!result.is_sequence, "single file must be is_sequence=false regardless of content structure");
+        assert!(
+            !result.is_sequence,
+            "single file must be is_sequence=false regardless of content structure"
+        );
         assert_eq!(
             result.files[0].content_structure,
             ContentStructure::ListRecord
@@ -345,11 +349,13 @@ mod tests {
         let path1 = create_file(&dir, "a.pdf", b"%PDF-1.4");
         let path2 = create_file(&dir, "b.pdf", b"%PDF-1.5");
 
-        let result =
-            resolve_paths(&[path1.to_str().unwrap(), path2.to_str().unwrap()]).unwrap();
+        let result = resolve_paths(&[path1.to_str().unwrap(), path2.to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 2);
-        assert!(result.is_sequence, "multiple files must be is_sequence=true");
+        assert!(
+            result.is_sequence,
+            "multiple files must be is_sequence=true"
+        );
     }
 
     // TEST1093: 1 dir with 1 file → is_sequence=false
@@ -361,7 +367,10 @@ mod tests {
         let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 1);
-        assert!(!result.is_sequence, "directory with single file must be is_sequence=false");
+        assert!(
+            !result.is_sequence,
+            "directory with single file must be is_sequence=false"
+        );
     }
 
     // TEST1094: 1 dir with 3 files → is_sequence=true
@@ -375,7 +384,10 @@ mod tests {
         let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
 
         assert_eq!(result.files.len(), 3);
-        assert!(result.is_sequence, "directory with multiple files must be is_sequence=true");
+        assert!(
+            result.is_sequence,
+            "directory with multiple files must be is_sequence=true"
+        );
     }
 
     // TEST1098: Common media (all same type)
@@ -518,9 +530,9 @@ mod tests {
     // These test detect_file_with_media_registry — the function used by the
     // AnalyzeFileContent gRPC handler to determine precise media URNs.
 
-    // TEST_CA_1: JSON object file resolves to record URN
+    // TEST1231: JSON object files resolve to record-shaped JSON media.
     #[test]
-    fn test_ca_1_json_object_detection() {
+    fn test1231_ca_1_json_object_detection() {
         let dir = create_test_dir();
         let path = create_file(&dir, "data.json", br#"{"name": "test", "count": 42}"#);
 
@@ -539,9 +551,9 @@ mod tests {
         );
     }
 
-    // TEST_CA_2: JSON array-of-objects resolves to list+record URN
+    // TEST1232: JSON arrays of objects resolve to list-and-record JSON media.
     #[test]
-    fn test_ca_2_json_array_detection() {
+    fn test1232_ca_2_json_array_detection() {
         let dir = create_test_dir();
         let path = create_file(&dir, "items.json", br#"[{"a":1},{"b":2},{"c":3}]"#);
 
@@ -565,9 +577,9 @@ mod tests {
         );
     }
 
-    // TEST_CA_3: Directory of JSON object files → all resolve to record
+    // TEST1233: The least upper bound of JSON object files keeps shared json and record tags.
     #[test]
-    fn test_ca_3_directory_json_objects_lub() {
+    fn test1233_ca_3_directory_json_objects_lub() {
         let dir = create_test_dir();
         create_file(&dir, "a.json", br#"{"key": "alpha"}"#);
         create_file(&dir, "b.json", br#"{"key": "beta"}"#);
@@ -598,9 +610,9 @@ mod tests {
         );
     }
 
-    // TEST_CA_4: Directory with mixed JSON and CSV → LUB drops format-specific tags
+    // TEST1234: Mixed JSON and CSV files drop format-specific tags in their least upper bound.
     #[test]
-    fn test_ca_4_directory_mixed_types_lub() {
+    fn test1234_ca_4_directory_mixed_types_lub() {
         let dir = create_test_dir();
         create_file(&dir, "data.json", br#"{"key": "value"}"#);
         create_file(&dir, "data.csv", b"a,b,c\n1,2,3\n4,5,6");
@@ -652,18 +664,17 @@ mod tests {
         registry.media_urns_for_extension("txt").unwrap()
     }
 
-    // TEST_DISC_1: Plain text content ("Hello world") with baseline media:list;textable;txt
-    // eliminates model-spec variants (they fail pattern ".*:.*") AND eliminates
-    // URNs more specific than the baseline that lack validation.
+    // TEST1235: Plain text without model-spec syntax eliminates model-spec TXT candidates.
     #[test]
-    fn test_disc_1_plain_text_eliminates_model_specs() {
+    fn test1235_disc_1_plain_text_eliminates_model_specs() {
         let (registry, _temp) = create_test_media_registry();
         let all_txt_urns = txt_extension_urns(&registry);
 
         let content = b"Hello world\nThis is a plain text file\nNo colons here";
         // Baseline: adapter detected multi-line plain text
         let baseline = "media:list;textable;txt";
-        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
+        let survivors =
+            discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
 
         // model-spec variants have pattern ".*:.*" — plain text without colons fails this
         for survivor in &survivors {
@@ -675,16 +686,17 @@ mod tests {
         }
     }
 
-    // TEST_DISC_2: Model spec content ("hf:MaziyarPanahi/Mistral-7B") passes the pattern.
+    // TEST1236: Colon-delimited model spec text survives TXT candidate discrimination.
     #[test]
-    fn test_disc_2_model_spec_content_survives_pattern() {
+    fn test1236_disc_2_model_spec_content_survives_pattern() {
         let (registry, _temp) = create_test_media_registry();
         let all_txt_urns = txt_extension_urns(&registry);
 
         let content = b"hf:MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF";
         // Baseline: adapter detected single-line plain text
         let baseline = "media:textable;txt";
-        let survivors = discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
+        let survivors =
+            discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
 
         // Content has a colon → model-spec pattern matches → model-spec variants survive
         assert!(
@@ -694,20 +706,25 @@ mod tests {
         );
     }
 
-    // TEST_DISC_5: Empty candidate list → empty result.
+    // TEST1237: Candidate discrimination returns an empty list when there are no candidates.
     #[test]
-    fn test_disc_5_empty_candidates() {
+    fn test1237_disc_5_empty_candidates() {
         let (registry, _temp) = create_test_media_registry();
-        let survivors = discriminate_candidates_by_validation(b"anything", &[], &registry, "media:");
+        let survivors =
+            discriminate_candidates_by_validation(b"anything", &[], &registry, "media:");
         assert!(survivors.is_empty());
     }
 
-    // TEST_DISC_6: URN not in registry cache → survives (cannot eliminate what we can't look up).
+    // TEST1238: Unknown candidate URNs survive discrimination when no registry spec can reject them.
     #[test]
-    fn test_disc_6_unknown_urn_survives() {
+    fn test1238_disc_6_unknown_urn_survives() {
         let (registry, _temp) = create_test_media_registry();
         let candidates = vec!["media:nonexistent;fake".to_string()];
-        let survivors = discriminate_candidates_by_validation(b"anything", &candidates, &registry, "media:");
-        assert_eq!(survivors, candidates, "Unknown URN should survive — no spec to eliminate it");
+        let survivors =
+            discriminate_candidates_by_validation(b"anything", &candidates, &registry, "media:");
+        assert_eq!(
+            survivors, candidates,
+            "Unknown URN should survive — no spec to eliminate it"
+        );
     }
 }

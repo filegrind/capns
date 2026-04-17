@@ -20,44 +20,47 @@
 
 use thiserror::Error;
 
-pub mod cardinality;
 pub mod argument_binding;
+pub mod cardinality;
 pub mod collection_input;
-pub mod plan;
-pub mod plan_builder;
 pub mod executor;
 pub mod live_cap_graph;
+pub mod plan;
+pub mod plan_builder;
 
 // Re-exports - Shape types (cardinality + structure)
-pub use cardinality::{
-    // Cardinality dimension
-    InputCardinality, CardinalityCompatibility, CardinalityPattern,
-    // Structure dimension
-    InputStructure, StructureCompatibility,
-    // Combined shape
-    MediaShape, ShapeCompatibility,
-    // Per-cap shape info and chain analysis
-    CapShapeInfo, StrandShapeAnalysis,
-};
 pub use argument_binding::{
-    ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,
-    StrandInput, CapFileMetadata, CapInputFile, ResolvedArgument, SourceEntityType,
-    resolve_binding,
+    resolve_binding, ArgumentBinding, ArgumentBindings, ArgumentResolutionContext, ArgumentSource,
+    CapFileMetadata, CapInputFile, ResolvedArgument, SourceEntityType, StrandInput,
+};
+pub use cardinality::{
+    // Per-cap shape info and chain analysis
+    CapShapeInfo,
+    CardinalityCompatibility,
+    CardinalityPattern,
+    // Cardinality dimension
+    InputCardinality,
+    // Structure dimension
+    InputStructure,
+    // Combined shape
+    MediaShape,
+    ShapeCompatibility,
+    StrandShapeAnalysis,
+    StructureCompatibility,
 };
 pub use collection_input::{CapInputCollection, CollectionFile};
-pub use plan::{
-    BodyOutcome, MachineResult, MachinePlanEdge, MachinePlan, MachineNode,
-    EdgeType, ExecutionNodeType, MergeStrategy,
-    NodeExecutionResult, NodeId,
-};
-pub use plan_builder::{
-    MachinePlanBuilder,
-    ArgumentResolution, ArgumentInfo, StepArgumentRequirements, PathArgumentRequirements,
-};
 pub use executor::MachineExecutor;
 pub use live_cap_graph::{
-    LiveCapGraph, LiveMachinePlanEdge, LiveMachinePlanEdgeType,
-    PathFindingEvent, ReachableTargetInfo, StrandStep, StrandStepType, Strand,
+    LiveCapGraph, LiveMachinePlanEdge, LiveMachinePlanEdgeType, PathFindingEvent,
+    ReachableTargetInfo, Strand, StrandStep, StrandStepType,
+};
+pub use plan::{
+    BodyOutcome, EdgeType, ExecutionNodeType, MachineNode, MachinePlan, MachinePlanEdge,
+    MachineResult, MergeStrategy, NodeExecutionResult, NodeId,
+};
+pub use plan_builder::{
+    ArgumentInfo, ArgumentResolution, MachinePlanBuilder, PathArgumentRequirements,
+    StepArgumentRequirements,
 };
 
 // =============================================================================

@@ -145,8 +145,9 @@ mod tests {
         }
     }
 
+    // TEST1221: Matching value adapters refine the base media URN when the value fits.
     #[test]
-    fn test_refine_with_matching_adapter() {
+    fn test1221_refine_with_matching_adapter() {
         let mut registry = ValueAdapterRegistry::new();
         registry.register("media:test", Arc::new(SpecialAdapter));
 
@@ -154,8 +155,9 @@ mod tests {
         assert_eq!(result, "media:test;textable;refined");
     }
 
+    // TEST1222: Base URNs without a registered adapter are returned unchanged.
     #[test]
-    fn test_refine_no_matching_adapter() {
+    fn test1222_refine_no_matching_adapter() {
         let mut registry = ValueAdapterRegistry::new();
         registry.register("media:test", Arc::new(SpecialAdapter));
 
@@ -163,8 +165,9 @@ mod tests {
         assert_eq!(result, "media:other;textable");
     }
 
+    // TEST1223: Adapters that decline to refine leave the original media URN intact.
     #[test]
-    fn test_refine_adapter_returns_none() {
+    fn test1223_refine_adapter_returns_none() {
         let mut registry = ValueAdapterRegistry::new();
         registry.register("media:test", Arc::new(SpecialAdapter));
 
@@ -172,8 +175,9 @@ mod tests {
         assert_eq!(result, "media:test;textable");
     }
 
+    // TEST1224: When multiple adapter prefixes match, the longest prefix wins.
     #[test]
-    fn test_refine_longest_prefix_match() {
+    fn test1224_refine_longest_prefix_match() {
         let mut registry = ValueAdapterRegistry::new();
         registry.register("media:test", Arc::new(SpecialAdapter));
         registry.register("media:test;specific", Arc::new(SpecificAdapter));
@@ -183,15 +187,17 @@ mod tests {
         assert_eq!(result, "media:specific;result");
     }
 
+    // TEST1225: An empty value adapter registry returns the input media URN unchanged.
     #[test]
-    fn test_empty_registry() {
+    fn test1225_empty_registry() {
         let registry = ValueAdapterRegistry::new();
         let result = registry.refine_media_urn("media:anything", "any-value");
         assert_eq!(result, "media:anything");
     }
 
+    // TEST1226: Adapter presence checks report only the prefixes that were registered.
     #[test]
-    fn test_has_adapter() {
+    fn test1226_has_adapter() {
         let mut registry = ValueAdapterRegistry::new();
         registry.register("media:test", Arc::new(SpecialAdapter));
 

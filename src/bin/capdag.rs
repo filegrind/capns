@@ -2,8 +2,8 @@
 //!
 //! A unified CLI for executing and validating machine notation pipelines.
 
-use capdag::orchestrator::{parse_machine_to_cap_dag, execute_dag, NodeData};
 use capdag::machine::parse_machine_with_node_names;
+use capdag::orchestrator::{execute_dag, parse_machine_to_cap_dag, NodeData};
 use capdag::{CapProgressFn, CapRegistry};
 use std::collections::HashMap;
 use std::env;
@@ -64,7 +64,10 @@ fn find_input_nodes(notation: &str, registry: &CapRegistry) -> Vec<String> {
     let (machine, strand_node_names) = match parse_machine_with_node_names(notation, registry) {
         Ok(pair) => pair,
         Err(e) => {
-            eprintln!("Failed to parse machine notation for input node detection: {}", e);
+            eprintln!(
+                "Failed to parse machine notation for input node detection: {}",
+                e
+            );
             return vec![];
         }
     };
@@ -91,9 +94,8 @@ fn find_input_nodes(notation: &str, registry: &CapRegistry) -> Vec<String> {
 
 /// File extensions to skip when expanding directories
 const SKIP_EXTENSIONS: &[&str] = &[
-    "json", "log", "txt", "md", "yml", "yaml", "toml",
-    "sh", "py", "rb", "js", "ts", "rs", "go", "c", "h", "cpp",
-    "zip", "tar", "gz", "bz2", "xz",
+    "json", "log", "txt", "md", "yml", "yaml", "toml", "sh", "py", "rb", "js", "ts", "rs", "go",
+    "c", "h", "cpp", "zip", "tar", "gz", "bz2", "xz",
 ];
 
 /// Files to always skip
@@ -101,9 +103,7 @@ const SKIP_FILES: &[&str] = &[".DS_Store", "Thumbs.db", ".gitignore", ".gitkeep"
 
 /// Check if a file should be included based on extension/name
 fn should_include_file(path: &PathBuf) -> bool {
-    let filename = path.file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     // Skip hidden files and known skip files
     if filename.starts_with('.') || SKIP_FILES.contains(&filename) {
@@ -151,13 +151,11 @@ fn expand_input_path(path: &str) -> Vec<PathBuf> {
     } else if path_buf.is_dir() {
         // Directory: list content files (non-recursive), filtering out non-content
         match fs::read_dir(&path_buf) {
-            Ok(entries) => {
-                entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| should_include_file(p))
-                    .collect()
-            }
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| should_include_file(p))
+                .collect(),
             Err(e) => {
                 eprintln!("Error reading directory '{}': {}", path, e);
                 vec![]
@@ -170,7 +168,6 @@ fn expand_input_path(path: &str) -> Vec<PathBuf> {
         vec![]
     }
 }
-
 
 fn print_usage(program: &str) {
     eprintln!(
@@ -346,7 +343,17 @@ async fn main() {
             eprintln!("  [{:5.1}%] {} {}", p * 100.0, cap_urn, msg);
         });
 
-        match execute_dag(&graph, cartridge_dir.clone(), registry_url.clone(), initial_inputs, dev_binaries.clone(), registry.clone(), Some(&progress)).await {
+        match execute_dag(
+            &graph,
+            cartridge_dir.clone(),
+            registry_url.clone(),
+            initial_inputs,
+            dev_binaries.clone(),
+            registry.clone(),
+            Some(&progress),
+        )
+        .await
+        {
             Ok(outputs) => {
                 eprintln!("Results:");
                 for (node, data) in outputs {

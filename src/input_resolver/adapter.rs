@@ -4,9 +4,9 @@
 //! 1. Declaring a pattern URN that describes what media it handles
 //! 2. Given candidate URNs from the registry, selecting the best match based on content inspection
 
-use std::path::Path;
 use crate::input_resolver::ContentStructure;
 use crate::urn::media_urn::MediaUrn;
+use std::path::Path;
 
 /// Result of adapter detection — a selected candidate URN and its structure
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,8 +126,9 @@ pub fn select_by_structure(
 mod tests {
     use super::*;
 
+    // TEST1227: Structure-based candidate selection picks the exact marker-tag variant for each shape.
     #[test]
-    fn test_select_by_structure_exact_match() {
+    fn test1227_select_by_structure_exact_match() {
         let scalar = MediaUrn::from_string("media:textable;yaml").unwrap();
         let list = MediaUrn::from_string("media:list;textable;yaml").unwrap();
         let record = MediaUrn::from_string("media:record;textable;yaml").unwrap();

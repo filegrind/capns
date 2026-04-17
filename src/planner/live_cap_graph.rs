@@ -412,9 +412,9 @@ impl LiveCapGraph {
             // it would match a wildcard registry cap (e.g. in=media:) before reaching
             // the specific one (e.g. in=media:txt;textable), since .find() returns the
             // first match.
-            let matching_cap = all_caps.iter().find(|registry_cap| {
-                cap_urn.is_equivalent(&registry_cap.urn)
-            });
+            let matching_cap = all_caps
+                .iter()
+                .find(|registry_cap| cap_urn.is_equivalent(&registry_cap.urn));
 
             match matching_cap {
                 Some(cap) => {
@@ -465,7 +465,10 @@ impl LiveCapGraph {
 
         // Skip identity caps (passthrough caps that don't transform anything)
         // These are is_equivalent to the CAP_IDENTITY constant
-        if cap.urn.is_equivalent(&crate::standard::caps::identity_urn()) {
+        if cap
+            .urn
+            .is_equivalent(&crate::standard::caps::identity_urn())
+        {
             return;
         }
 
@@ -499,19 +502,34 @@ impl LiveCapGraph {
         // Create edge
         let edge_idx = self.edges.len();
         // Main input arg: the one with a stdin source
-        let input_is_sequence = cap.args.iter()
-            .find(|arg| arg.sources.iter().any(|s| matches!(s, crate::cap::definition::ArgSource::Stdin { .. })))
+        let input_is_sequence = cap
+            .args
+            .iter()
+            .find(|arg| {
+                arg.sources
+                    .iter()
+                    .any(|s| matches!(s, crate::cap::definition::ArgSource::Stdin { .. }))
+            })
             .map_or(false, |arg| arg.is_sequence);
         let output_is_sequence = cap.output.as_ref().map_or(false, |o| o.is_sequence);
 
         // Update indices with URN clones — MediaUrn and CapUrn
         // are the HashMap keys directly via their derived
         // `Hash`/`Eq` impls; no string intermediaries.
-        self.outgoing.entry(from_spec.clone()).or_default().push(edge_idx);
-        self.incoming.entry(to_spec.clone()).or_default().push(edge_idx);
+        self.outgoing
+            .entry(from_spec.clone())
+            .or_default()
+            .push(edge_idx);
+        self.incoming
+            .entry(to_spec.clone())
+            .or_default()
+            .push(edge_idx);
         self.nodes.insert(from_spec.clone());
         self.nodes.insert(to_spec.clone());
-        self.cap_to_edges.entry(cap.urn.clone()).or_default().push(edge_idx);
+        self.cap_to_edges
+            .entry(cap.urn.clone())
+            .or_default()
+            .push(edge_idx);
 
         let edge = LiveMachinePlanEdge {
             from_spec,
@@ -542,8 +560,13 @@ impl LiveCapGraph {
     ///   The media URN does not change — ForEach is a shape transition, not a type transition.
     /// - **Collect** (is_sequence=false → true): gather items into a sequence.
     ///   The media URN does not change — Collect is a shape transition, not a type transition.
-    fn get_outgoing_edges(&self, source: &MediaUrn, is_sequence: bool) -> Vec<(LiveMachinePlanEdge, bool)> {
-        let mut result: Vec<(LiveMachinePlanEdge, bool)> = self.edges
+    fn get_outgoing_edges(
+        &self,
+        source: &MediaUrn,
+        is_sequence: bool,
+    ) -> Vec<(LiveMachinePlanEdge, bool)> {
+        let mut result: Vec<(LiveMachinePlanEdge, bool)> = self
+            .edges
             .iter()
             .filter(|edge| {
                 debug_assert!(
@@ -558,7 +581,9 @@ impl LiveCapGraph {
                 // - sequence data can only go to caps that expect sequences
                 // - scalar data can go to scalar or sequence caps (single item wraps into 1-item sequence)
                 match &edge.edge_type {
-                    LiveMachinePlanEdgeType::Cap { input_is_sequence, .. } => {
+                    LiveMachinePlanEdgeType::Cap {
+                        input_is_sequence, ..
+                    } => {
                         if is_sequence && !input_is_sequence {
                             // Sequence data → scalar cap: needs ForEach first, skip direct match
                             false
@@ -572,9 +597,9 @@ impl LiveCapGraph {
             .map(|edge| {
                 // Determine outgoing is_sequence from the cap's output flag
                 let out_is_seq = match &edge.edge_type {
-                    LiveMachinePlanEdgeType::Cap { output_is_sequence, .. } => {
-                        *output_is_sequence
-                    }
+                    LiveMachinePlanEdgeType::Cap {
+                        output_is_sequence, ..
+                    } => *output_is_sequence,
                     _ => is_sequence,
                 };
                 (edge.clone(), out_is_seq)
@@ -586,18 +611,24 @@ impl LiveCapGraph {
             // ForEach: sequence → scalar (same media URN, is_sequence flips to false)
             // Check if any scalar cap could consume items after ForEach
             let has_scalar_consumers = self.edges.iter().any(|edge| {
-                if let LiveMachinePlanEdgeType::Cap { input_is_sequence, .. } = &edge.edge_type {
+                if let LiveMachinePlanEdgeType::Cap {
+                    input_is_sequence, ..
+                } = &edge.edge_type
+                {
                     !input_is_sequence && source.conforms_to(&edge.from_spec).unwrap_or(false)
                 } else {
                     false
                 }
             });
             if has_scalar_consumers {
-                result.push((LiveMachinePlanEdge {
-                    from_spec: source.clone(),
-                    to_spec: source.clone(),
-                    edge_type: LiveMachinePlanEdgeType::ForEach,
-                }, false));
+                result.push((
+                    LiveMachinePlanEdge {
+                        from_spec: source.clone(),
+                        to_spec: source.clone(),
+                        edge_type: LiveMachinePlanEdgeType::ForEach,
+                    },
+                    false,
+                ));
             }
         }
         // Collect is NOT synthesized during path finding. It pairs with ForEach
@@ -612,7 +643,6 @@ impl LiveCapGraph {
     pub fn stats(&self) -> (usize, usize) {
         (self.nodes.len(), self.edges.len())
     }
-
 
     // =========================================================================
     // REACHABLE TARGETS (BFS)
@@ -650,14 +680,15 @@ impl LiveCapGraph {
                 // Record this target — the `MediaUrn` entry
                 // key collapses tag-set-equal URNs
                 // automatically via the structural `Hash`/`Eq`.
-                let entry = results
-                    .entry(edge.to_spec.clone())
-                    .or_insert_with(|| ReachableTargetInfo {
-                        media_spec: edge.to_spec.clone(),
-                        display_name: edge.to_spec.to_string(),
-                        min_path_length: new_depth as i32,
-                        path_count: 0,
-                    });
+                let entry =
+                    results
+                        .entry(edge.to_spec.clone())
+                        .or_insert_with(|| ReachableTargetInfo {
+                            media_spec: edge.to_spec.clone(),
+                            display_name: edge.to_spec.to_string(),
+                            min_path_length: new_depth as i32,
+                            path_count: 0,
+                        });
                 entry.path_count += 1;
 
                 // Continue BFS if not visited at this is_sequence state
@@ -712,7 +743,8 @@ impl LiveCapGraph {
         for (edge, _) in &source_edges {
             tracing::info!(
                 "  outgoing: {} -> {} ({})",
-                edge.from_spec, edge.to_spec,
+                edge.from_spec,
+                edge.to_spec,
                 match &edge.edge_type {
                     LiveMachinePlanEdgeType::Cap { cap_title, .. } => cap_title.as_str(),
                     LiveMachinePlanEdgeType::ForEach => "ForEach",
@@ -755,7 +787,10 @@ impl LiveCapGraph {
             if new_paths > 0 || nodes_this_depth > 1000 {
                 tracing::info!(
                     "  IDDFS depth={}: explored {} nodes, found {} new paths (total {})",
-                    depth_limit, nodes_this_depth, new_paths, all_paths.len()
+                    depth_limit,
+                    nodes_this_depth,
+                    new_paths,
+                    all_paths.len()
                 );
             }
 
@@ -764,7 +799,8 @@ impl LiveCapGraph {
                 tracing::warn!(
                     "find_paths_to_exact_target: aborting after {} nodes explored. \
                      Returning {} paths found so far.",
-                    total_nodes_explored, all_paths.len()
+                    total_nodes_explored,
+                    all_paths.len()
                 );
                 break;
             }
@@ -815,9 +851,16 @@ impl LiveCapGraph {
             let mut nodes_this_depth: u64 = 0;
 
             self.iddfs_find_paths(
-                source, target, source, is_sequence,
-                &mut current_path, &mut visited, &mut all_paths,
-                depth_limit, max_paths, &mut nodes_this_depth,
+                source,
+                target,
+                source,
+                is_sequence,
+                &mut current_path,
+                &mut visited,
+                &mut all_paths,
+                depth_limit,
+                max_paths,
+                &mut nodes_this_depth,
                 cancelled,
             );
 
@@ -927,25 +970,25 @@ impl LiveCapGraph {
 
             if !visited.contains(&next_visit_key) {
                 let step_type = match &edge.edge_type {
-                    LiveMachinePlanEdgeType::Cap { cap_urn, cap_title, specificity, input_is_sequence, output_is_sequence } => {
-                        StrandStepType::Cap {
-                            cap_urn: cap_urn.clone(),
-                            title: cap_title.clone(),
-                            specificity: *specificity,
-                            input_is_sequence: *input_is_sequence,
-                            output_is_sequence: *output_is_sequence,
-                        }
-                    }
-                    LiveMachinePlanEdgeType::ForEach => {
-                        StrandStepType::ForEach {
-                            media_spec: edge.from_spec.clone(),
-                        }
-                    }
-                    LiveMachinePlanEdgeType::Collect => {
-                        StrandStepType::Collect {
-                            media_spec: edge.from_spec.clone(),
-                        }
-                    }
+                    LiveMachinePlanEdgeType::Cap {
+                        cap_urn,
+                        cap_title,
+                        specificity,
+                        input_is_sequence,
+                        output_is_sequence,
+                    } => StrandStepType::Cap {
+                        cap_urn: cap_urn.clone(),
+                        title: cap_title.clone(),
+                        specificity: *specificity,
+                        input_is_sequence: *input_is_sequence,
+                        output_is_sequence: *output_is_sequence,
+                    },
+                    LiveMachinePlanEdgeType::ForEach => StrandStepType::ForEach {
+                        media_spec: edge.from_spec.clone(),
+                    },
+                    LiveMachinePlanEdgeType::Collect => StrandStepType::Collect {
+                        media_spec: edge.from_spec.clone(),
+                    },
                 };
 
                 current_path.push(StrandStep {
@@ -991,7 +1034,8 @@ impl LiveCapGraph {
     /// via `MediaUrn`'s structural `Ord`. No URN is ever
     /// compared as a flat string.
     fn compare_paths(a: &Strand, b: &Strand) -> Ordering {
-        a.cap_step_count.cmp(&b.cap_step_count)
+        a.cap_step_count
+            .cmp(&b.cap_step_count)
             .then_with(|| {
                 // Higher specificity first.
                 let spec_a: usize = a.steps.iter().map(|s| s.specificity()).sum();
@@ -1040,13 +1084,12 @@ impl LiveCapGraph {
 
         // Same rank — compare structural details.
         match (&a.step_type, &b.step_type) {
-            (
-                StrandStepType::Cap { cap_urn: ca, .. },
-                StrandStepType::Cap { cap_urn: cb, .. },
-            ) => match ca.cmp(cb) {
-                Ordering::Equal => {}
-                ord => return ord,
-            },
+            (StrandStepType::Cap { cap_urn: ca, .. }, StrandStepType::Cap { cap_urn: cb, .. }) => {
+                match ca.cmp(cb) {
+                    Ordering::Equal => {}
+                    ord => return ord,
+                }
+            }
             (
                 StrandStepType::ForEach { media_spec: ma },
                 StrandStepType::ForEach { media_spec: mb },
@@ -1117,12 +1160,7 @@ mod tests {
     /// `Strand::knit` or `Strand::to_machine_notation`, since
     /// the resolver looks up the cap's args list to compute
     /// the source-to-arg matching.
-    fn make_test_cap_with_arg(
-        in_spec: &str,
-        out_spec: &str,
-        op: &str,
-        title: &str,
-    ) -> Cap {
+    fn make_test_cap_with_arg(in_spec: &str, out_spec: &str, op: &str, title: &str) -> Cap {
         use crate::cap::definition::{ArgSource, CapArg, CapOutput};
         use crate::urn::cap_urn::CapUrnBuilder;
 
@@ -1154,11 +1192,17 @@ mod tests {
         }
     }
 
+    // TEST1150: Adding one cap creates one edge and makes its output reachable in one step.
     #[test]
-    fn test_add_cap_and_basic_traversal() {
+    fn test1150_add_cap_and_basic_traversal() {
         let mut graph = LiveCapGraph::new();
 
-        let cap = make_test_cap("media:pdf", "media:extracted-text", "extract_text", "Extract Text");
+        let cap = make_test_cap(
+            "media:pdf",
+            "media:extracted-text",
+            "extract_text",
+            "Extract Text",
+        );
         graph.add_cap(&cap);
 
         assert_eq!(graph.edges.len(), 1);
@@ -1179,8 +1223,9 @@ mod tests {
         assert_eq!(cap_target.unwrap().min_path_length, 1);
     }
 
+    // TEST1151: Exact target lookup prefers the direct singular or list-producing path over longer alternatives.
     #[test]
-    fn test_exact_vs_conformance_matching() {
+    fn test1151_exact_vs_conformance_matching() {
         // First verify our assumption about is_equivalent
         let singular = MediaUrn::from_string("media:analysis-result").unwrap();
         let list = MediaUrn::from_string("media:analysis-result;list").unwrap();
@@ -1202,7 +1247,7 @@ mod tests {
             "media:pdf",
             "media:analysis-result",
             "analyze",
-            "Analyze PDF"
+            "Analyze PDF",
         );
         graph.add_cap(&cap1);
 
@@ -1211,7 +1256,7 @@ mod tests {
             "media:pdf",
             "media:analysis-result;list",
             "analyze_multi",
-            "Analyze PDF Multi"
+            "Analyze PDF Multi",
         );
         graph.add_cap(&cap2);
 
@@ -1223,11 +1268,18 @@ mod tests {
         // 2. Indirect: pdf → result;list (via analyze_multi) → ForEach → result — 1 cap step, 2 total steps
         // Both are valid. Path 1 ranks first (fewer total steps at same cap count).
         let target_singular = MediaUrn::from_string("media:analysis-result").unwrap();
-        let paths_singular = graph.find_paths_to_exact_target(&source, &target_singular, false, 5, 10);
+        let paths_singular =
+            graph.find_paths_to_exact_target(&source, &target_singular, false, 5, 10);
 
-        assert!(paths_singular.len() >= 1, "singular query should find at least 1 path");
-        assert_eq!(paths_singular[0].steps[0].title(), "Analyze PDF",
-            "First path should be the direct cap (fewer total steps)");
+        assert!(
+            paths_singular.len() >= 1,
+            "singular query should find at least 1 path"
+        );
+        assert_eq!(
+            paths_singular[0].steps[0].title(),
+            "Analyze PDF",
+            "First path should be the direct cap (fewer total steps)"
+        );
 
         // Query for EXACT target: result;list (plural)
         // Two valid paths exist:
@@ -1237,20 +1289,32 @@ mod tests {
         let target_plural = MediaUrn::from_string("media:analysis-result;list").unwrap();
         let paths_plural = graph.find_paths_to_exact_target(&source, &target_plural, false, 5, 10);
 
-        assert!(paths_plural.len() >= 1, "list query should find at least 1 path");
+        assert!(
+            paths_plural.len() >= 1,
+            "list query should find at least 1 path"
+        );
         // The shortest path (fewest cap steps, then fewest total steps) should be the direct one
-        assert_eq!(paths_plural[0].steps[0].title(), "Analyze PDF Multi",
-            "First path should be the direct cap (fewer total steps)");
+        assert_eq!(
+            paths_plural[0].steps[0].title(),
+            "Analyze PDF Multi",
+            "First path should be the direct cap (fewer total steps)"
+        );
     }
 
+    // TEST1152: Path finding returns the expected two-cap chain through an intermediate media type.
     #[test]
-    fn test_multi_step_path() {
+    fn test1152_multi_step_path() {
         let mut graph = LiveCapGraph::new();
 
         // pdf -> extracted-text
         let cap1 = make_test_cap("media:pdf", "media:extracted-text", "extract", "Extract");
         // extracted-text -> summary-text
-        let cap2 = make_test_cap("media:extracted-text", "media:summary-text", "summarize", "Summarize");
+        let cap2 = make_test_cap(
+            "media:extracted-text",
+            "media:summary-text",
+            "summarize",
+            "Summarize",
+        );
 
         graph.add_cap(&cap1);
         graph.add_cap(&cap2);
@@ -1266,13 +1330,24 @@ mod tests {
         assert_eq!(paths[0].steps[1].title(), "Summarize");
     }
 
+    // TEST1153: Repeated path searches return the same path order for the same graph and target.
     #[test]
-    fn test_deterministic_ordering() {
+    fn test1153_deterministic_ordering() {
         let mut graph = LiveCapGraph::new();
 
         // Two paths to the same target with different specificities
-        let cap1 = make_test_cap("media:pdf", "media:extracted-text", "extract_a", "Extract A");
-        let cap2 = make_test_cap("media:pdf", "media:extracted-text", "extract_b", "Extract B");
+        let cap1 = make_test_cap(
+            "media:pdf",
+            "media:extracted-text",
+            "extract_a",
+            "Extract A",
+        );
+        let cap2 = make_test_cap(
+            "media:pdf",
+            "media:extracted-text",
+            "extract_b",
+            "Extract B",
+        );
 
         graph.add_cap(&cap1);
         graph.add_cap(&cap2);
@@ -1296,13 +1371,15 @@ mod tests {
             assert!(
                 u1.is_equivalent(u2),
                 "determinism: first cap URN differs across runs: {} vs {}",
-                u1, u2
+                u1,
+                u2
             );
         }
     }
 
+    // TEST1154: Syncing from caps replaces the existing graph contents with the new cap set.
     #[test]
-    fn test_sync_from_caps() {
+    fn test1154_sync_from_caps() {
         let mut graph = LiveCapGraph::new();
 
         let caps = vec![
@@ -1316,9 +1393,12 @@ mod tests {
         assert_eq!(graph.nodes.len(), 3);
 
         // Sync again with different caps - should replace
-        let new_caps = vec![
-            make_test_cap("media:image", "media:extracted-text", "ocr", "OCR"),
-        ];
+        let new_caps = vec![make_test_cap(
+            "media:image",
+            "media:extracted-text",
+            "ocr",
+            "OCR",
+        )];
 
         graph.sync_from_caps(&new_caps);
 
@@ -1349,8 +1429,16 @@ mod tests {
 
         let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
-        assert_eq!(paths.len(), 1, "Should find one path through intermediate node");
-        assert_eq!(paths[0].steps.len(), 2, "Path should have 2 steps (A->B, B->C)");
+        assert_eq!(
+            paths.len(),
+            1,
+            "Should find one path through intermediate node"
+        );
+        assert_eq!(
+            paths[0].steps.len(),
+            2,
+            "Path should have 2 steps (A->B, B->C)"
+        );
         assert_eq!(paths[0].steps[0].title(), "A to B");
         assert_eq!(paths[0].steps[1].title(), "B to C");
     }
@@ -1370,7 +1458,10 @@ mod tests {
 
         let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
-        assert!(paths.is_empty(), "Should find no paths when target is unreachable");
+        assert!(
+            paths.is_empty(),
+            "Should find no paths when target is unreachable"
+        );
     }
 
     // TEST774: Tests get_reachable_targets() returns all reachable targets
@@ -1421,7 +1512,10 @@ mod tests {
 
         let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
-        assert!(paths.is_empty(), "Should NOT find path from PNG to text via PDF cap");
+        assert!(
+            paths.is_empty(),
+            "Should NOT find path from PNG to text via PDF cap"
+        );
     }
 
     // TEST778: Tests type checking prevents using PNG-specific cap with PDF input
@@ -1431,7 +1525,12 @@ mod tests {
         let mut graph = LiveCapGraph::new();
 
         // Only add PNG->thumbnail cap
-        let png_to_thumb = make_test_cap("media:png", "media:thumbnail", "png2thumb", "PNG to Thumbnail");
+        let png_to_thumb = make_test_cap(
+            "media:png",
+            "media:thumbnail",
+            "png2thumb",
+            "PNG to Thumbnail",
+        );
         graph.add_cap(&png_to_thumb);
 
         // Try to find path from PDF (not PNG)
@@ -1440,7 +1539,10 @@ mod tests {
 
         let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
-        assert!(paths.is_empty(), "Should NOT find path from PDF to thumbnail via PNG cap");
+        assert!(
+            paths.is_empty(),
+            "Should NOT find path from PDF to thumbnail via PNG cap"
+        );
     }
 
     // TEST779: Tests get_reachable_targets() only returns targets reachable via type-compatible caps
@@ -1450,7 +1552,12 @@ mod tests {
         let mut graph = LiveCapGraph::new();
 
         let pdf_to_text = make_test_cap("media:pdf", "media:textable", "pdf2text", "PDF to Text");
-        let png_to_thumb = make_test_cap("media:png", "media:thumbnail", "png2thumb", "PNG to Thumbnail");
+        let png_to_thumb = make_test_cap(
+            "media:png",
+            "media:thumbnail",
+            "png2thumb",
+            "PNG to Thumbnail",
+        );
 
         graph.add_cap(&pdf_to_text);
         graph.add_cap(&png_to_thumb);
@@ -1468,10 +1575,9 @@ mod tests {
             "PNG should reach thumbnail"
         );
         assert!(
-            !png_targets.iter().any(|t| t
-                .media_spec
-                .is_equivalent(&media_textable)
-                .unwrap_or(false)),
+            !png_targets
+                .iter()
+                .any(|t| t.media_spec.is_equivalent(&media_textable).unwrap_or(false)),
             "PNG should NOT reach textable"
         );
 
@@ -1479,10 +1585,9 @@ mod tests {
         let pdf_source = MediaUrn::from_string("media:pdf").unwrap();
         let pdf_targets = graph.get_reachable_targets(&pdf_source, false, 5);
         assert!(
-            pdf_targets.iter().any(|t| t
-                .media_spec
-                .is_equivalent(&media_textable)
-                .unwrap_or(false)),
+            pdf_targets
+                .iter()
+                .any(|t| t.media_spec.is_equivalent(&media_textable).unwrap_or(false)),
             "PDF should reach textable"
         );
         assert!(
@@ -1501,7 +1606,12 @@ mod tests {
         let mut graph = LiveCapGraph::new();
 
         let resize_png = make_test_cap("media:png", "media:resized-png", "resize", "Resize PNG");
-        let to_thumb = make_test_cap("media:resized-png", "media:thumbnail", "thumb", "To Thumbnail");
+        let to_thumb = make_test_cap(
+            "media:resized-png",
+            "media:thumbnail",
+            "thumb",
+            "To Thumbnail",
+        );
 
         graph.add_cap(&resize_png);
         graph.add_cap(&to_thumb);
@@ -1510,13 +1620,20 @@ mod tests {
         let png_source = MediaUrn::from_string("media:png").unwrap();
         let thumb_target = MediaUrn::from_string("media:thumbnail").unwrap();
         let png_paths = graph.find_paths_to_exact_target(&png_source, &thumb_target, false, 5, 10);
-        assert_eq!(png_paths.len(), 1, "Should find 1 path from PNG to thumbnail");
+        assert_eq!(
+            png_paths.len(),
+            1,
+            "Should find 1 path from PNG to thumbnail"
+        );
         assert_eq!(png_paths[0].steps.len(), 2, "Path should have 2 steps");
 
         // PDF should NOT find path to thumbnail (no PDF->resized-png cap)
         let pdf_source = MediaUrn::from_string("media:pdf").unwrap();
         let pdf_paths = graph.find_paths_to_exact_target(&pdf_source, &thumb_target, false, 5, 10);
-        assert!(pdf_paths.is_empty(), "Should find NO paths from PDF to thumbnail (type mismatch)");
+        assert!(
+            pdf_paths.is_empty(),
+            "Should find NO paths from PDF to thumbnail (type mismatch)"
+        );
     }
 
     // TEST788: ForEach is only synthesized when is_sequence=true
@@ -1528,22 +1645,21 @@ mod tests {
     fn test788_foreach_only_with_sequence_input() {
         let mut graph = LiveCapGraph::new();
 
-        let disbind = make_test_cap(
-            "media:pdf",
-            "media:page;textable",
-            "disbind",
-            "Disbind PDF"
-        );
+        let disbind = make_test_cap("media:pdf", "media:page;textable", "disbind", "Disbind PDF");
 
         let choose = make_test_cap(
             "media:textable",
             "media:decision;json;record;textable",
             "choose",
-            "Make a Decision"
+            "Make a Decision",
         );
 
         graph.sync_from_caps(&[disbind, choose]);
-        assert_eq!(graph.edges.len(), 2, "Graph should contain exactly 2 Cap edges");
+        assert_eq!(
+            graph.edges.len(),
+            2,
+            "Graph should contain exactly 2 Cap edges"
+        );
 
         let source = MediaUrn::from_string("media:pdf").unwrap();
         let target = MediaUrn::from_string("media:decision;json;record;textable").unwrap();
@@ -1551,59 +1667,67 @@ mod tests {
         // Scalar input: no ForEach, direct path disbind → choose
         let scalar_paths = graph.find_paths_to_exact_target(&source, &target, false, 10, 20);
         let has_foreach_scalar = scalar_paths.iter().any(|p| {
-            p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }))
+            p.steps
+                .iter()
+                .any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }))
         });
-        assert!(!has_foreach_scalar, "Scalar input should NOT produce ForEach");
-        assert!(!scalar_paths.is_empty(), "Should find direct path disbind → choose");
+        assert!(
+            !has_foreach_scalar,
+            "Scalar input should NOT produce ForEach"
+        );
+        assert!(
+            !scalar_paths.is_empty(),
+            "Should find direct path disbind → choose"
+        );
 
         // Sequence input: ForEach should appear
         let seq_paths = graph.find_paths_to_exact_target(&source, &target, true, 10, 20);
         let has_foreach_seq = seq_paths.iter().any(|p| {
-            p.steps.iter().any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }))
+            p.steps
+                .iter()
+                .any(|s| matches!(s.step_type, StrandStepType::ForEach { .. }))
         });
-        assert!(has_foreach_seq, "Sequence input should produce ForEach step");
+        assert!(
+            has_foreach_seq,
+            "Sequence input should produce ForEach step"
+        );
     }
 
     // TEST791: Tests sync_from_cap_urns actually adds edges
     #[tokio::test]
     async fn test791_sync_from_cap_urns_adds_edges() {
-        use std::sync::Arc;
         use crate::CapRegistry;
+        use std::sync::Arc;
 
         // Create a registry with test caps
         let registry = CapRegistry::new_for_test();
-        let disbind = make_test_cap(
-            "media:pdf",
-            "media:page;textable",
-            "disbind",
-            "Disbind PDF"
-        );
+        let disbind = make_test_cap("media:pdf", "media:page;textable", "disbind", "Disbind PDF");
         let choose = make_test_cap(
             "media:textable",
             "media:decision;json;record;textable",
             "choose",
-            "Make a Decision"
+            "Make a Decision",
         );
         registry.add_caps_to_cache(vec![disbind.clone(), choose.clone()]);
 
         // Create cap URN strings as cartridges would report them
-        let cap_urns: Vec<String> = vec![
-            disbind.urn.to_string(),
-            choose.urn.to_string(),
-        ];
+        let cap_urns: Vec<String> = vec![disbind.urn.to_string(), choose.urn.to_string()];
 
         eprintln!("Cap URNs to sync: {:?}", cap_urns);
 
         // Sync from URNs
         let mut graph = LiveCapGraph::new();
-        graph.sync_from_cap_urns(&cap_urns, &Arc::new(registry)).await;
+        graph
+            .sync_from_cap_urns(&cap_urns, &Arc::new(registry))
+            .await;
 
         eprintln!("Graph edges: {}", graph.edges.len());
         eprintln!("Graph nodes: {}", graph.nodes.len());
 
         // Should have exactly 2 Cap edges (no pre-computed cardinality edges)
         assert_eq!(
-            graph.edges.len(), 2,
+            graph.edges.len(),
+            2,
             "Should have exactly 2 Cap edges, got {}",
             graph.edges.len()
         );
@@ -1623,13 +1747,23 @@ mod tests {
 
         // A specific cap should NOT be equivalent to identity
         let specific_cap = crate::CapUrn::from_string(
-            r#"cap:in=media:pdf;op=disbind;out="media:disbound-page;textable""#
-        ).unwrap();
+            r#"cap:in=media:pdf;op=disbind;out="media:disbound-page;textable""#,
+        )
+        .unwrap();
 
         eprintln!("Specific cap: {}", specific_cap);
-        eprintln!("specific.is_equivalent(&identity): {}", specific_cap.is_equivalent(&identity));
-        eprintln!("identity.accepts(&specific): {}", identity.accepts(&specific_cap));
-        eprintln!("specific.accepts(&identity): {}", specific_cap.accepts(&identity));
+        eprintln!(
+            "specific.is_equivalent(&identity): {}",
+            specific_cap.is_equivalent(&identity)
+        );
+        eprintln!(
+            "identity.accepts(&specific): {}",
+            identity.accepts(&specific_cap)
+        );
+        eprintln!(
+            "specific.accepts(&identity): {}",
+            specific_cap.accepts(&identity)
+        );
 
         assert!(
             !specific_cap.is_equivalent(&identity),
@@ -1660,7 +1794,11 @@ mod tests {
         assert!(!in_spec.is_empty(), "in_spec should not be empty");
         assert!(!out_spec.is_empty(), "out_spec should not be empty");
         assert_eq!(in_spec, "media:pdf");
-        assert!(out_spec.contains("disbound-page"), "out_spec should contain disbound-page: {}", out_spec);
+        assert!(
+            out_spec.contains("disbound-page"),
+            "out_spec should contain disbound-page: {}",
+            out_spec
+        );
     }
 
     // TEST787: Tests find_paths_to_exact_target() sorts paths by length, preferring shorter ones
@@ -1684,8 +1822,16 @@ mod tests {
 
         let paths = graph.find_paths_to_exact_target(&source, &target, false, 5, 10);
 
-        assert!(paths.len() >= 2, "Should find at least 2 paths (got {})", paths.len());
-        assert_eq!(paths[0].steps.len(), 1, "Shortest path should be first (1 step)");
+        assert!(
+            paths.len() >= 2,
+            "Should find at least 2 paths (got {})",
+            paths.len()
+        );
+        assert_eq!(
+            paths[0].steps.len(),
+            1,
+            "Shortest path should be first (1 step)"
+        );
         assert_eq!(paths[0].steps[0].title(), "Direct");
     }
 
@@ -1742,8 +1888,14 @@ mod tests {
             "target_spec must round-trip structurally as media:page;textable"
         );
         assert_eq!(recovered.steps.len(), 2);
-        assert!(matches!(recovered.steps[0].step_type, StrandStepType::Cap { .. }));
-        assert!(matches!(recovered.steps[1].step_type, StrandStepType::ForEach { .. }));
+        assert!(matches!(
+            recovered.steps[0].step_type,
+            StrandStepType::Cap { .. }
+        ));
+        assert!(matches!(
+            recovered.steps[1].step_type,
+            StrandStepType::ForEach { .. }
+        ));
     }
 
     // TEST1111: ForEach works for user-provided list sources not in the graph.
@@ -1760,7 +1912,7 @@ mod tests {
             "media:textable",
             "media:decision;json;record;textable",
             "make_decision",
-            "Make Decision"
+            "Make Decision",
         );
         graph.sync_from_caps(&[make_decision]);
 
@@ -1809,7 +1961,7 @@ mod tests {
             "media:textable",
             "media:summary;textable",
             "summarize",
-            "Summarize"
+            "Summarize",
         );
         graph.sync_from_caps(&[summarize]);
 
@@ -1819,7 +1971,10 @@ mod tests {
         let target = MediaUrn::from_string("media:list;summary;textable").unwrap();
 
         let paths = graph.find_paths_to_exact_target(&source, &target, false, 10, 20);
-        assert!(paths.is_empty(), "Should NOT find path to list type without a cap that produces it");
+        assert!(
+            paths.is_empty(),
+            "Should NOT find path to list type without a cap that produces it"
+        );
     }
 
     // TEST1113: Multi-cap path without Collect — Collect is not synthesized
@@ -1827,17 +1982,12 @@ mod tests {
     fn test1113_multi_cap_path_no_collect() {
         let mut graph = LiveCapGraph::new();
 
-        let disbind = make_test_cap(
-            "media:pdf",
-            "media:page;textable",
-            "disbind",
-            "Disbind PDF"
-        );
+        let disbind = make_test_cap("media:pdf", "media:page;textable", "disbind", "Disbind PDF");
         let summarize = make_test_cap(
             "media:page;textable",
             "media:summary;textable",
             "summarize",
-            "Summarize Page"
+            "Summarize Page",
         );
         graph.sync_from_caps(&[disbind, summarize]);
 
@@ -1857,8 +2007,18 @@ mod tests {
 
         let caps = vec![
             make_test_cap("media:pdf", "media:page;textable", "disbind", "Disbind"),
-            make_test_cap("media:page;textable", "media:summary;textable", "summarize", "Summarize"),
-            make_test_cap("media:textable", "media:decision;json;record;textable", "decide", "Decide"),
+            make_test_cap(
+                "media:page;textable",
+                "media:summary;textable",
+                "summarize",
+                "Summarize",
+            ),
+            make_test_cap(
+                "media:textable",
+                "media:decision;json;record;textable",
+                "decide",
+                "Decide",
+            ),
         ];
 
         graph.sync_from_caps(&caps);
@@ -1880,19 +2040,35 @@ mod tests {
         let mut graph = LiveCapGraph::new();
 
         // Need a cap that accepts the source type for ForEach to be synthesized
-        let cap = make_test_cap("media:textable", "media:summary;textable", "summarize", "Summarize");
+        let cap = make_test_cap(
+            "media:textable",
+            "media:summary;textable",
+            "summarize",
+            "Summarize",
+        );
         graph.sync_from_caps(&[cap]);
 
         let source = MediaUrn::from_string("media:textable").unwrap();
         let edges = graph.get_outgoing_edges(&source, true);
 
-        let foreach_edge = edges.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
-        assert!(foreach_edge.is_some(), "Should synthesize ForEach when is_sequence=true and caps exist");
+        let foreach_edge = edges
+            .iter()
+            .find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
+        assert!(
+            foreach_edge.is_some(),
+            "Should synthesize ForEach when is_sequence=true and caps exist"
+        );
 
         let (fe, next_is_seq) = foreach_edge.unwrap();
         assert!(!next_is_seq, "ForEach should flip is_sequence to false");
-        assert!(fe.from_spec.is_equivalent(&source).unwrap(), "ForEach from_spec should be the source");
-        assert!(fe.to_spec.is_equivalent(&source).unwrap(), "ForEach to_spec should be the same URN");
+        assert!(
+            fe.from_spec.is_equivalent(&source).unwrap(),
+            "ForEach from_spec should be the source"
+        );
+        assert!(
+            fe.to_spec.is_equivalent(&source).unwrap(),
+            "ForEach to_spec should be the same URN"
+        );
     }
 
     // TEST1116: Collect is never synthesized during path finding
@@ -1904,12 +2080,22 @@ mod tests {
 
         // Neither scalar nor sequence should produce Collect
         let edges_scalar = graph.get_outgoing_edges(&source, false);
-        let collect_scalar = edges_scalar.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
-        assert!(collect_scalar.is_none(), "Should NOT synthesize Collect for scalar");
+        let collect_scalar = edges_scalar
+            .iter()
+            .find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
+        assert!(
+            collect_scalar.is_none(),
+            "Should NOT synthesize Collect for scalar"
+        );
 
         let edges_seq = graph.get_outgoing_edges(&source, true);
-        let collect_seq = edges_seq.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
-        assert!(collect_seq.is_none(), "Should NOT synthesize Collect for sequence");
+        let collect_seq = edges_seq
+            .iter()
+            .find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::Collect));
+        assert!(
+            collect_seq.is_none(),
+            "Should NOT synthesize Collect for sequence"
+        );
     }
 
     // TEST1117: ForEach is NOT synthesized when is_sequence=false
@@ -1918,14 +2104,24 @@ mod tests {
         let mut graph = LiveCapGraph::new();
 
         // Even with caps that could consume, ForEach requires is_sequence=true
-        let cap = make_test_cap("media:textable", "media:summary;textable", "summarize", "Summarize");
+        let cap = make_test_cap(
+            "media:textable",
+            "media:summary;textable",
+            "summarize",
+            "Summarize",
+        );
         graph.sync_from_caps(&[cap]);
 
         let source = MediaUrn::from_string("media:textable").unwrap();
         let edges = graph.get_outgoing_edges(&source, false);
 
-        let foreach_edge = edges.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
-        assert!(foreach_edge.is_none(), "Should NOT synthesize ForEach when is_sequence=false");
+        let foreach_edge = edges
+            .iter()
+            .find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
+        assert!(
+            foreach_edge.is_none(),
+            "Should NOT synthesize ForEach when is_sequence=false"
+        );
     }
 
     // TEST1118: ForEach not synthesized without cap consumers even with is_sequence=true
@@ -1937,8 +2133,13 @@ mod tests {
         // Empty graph — no caps to consume items
         let edges = graph.get_outgoing_edges(&source, true);
 
-        let foreach_edge = edges.iter().find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
-        assert!(foreach_edge.is_none(), "Should NOT synthesize ForEach without cap consumers");
+        let foreach_edge = edges
+            .iter()
+            .find(|(e, _)| matches!(e.edge_type, LiveMachinePlanEdgeType::ForEach));
+        assert!(
+            foreach_edge.is_none(),
+            "Should NOT synthesize ForEach without cap consumers"
+        );
     }
 
     // TEST1119: Strand::knit returns a single-strand Machine via the new
@@ -1947,19 +2148,12 @@ mod tests {
     fn test1119_strand_knit_with_registry_returns_single_strand_machine() {
         use crate::cap::registry::CapRegistry;
 
-        let cap = make_test_cap_with_arg(
-            "media:pdf",
-            "media:txt;textable",
-            "extract",
-            "Extract",
-        );
+        let cap = make_test_cap_with_arg("media:pdf", "media:txt;textable", "extract", "Extract");
         let registry = CapRegistry::new_for_test();
         registry.add_caps_to_cache(vec![cap]);
 
-        let cap_urn = CapUrn::from_string(
-            "cap:in=media:pdf;op=extract;out=\"media:txt;textable\"",
-        )
-        .unwrap();
+        let cap_urn =
+            CapUrn::from_string("cap:in=media:pdf;op=extract;out=\"media:txt;textable\"").unwrap();
         let strand = Strand {
             steps: vec![StrandStep {
                 step_type: StrandStepType::Cap {
@@ -1985,7 +2179,9 @@ mod tests {
 
         // Same registry → `to_machine_notation` produces the
         // same canonical form as the explicit knit + serialize.
-        let direct = strand.to_machine_notation(&registry).expect("must serialize");
+        let direct = strand
+            .to_machine_notation(&registry)
+            .expect("must serialize");
         let via_machine = machine.to_machine_notation().unwrap();
         assert_eq!(direct, via_machine);
     }
@@ -2002,10 +2198,8 @@ mod tests {
         let registry = CapRegistry::new_for_test();
         // Note: no caps added to the registry.
 
-        let cap_urn = CapUrn::from_string(
-            "cap:in=media:pdf;op=ghost;out=\"media:txt;textable\"",
-        )
-        .unwrap();
+        let cap_urn =
+            CapUrn::from_string("cap:in=media:pdf;op=ghost;out=\"media:txt;textable\"").unwrap();
         let strand = Strand {
             steps: vec![StrandStep {
                 step_type: StrandStepType::Cap {

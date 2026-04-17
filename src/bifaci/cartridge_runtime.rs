@@ -39,20 +39,20 @@
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{handshake_accept, CborError, FrameReader, FrameWriter};
+use crate::bifaci::manifest::CapManifest;
 use crate::cap::caller::CapArgumentValue;
 use crate::cap::definition::{ArgSource, Cap, CapArg};
+use crate::standard::caps::{CAP_DISCARD, CAP_IDENTITY};
 use crate::urn::cap_urn::CapUrn;
-use crate::bifaci::manifest::CapManifest;
 use crate::urn::media_urn::{MediaUrn, MEDIA_FILE_PATH, MEDIA_FILE_PATH_ARRAY};
-use crate::standard::caps::{CAP_IDENTITY, CAP_DISCARD};
 use async_trait::async_trait;
 // crossbeam is used for demux_multi_stream (bridging sync stdin reads to async handlers)
-use ops::{Op, OpMetadata, DryContext, WetContext, OpResult, OpError};
+use ops::{DryContext, Op, OpError, OpMetadata, OpResult, WetContext};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read, Write};
 use std::os::unix::io::FromRawFd;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::task::JoinHandle;
@@ -156,7 +156,9 @@ pub trait FrameSender: Send + Sync {
 pub struct InputStream {
     media_urn: String,
     stream_meta: Option<StreamMeta>,
-    rx: tokio::sync::mpsc::UnboundedReceiver<Result<(ciborium::Value, Option<StreamMeta>), StreamError>>,
+    rx: tokio::sync::mpsc::UnboundedReceiver<
+        Result<(ciborium::Value, Option<StreamMeta>), StreamError>,
+    >,
 }
 
 impl InputStream {
@@ -172,7 +174,9 @@ impl InputStream {
 
     /// Receive the next CBOR value with per-item metadata from this stream.
     /// Returns None when the stream ends.
-    pub async fn recv(&mut self) -> Option<Result<(ciborium::Value, Option<StreamMeta>), StreamError>> {
+    pub async fn recv(
+        &mut self,
+    ) -> Option<Result<(ciborium::Value, Option<StreamMeta>), StreamError>> {
         self.rx.recv().await
     }
 
@@ -189,7 +193,9 @@ impl InputStream {
     /// Collect each chunk as a separate item with its metadata.
     /// For sequence streams (is_sequence=true), each chunk is one item.
     /// Returns a Vec of (raw_bytes, optional_per_item_meta).
-    pub async fn collect_items(mut self) -> Result<Vec<(Vec<u8>, Option<StreamMeta>)>, StreamError> {
+    pub async fn collect_items(
+        mut self,
+    ) -> Result<Vec<(Vec<u8>, Option<StreamMeta>)>, StreamError> {
         let mut items = Vec::new();
         while let Some(item) = self.recv().await {
             let (value, meta) = item?;
@@ -198,8 +204,9 @@ impl InputStream {
                 ciborium::Value::Text(s) => s.into_bytes(),
                 other => {
                     let mut buf = Vec::new();
-                    ciborium::into_writer(&other, &mut buf)
-                        .map_err(|e| StreamError::Decode(format!("Failed to encode CBOR: {}", e)))?;
+                    ciborium::into_writer(&other, &mut buf).map_err(|e| {
+                        StreamError::Decode(format!("Failed to encode CBOR: {}", e))
+                    })?;
                     buf
                 }
             };
@@ -224,8 +231,9 @@ impl InputStream {
                 other => {
                     // For non-byte types, CBOR-encode them
                     let mut buf = Vec::new();
-                    ciborium::into_writer(&other, &mut buf)
-                        .map_err(|e| StreamError::Decode(format!("Failed to encode CBOR: {}", e)))?;
+                    ciborium::into_writer(&other, &mut buf).map_err(|e| {
+                        StreamError::Decode(format!("Failed to encode CBOR: {}", e))
+                    })?;
                     result.extend(buf);
                 }
             }
@@ -284,29 +292,43 @@ impl PeerResponse {
                     chunk_count += 1;
                     match value {
                         ciborium::Value::Bytes(b) => {
-                            tracing::info!("[collect_bytes] chunk {} Bytes({} bytes)", chunk_count, b.len());
+                            tracing::info!(
+                                "[collect_bytes] chunk {} Bytes({} bytes)",
+                                chunk_count,
+                                b.len()
+                            );
                             result.extend(b);
                         }
                         ciborium::Value::Text(s) => {
-                            tracing::info!("[collect_bytes] chunk {} Text({} bytes)", chunk_count, s.len());
+                            tracing::info!(
+                                "[collect_bytes] chunk {} Text({} bytes)",
+                                chunk_count,
+                                s.len()
+                            );
                             result.extend(s.into_bytes());
                         }
                         other => {
                             let mut buf = Vec::new();
-                            ciborium::into_writer(&other, &mut buf)
-                                .map_err(|e| StreamError::Decode(format!("Failed to encode CBOR: {}", e)))?;
-                            tracing::info!("[collect_bytes] chunk {} Other({} bytes)", chunk_count, buf.len());
+                            ciborium::into_writer(&other, &mut buf).map_err(|e| {
+                                StreamError::Decode(format!("Failed to encode CBOR: {}", e))
+                            })?;
+                            tracing::info!(
+                                "[collect_bytes] chunk {} Other({} bytes)",
+                                chunk_count,
+                                buf.len()
+                            );
                             result.extend(buf);
                         }
                     }
-                },
+                }
                 PeerResponseItem::Data(Err(e), _) => return Err(e),
                 PeerResponseItem::Log(_) => {} // Discard LOG frames
             }
         }
         tracing::info!(
             "[collect_bytes] DONE: {} chunks, {} total bytes, preview={:?}",
-            chunk_count, result.len(),
+            chunk_count,
+            result.len(),
             String::from_utf8_lossy(&result[..result.len().min(100)])
         );
         Ok(result)
@@ -359,7 +381,9 @@ impl InputPackage {
     /// Use `find_stream()` helpers to retrieve args by URN pattern matching.
     ///
     /// WARNING: Only call this if you know all streams are finite.
-    pub async fn collect_streams(mut self) -> Result<Vec<(String, Vec<u8>, Option<StreamMeta>)>, StreamError> {
+    pub async fn collect_streams(
+        mut self,
+    ) -> Result<Vec<(String, Vec<u8>, Option<StreamMeta>)>, StreamError> {
         let mut result = Vec::new();
         while let Some(stream_result) = self.recv().await {
             let stream = stream_result?;
@@ -381,7 +405,10 @@ impl InputPackage {
 ///
 /// The `media_urn` parameter must be the FULL media URN from the cap arg
 /// definition (e.g., `"media:model-spec;textable"`).
-pub fn find_stream<'a>(streams: &'a [(String, Vec<u8>, Option<StreamMeta>)], media_urn: &str) -> Option<&'a [u8]> {
+pub fn find_stream<'a>(
+    streams: &'a [(String, Vec<u8>, Option<StreamMeta>)],
+    media_urn: &str,
+) -> Option<&'a [u8]> {
     let target = match crate::MediaUrn::from_string(media_urn) {
         Ok(p) => p,
         Err(_) => return None,
@@ -397,12 +424,18 @@ pub fn find_stream<'a>(streams: &'a [(String, Vec<u8>, Option<StreamMeta>)], med
 }
 
 /// Like `find_stream` but returns a UTF-8 string.
-pub fn find_stream_str(streams: &[(String, Vec<u8>, Option<StreamMeta>)], media_urn: &str) -> Option<String> {
+pub fn find_stream_str(
+    streams: &[(String, Vec<u8>, Option<StreamMeta>)],
+    media_urn: &str,
+) -> Option<String> {
     find_stream(streams, media_urn).and_then(|b| String::from_utf8(b.to_vec()).ok())
 }
 
 /// Find the stream-level metadata (from STREAM_START) for a stream by media URN.
-pub fn find_stream_meta<'a>(streams: &'a [(String, Vec<u8>, Option<StreamMeta>)], media_urn: &str) -> Option<&'a StreamMeta> {
+pub fn find_stream_meta<'a>(
+    streams: &'a [(String, Vec<u8>, Option<StreamMeta>)],
+    media_urn: &str,
+) -> Option<&'a StreamMeta> {
     let target = match crate::MediaUrn::from_string(media_urn) {
         Ok(p) => p,
         Err(_) => return None,
@@ -418,20 +451,23 @@ pub fn find_stream_meta<'a>(streams: &'a [(String, Vec<u8>, Option<StreamMeta>)]
 }
 
 /// Like `find_stream` but fails hard if not found.
-pub fn require_stream<'a>(streams: &'a [(String, Vec<u8>, Option<StreamMeta>)], media_urn: &str) -> Result<&'a [u8], StreamError> {
-    find_stream(streams, media_urn).ok_or_else(|| StreamError::Protocol(
-        format!("Missing required arg: {}", media_urn)
-    ))
+pub fn require_stream<'a>(
+    streams: &'a [(String, Vec<u8>, Option<StreamMeta>)],
+    media_urn: &str,
+) -> Result<&'a [u8], StreamError> {
+    find_stream(streams, media_urn)
+        .ok_or_else(|| StreamError::Protocol(format!("Missing required arg: {}", media_urn)))
 }
 
 /// Like `require_stream` but returns a UTF-8 string.
-pub fn require_stream_str(streams: &[(String, Vec<u8>, Option<StreamMeta>)], media_urn: &str) -> Result<String, StreamError> {
+pub fn require_stream_str(
+    streams: &[(String, Vec<u8>, Option<StreamMeta>)],
+    media_urn: &str,
+) -> Result<String, StreamError> {
     let bytes = require_stream(streams, media_urn)?;
-    String::from_utf8(bytes.to_vec()).map_err(|e| StreamError::Decode(
-        format!("Arg '{}' is not valid UTF-8: {}", media_urn, e)
-    ))
+    String::from_utf8(bytes.to_vec())
+        .map_err(|e| StreamError::Decode(format!("Arg '{}' is not valid UTF-8: {}", media_urn, e)))
 }
-
 
 /// Detached progress/log emitter that can be moved into `spawn_blocking`.
 ///
@@ -575,19 +611,15 @@ impl OutputStream {
     fn check_mode(&self, is_sequence: bool) -> Result<(), RuntimeError> {
         let mode = self.stream_mode.lock().unwrap();
         match *mode {
-            None => {
-                Err(RuntimeError::Handler(
-                    "stream not started: call start() before write/emit_list_item".to_string(),
-                ))
-            }
+            None => Err(RuntimeError::Handler(
+                "stream not started: call start() before write/emit_list_item".to_string(),
+            )),
             Some(existing) if existing == is_sequence => Ok(()),
-            Some(existing) => {
-                Err(RuntimeError::Handler(format!(
-                    "stream mode conflict: started as {} but called with {}",
-                    if existing { "sequence" } else { "write" },
-                    if is_sequence { "sequence" } else { "write" },
-                )))
-            }
+            Some(existing) => Err(RuntimeError::Handler(format!(
+                "stream mode conflict: started as {} but called with {}",
+                if existing { "sequence" } else { "write" },
+                if is_sequence { "sequence" } else { "write" },
+            ))),
         }
     }
 
@@ -649,7 +681,11 @@ impl OutputStream {
     /// this sends raw CBOR bytes as frame payloads directly.
     ///
     /// `meta` is per-item metadata, placed on the first chunk frame of this item only.
-    pub fn emit_list_item(&self, value: &ciborium::Value, meta: Option<StreamMeta>) -> Result<(), RuntimeError> {
+    pub fn emit_list_item(
+        &self,
+        value: &ciborium::Value,
+        meta: Option<StreamMeta>,
+    ) -> Result<(), RuntimeError> {
         self.check_mode(true)?;
         let mut cbor_bytes = Vec::new();
         ciborium::into_writer(value, &mut cbor_bytes)
@@ -717,7 +753,9 @@ impl OutputStream {
                         chunk_size -= 1;
                     }
                     if chunk_size == 0 {
-                        return Err(RuntimeError::Handler("Cannot split text on character boundary".to_string()));
+                        return Err(RuntimeError::Handler(
+                            "Cannot split text on character boundary".to_string(),
+                        ));
                     }
                     let chunk_text = text[offset..offset + chunk_size].to_string();
                     self.send_chunk(&ciborium::Value::Text(chunk_text))?;
@@ -881,11 +919,8 @@ impl OutputStream {
             let count_guard = self.chunk_count.lock().unwrap();
             *count_guard
         };
-        let mut frame = Frame::stream_end(
-            self.request_id.clone(),
-            self.stream_id.clone(),
-            chunk_count,
-        );
+        let mut frame =
+            Frame::stream_end(self.request_id.clone(), self.stream_id.clone(), chunk_count);
         frame.routing_id = self.routing_id.clone();
         self.sender.send(&frame)
     }
@@ -924,18 +959,26 @@ impl PeerCall {
     /// decides how to react to each (e.g., forward progress, accumulate data).
     pub async fn finish(mut self) -> Result<PeerResponse, RuntimeError> {
         // Send END frame for the peer request
-        tracing::info!("[PeerCall] finish: sending END for peer_rid={:?}", self.request_id);
+        tracing::info!(
+            "[PeerCall] finish: sending END for peer_rid={:?}",
+            self.request_id
+        );
         let end_frame = Frame::end(self.request_id.clone(), None);
         self.sender.send(&end_frame)?;
 
         // Take the response receiver
-        let response_rx = self.response_rx.take()
+        let response_rx = self
+            .response_rx
+            .take()
             .ok_or_else(|| RuntimeError::PeerRequest("PeerCall already finished".to_string()))?;
 
         // Start demux — returns immediately so LOG frames can be consumed
         // before data arrives (critical for keeping activity timer alive)
         let peer_response = demux_single_stream(response_rx);
-        tracing::info!("[PeerCall] finish: demux started for peer_rid={:?}", self.request_id);
+        tracing::info!(
+            "[PeerCall] finish: demux started for peer_rid={:?}",
+            self.request_id
+        );
 
         Ok(peer_response)
     }
@@ -1010,11 +1053,11 @@ pub(crate) struct ChannelFrameSender {
 impl FrameSender for ChannelFrameSender {
     fn send(&self, frame: &Frame) -> Result<(), RuntimeError> {
         // UnboundedSender::send is sync-compatible (no .await needed)
-        self.tx.send(frame.clone())
+        self.tx
+            .send(frame.clone())
             .map_err(|_| RuntimeError::Handler("Output channel closed".to_string()))
     }
 }
-
 
 /// CLI-mode emitter that writes directly to stdout.
 /// Used when the cartridge is invoked via CLI (with arguments).
@@ -1064,9 +1107,13 @@ impl CliStreamEmitter {
                         }
                         ciborium::Value::Map(map) => {
                             // Map - extract "value" field (for argument structures)
-                            if let Some(val) = map.iter().find(|(k, _)| {
-                                matches!(k, ciborium::Value::Text(s) if s == "value")
-                            }).map(|(_, v)| v) {
+                            if let Some(val) = map
+                                .iter()
+                                .find(
+                                    |(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"),
+                                )
+                                .map(|(_, v)| v)
+                            {
                                 match val {
                                     ciborium::Value::Bytes(bytes) => {
                                         let _ = handle.write_all(bytes);
@@ -1074,14 +1121,22 @@ impl CliStreamEmitter {
                                     ciborium::Value::Text(text) => {
                                         let _ = handle.write_all(text.as_bytes());
                                     }
-                                    _ => return Err(RuntimeError::Handler("Map 'value' field is not bytes/text".to_string())),
+                                    _ => {
+                                        return Err(RuntimeError::Handler(
+                                            "Map 'value' field is not bytes/text".to_string(),
+                                        ))
+                                    }
                                 }
                             } else {
-                                return Err(RuntimeError::Handler("Map in array has no 'value' field".to_string()));
+                                return Err(RuntimeError::Handler(
+                                    "Map in array has no 'value' field".to_string(),
+                                ));
                             }
                         }
                         _ => {
-                            return Err(RuntimeError::Handler("Array contains unsupported element type".to_string()));
+                            return Err(RuntimeError::Handler(
+                                "Array contains unsupported element type".to_string(),
+                            ));
                         }
                     }
                 }
@@ -1096,9 +1151,11 @@ impl CliStreamEmitter {
             }
             ciborium::Value::Map(map) => {
                 // Single map - extract "value" field
-                if let Some(val) = map.iter().find(|(k, _)| {
-                    matches!(k, ciborium::Value::Text(s) if s == "value")
-                }).map(|(_, v)| v) {
+                if let Some(val) = map
+                    .iter()
+                    .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
+                    .map(|(_, v)| v)
+                {
                     match val {
                         ciborium::Value::Bytes(bytes) => {
                             let _ = handle.write_all(bytes);
@@ -1106,14 +1163,22 @@ impl CliStreamEmitter {
                         ciborium::Value::Text(text) => {
                             let _ = handle.write_all(text.as_bytes());
                         }
-                        _ => return Err(RuntimeError::Handler("Map 'value' field is not bytes/text".to_string())),
+                        _ => {
+                            return Err(RuntimeError::Handler(
+                                "Map 'value' field is not bytes/text".to_string(),
+                            ))
+                        }
                     }
                 } else {
-                    return Err(RuntimeError::Handler("Map has no 'value' field".to_string()));
+                    return Err(RuntimeError::Handler(
+                        "Map has no 'value' field".to_string(),
+                    ));
                 }
             }
             _ => {
-                return Err(RuntimeError::Handler("Handler emitted unsupported CBOR type".to_string()));
+                return Err(RuntimeError::Handler(
+                    "Handler emitted unsupported CBOR type".to_string(),
+                ));
             }
         }
 
@@ -1164,13 +1229,17 @@ impl FrameSender for CliFrameSender {
                     if expected_checksum != actual_checksum {
                         return Err(RuntimeError::CorruptedData(format!(
                             "CHUNK checksum mismatch: expected {}, got {} (payload {} bytes)",
-                            expected_checksum, actual_checksum, payload.len()
+                            expected_checksum,
+                            actual_checksum,
+                            payload.len()
                         )));
                     }
 
                     // Decode CBOR payload
-                    let value: ciborium::Value = ciborium::from_reader(&payload[..])
-                        .map_err(|e| RuntimeError::Handler(format!("Failed to decode CBOR payload: {}", e)))?;
+                    let value: ciborium::Value =
+                        ciborium::from_reader(&payload[..]).map_err(|e| {
+                            RuntimeError::Handler(format!("Failed to decode CBOR payload: {}", e))
+                        })?;
 
                     // Emit to stdout via CliStreamEmitter
                     self.emitter.emit_cbor(&value)?;
@@ -1196,7 +1265,10 @@ impl FrameSender for CliFrameSender {
             }
             _ => {
                 // Fail hard on unexpected frame types
-                Err(RuntimeError::Handler(format!("Unexpected frame type in CLI mode: {:?}", frame.frame_type)))
+                Err(RuntimeError::Handler(format!(
+                    "Unexpected frame type in CLI mode: {:?}",
+                    frame.frame_type
+                )))
             }
         }
     }
@@ -1226,9 +1298,11 @@ impl Request {
 
     /// Take the input package. Can only be called once — second call returns error.
     pub fn take_input(&self) -> Result<InputPackage, RuntimeError> {
-        self.input.lock().unwrap().take().ok_or_else(|| {
-            RuntimeError::Handler("Input already consumed".to_string())
-        })
+        self.input
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| RuntimeError::Handler("Input already consumed".to_string()))
     }
 
     /// Access the output stream.
@@ -1255,9 +1329,11 @@ pub struct IdentityOp;
 #[async_trait]
 impl Op<()> for IdentityOp {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-        let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+        let req: Arc<Request> = wet
+            .get_required(WET_KEY_REQUEST)
             .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-        let mut input = req.take_input()
+        let mut input = req
+            .take_input()
             .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
         let mut started = false;
         while let Some(stream_result) = input.recv().await {
@@ -1265,20 +1341,24 @@ impl Op<()> for IdentityOp {
                 .map_err(|e| OpError::ExecutionFailed(format!("Identity input error: {}", e)))?;
             // Start output with the first input stream's meta (propagates provenance context)
             if !started {
-                req.output().start(false, stream.stream_meta().cloned())
+                req.output()
+                    .start(false, stream.stream_meta().cloned())
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 started = true;
             }
             while let Some(chunk_result) = stream.recv_data().await {
-                let chunk = chunk_result
-                    .map_err(|e| OpError::ExecutionFailed(format!("Identity chunk error: {}", e)))?;
-                req.output().emit_cbor(&chunk)
+                let chunk = chunk_result.map_err(|e| {
+                    OpError::ExecutionFailed(format!("Identity chunk error: {}", e))
+                })?;
+                req.output()
+                    .emit_cbor(&chunk)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             }
         }
         // If no input streams arrived, still need to start and close the output
         if !started {
-            req.output().start(false, None)
+            req.output()
+                .start(false, None)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
         }
         Ok(())
@@ -1298,9 +1378,11 @@ pub struct DiscardOp;
 #[async_trait]
 impl Op<()> for DiscardOp {
     async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-        let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+        let req: Arc<Request> = wet
+            .get_required(WET_KEY_REQUEST)
             .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-        let mut input = req.take_input()
+        let mut input = req
+            .take_input()
             .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
         while let Some(stream_result) = input.recv().await {
             let mut stream = stream_result
@@ -1369,7 +1451,8 @@ fn extract_effective_payload(
     let expected_media_urn = MediaUrn::from_string(&expected_input).ok();
 
     // Build map of arg media_urn → stdin source media_urn for file-path conversion
-    let mut arg_to_stdin: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut arg_to_stdin: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for arg_def in cap.get_args() {
         if let Some(stdin_urn) = arg_def.sources.iter().find_map(|s| match s {
             ArgSource::Stdin { stdin } => Some(stdin.clone()),
@@ -1380,9 +1463,8 @@ fn extract_effective_payload(
     }
 
     // Parse the CBOR payload as an array of argument maps
-    let cbor_value: ciborium::Value = ciborium::from_reader(payload).map_err(|e| {
-        RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e))
-    })?;
+    let cbor_value: ciborium::Value = ciborium::from_reader(payload)
+        .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e)))?;
 
     let mut arguments = match cbor_value {
         ciborium::Value::Array(arr) => arr,
@@ -1424,11 +1506,16 @@ fn extract_effective_payload(
 
             // Check if this is a file-path argument using pattern matching
             if let (Some(ref urn_str), Some(value)) = (media_urn, value_ref) {
-                let arg_urn = MediaUrn::from_string(urn_str)
-                    .map_err(|e| RuntimeError::Handler(format!("Invalid argument media URN '{}': {}", urn_str, e)))?;
+                let arg_urn = MediaUrn::from_string(urn_str).map_err(|e| {
+                    RuntimeError::Handler(format!(
+                        "Invalid argument media URN '{}': {}",
+                        urn_str, e
+                    ))
+                })?;
 
                 // Check if it's a file-path using pattern matching (pattern accepts instance)
-                let is_file_path = file_path_base.accepts(&arg_urn)
+                let is_file_path = file_path_base
+                    .accepts(&arg_urn)
                     .map_err(|e| RuntimeError::Handler(format!("URN matching failed: {}", e)))?;
 
                 if is_file_path {
@@ -1464,11 +1551,16 @@ fn extract_effective_payload(
                         };
 
                         let path_str = String::from_utf8_lossy(&path_bytes);
-                        let file_bytes = std::fs::read(path_str.as_ref())
-                            .map_err(|e| RuntimeError::Handler(format!("Failed to read file '{}': {}", path_str, e)))?;
+                        let file_bytes = std::fs::read(path_str.as_ref()).map_err(|e| {
+                            RuntimeError::Handler(format!(
+                                "Failed to read file '{}': {}",
+                                path_str, e
+                            ))
+                        })?;
 
                         // Find target media_urn from arg_to_stdin map
-                        let target_urn = arg_to_stdin.get(urn_str)
+                        let target_urn = arg_to_stdin
+                            .get(urn_str)
                             .cloned()
                             .unwrap_or_else(|| expected_input.clone());
 
@@ -1500,10 +1592,15 @@ fn extract_effective_payload(
                                 for item in arr {
                                     match item {
                                         ciborium::Value::Text(s) => paths.push(s.clone()),
-                                        ciborium::Value::Bytes(b) => paths.push(String::from_utf8_lossy(b).to_string()),
-                                        _ => return Err(RuntimeError::Handler(
-                                            "CBOR array must contain text or bytes paths".to_string()
-                                        )),
+                                        ciborium::Value::Bytes(b) => {
+                                            paths.push(String::from_utf8_lossy(b).to_string())
+                                        }
+                                        _ => {
+                                            return Err(RuntimeError::Handler(
+                                                "CBOR array must contain text or bytes paths"
+                                                    .to_string(),
+                                            ))
+                                        }
                                     }
                                 }
                                 paths
@@ -1529,65 +1626,72 @@ fn extract_effective_payload(
                         // Process each path (could be glob pattern or literal)
                         for path_str in paths_to_process {
                             // Detect glob pattern
-                            let is_glob = path_str.contains('*') || path_str.contains('?') || path_str.contains('[');
+                            let is_glob = path_str.contains('*')
+                                || path_str.contains('?')
+                                || path_str.contains('[');
 
-                        if is_glob {
-                            // Expand glob pattern
-                            let paths = glob::glob(&path_str)
-                                .map_err(|e| RuntimeError::Handler(format!(
-                                    "Invalid glob pattern '{}': {}",
-                                    path_str, e
-                                )))?;
+                            if is_glob {
+                                // Expand glob pattern
+                                let paths = glob::glob(&path_str).map_err(|e| {
+                                    RuntimeError::Handler(format!(
+                                        "Invalid glob pattern '{}': {}",
+                                        path_str, e
+                                    ))
+                                })?;
 
-                            for path_result in paths {
-                                let path = path_result
-                                    .map_err(|e| RuntimeError::Handler(format!("Glob error: {}", e)))?;
+                                for path_result in paths {
+                                    let path = path_result.map_err(|e| {
+                                        RuntimeError::Handler(format!("Glob error: {}", e))
+                                    })?;
 
-                                // Only include files (skip directories)
+                                    // Only include files (skip directories)
+                                    if path.is_file() {
+                                        all_files.push(path);
+                                    }
+                                }
+
+                                if all_files.is_empty() {
+                                    return Err(RuntimeError::Handler(format!(
+                                        "No files matched glob pattern '{}'",
+                                        path_str
+                                    )));
+                                }
+                            } else {
+                                // Literal path - verify it exists
+                                let path = std::path::Path::new(&path_str);
+                                if !path.exists() {
+                                    return Err(RuntimeError::Handler(format!(
+                                        "File not found: '{}'",
+                                        path_str
+                                    )));
+                                }
                                 if path.is_file() {
-                                    all_files.push(path);
+                                    all_files.push(path.to_path_buf());
+                                } else {
+                                    return Err(RuntimeError::Handler(format!(
+                                        "Path is not a file: '{}'",
+                                        path_str
+                                    )));
                                 }
                             }
-
-                            if all_files.is_empty() {
-                                return Err(RuntimeError::Handler(format!(
-                                    "No files matched glob pattern '{}'",
-                                    path_str
-                                )));
-                            }
-                        } else {
-                            // Literal path - verify it exists
-                            let path = std::path::Path::new(&path_str);
-                            if !path.exists() {
-                                return Err(RuntimeError::Handler(format!(
-                                    "File not found: '{}'",
-                                    path_str
-                                )));
-                            }
-                            if path.is_file() {
-                                all_files.push(path.to_path_buf());
-                            } else {
-                                return Err(RuntimeError::Handler(format!(
-                                    "Path is not a file: '{}'",
-                                    path_str
-                                )));
-                            }
-                        }
-                        }  // End for path_str in paths_to_process
+                        } // End for path_str in paths_to_process
 
                         // Read all files
                         let mut files_data = Vec::new();
                         for path in &all_files {
-                            let bytes = std::fs::read(path)
-                                .map_err(|e| RuntimeError::Handler(format!(
+                            let bytes = std::fs::read(path).map_err(|e| {
+                                RuntimeError::Handler(format!(
                                     "Failed to read file '{}': {}",
-                                    path.display(), e
-                                )))?;
+                                    path.display(),
+                                    e
+                                ))
+                            })?;
                             files_data.push(ciborium::Value::Bytes(bytes));
                         }
 
                         // Find target media_urn from arg_to_stdin map
-                        let target_urn = arg_to_stdin.get(urn_str)
+                        let target_urn = arg_to_stdin
+                            .get(urn_str)
                             .cloned()
                             .unwrap_or_else(|| expected_input.clone());
 
@@ -1669,8 +1773,9 @@ fn extract_effective_payload(
     // Handler will parse it and extract arguments by matching against in_spec
     let modified_cbor = ciborium::Value::Array(arguments);
     let mut serialized = Vec::new();
-    ciborium::into_writer(&modified_cbor, &mut serialized)
-        .map_err(|e| RuntimeError::Serialize(format!("Failed to serialize modified CBOR: {}", e)))?;
+    ciborium::into_writer(&modified_cbor, &mut serialized).map_err(|e| {
+        RuntimeError::Serialize(format!("Failed to serialize modified CBOR: {}", e))
+    })?;
 
     Ok(serialized)
 }
@@ -1679,7 +1784,12 @@ fn extract_effective_payload(
 impl PeerInvoker for PeerInvokerImpl {
     fn call(&self, cap_urn: &str) -> Result<PeerCall, RuntimeError> {
         let request_id = MessageId::new_uuid();
-        tracing::info!("[CartridgeRuntime] PEER_CALL: cap='{}' peer_rid={:?} origin_rid={:?}", cap_urn, request_id, self.origin_request_id);
+        tracing::info!(
+            "[CartridgeRuntime] PEER_CALL: cap='{}' peer_rid={:?} origin_rid={:?}",
+            cap_urn,
+            request_id,
+            self.origin_request_id
+        );
 
         // Create tokio channel for response frames (unbounded to avoid backpressure issues)
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -1687,20 +1797,18 @@ impl PeerInvoker for PeerInvokerImpl {
         // Register pending request before sending REQ
         {
             let mut pending = self.pending_requests.lock().unwrap();
-            pending.insert(request_id.clone(), PendingPeerRequest {
-                sender,
-                origin_request_id: self.origin_request_id.clone(),
-                origin_routing_id: self.origin_routing_id.clone(),
-            });
+            pending.insert(
+                request_id.clone(),
+                PendingPeerRequest {
+                    sender,
+                    origin_request_id: self.origin_request_id.clone(),
+                    origin_routing_id: self.origin_routing_id.clone(),
+                },
+            );
         }
 
         // Send REQ with empty payload, stamped with parent_rid for cancel cascade
-        let mut req_frame = Frame::req(
-            request_id.clone(),
-            cap_urn,
-            vec![],
-            "application/cbor",
-        );
+        let mut req_frame = Frame::req(request_id.clone(), cap_urn, vec![], "application/cbor");
         let mut meta = req_frame.meta.take().unwrap_or_default();
         meta.insert(
             "parent_rid".to_string(),
@@ -1743,8 +1851,9 @@ struct FilePathContext {
 impl FilePathContext {
     fn new(cap_urn: &str, manifest: Option<CapManifest>) -> Result<Self, RuntimeError> {
         Ok(Self {
-            file_path_pattern: MediaUrn::from_string("media:file-path")
-                .map_err(|e| RuntimeError::Handler(format!("Failed to create file-path pattern: {}", e)))?,
+            file_path_pattern: MediaUrn::from_string("media:file-path").map_err(|e| {
+                RuntimeError::Handler(format!("Failed to create file-path pattern: {}", e))
+            })?,
             cap_urn: cap_urn.to_string(),
             manifest,
         })
@@ -1771,7 +1880,10 @@ impl FilePathContext {
     /// Uses is_equivalent (not string comparison) to match the arg.
     fn resolve_stdin_urn(&self, file_path_media_urn: &str) -> Option<String> {
         let manifest = self.manifest.as_ref()?;
-        let cap_def = manifest.caps.iter().find(|c| c.urn.to_string() == self.cap_urn)?;
+        let cap_def = manifest
+            .caps
+            .iter()
+            .find(|c| c.urn.to_string() == self.cap_urn)?;
         let incoming = crate::MediaUrn::from_string(file_path_media_urn).ok()?;
         let arg_def = cap_def.args.iter().find(|a| {
             crate::MediaUrn::from_string(&a.media_urn)
@@ -1802,7 +1914,12 @@ fn demux_multi_stream(
 
     let handle = tokio::task::spawn_blocking(move || {
         // Per-stream channels: stream_id → chunk sender (tokio unbounded for async recv)
-        let mut stream_channels: HashMap<String, tokio::sync::mpsc::UnboundedSender<Result<(ciborium::Value, Option<StreamMeta>), StreamError>>> = HashMap::new();
+        let mut stream_channels: HashMap<
+            String,
+            tokio::sync::mpsc::UnboundedSender<
+                Result<(ciborium::Value, Option<StreamMeta>), StreamError>,
+            >,
+        > = HashMap::new();
         // File-path accumulators: stream_id → (media_urn, accumulated_chunk_payloads)
         let mut fp_accumulators: HashMap<String, (String, Vec<Vec<u8>>)> = HashMap::new();
 
@@ -1812,14 +1929,17 @@ fn demux_multi_stream(
                     let stream_id = match frame.stream_id.as_ref() {
                         Some(id) => id.clone(),
                         None => {
-                            let _ = streams_tx.send(Err(StreamError::Protocol("STREAM_START missing stream_id".into())));
+                            let _ = streams_tx.send(Err(StreamError::Protocol(
+                                "STREAM_START missing stream_id".into(),
+                            )));
                             break;
                         }
                     };
                     let media_urn = frame.media_urn.as_ref().cloned().unwrap_or_default();
 
                     // Check if file-path (only when FilePathContext provided)
-                    let is_fp = file_path_ctx.as_ref()
+                    let is_fp = file_path_ctx
+                        .as_ref()
                         .map_or(false, |ctx| ctx.is_file_path(&media_urn));
 
                     if is_fp {
@@ -1857,22 +1977,27 @@ fn demux_multi_stream(
                                 Some(c) => c,
                                 None => {
                                     let _ = tx.send(Err(StreamError::Protocol(
-                                        "CHUNK frame missing required checksum field".to_string()
+                                        "CHUNK frame missing required checksum field".to_string(),
                                     )));
                                     continue;
                                 }
                             };
                             let actual = Frame::compute_checksum(&payload);
                             if actual != expected_checksum {
-                                let _ = tx.send(Err(StreamError::Protocol(
-                                    format!("Checksum mismatch: expected={}, actual={}", expected_checksum, actual)
-                                )));
+                                let _ = tx.send(Err(StreamError::Protocol(format!(
+                                    "Checksum mismatch: expected={}, actual={}",
+                                    expected_checksum, actual
+                                ))));
                                 continue;
                             }
                             let chunk_meta = frame.meta;
                             match ciborium::from_reader::<ciborium::Value, _>(&payload[..]) {
-                                Ok(value) => { let _ = tx.send(Ok((value, chunk_meta))); }
-                                Err(e) => { let _ = tx.send(Err(StreamError::Decode(e.to_string()))); }
+                                Ok(value) => {
+                                    let _ = tx.send(Ok((value, chunk_meta)));
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(Err(StreamError::Decode(e.to_string())));
+                                }
                             }
                         }
                     }
@@ -1914,8 +2039,10 @@ fn demux_multi_stream(
                                 let path_str = String::from_utf8_lossy(&path_bytes);
                                 match std::fs::read(path_str.as_ref()) {
                                     Ok(file_bytes) => {
-                                        let (chunk_tx, chunk_rx) = tokio::sync::mpsc::unbounded_channel();
-                                        let _ = chunk_tx.send(Ok((ciborium::Value::Bytes(file_bytes), None)));
+                                        let (chunk_tx, chunk_rx) =
+                                            tokio::sync::mpsc::unbounded_channel();
+                                        let _ = chunk_tx
+                                            .send(Ok((ciborium::Value::Bytes(file_bytes), None)));
                                         drop(chunk_tx);
                                         let input_stream = InputStream {
                                             media_urn: resolved_urn,
@@ -1927,16 +2054,18 @@ fn demux_multi_stream(
                                         }
                                     }
                                     Err(e) => {
-                                        let _ = streams_tx.send(Err(StreamError::Io(
-                                            format!("Failed to read file '{}': {}", path_str, e)
-                                        )));
+                                        let _ = streams_tx.send(Err(StreamError::Io(format!(
+                                            "Failed to read file '{}': {}",
+                                            path_str, e
+                                        ))));
                                         break;
                                     }
                                 }
                             } else {
                                 // list — not yet implemented in CBOR mode
                                 let _ = streams_tx.send(Err(StreamError::Protocol(
-                                    "File-path list conversion not yet implemented in CBOR mode".into()
+                                    "File-path list conversion not yet implemented in CBOR mode"
+                                        .into(),
                                 )));
                                 break;
                             }
@@ -2002,9 +2131,7 @@ fn demux_multi_stream(
 /// Returns immediately — LOG frames are delivered in real-time as they arrive,
 /// not blocked until the first data frame. This is critical for keeping the
 /// engine's activity timer alive during long peer calls (e.g., model downloads).
-fn demux_single_stream(
-    mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Frame>,
-) -> PeerResponse {
+fn demux_single_stream(mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Frame>) -> PeerResponse {
     let (item_tx, item_rx) = tokio::sync::mpsc::unbounded_channel();
 
     tokio::spawn(async move {
@@ -2019,23 +2146,37 @@ fn demux_single_stream(
                         let expected_checksum = match frame.checksum {
                             Some(c) => c,
                             None => {
-                                let _ = item_tx.send(PeerResponseItem::Data(Err(StreamError::Protocol(
-                                    "CHUNK frame missing required checksum field".to_string()
-                                )), None));
+                                let _ = item_tx.send(PeerResponseItem::Data(
+                                    Err(StreamError::Protocol(
+                                        "CHUNK frame missing required checksum field".to_string(),
+                                    )),
+                                    None,
+                                ));
                                 continue;
                             }
                         };
                         let actual = Frame::compute_checksum(&payload);
                         if actual != expected_checksum {
-                            let _ = item_tx.send(PeerResponseItem::Data(Err(StreamError::Protocol(
-                                format!("Checksum mismatch: expected={}, actual={}", expected_checksum, actual)
-                            )), None));
+                            let _ = item_tx.send(PeerResponseItem::Data(
+                                Err(StreamError::Protocol(format!(
+                                    "Checksum mismatch: expected={}, actual={}",
+                                    expected_checksum, actual
+                                ))),
+                                None,
+                            ));
                             continue;
                         }
                         let chunk_meta = frame.meta;
                         match ciborium::from_reader::<ciborium::Value, _>(&payload[..]) {
-                            Ok(value) => { let _ = item_tx.send(PeerResponseItem::Data(Ok(value), chunk_meta)); }
-                            Err(e) => { let _ = item_tx.send(PeerResponseItem::Data(Err(StreamError::Decode(e.to_string())), None)); }
+                            Ok(value) => {
+                                let _ = item_tx.send(PeerResponseItem::Data(Ok(value), chunk_meta));
+                            }
+                            Err(e) => {
+                                let _ = item_tx.send(PeerResponseItem::Data(
+                                    Err(StreamError::Decode(e.to_string())),
+                                    None,
+                                ));
+                            }
                         }
                     }
                 }
@@ -2048,7 +2189,10 @@ fn demux_single_stream(
                 FrameType::Err => {
                     let code = frame.error_code().unwrap_or("UNKNOWN").to_string();
                     let message = frame.error_message().unwrap_or("Unknown error").to_string();
-                    let _ = item_tx.send(PeerResponseItem::Data(Err(StreamError::RemoteError { code, message }), None));
+                    let _ = item_tx.send(PeerResponseItem::Data(
+                        Err(StreamError::RemoteError { code, message }),
+                        None,
+                    ));
                     break;
                 }
                 _ => {}
@@ -2056,9 +2200,7 @@ fn demux_single_stream(
         }
     });
 
-    PeerResponse {
-        rx: item_rx,
-    }
+    PeerResponse { rx: item_rx }
 }
 
 // =============================================================================
@@ -2166,7 +2308,9 @@ async fn dispatch_op(
     let mut wet = WetContext::new();
     wet.insert_arc(WET_KEY_REQUEST, req.clone());
 
-    let result = op.perform(&mut dry, &mut wet).await
+    let result = op
+        .perform(&mut dry, &mut wet)
+        .await
         .map_err(|e| RuntimeError::Handler(e.to_string()));
 
     if result.is_ok() {
@@ -2197,7 +2341,11 @@ fn spawn_handler(
     let done_tx = handler_done_tx.clone();
 
     tokio::spawn(async move {
-        tracing::info!("[CartridgeRuntime] handler started: cap='{}' rid={:?}", cap_urn, request_id);
+        tracing::info!(
+            "[CartridgeRuntime] handler started: cap='{}' rid={:?}",
+            cap_urn,
+            request_id
+        );
         let fp_ctx = FilePathContext::new(&cap_urn, manifest_clone).ok();
         let input_package = demux_multi_stream(raw_rx, fp_ctx);
 
@@ -2231,13 +2379,22 @@ fn spawn_handler(
 
         match result {
             Ok(()) => {
-                tracing::info!("[CartridgeRuntime] handler completed OK: cap='{}' rid={:?}", cap_urn, request_id);
+                tracing::info!(
+                    "[CartridgeRuntime] handler completed OK: cap='{}' rid={:?}",
+                    cap_urn,
+                    request_id
+                );
                 let mut end_frame = Frame::end_ok(request_id.clone(), None);
                 end_frame.routing_id = routing_id;
                 let _ = sender.send(&end_frame);
             }
             Err(e) => {
-                tracing::error!("[CartridgeRuntime] handler FAILED: cap='{}' rid={:?} error={}", cap_urn, request_id, e);
+                tracing::error!(
+                    "[CartridgeRuntime] handler FAILED: cap='{}' rid={:?} error={}",
+                    cap_urn,
+                    request_id,
+                    e
+                );
                 let mut err_frame = Frame::err(request_id.clone(), "HANDLER_ERROR", &e.to_string());
                 err_frame.routing_id = routing_id;
                 let _ = sender.send(&err_frame);
@@ -2271,7 +2428,8 @@ impl CartridgeRuntime {
         let (manifest_data, parsed_manifest) = match parsed_manifest {
             Some(m) => {
                 // FAIL HARD if manifest doesn't have CAP_IDENTITY
-                m.validate().expect("Manifest validation failed - cartridge MUST declare CAP_IDENTITY");
+                m.validate()
+                    .expect("Manifest validation failed - cartridge MUST declare CAP_IDENTITY");
                 let data = serde_json::to_vec(&m).unwrap_or_else(|_| manifest.to_vec());
                 (data, Some(m))
             }
@@ -2296,7 +2454,9 @@ impl CartridgeRuntime {
     /// **PANICS** if manifest is missing CAP_IDENTITY - cartridges must declare it explicitly.
     pub fn with_manifest(manifest: CapManifest) -> Self {
         // FAIL HARD if manifest doesn't have CAP_IDENTITY
-        manifest.validate().expect("Manifest validation failed - cartridge MUST declare CAP_IDENTITY");
+        manifest
+            .validate()
+            .expect("Manifest validation failed - cartridge MUST declare CAP_IDENTITY");
 
         let manifest_data = serde_json::to_vec(&manifest).unwrap_or_default();
         let mut rt = Self {
@@ -2363,7 +2523,10 @@ impl CartridgeRuntime {
     /// Register an Op type for a cap URN. The type must implement Op<()> + Default.
     /// Creates instances via Default::default() on each invocation.
     pub fn register_op_type<T: Op<()> + Default + 'static>(&mut self, cap_urn: &str) {
-        self.handlers.insert(cap_urn.to_string(), Arc::new(|| Box::new(T::default()) as Box<dyn Op<()>>));
+        self.handlers.insert(
+            cap_urn.to_string(),
+            Arc::new(|| Box::new(T::default()) as Box<dyn Op<()>>),
+        );
     }
 
     /// Find a handler for a cap URN.
@@ -2400,9 +2563,9 @@ impl CartridgeRuntime {
                             // - best is non-negative and candidate is negative
                             // - OR both same sign and best has smaller abs distance
                             match (best_dist >= &0, signed_distance >= 0) {
-                                (true, false) => true, // best is refinement, candidate is fallback
+                                (true, false) => true,  // best is refinement, candidate is fallback
                                 (false, true) => false, // candidate is refinement, best is fallback
-                                _ => best_dist.unsigned_abs() <= signed_distance.unsigned_abs()
+                                _ => best_dist.unsigned_abs() <= signed_distance.unsigned_abs(),
                             }
                         }
                     };
@@ -2457,7 +2620,6 @@ impl CartridgeRuntime {
         self.run_cli_mode(&args).await
     }
 
-
     /// Run in CLI mode - parse arguments and invoke handler.
     ///
     /// If stdin is piped (binary data), this streams it in chunks and accumulates.
@@ -2493,12 +2655,14 @@ impl CartridgeRuntime {
         }
 
         // Find cap by command name
-        let cap = self.find_cap_by_command(manifest, subcommand).ok_or_else(|| {
-            RuntimeError::UnknownSubcommand(format!(
-                "Unknown subcommand '{}'. Run with --help to see available commands.",
-                subcommand
-            ))
-        })?;
+        let cap = self
+            .find_cap_by_command(manifest, subcommand)
+            .ok_or_else(|| {
+                RuntimeError::UnknownSubcommand(format!(
+                    "Unknown subcommand '{}'. Run with --help to see available commands.",
+                    subcommand
+                ))
+            })?;
 
         // Find handler factory
         let factory = self.find_handler(&cap.urn_string()).ok_or_else(|| {
@@ -2524,7 +2688,7 @@ impl CartridgeRuntime {
                 &raw_payload,
                 Some("application/cbor"),
                 &cap,
-                true,  // CLI mode
+                true, // CLI mode
             )?
         } else if stdin_is_piped && cap_accepts_stdin {
             // STREAMING PATH: No args, read stdin in chunks and accumulate
@@ -2532,7 +2696,7 @@ impl CartridgeRuntime {
         } else {
             // No input provided
             return Err(RuntimeError::MissingArgument(
-                "No input provided (expected CLI arguments or piped stdin)".to_string()
+                "No input provided (expected CLI arguments or piped stdin)".to_string(),
             ));
         };
 
@@ -2543,12 +2707,17 @@ impl CartridgeRuntime {
 
         // STREAM MULTIPLEXING: Parse CBOR arguments and create separate streams
         // The payload from extract_effective_payload is a CBOR array of argument maps
-        let cbor_value: ciborium::Value = ciborium::from_reader(&payload[..])
-            .map_err(|e| RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e)))?;
+        let cbor_value: ciborium::Value = ciborium::from_reader(&payload[..]).map_err(|e| {
+            RuntimeError::Deserialize(format!("Failed to parse CBOR arguments: {}", e))
+        })?;
 
         let arguments = match cbor_value {
             ciborium::Value::Array(arr) => arr,
-            _ => return Err(RuntimeError::Deserialize("CBOR arguments must be an array".to_string())),
+            _ => {
+                return Err(RuntimeError::Deserialize(
+                    "CBOR arguments must be an array".to_string(),
+                ))
+            }
         };
 
         // Create channel and send each argument as separate Frame streams
@@ -2574,8 +2743,12 @@ impl CartridgeRuntime {
                                 // ALL values must be CBOR-encoded before sending as CHUNK payloads
                                 // Protocol: CHUNK payloads contain CBOR-encoded data (encode once, no double-wrapping)
                                 let mut cbor_bytes = Vec::new();
-                                ciborium::into_writer(&v, &mut cbor_bytes)
-                                    .map_err(|e| RuntimeError::Serialize(format!("Failed to encode value: {}", e)))?;
+                                ciborium::into_writer(&v, &mut cbor_bytes).map_err(|e| {
+                                    RuntimeError::Serialize(format!(
+                                        "Failed to encode value: {}",
+                                        e
+                                    ))
+                                })?;
                                 value_bytes = Some(cbor_bytes);
                             }
                             _ => {}
@@ -2588,15 +2761,31 @@ impl CartridgeRuntime {
                     let stream_id = uuid::Uuid::new_v4().to_string();
 
                     // Send STREAM_START
-                    let start_frame = Frame::stream_start(request_id.clone(), stream_id.clone(), urn.clone(), None);
-                    tx.send(start_frame).map_err(|_| RuntimeError::Handler("Failed to send STREAM_START".to_string()))?;
+                    let start_frame = Frame::stream_start(
+                        request_id.clone(),
+                        stream_id.clone(),
+                        urn.clone(),
+                        None,
+                    );
+                    tx.send(start_frame).map_err(|_| {
+                        RuntimeError::Handler("Failed to send STREAM_START".to_string())
+                    })?;
 
                     // Send CHUNK frame(s)
                     let chunk_count = if bytes.is_empty() {
                         // Empty value - send single empty chunk
                         let checksum = Frame::compute_checksum(&[]);
-                        let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, vec![], 0, checksum);
-                        tx.send(chunk_frame).map_err(|_| RuntimeError::Handler("Failed to send CHUNK".to_string()))?;
+                        let chunk_frame = Frame::chunk(
+                            request_id.clone(),
+                            stream_id.clone(),
+                            0,
+                            vec![],
+                            0,
+                            checksum,
+                        );
+                        tx.send(chunk_frame).map_err(|_| {
+                            RuntimeError::Handler("Failed to send CHUNK".to_string())
+                        })?;
                         1
                     } else {
                         // Non-empty value - chunk into max_chunk pieces
@@ -2606,8 +2795,17 @@ impl CartridgeRuntime {
                             let chunk_size = (bytes.len() - offset).min(max_chunk);
                             let chunk_data = bytes[offset..offset + chunk_size].to_vec();
                             let checksum = Frame::compute_checksum(&chunk_data);
-                            let chunk_frame = Frame::chunk(request_id.clone(), stream_id.clone(), 0, chunk_data, chunk_index, checksum);
-                            tx.send(chunk_frame).map_err(|_| RuntimeError::Handler("Failed to send CHUNK".to_string()))?;
+                            let chunk_frame = Frame::chunk(
+                                request_id.clone(),
+                                stream_id.clone(),
+                                0,
+                                chunk_data,
+                                chunk_index,
+                                checksum,
+                            );
+                            tx.send(chunk_frame).map_err(|_| {
+                                RuntimeError::Handler("Failed to send CHUNK".to_string())
+                            })?;
                             offset += chunk_size;
                             chunk_index += 1;
                         }
@@ -2615,15 +2813,19 @@ impl CartridgeRuntime {
                     };
 
                     // Send STREAM_END
-                    let end_frame = Frame::stream_end(request_id.clone(), stream_id.clone(), chunk_count);
-                    tx.send(end_frame).map_err(|_| RuntimeError::Handler("Failed to send STREAM_END".to_string()))?;
+                    let end_frame =
+                        Frame::stream_end(request_id.clone(), stream_id.clone(), chunk_count);
+                    tx.send(end_frame).map_err(|_| {
+                        RuntimeError::Handler("Failed to send STREAM_END".to_string())
+                    })?;
                 }
             }
         }
 
         // Send END frame to signal request completion
         let end_frame = Frame::end(request_id.clone(), None);
-        tx.send(end_frame).map_err(|_| RuntimeError::Handler("Failed to send END".to_string()))?;
+        tx.send(end_frame)
+            .map_err(|_| RuntimeError::Handler("Failed to send END".to_string()))?;
         drop(tx); // Close channel
 
         // Create InputPackage from frame channel (no file-path interception — already done)
@@ -2646,17 +2848,17 @@ impl CartridgeRuntime {
         let result = dispatch_op(op, input_package, output, peer_arc).await;
 
         match result {
-            Ok(()) => {
-                Ok(())
-            }
-            Err(e) => {
-                Err(e)
-            }
+            Ok(()) => Ok(()),
+            Err(e) => Err(e),
         }
     }
 
     /// Find a cap by its command name (the CLI subcommand).
-    fn find_cap_by_command<'a>(&self, manifest: &'a CapManifest, command_name: &str) -> Option<&'a Cap> {
+    fn find_cap_by_command<'a>(
+        &self,
+        manifest: &'a CapManifest,
+        command_name: &str,
+    ) -> Option<&'a Cap> {
         manifest.caps.iter().find(|cap| cap.command == command_name)
     }
 
@@ -2730,12 +2932,16 @@ impl CartridgeRuntime {
 
         let arg = CapArgumentValue::new(expected_media_urn, complete_payload);
         let mut cbor_payload = Vec::new();
-        let cbor_args: Vec<ciborium::Value> = vec![
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(arg.media_urn.clone())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(arg.value.clone())),
-            ])
-        ];
+        let cbor_args: Vec<ciborium::Value> = vec![ciborium::Value::Map(vec![
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text(arg.media_urn.clone()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(arg.value.clone()),
+            ),
+        ])];
         ciborium::into_writer(&ciborium::Value::Array(cbor_args), &mut cbor_payload)
             .map_err(|e| RuntimeError::Serialize(format!("Failed to serialize CBOR: {}", e)))?;
 
@@ -2749,7 +2955,11 @@ impl CartridgeRuntime {
     /// ```text
     /// [ { media_urn: "...", value: bytes }, ... ]
     /// ```
-    fn build_payload_from_cli(&self, cap: &Cap, cli_args: &[String]) -> Result<Vec<u8>, RuntimeError> {
+    fn build_payload_from_cli(
+        &self,
+        cap: &Cap,
+        cli_args: &[String],
+    ) -> Result<Vec<u8>, RuntimeError> {
         let mut arguments: Vec<CapArgumentValue> = Vec::new();
 
         // Check for stdin data if cap accepts stdin
@@ -2762,14 +2972,17 @@ impl CartridgeRuntime {
 
         // Process each cap argument
         for arg_def in cap.get_args() {
-            let (value, came_from_stdin) = self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
+            let (value, came_from_stdin) =
+                self.extract_arg_value(&arg_def, cli_args, stdin_data.as_deref())?;
 
             if let Some(val) = value {
                 // Determine media_urn: if value came from stdin source, use stdin's media_urn
                 // Otherwise use arg's media_urn as-is (file-path conversion happens later)
                 let media_urn = if came_from_stdin {
                     // Find stdin source's media_urn
-                    arg_def.sources.iter()
+                    arg_def
+                        .sources
+                        .iter()
                         .find_map(|s| match s {
                             ArgSource::Stdin { stdin } => Some(stdin.clone()),
                             _ => None,
@@ -2802,23 +3015,27 @@ impl CartridgeRuntime {
 
         // Build CBOR arguments array (same format as CBOR mode)
         if !arguments.is_empty() {
-            let cbor_args: Vec<ciborium::Value> = arguments.iter().map(|arg| {
-                ciborium::Value::Map(vec![
-                    (
-                        ciborium::Value::Text("media_urn".to_string()),
-                        ciborium::Value::Text(arg.media_urn.clone()),
-                    ),
-                    (
-                        ciborium::Value::Text("value".to_string()),
-                        ciborium::Value::Bytes(arg.value.clone()),
-                    ),
-                ])
-            }).collect();
+            let cbor_args: Vec<ciborium::Value> = arguments
+                .iter()
+                .map(|arg| {
+                    ciborium::Value::Map(vec![
+                        (
+                            ciborium::Value::Text("media_urn".to_string()),
+                            ciborium::Value::Text(arg.media_urn.clone()),
+                        ),
+                        (
+                            ciborium::Value::Text("value".to_string()),
+                            ciborium::Value::Bytes(arg.value.clone()),
+                        ),
+                    ])
+                })
+                .collect();
 
             let cbor_array = ciborium::Value::Array(cbor_args);
             let mut payload = Vec::new();
-            ciborium::into_writer(&cbor_array, &mut payload)
-                .map_err(|e| RuntimeError::Serialize(format!("Failed to encode CBOR payload: {}", e)))?;
+            ciborium::into_writer(&cbor_array, &mut payload).map_err(|e| {
+                RuntimeError::Serialize(format!("Failed to encode CBOR payload: {}", e))
+            })?;
 
             return Ok(payload);
         }
@@ -2861,8 +3078,8 @@ impl CartridgeRuntime {
 
         // Try default value
         if let Some(default) = &arg_def.default_value {
-            let bytes = serde_json::to_vec(default)
-                .map_err(|e| RuntimeError::Serialize(e.to_string()))?;
+            let bytes =
+                serde_json::to_vec(default).map_err(|e| RuntimeError::Serialize(e.to_string()))?;
             return Ok((Some(bytes), false));
         }
 
@@ -2933,9 +3150,7 @@ impl CartridgeRuntime {
             };
 
             // Poll with 0 timeout = non-blocking check
-            let poll_result = unsafe {
-                libc::poll(&mut pollfd as *mut libc::pollfd, 1, 0)
-            };
+            let poll_result = unsafe { libc::poll(&mut pollfd as *mut libc::pollfd, 1, 0) };
 
             if poll_result < 0 {
                 return Err(RuntimeError::Io(io::Error::last_os_error()));
@@ -2982,7 +3197,11 @@ impl CartridgeRuntime {
     ///
     /// # Errors
     /// Returns RuntimeError::Io if file cannot be read with clear error message.
-    fn read_file_path_to_bytes(&self, path_value: &str, is_array: bool) -> Result<Option<Vec<u8>>, RuntimeError> {
+    fn read_file_path_to_bytes(
+        &self,
+        path_value: &str,
+        is_array: bool,
+    ) -> Result<Option<Vec<u8>>, RuntimeError> {
         if is_array {
             // Parse JSON array of path patterns
             let path_patterns: Vec<String> = serde_json::from_str(path_value)
@@ -2995,7 +3214,8 @@ impl CartridgeRuntime {
             let mut all_files = Vec::new();
             for pattern in &path_patterns {
                 // Check if this is a literal path (no glob metacharacters) or a glob pattern
-                let is_glob = pattern.contains('*') || pattern.contains('?') || pattern.contains('[');
+                let is_glob =
+                    pattern.contains('*') || pattern.contains('?') || pattern.contains('[');
 
                 if !is_glob {
                     // Literal path - verify it exists and is a file
@@ -3012,18 +3232,17 @@ impl CartridgeRuntime {
                     // Skip directories silently for consistency with glob behavior
                 } else {
                     // Glob pattern - expand it
-                    let paths = glob::glob(pattern)
-                        .map_err(|e| RuntimeError::Cli(format!(
-                            "Invalid glob pattern '{}': {}",
-                            pattern, e
-                        )))?;
+                    let paths = glob::glob(pattern).map_err(|e| {
+                        RuntimeError::Cli(format!("Invalid glob pattern '{}': {}", pattern, e))
+                    })?;
 
                     for path_result in paths {
-                        let path = path_result
-                            .map_err(|e| RuntimeError::Io(std::io::Error::new(
+                        let path = path_result.map_err(|e| {
+                            RuntimeError::Io(std::io::Error::new(
                                 std::io::ErrorKind::Other,
-                                format!("Glob error: {}", e)
-                            )))?;
+                                format!("Glob error: {}", e),
+                            ))
+                        })?;
 
                         // Only include files (skip directories)
                         if path.is_file() {
@@ -3036,28 +3255,35 @@ impl CartridgeRuntime {
             // Read each file sequentially (streaming construction - don't load all at once)
             let mut files_data = Vec::new();
             for path in &all_files {
-                let bytes = std::fs::read(path)
-                    .map_err(|e| RuntimeError::Io(std::io::Error::new(
+                let bytes = std::fs::read(path).map_err(|e| {
+                    RuntimeError::Io(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        format!("Failed to read file '{}' from file-path-array: {}", path.display(), e)
-                    )))?;
+                        format!(
+                            "Failed to read file '{}' from file-path-array: {}",
+                            path.display(),
+                            e
+                        ),
+                    ))
+                })?;
                 files_data.push(ciborium::Value::Bytes(bytes));
             }
 
             // Encode as CBOR array
             let cbor_array = ciborium::Value::Array(files_data);
             let mut cbor_bytes = Vec::new();
-            ciborium::into_writer(&cbor_array, &mut cbor_bytes)
-                .map_err(|e| RuntimeError::Serialize(format!("Failed to encode CBOR array: {}", e)))?;
+            ciborium::into_writer(&cbor_array, &mut cbor_bytes).map_err(|e| {
+                RuntimeError::Serialize(format!("Failed to encode CBOR array: {}", e))
+            })?;
 
             Ok(Some(cbor_bytes))
         } else {
             // Single file path - read and return raw bytes
-            let bytes = std::fs::read(path_value)
-                .map_err(|e| RuntimeError::Io(std::io::Error::new(
+            let bytes = std::fs::read(path_value).map_err(|e| {
+                RuntimeError::Io(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Failed to read file '{}': {}", path_value, e)
-                )))?;
+                    format!("Failed to read file '{}': {}", path_value, e),
+                ))
+            })?;
 
             Ok(Some(bytes))
         }
@@ -3072,7 +3298,11 @@ impl CartridgeRuntime {
         let _ = writeln!(handle, "Usage: {} <command> [options]", manifest.name);
         let _ = writeln!(handle);
         let _ = writeln!(handle, "Commands:");
-        let _ = writeln!(handle, "    {:16} Output cartridge manifest as JSON", "manifest");
+        let _ = writeln!(
+            handle,
+            "    {:16} Output cartridge manifest as JSON",
+            "manifest"
+        );
 
         for cap in &manifest.caps {
             let desc = cap.cap_description.as_deref().unwrap_or(&cap.title);
@@ -3080,7 +3310,10 @@ impl CartridgeRuntime {
             let _ = writeln!(handle, "    {}{}", padded_command, desc);
         }
         let _ = writeln!(handle);
-        let _ = writeln!(handle, "Run '<command> --help' for more information on a command.");
+        let _ = writeln!(
+            handle,
+            "Run '<command> --help' for more information on a command."
+        );
     }
 
     /// Print help for a specific cap.
@@ -3140,10 +3373,10 @@ impl CartridgeRuntime {
         }
         // Redirect FD 1 → stderr so any stray stdout writes end up in the
         // log instead of injecting non-CBOR bytes into the frame pipe.
-        unsafe { libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO); }
-        let stdout = tokio::fs::File::from_std(unsafe {
-            std::fs::File::from_raw_fd(safe_fd)
-        });
+        unsafe {
+            libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO);
+        }
+        let stdout = tokio::fs::File::from_std(unsafe { std::fs::File::from_raw_fd(safe_fd) });
 
         // Use async buffered readers/writers
         let reader = BufReader::new(stdin);
@@ -3153,7 +3386,8 @@ impl CartridgeRuntime {
         let mut frame_writer = FrameWriter::new(writer);
 
         // Perform handshake - send our manifest in the HELLO response
-        let negotiated_limits = handshake_accept(&mut frame_reader, &mut frame_writer, &self.manifest_data).await?;
+        let negotiated_limits =
+            handshake_accept(&mut frame_reader, &mut frame_writer, &self.manifest_data).await?;
         frame_reader.set_limits(negotiated_limits);
         frame_writer.set_limits(negotiated_limits);
 
@@ -3200,24 +3434,28 @@ impl CartridgeRuntime {
         // Track routing IDs per handler for stamping ERR frames on cancel
         let mut handler_routing_ids: HashMap<MessageId, Option<MessageId>> = HashMap::new();
         // Track cancelled requests to prevent duplicate ERR frames
-        let mut cancelled_requests: std::collections::HashSet<MessageId> = std::collections::HashSet::new();
+        let mut cancelled_requests: std::collections::HashSet<MessageId> =
+            std::collections::HashSet::new();
 
         // Queue for requests waiting for a handler slot.
         // Each entry holds the crossbeam receiver (the sender side is in active_requests).
         // When dequeued, the receiver is passed to the spawned handler.
-        let mut request_queue: std::collections::VecDeque<QueuedRequest> = std::collections::VecDeque::new();
+        let mut request_queue: std::collections::VecDeque<QueuedRequest> =
+            std::collections::VecDeque::new();
 
         // Number of currently running handlers (decremented when JoinHandles finish).
         let mut running_handler_count: usize = 0;
 
         // Notification channel: handlers send their RID when they finish so the main
         // loop can check cancelled state and send deferred ERR CANCELLED if needed.
-        let (handler_done_tx, mut handler_done_rx) = tokio::sync::mpsc::unbounded_channel::<MessageId>();
+        let (handler_done_tx, mut handler_done_rx) =
+            tokio::sync::mpsc::unbounded_channel::<MessageId>();
 
         // Spawn a reader task that feeds frames into a channel.
         // This decouples stdin reading from the main select loop so that
         // handler-done signals can wake the loop even when no frames arrive.
-        let (frame_tx, mut frame_rx) = tokio::sync::mpsc::unbounded_channel::<Result<Frame, CborError>>();
+        let (frame_tx, mut frame_rx) =
+            tokio::sync::mpsc::unbounded_channel::<Result<Frame, CborError>>();
         let reader_handle = tokio::spawn(async move {
             loop {
                 match frame_reader.read().await {
@@ -3249,7 +3487,9 @@ impl CartridgeRuntime {
 
                 tracing::info!(
                     "[CartridgeRuntime] dequeuing request: cap='{}' rid={:?} remaining_queue={}",
-                    queued.cap_urn, queued.request_id, request_queue.len()
+                    queued.cap_urn,
+                    queued.request_id,
+                    request_queue.len()
                 );
 
                 // Notify the caller that this request has been dequeued and is
@@ -3257,7 +3497,8 @@ impl CartridgeRuntime {
                 // on the pipeline side, ActivityTimer unpauses and resets the
                 // timeout clock, and the stall tracker is touched.
                 let mut dequeued_log = Frame::log(
-                    queued.request_id.clone(), "dequeued",
+                    queued.request_id.clone(),
+                    "dequeued",
                     "Request dequeued, handler starting",
                 );
                 dequeued_log.routing_id = queued.routing_id.clone();
@@ -3319,7 +3560,8 @@ impl CartridgeRuntime {
                     let cap_urn = match frame.cap.as_ref() {
                         Some(urn) => urn.clone(),
                         None => {
-                            let mut err_frame = Frame::err(frame.id, "INVALID_REQUEST", "Request missing cap URN");
+                            let mut err_frame =
+                                Frame::err(frame.id, "INVALID_REQUEST", "Request missing cap URN");
                             err_frame.routing_id = routing_id;
                             let _ = output_tx.send(err_frame);
                             continue;
@@ -3329,8 +3571,11 @@ impl CartridgeRuntime {
                     let factory = match self.find_handler(&cap_urn) {
                         Some(f) => f,
                         None => {
-                            let mut err_frame = Frame::err(frame.id.clone(), "NO_HANDLER",
-                                &format!("No handler registered for cap: {}", cap_urn));
+                            let mut err_frame = Frame::err(
+                                frame.id.clone(),
+                                "NO_HANDLER",
+                                &format!("No handler registered for cap: {}", cap_urn),
+                            );
                             err_frame.routing_id = routing_id;
                             let _ = output_tx.send(err_frame);
                             continue;
@@ -3338,8 +3583,11 @@ impl CartridgeRuntime {
                     };
 
                     if frame.payload.as_ref().map_or(false, |p| !p.is_empty()) {
-                        let mut err_frame = Frame::err(frame.id, "PROTOCOL_ERROR",
-                            "REQ frame must have empty payload - use STREAM_START for arguments");
+                        let mut err_frame = Frame::err(
+                            frame.id,
+                            "PROTOCOL_ERROR",
+                            "REQ frame must have empty payload - use STREAM_START for arguments",
+                        );
                         err_frame.routing_id = routing_id;
                         let _ = output_tx.send(err_frame);
                         continue;
@@ -3360,15 +3608,21 @@ impl CartridgeRuntime {
                         // At capacity — queue the request, send "queued" LOG back to caller.
                         let queue_pos = request_queue.len() + 1;
                         let mut log_frame = Frame::log(
-                            request_id.clone(), "queued",
-                            &format!("Request queued (position {}, {} active)", queue_pos, running_handler_count),
+                            request_id.clone(),
+                            "queued",
+                            &format!(
+                                "Request queued (position {}, {} active)",
+                                queue_pos, running_handler_count
+                            ),
                         );
                         log_frame.routing_id = routing_id.clone();
                         let _ = output_tx.send(log_frame);
 
                         tracing::info!(
                             "[CartridgeRuntime] request queued: cap='{}' rid={:?} queue_pos={}",
-                            cap_urn, request_id, queue_pos
+                            cap_urn,
+                            request_id,
+                            queue_pos
                         );
 
                         request_queue.push_back(QueuedRequest {
@@ -3383,8 +3637,14 @@ impl CartridgeRuntime {
                         let handler_rid = request_id.clone();
                         let handler_xid = routing_id.clone();
                         let handle = spawn_handler(
-                            raw_rx, factory, cap_urn, request_id, routing_id,
-                            &output_tx, &pending_peer_requests, &self.manifest,
+                            raw_rx,
+                            factory,
+                            cap_urn,
+                            request_id,
+                            routing_id,
+                            &output_tx,
+                            &pending_peer_requests,
+                            &self.manifest,
                             negotiated_limits.max_chunk,
                             &handler_done_tx,
                         );
@@ -3395,7 +3655,10 @@ impl CartridgeRuntime {
                 }
 
                 // Route STREAM_START / CHUNK / STREAM_END / LOG to active request or peer response
-                FrameType::StreamStart | FrameType::Chunk | FrameType::StreamEnd | FrameType::Log => {
+                FrameType::StreamStart
+                | FrameType::Chunk
+                | FrameType::StreamEnd
+                | FrameType::Log => {
                     // Try active request first
                     if let Some(ar) = active_requests.get(&frame.id) {
                         tracing::debug!(target: "cartridge_runtime", "Routing {:?} to active_request rid={:?}", frame.frame_type, frame.id);
@@ -3419,7 +3682,10 @@ impl CartridgeRuntime {
                 FrameType::End => {
                     // Try active request first -- send END then remove
                     if let Some(ar) = active_requests.remove(&frame.id) {
-                        tracing::info!("[CartridgeRuntime] END routed to active_request rid={:?}", frame.id);
+                        tracing::info!(
+                            "[CartridgeRuntime] END routed to active_request rid={:?}",
+                            frame.id
+                        );
                         let _ = ar.raw_tx.send(frame.clone());
                         // raw_tx dropped here → Demux sees channel close after END
                         continue;
@@ -3428,7 +3694,11 @@ impl CartridgeRuntime {
                     // Try peer response — send END then remove
                     let mut peer = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = peer.remove(&frame.id) {
-                        tracing::info!("[CartridgeRuntime] PEER_END received: peer_rid={:?} origin_rid={:?}", frame.id, pr.origin_request_id);
+                        tracing::info!(
+                            "[CartridgeRuntime] PEER_END received: peer_rid={:?} origin_rid={:?}",
+                            frame.id,
+                            pr.origin_request_id
+                        );
                         let _ = pr.sender.send(frame.clone());
                     } else {
                         tracing::warn!("[CartridgeRuntime] END for unknown rid={:?} (not in active_requests or pending_peer_requests)", frame.id);
@@ -3437,7 +3707,12 @@ impl CartridgeRuntime {
                 }
 
                 FrameType::Err => {
-                    tracing::error!("[CartridgeRuntime] ERR received: rid={:?} code={:?} msg={:?}", frame.id, frame.error_code(), frame.error_message());
+                    tracing::error!(
+                        "[CartridgeRuntime] ERR received: rid={:?} code={:?} msg={:?}",
+                        frame.id,
+                        frame.error_code(),
+                        frame.error_message()
+                    );
                     // Try active request first
                     if let Some(ar) = active_requests.remove(&frame.id) {
                         let _ = ar.raw_tx.send(frame.clone());
@@ -3454,22 +3729,39 @@ impl CartridgeRuntime {
 
                 FrameType::Cancel => {
                     let target_rid = frame.id.clone();
-                    tracing::info!("[CartridgeRuntime] Cancel received: rid={:?} force_kill={:?}", target_rid, frame.force_kill);
+                    tracing::info!(
+                        "[CartridgeRuntime] Cancel received: rid={:?} force_kill={:?}",
+                        target_rid,
+                        frame.force_kill
+                    );
 
                     // Skip if already cancelled (prevent duplicate ERR)
                     if cancelled_requests.contains(&target_rid) {
-                        tracing::debug!("[CartridgeRuntime] Cancel for already-cancelled rid={:?} — ignoring", target_rid);
+                        tracing::debug!(
+                            "[CartridgeRuntime] Cancel for already-cancelled rid={:?} — ignoring",
+                            target_rid
+                        );
                         continue;
                     }
 
                     // Case 1: Request is in the queue — remove it, send ERR
-                    if let Some(pos) = request_queue.iter().position(|q| q.request_id == target_rid) {
+                    if let Some(pos) = request_queue
+                        .iter()
+                        .position(|q| q.request_id == target_rid)
+                    {
                         let queued = request_queue.remove(pos).unwrap();
                         active_requests.remove(&target_rid);
-                        let mut err = Frame::err(target_rid.clone(), "CANCELLED", "Request cancelled while queued");
+                        let mut err = Frame::err(
+                            target_rid.clone(),
+                            "CANCELLED",
+                            "Request cancelled while queued",
+                        );
                         err.routing_id = queued.routing_id;
                         let _ = output_tx.send(err);
-                        tracing::info!("[CartridgeRuntime] Cancelled queued request rid={:?}", target_rid);
+                        tracing::info!(
+                            "[CartridgeRuntime] Cancelled queued request rid={:?}",
+                            target_rid
+                        );
                         continue;
                     }
 
@@ -3494,7 +3786,8 @@ impl CartridgeRuntime {
                                 .collect()
                         };
                         for (peer_rid, _) in &peer_rids_to_cancel {
-                            let cancel = Frame::cancel(peer_rid.clone(), frame.force_kill.unwrap_or(false));
+                            let cancel =
+                                Frame::cancel(peer_rid.clone(), frame.force_kill.unwrap_or(false));
                             let _ = output_tx.send(cancel);
                         }
                         {
@@ -3509,14 +3802,20 @@ impl CartridgeRuntime {
                     }
 
                     // Case 3: Unknown RID — silently ignore
-                    tracing::debug!("[CartridgeRuntime] Cancel for unknown rid={:?} — ignoring", target_rid);
+                    tracing::debug!(
+                        "[CartridgeRuntime] Cancel for unknown rid={:?} — ignoring",
+                        target_rid
+                    );
                 }
 
                 FrameType::Heartbeat => {
                     let mut response = Frame::heartbeat(frame.id);
                     if let Some((footprint_mb, rss_mb)) = get_own_memory_mb() {
                         let mut meta = std::collections::BTreeMap::new();
-                        meta.insert("footprint_mb".into(), ciborium::Value::Integer(footprint_mb.into()));
+                        meta.insert(
+                            "footprint_mb".into(),
+                            ciborium::Value::Integer(footprint_mb.into()),
+                        );
                         meta.insert("rss_mb".into(), ciborium::Value::Integer(rss_mb.into()));
                         response.meta = Some(meta);
                     }
@@ -3524,7 +3823,11 @@ impl CartridgeRuntime {
                 }
 
                 FrameType::Hello => {
-                    let err_frame = Frame::err(frame.id, "PROTOCOL_ERROR", "Unexpected HELLO after handshake");
+                    let err_frame = Frame::err(
+                        frame.id,
+                        "PROTOCOL_ERROR",
+                        "Unexpected HELLO after handshake",
+                    );
                     let _ = output_tx.send(err_frame);
                 }
 
@@ -3532,7 +3835,8 @@ impl CartridgeRuntime {
                     return Err(CborError::Protocol(format!(
                         "Relay frame {:?} must not reach cartridge runtime",
                         frame.frame_type
-                    )).into());
+                    ))
+                    .into());
                 }
             }
         }
@@ -3602,17 +3906,23 @@ mod tests {
     #[async_trait]
     impl Op<()> for EmitBytesOp {
         async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            let req: Arc<Request> = wet
+                .get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            let _input = req.take_input()
+            let _input = req
+                .take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            req.output().start(false, None)
+            req.output()
+                .start(false, None)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
+            req.output()
+                .emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             Ok(())
         }
-        fn metadata(&self) -> OpMetadata { OpMetadata::builder("EmitBytesOp").build() }
+        fn metadata(&self) -> OpMetadata {
+            OpMetadata::builder("EmitBytesOp").build()
+        }
     }
 
     /// Test Op: echoes all input chunks to output, optionally records received bytes
@@ -3620,16 +3930,21 @@ mod tests {
         received: Option<Arc<Mutex<Vec<u8>>>>,
     }
     impl Default for EchoOp {
-        fn default() -> Self { Self { received: None } }
+        fn default() -> Self {
+            Self { received: None }
+        }
     }
     #[async_trait]
     impl Op<()> for EchoOp {
         async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            let req: Arc<Request> = wet
+                .get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            let mut input = req.take_input()
+            let mut input = req
+                .take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            req.output().start(false, None)
+            req.output()
+                .start(false, None)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             let mut total = Vec::new();
             while let Some(stream) = input.recv().await {
@@ -3639,7 +3954,8 @@ mod tests {
                     if let ciborium::Value::Bytes(ref b) = chunk {
                         total.extend(b);
                     }
-                    req.output().emit_cbor(&chunk)
+                    req.output()
+                        .emit_cbor(&chunk)
                         .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 }
             }
@@ -3648,7 +3964,9 @@ mod tests {
             }
             Ok(())
         }
-        fn metadata(&self) -> OpMetadata { OpMetadata::builder("EchoOp").build() }
+        fn metadata(&self) -> OpMetadata {
+            OpMetadata::builder("EchoOp").build()
+        }
     }
 
     /// Test Op: echoes input then appends a tag byte
@@ -3658,25 +3976,32 @@ mod tests {
     #[async_trait]
     impl Op<()> for EchoTagOp {
         async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            let req: Arc<Request> = wet
+                .get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            let mut input = req.take_input()
+            let mut input = req
+                .take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            req.output().start(false, None)
+            req.output()
+                .start(false, None)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             while let Some(stream) = input.recv().await {
                 let mut stream = stream.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 while let Some(chunk) = stream.recv_data().await {
                     let chunk = chunk.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                    req.output().emit_cbor(&chunk)
+                    req.output()
+                        .emit_cbor(&chunk)
                         .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 }
             }
-            req.output().emit_cbor(&ciborium::Value::Bytes(self.tag.clone()))
+            req.output()
+                .emit_cbor(&ciborium::Value::Bytes(self.tag.clone()))
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             Ok(())
         }
-        fn metadata(&self) -> OpMetadata { OpMetadata::builder("EchoTagOp").build() }
+        fn metadata(&self) -> OpMetadata {
+            OpMetadata::builder("EchoTagOp").build()
+        }
     }
 
     /// Test Op: extracts CBOR "value" key from args, stores in shared state
@@ -3686,13 +4011,18 @@ mod tests {
     #[async_trait]
     impl Op<()> for ExtractValueOp {
         async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            let req: Arc<Request> = wet
+                .get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            let input = req.take_input()
+            let input = req
+                .take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            req.output().start(false, None)
+            req.output()
+                .start(false, None)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            let bytes = input.collect_all_bytes().await
+            let bytes = input
+                .collect_all_bytes()
+                .await
                 .map_err(|e| OpError::ExecutionFailed(format!("Stream error: {}", e)))?;
             let cbor_val: ciborium::Value = ciborium::from_reader(&bytes[..])
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
@@ -3700,10 +4030,12 @@ mod tests {
                 for arg in args {
                     if let ciborium::Value::Map(map) = arg {
                         for (k, v) in map {
-                            if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v) {
+                            if let (ciborium::Value::Text(key), ciborium::Value::Bytes(b)) = (k, v)
+                            {
                                 if key == "value" {
                                     *self.received.lock().unwrap() = b.clone();
-                                    req.output().emit_cbor(&ciborium::Value::Bytes(b))
+                                    req.output()
+                                        .emit_cbor(&ciborium::Value::Bytes(b))
                                         .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                                     return Ok(());
                                 }
@@ -3714,7 +4046,9 @@ mod tests {
             }
             Ok(())
         }
-        fn metadata(&self) -> OpMetadata { OpMetadata::builder("ExtractValueOp").build() }
+        fn metadata(&self) -> OpMetadata {
+            OpMetadata::builder("ExtractValueOp").build()
+        }
     }
 
     /// Test Op: no-op (does nothing)
@@ -3723,17 +4057,25 @@ mod tests {
     #[async_trait]
     impl Op<()> for NoOpOp {
         async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-            let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+            let req: Arc<Request> = wet
+                .get_required(WET_KEY_REQUEST)
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-            let _input = req.take_input()
+            let _input = req
+                .take_input()
                 .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
             Ok(())
         }
-        fn metadata(&self) -> OpMetadata { OpMetadata::builder("NoOpOp").build() }
+        fn metadata(&self) -> OpMetadata {
+            OpMetadata::builder("NoOpOp").build()
+        }
     }
 
     /// Helper: invoke a factory-produced Op with test input/output
-    async fn invoke_op(factory: &OpFactory, input: InputPackage, output: OutputStream) -> Result<(), RuntimeError> {
+    async fn invoke_op(
+        factory: &OpFactory,
+        input: InputPackage,
+        output: OutputStream,
+    ) -> Result<(), RuntimeError> {
         let op = factory();
         let peer: Arc<dyn PeerInvoker> = Arc::new(NoPeerInvoker);
         dispatch_op(op, input, output, peer).await
@@ -3748,15 +4090,33 @@ mod tests {
 
         for (media_urn, data) in streams {
             let stream_id = uuid::Uuid::new_v4().to_string();
-            raw_tx.send(Frame::stream_start(request_id.clone(), stream_id.clone(), media_urn.to_string(), None)).ok();
+            raw_tx
+                .send(Frame::stream_start(
+                    request_id.clone(),
+                    stream_id.clone(),
+                    media_urn.to_string(),
+                    None,
+                ))
+                .ok();
 
             // Encode data as CBOR Bytes and wrap in CHUNK
             let value = ciborium::Value::Bytes(data.to_vec());
             let mut cbor = Vec::new();
             ciborium::into_writer(&value, &mut cbor).unwrap();
             let checksum = Frame::compute_checksum(&cbor);
-            raw_tx.send(Frame::chunk(request_id.clone(), stream_id.clone(), 0, cbor, 0, checksum)).ok();
-            raw_tx.send(Frame::stream_end(request_id.clone(), stream_id, 1)).ok();
+            raw_tx
+                .send(Frame::chunk(
+                    request_id.clone(),
+                    stream_id.clone(),
+                    0,
+                    cbor,
+                    0,
+                    checksum,
+                ))
+                .ok();
+            raw_tx
+                .send(Frame::stream_end(request_id.clone(), stream_id, 1))
+                .ok();
         }
         raw_tx.send(Frame::end(request_id, None)).ok();
         drop(raw_tx);
@@ -3793,7 +4153,9 @@ mod tests {
 
     impl MockRegistry {
         fn new() -> Self {
-            Self { caps: HashMap::new() }
+            Self {
+                caps: HashMap::new(),
+            }
         }
 
         fn add_cap(&mut self, cap: Cap) {
@@ -3803,7 +4165,8 @@ mod tests {
         fn get(&self, urn_str: &str) -> Option<&Cap> {
             // Normalize the URN for lookup
             let normalized = CapUrn::from_string(urn_str).ok()?.to_string();
-            self.caps.iter()
+            self.caps
+                .iter()
                 .find(|(k, _)| {
                     if let Ok(k_norm) = CapUrn::from_string(k) {
                         k_norm.to_string() == normalized
@@ -3866,21 +4229,34 @@ mod tests {
     }
 
     /// Helper to test file-path array conversion: returns array of file bytes
-    fn test_filepath_array_conversion(cap: &Cap, cli_args: &[String], runtime: &CartridgeRuntime) -> Vec<Vec<u8>> {
+    fn test_filepath_array_conversion(
+        cap: &Cap,
+        cli_args: &[String],
+        runtime: &CartridgeRuntime,
+    ) -> Vec<Vec<u8>> {
         // Extract raw argument value
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], cli_args, None)
+            .unwrap();
 
         // Build CBOR payload
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(cap.args[0].media_urn.clone())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text(cap.args[0].media_urn.clone()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         // Do file-path conversion
-        let result = extract_effective_payload(&payload, Some("application/cbor"), cap, true).unwrap();
+        let result =
+            extract_effective_payload(&payload, Some("application/cbor"), cap, true).unwrap();
 
         // Decode and extract array of bytes
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -3892,7 +4268,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected map"),
         };
-        let value_array = result_map.iter()
+        let value_array = result_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| match v {
                 ciborium::Value::Array(arr) => arr.clone(),
@@ -3901,28 +4278,44 @@ mod tests {
             .unwrap();
 
         // Extract bytes from each element
-        value_array.iter().map(|v| match v {
-            ciborium::Value::Bytes(b) => b.clone(),
-            _ => panic!("Expected bytes in array"),
-        }).collect()
+        value_array
+            .iter()
+            .map(|v| match v {
+                ciborium::Value::Bytes(b) => b.clone(),
+                _ => panic!("Expected bytes in array"),
+            })
+            .collect()
     }
 
     /// Helper to test file-path conversion: takes Cap, CLI args, and returns converted bytes
-    fn test_filepath_conversion(cap: &Cap, cli_args: &[String], runtime: &CartridgeRuntime) -> Vec<u8> {
+    fn test_filepath_conversion(
+        cap: &Cap,
+        cli_args: &[String],
+        runtime: &CartridgeRuntime,
+    ) -> Vec<u8> {
         // Extract raw argument value
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], cli_args, None)
+            .unwrap();
 
         // Build CBOR payload
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(cap.args[0].media_urn.clone())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text(cap.args[0].media_urn.clone()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         // Do file-path conversion
-        let result = extract_effective_payload(&payload, Some("application/cbor"), cap, true).unwrap();
+        let result =
+            extract_effective_payload(&payload, Some("application/cbor"), cap, true).unwrap();
 
         // Decode and extract bytes
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -3934,7 +4327,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected map"),
         };
-        result_map.iter()
+        result_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| match v {
                 ciborium::Value::Bytes(b) => b.clone(),
@@ -3944,7 +4338,12 @@ mod tests {
     }
 
     /// Helper function to create a CapManifest for tests
-    fn create_test_manifest(name: &str, version: &str, description: &str, mut caps: Vec<Cap>) -> CapManifest {
+    fn create_test_manifest(
+        name: &str,
+        version: &str,
+        description: &str,
+        mut caps: Vec<Cap>,
+    ) -> CapManifest {
         // Always append CAP_IDENTITY at the end - cartridges must declare it
         // (Appending instead of prepending to avoid breaking tests that reference caps[0])
         let identity_urn = crate::CapUrn::from_string("cap:").unwrap();
@@ -3973,7 +4372,11 @@ mod tests {
     #[test]
     fn test248_register_and_find_handler() {
         let mut runtime = CartridgeRuntime::new(TEST_MANIFEST.as_bytes());
-        runtime.register_op("cap:in=*;op=test;out=*", || Box::new(EmitBytesOp { data: b"result".to_vec() }));
+        runtime.register_op("cap:in=*;op=test;out=*", || {
+            Box::new(EmitBytesOp {
+                data: b"result".to_vec(),
+            })
+        });
         assert!(runtime.find_handler("cap:in=*;op=test;out=*").is_some());
     }
 
@@ -3985,14 +4388,20 @@ mod tests {
         let received_clone = Arc::clone(&received);
 
         runtime.register_op("cap:op=raw", move || {
-            Box::new(EchoOp { received: Some(Arc::clone(&received_clone)) }) as Box<dyn Op<()>>
+            Box::new(EchoOp {
+                received: Some(Arc::clone(&received_clone)),
+            }) as Box<dyn Op<()>>
         });
 
         let factory = runtime.find_handler("cap:op=raw").unwrap();
         let input = test_input_package(&[("media:", b"echo this")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).await.unwrap();
-        assert_eq!(&*received.lock().unwrap(), b"echo this", "raw handler must echo payload");
+        assert_eq!(
+            &*received.lock().unwrap(),
+            b"echo this",
+            "raw handler must echo payload"
+        );
     }
 
     // TEST250: Test Op handler collects input and processes it
@@ -4005,24 +4414,35 @@ mod tests {
         #[async_trait]
         impl Op<()> for JsonKeyOp {
             async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                let req: Arc<Request> = wet
+                    .get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let input = req.take_input()
+                let input = req
+                    .take_input()
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let all_bytes = input.collect_all_bytes().await
+                let all_bytes = input
+                    .collect_all_bytes()
+                    .await
                     .map_err(|e| OpError::ExecutionFailed(format!("Failed to collect: {}", e)))?;
                 let json: serde_json::Value = serde_json::from_slice(&all_bytes)
                     .map_err(|e| OpError::ExecutionFailed(format!("Bad JSON: {}", e)))?;
-                let value = json.get("key").and_then(|v| v.as_str()).unwrap_or("missing");
+                let value = json
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("missing");
                 let bytes = value.as_bytes();
-                req.output().start(false, None)
+                req.output()
+                    .start(false, None)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                req.output().emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()))
+                req.output()
+                    .emit_cbor(&ciborium::Value::Bytes(bytes.to_vec()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 *self.received.lock().unwrap() = bytes.to_vec();
                 Ok(())
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("JsonKeyOp").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("JsonKeyOp").build()
+            }
         }
 
         let mut runtime = CartridgeRuntime::new(TEST_MANIFEST.as_bytes());
@@ -4030,7 +4450,9 @@ mod tests {
         let received_clone = Arc::clone(&received);
 
         runtime.register_op("cap:op=test", move || {
-            Box::new(JsonKeyOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
+            Box::new(JsonKeyOp {
+                received: Arc::clone(&received_clone),
+            }) as Box<dyn Op<()>>
         });
 
         let factory = runtime.find_handler("cap:op=test").unwrap();
@@ -4048,17 +4470,23 @@ mod tests {
         #[async_trait]
         impl Op<()> for JsonParseOp {
             async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                let req: Arc<Request> = wet
+                    .get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let input = req.take_input()
+                let input = req
+                    .take_input()
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let all_bytes = input.collect_all_bytes().await
+                let all_bytes = input
+                    .collect_all_bytes()
+                    .await
                     .map_err(|e| OpError::ExecutionFailed(format!("Failed to collect: {}", e)))?;
                 let _: serde_json::Value = serde_json::from_slice(&all_bytes)
                     .map_err(|e| OpError::ExecutionFailed(format!("Bad JSON: {}", e)))?;
                 Ok(())
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("JsonParseOp").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("JsonParseOp").build()
+            }
         }
 
         let mut runtime = CartridgeRuntime::new(TEST_MANIFEST.as_bytes());
@@ -4070,7 +4498,11 @@ mod tests {
         let result = invoke_op(&factory, input, output).await;
         assert!(result.is_err(), "Invalid JSON must produce error");
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("JSON"), "Error should mention JSON: {}", err_msg);
+        assert!(
+            err_msg.contains("JSON"),
+            "Error should mention JSON: {}",
+            err_msg
+        );
     }
 
     // TEST252: Test find_handler returns None for unregistered cap URNs
@@ -4089,7 +4521,10 @@ mod tests {
 
         runtime.register_op("cap:op=threaded", move || {
             let r = Arc::clone(&received_clone);
-            Box::new(EmitAndRecordOp { data: b"done".to_vec(), received: r }) as Box<dyn Op<()>>
+            Box::new(EmitAndRecordOp {
+                data: b"done".to_vec(),
+                received: r,
+            }) as Box<dyn Op<()>>
         });
 
         /// Test Op: emits fixed bytes and records in shared state
@@ -4100,18 +4535,24 @@ mod tests {
         #[async_trait]
         impl Op<()> for EmitAndRecordOp {
             async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                let req: Arc<Request> = wet
+                    .get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let _input = req.take_input()
+                let _input = req
+                    .take_input()
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                req.output().start(false, None)
+                req.output()
+                    .start(false, None)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
+                req.output()
+                    .emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 *self.received.lock().unwrap() = self.data.clone();
                 Ok(())
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("EmitAndRecordOp").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("EmitAndRecordOp").build()
+            }
         }
 
         let factory = runtime.find_handler("cap:op=threaded").unwrap();
@@ -4135,7 +4576,10 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(RuntimeError::PeerRequest(msg)) => {
-                assert!(msg.contains("not supported"), "error must indicate peer not supported");
+                assert!(
+                    msg.contains("not supported"),
+                    "error must indicate peer not supported"
+                );
             }
             _ => panic!("Expected PeerRequest error"),
         }
@@ -4145,7 +4589,9 @@ mod tests {
     #[tokio::test]
     async fn test255_no_peer_invoker_with_arguments() {
         let no_peer = NoPeerInvoker;
-        let result = no_peer.call_with_bytes("cap:op=test", &[("media:test", b"value".as_slice())]).await;
+        let result = no_peer
+            .call_with_bytes("cap:op=test", &[("media:test", b"value".as_slice())])
+            .await;
         assert!(result.is_err());
     }
 
@@ -4156,14 +4602,20 @@ mod tests {
         // Manifest must declare CAP_IDENTITY explicitly or it will fail validation.
         let runtime_basic = CartridgeRuntime::with_manifest_json(TEST_MANIFEST);
         assert!(!runtime_basic.manifest_data.is_empty());
-        assert!(runtime_basic.manifest.is_some(), "cap:op=test is valid (defaults to media: for in/out)");
+        assert!(
+            runtime_basic.manifest.is_some(),
+            "cap:op=test is valid (defaults to media: for in/out)"
+        );
         let manifest = runtime_basic.manifest.unwrap();
         assert_eq!(manifest.caps.len(), 2, "Original cap + auto-added identity");
 
         // VALID_MANIFEST has proper in/out specs
         let runtime_valid = CartridgeRuntime::with_manifest_json(VALID_MANIFEST);
         assert!(!runtime_valid.manifest_data.is_empty());
-        assert!(runtime_valid.manifest.is_some(), "VALID_MANIFEST must parse into CapManifest");
+        assert!(
+            runtime_valid.manifest.is_some(),
+            "VALID_MANIFEST must parse into CapManifest"
+        );
     }
 
     // TEST257: Test CartridgeRuntime::new with invalid JSON still creates runtime (manifest is None)
@@ -4171,13 +4623,17 @@ mod tests {
     fn test257_new_with_invalid_json() {
         let runtime = CartridgeRuntime::new(b"not json");
         assert!(!runtime.manifest_data.is_empty());
-        assert!(runtime.manifest.is_none(), "invalid JSON should leave manifest as None");
+        assert!(
+            runtime.manifest.is_none(),
+            "invalid JSON should leave manifest as None"
+        );
     }
 
     // TEST258: Test CartridgeRuntime::with_manifest creates runtime with valid manifest data
     #[test]
     fn test258_with_manifest_struct() {
-        let manifest: crate::bifaci::manifest::CapManifest = serde_json::from_str(VALID_MANIFEST).unwrap();
+        let manifest: crate::bifaci::manifest::CapManifest =
+            serde_json::from_str(VALID_MANIFEST).unwrap();
         let runtime = CartridgeRuntime::with_manifest(manifest);
         assert!(!runtime.manifest_data.is_empty());
         assert!(runtime.manifest.is_some());
@@ -4187,9 +4643,12 @@ mod tests {
     #[test]
     fn test259_extract_effective_payload_non_cbor() {
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:void";op=test;out="media:void""#).unwrap();
+        let cap = registry
+            .get(r#"cap:in="media:void";op=test;out="media:void""#)
+            .unwrap();
         let payload = b"raw data";
-        let result = extract_effective_payload(payload, Some("application/json"), cap, true).unwrap();
+        let result =
+            extract_effective_payload(payload, Some("application/json"), cap, true).unwrap();
         assert_eq!(result, payload, "non-CBOR must return raw payload");
     }
 
@@ -4197,7 +4656,9 @@ mod tests {
     #[test]
     fn test260_extract_effective_payload_no_content_type() {
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:void";op=test;out="media:void""#).unwrap();
+        let cap = registry
+            .get(r#"cap:in="media:void";op=test;out="media:void""#)
+            .unwrap();
         let payload = b"raw data";
         let result = extract_effective_payload(payload, None, cap, true).unwrap();
         assert_eq!(result, payload);
@@ -4207,24 +4668,31 @@ mod tests {
     #[test]
     fn test261_extract_effective_payload_cbor_match() {
         // Build CBOR arguments: [{media_urn: "media:string;textable", value: bytes("hello")}]
-        let args = ciborium::Value::Array(vec![
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:string;textable".to_string())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"hello".to_vec())),
-            ]),
-        ]);
+        let args = ciborium::Value::Array(vec![ciborium::Value::Map(vec![
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:string;textable".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(b"hello".to_vec()),
+            ),
+        ])]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         // The cap URN has in=media:string;textable
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:string;textable";op=test;out="*""#).unwrap();
+        let cap = registry
+            .get(r#"cap:in="media:string;textable";op=test;out="*""#)
+            .unwrap();
         let result = extract_effective_payload(
             &payload,
             Some("application/cbor"),
             cap,
-            false,  // CBOR mode - tests pass CBOR payloads directly
-        ).unwrap();
+            false, // CBOR mode - tests pass CBOR payloads directly
+        )
+        .unwrap();
 
         // NEW REGIME: Result is full CBOR array, handler must parse and extract
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -4248,28 +4716,38 @@ mod tests {
                 }
             }
         }
-        assert_eq!(found_value, Some(b"hello".to_vec()), "Handler extracts value from CBOR array");
+        assert_eq!(
+            found_value,
+            Some(b"hello".to_vec()),
+            "Handler extracts value from CBOR array"
+        );
     }
 
     // TEST262: Test extract_effective_payload with CBOR content fails when no argument matches expected input
     #[test]
     fn test262_extract_effective_payload_cbor_no_match() {
-        let args = ciborium::Value::Array(vec![
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:other-type".to_string())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"data".to_vec())),
-            ]),
-        ]);
+        let args = ciborium::Value::Array(vec![ciborium::Value::Map(vec![
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:other-type".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(b"data".to_vec()),
+            ),
+        ])]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:string;textable";op=test;out="*""#).unwrap();
+        let cap = registry
+            .get(r#"cap:in="media:string;textable";op=test;out="*""#)
+            .unwrap();
         let result = extract_effective_payload(
             &payload,
             Some("application/cbor"),
             cap,
-            false,  // CBOR mode
+            false, // CBOR mode
         );
         assert!(result.is_err(), "must fail when no argument matches");
         match result.unwrap_err() {
@@ -4289,7 +4767,7 @@ mod tests {
             b"not cbor",
             Some("application/cbor"),
             cap,
-            false,  // CBOR mode
+            false, // CBOR mode
         );
         assert!(result.is_err());
     }
@@ -4307,7 +4785,7 @@ mod tests {
             &payload,
             Some("application/cbor"),
             cap,
-            false,  // CBOR mode
+            false, // CBOR mode
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -4356,9 +4834,13 @@ mod tests {
     async fn test270_multiple_handlers() {
         let mut runtime = CartridgeRuntime::new(TEST_MANIFEST.as_bytes());
 
-        runtime.register_op("cap:op=alpha", || Box::new(EchoTagOp { tag: b"a".to_vec() }));
+        runtime.register_op("cap:op=alpha", || {
+            Box::new(EchoTagOp { tag: b"a".to_vec() })
+        });
         runtime.register_op("cap:op=beta", || Box::new(EchoTagOp { tag: b"b".to_vec() }));
-        runtime.register_op("cap:op=gamma", || Box::new(EchoTagOp { tag: b"g".to_vec() }));
+        runtime.register_op("cap:op=gamma", || {
+            Box::new(EchoTagOp { tag: b"g".to_vec() })
+        });
 
         let f_alpha = runtime.find_handler("cap:op=alpha").unwrap();
         let input = test_input_package(&[("media:", b"")]);
@@ -4386,11 +4868,16 @@ mod tests {
         let result2_clone = Arc::clone(&result2);
 
         runtime.register_op("cap:op=test", move || {
-            Box::new(EchoTagOp { tag: b"first".to_vec() }) as Box<dyn Op<()>>
+            Box::new(EchoTagOp {
+                tag: b"first".to_vec(),
+            }) as Box<dyn Op<()>>
         });
         runtime.register_op("cap:op=test", move || {
             let r = Arc::clone(&result2_clone);
-            Box::new(EmitAndRecordOp2 { data: b"second".to_vec(), received: r }) as Box<dyn Op<()>>
+            Box::new(EmitAndRecordOp2 {
+                data: b"second".to_vec(),
+                received: r,
+            }) as Box<dyn Op<()>>
         });
 
         /// Op that emits fixed data and records it
@@ -4401,33 +4888,47 @@ mod tests {
         #[async_trait]
         impl Op<()> for EmitAndRecordOp2 {
             async fn perform(&self, _dry: &mut DryContext, wet: &mut WetContext) -> OpResult<()> {
-                let req: Arc<Request> = wet.get_required(WET_KEY_REQUEST)
+                let req: Arc<Request> = wet
+                    .get_required(WET_KEY_REQUEST)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                let mut input = req.take_input()
+                let mut input = req
+                    .take_input()
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 while let Some(stream_result) = input.recv().await {
-                    let mut stream = stream_result.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
+                    let mut stream =
+                        stream_result.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                     while let Some(chunk) = stream.recv_data().await {
                         let _ = chunk.map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                     }
                 }
-                req.output().start(false, None)
+                req.output()
+                    .start(false, None)
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
-                req.output().emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
+                req.output()
+                    .emit_cbor(&ciborium::Value::Bytes(self.data.clone()))
                     .map_err(|e| OpError::ExecutionFailed(e.to_string()))?;
                 *self.received.lock().unwrap() = self.data.clone();
                 Ok(())
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("EmitAndRecordOp2").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("EmitAndRecordOp2").build()
+            }
         }
 
         let factory = runtime.find_handler("cap:op=test").unwrap();
         let input = test_input_package(&[("media:", b"")]);
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).await.unwrap();
-        assert_eq!(&*result2.lock().unwrap(), b"second", "later registration must replace earlier");
+        assert_eq!(
+            &*result2.lock().unwrap(),
+            b"second",
+            "later registration must replace earlier"
+        );
         // result1 should NOT have been called
-        assert!(result1.lock().unwrap().is_empty(), "first handler must not be called after replacement");
+        assert!(
+            result1.lock().unwrap().is_empty(),
+            "first handler must not be called after replacement"
+        );
     }
 
     // TEST272: Test extract_effective_payload CBOR with multiple arguments selects the correct one
@@ -4435,25 +4936,40 @@ mod tests {
     fn test272_extract_effective_payload_multiple_args() {
         let args = ciborium::Value::Array(vec![
             ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:other-type;textable".to_string())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"wrong".to_vec())),
+                (
+                    ciborium::Value::Text("media_urn".to_string()),
+                    ciborium::Value::Text("media:other-type;textable".to_string()),
+                ),
+                (
+                    ciborium::Value::Text("value".to_string()),
+                    ciborium::Value::Bytes(b"wrong".to_vec()),
+                ),
             ]),
             ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:model-spec;textable".to_string())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(b"correct".to_vec())),
+                (
+                    ciborium::Value::Text("media_urn".to_string()),
+                    ciborium::Value::Text("media:model-spec;textable".to_string()),
+                ),
+                (
+                    ciborium::Value::Text("value".to_string()),
+                    ciborium::Value::Bytes(b"correct".to_vec()),
+                ),
             ]),
         ]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:model-spec;textable";op=infer;out="*""#).unwrap();
+        let cap = registry
+            .get(r#"cap:in="media:model-spec;textable";op=infer;out="*""#)
+            .unwrap();
         let result = extract_effective_payload(
             &payload,
             Some("application/cbor"),
             cap,
-            false,  // CBOR mode - tests pass CBOR payloads directly
-        ).unwrap();
+            false, // CBOR mode - tests pass CBOR payloads directly
+        )
+        .unwrap();
 
         // NEW REGIME: Handler receives full CBOR array with BOTH arguments
         // Handler must match against in_spec to find main input
@@ -4463,7 +4979,11 @@ mod tests {
             _ => panic!("Expected CBOR array"),
         };
 
-        assert_eq!(result_array.len(), 2, "Both arguments present in CBOR array");
+        assert_eq!(
+            result_array.len(),
+            2,
+            "Both arguments present in CBOR array"
+        );
 
         // Find the argument matching in_spec (media:model-spec)
         let in_spec = MediaUrn::from_string("media:model-spec;textable").unwrap();
@@ -4498,30 +5018,41 @@ mod tests {
             }
         }
 
-        assert_eq!(found_value, Some(b"correct".to_vec()), "Handler finds correct argument by matching in_spec");
+        assert_eq!(
+            found_value,
+            Some(b"correct".to_vec()),
+            "Handler finds correct argument by matching in_spec"
+        );
     }
 
     // TEST273: Test extract_effective_payload with binary data in CBOR value (not just text)
     #[test]
     fn test273_extract_effective_payload_binary_value() {
         let binary_data: Vec<u8> = (0u8..=255).collect();
-        let args = ciborium::Value::Array(vec![
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf".to_string())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(binary_data.clone())),
-            ]),
-        ]);
+        let args = ciborium::Value::Array(vec![ciborium::Value::Map(vec![
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:pdf".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(binary_data.clone()),
+            ),
+        ])]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         let registry = MockRegistry::with_test_caps();
-        let cap = registry.get(r#"cap:in="media:pdf";op=process;out="*""#).unwrap();
+        let cap = registry
+            .get(r#"cap:in="media:pdf";op=process;out="*""#)
+            .unwrap();
         let result = extract_effective_payload(
             &payload,
             Some("application/cbor"),
             cap,
-            false,  // CBOR mode - tests pass CBOR payloads directly
-        ).unwrap();
+            false, // CBOR mode - tests pass CBOR payloads directly
+        )
+        .unwrap();
 
         // NEW REGIME: Parse CBOR array and extract value
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -4544,7 +5075,11 @@ mod tests {
                 }
             }
         }
-        assert_eq!(found_value, Some(binary_data), "binary values must roundtrip through CBOR array");
+        assert_eq!(
+            found_value,
+            Some(binary_data),
+            "binary values must roundtrip through CBOR array"
+        );
     }
 
     // TEST336: Single file-path arg with stdin source reads file and passes bytes to handler
@@ -4564,7 +5099,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:pdf".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4580,7 +5117,9 @@ mod tests {
         runtime.register_op(
             "cap:in=\"media:pdf\";op=process;out=\"media:void\"",
             move || {
-                Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
+                Box::new(ExtractValueOp {
+                    received: Arc::clone(&received_clone),
+                }) as Box<dyn Op<()>>
             },
         );
 
@@ -4595,8 +5134,9 @@ mod tests {
             &raw_payload,
             Some("application/cbor"),
             &cap,
-            true,  // CLI mode
-        ).unwrap();
+            true, // CLI mode
+        )
+        .unwrap();
 
         let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
@@ -4607,7 +5147,10 @@ mod tests {
 
         // Verify handler received file bytes (not file path string)
         let received = received_payload.lock().unwrap();
-        assert_eq!(&*received, b"PDF binary content 336", "Handler receives file bytes after auto-conversion");
+        assert_eq!(
+            &*received, b"PDF binary content 336",
+            "Handler receives file bytes after auto-conversion"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -4626,7 +5169,7 @@ mod tests {
             vec![CapArg::new(
                 "media:file-path;textable",
                 true,
-                vec![ArgSource::Position { position: 0 }],  // NO stdin source!
+                vec![ArgSource::Position { position: 0 }], // NO stdin source!
             )],
         );
 
@@ -4635,11 +5178,16 @@ mod tests {
 
         let cli_args = vec![test_file.to_string_lossy().to_string()];
         let cap = &runtime.manifest.as_ref().unwrap().caps[0];
-        let result = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let result = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
 
         // Should get file PATH as string, not file CONTENTS
         let value_str = String::from_utf8(result.0.unwrap()).unwrap();
-        assert!(value_str.contains("test337_input.txt"), "Should receive file path string when no stdin source");
+        assert!(
+            value_str.contains("test337_input.txt"),
+            "Should receive file path string when no stdin source"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -4659,8 +5207,12 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
-                    ArgSource::CliFlag { cli_flag: "--file".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:pdf".to_string(),
+                    },
+                    ArgSource::CliFlag {
+                        cli_flag: "--file".to_string(),
+                    },
                 ],
             )],
         );
@@ -4668,10 +5220,16 @@ mod tests {
         let manifest = create_test_manifest("TestCartridge", "1.0.0", "Test", vec![cap.clone()]);
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
-        let cli_args = vec!["--file".to_string(), test_file.to_string_lossy().to_string()];
+        let cli_args = vec![
+            "--file".to_string(),
+            test_file.to_string_lossy().to_string(),
+        ];
         let file_contents = test_filepath_conversion(&cap, &cli_args, &runtime);
 
-        assert_eq!(file_contents, b"PDF via flag 338", "Should read file from --file flag");
+        assert_eq!(
+            file_contents, b"PDF via flag 338",
+            "Should read file from --file flag"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -4695,7 +5253,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4730,7 +5290,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:pdf".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4742,10 +5304,18 @@ mod tests {
         let cli_args = vec!["/nonexistent/file.pdf".to_string()];
 
         // Build CBOR payload and try conversion - should fail on file read
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -4756,8 +5326,14 @@ mod tests {
 
         assert!(result.is_err(), "Should fail when file doesn't exist");
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("/nonexistent/file.pdf"), "Error should mention file path");
-        assert!(err_msg.contains("Failed to read file"), "Error should be clear");
+        assert!(
+            err_msg.contains("/nonexistent/file.pdf"),
+            "Error should mention file path"
+        );
+        assert!(
+            err_msg.contains("Failed to read file"),
+            "Error should be clear"
+        );
     }
 
     // TEST341: stdin takes precedence over file-path in source order
@@ -4776,8 +5352,10 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },  // First
-                    ArgSource::Position { position: 0 },                     // Second
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    }, // First
+                    ArgSource::Position { position: 0 }, // Second
                 ],
             )],
         );
@@ -4789,11 +5367,16 @@ mod tests {
         let stdin_data = b"stdin content 341";
         let cap = &runtime.manifest.as_ref().unwrap().caps[0];
 
-        let (result, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, Some(stdin_data)).unwrap();
+        let (result, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, Some(stdin_data))
+            .unwrap();
         let result = result.unwrap();
 
         // Should get stdin data, not file content (stdin source tried first)
-        assert_eq!(result, b"stdin content 341", "stdin source should take precedence");
+        assert_eq!(
+            result, b"stdin content 341",
+            "stdin source should take precedence"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -4813,7 +5396,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4840,10 +5425,12 @@ mod tests {
             "Test",
             "test",
             vec![CapArg::new(
-                "media:model-spec;textable",  // NOT file-path
+                "media:model-spec;textable", // NOT file-path
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:model-spec;textable".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:model-spec;textable".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4854,7 +5441,9 @@ mod tests {
 
         let cli_args = vec!["mlx-community/Llama-3.2-3B-Instruct-4bit".to_string()];
         let cap = &runtime.manifest.as_ref().unwrap().caps[0];
-        let (result, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let (result, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
         let result = result.unwrap();
 
         // Should get the string value, not attempt file read
@@ -4873,7 +5462,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4886,10 +5477,18 @@ mod tests {
         let cli_args = vec!["/nonexistent/path/to/nothing".to_string()];
 
         // Build CBOR payload and try conversion - should fail on file read
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -4899,8 +5498,14 @@ mod tests {
 
         assert!(result.is_err(), "Should fail when path doesn't exist");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("/nonexistent/path/to/nothing"), "Error should mention the path");
-        assert!(err.contains("File not found") || err.contains("Failed to read"), "Error should be clear about file access failure");
+        assert!(
+            err.contains("/nonexistent/path/to/nothing"),
+            "Error should mention the path"
+        );
+        assert!(
+            err.contains("File not found") || err.contains("Failed to read"),
+            "Error should be clear about file access failure"
+        );
     }
 
     // TEST345: file-path-array with literal nonexistent path fails hard
@@ -4917,7 +5522,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4930,10 +5537,18 @@ mod tests {
         let cli_args = vec![missing_path.to_string_lossy().to_string()];
 
         // Build CBOR payload and try conversion - should fail on file read
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -4941,10 +5556,19 @@ mod tests {
 
         let result = extract_effective_payload(&payload, Some("application/cbor"), &cap, true);
 
-        assert!(result.is_err(), "Should fail hard when literal path doesn't exist");
+        assert!(
+            result.is_err(),
+            "Should fail hard when literal path doesn't exist"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("test345_missing.txt"), "Error should mention the missing file");
-        assert!(err.contains("File not found") || err.contains("doesn't exist"), "Error should be clear about missing file");
+        assert!(
+            err.contains("test345_missing.txt"),
+            "Error should mention the missing file"
+        );
+        assert!(
+            err.contains("File not found") || err.contains("doesn't exist"),
+            "Error should be clear about missing file"
+        );
     }
 
     // TEST346: Large file (1MB) reads successfully
@@ -4965,7 +5589,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -4998,7 +5624,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5031,8 +5659,10 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Position { position: 0 },                     // First
-                    ArgSource::Stdin { stdin: "media:".to_string() },  // Second
+                    ArgSource::Position { position: 0 }, // First
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    }, // Second
                 ],
             )],
         );
@@ -5047,7 +5677,10 @@ mod tests {
         let result = test_filepath_conversion(cap, &cli_args, &runtime);
 
         // Position source tried first, so file is read
-        assert_eq!(result, b"file content 348", "Position source tried first, file read");
+        assert_eq!(
+            result, b"file content 348",
+            "Position source tried first, file read"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -5067,9 +5700,13 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::CliFlag { cli_flag: "--file".to_string() },  // First (not provided)
-                    ArgSource::Position { position: 0 },                     // Second (provided)
-                    ArgSource::Stdin { stdin: "media:".to_string() },  // Third (not used)
+                    ArgSource::CliFlag {
+                        cli_flag: "--file".to_string(),
+                    }, // First (not provided)
+                    ArgSource::Position { position: 0 }, // Second (provided)
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    }, // Third (not used)
                 ],
             )],
         );
@@ -5084,7 +5721,10 @@ mod tests {
         // Use helper to properly test file-path conversion
         let result = test_filepath_conversion(cap, &cli_args, &runtime);
 
-        assert_eq!(result, b"content 349", "Should fall back to position source and read file");
+        assert_eq!(
+            result, b"content 349",
+            "Should fall back to position source and read file"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -5107,7 +5747,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:pdf".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5123,7 +5765,9 @@ mod tests {
         runtime.register_op(
             "cap:in=\"media:pdf\";op=process;out=\"media:result;textable\"",
             move || {
-                Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
+                Box::new(ExtractValueOp {
+                    received: Arc::clone(&received_clone),
+                }) as Box<dyn Op<()>>
             },
         );
 
@@ -5137,8 +5781,9 @@ mod tests {
             &raw_payload,
             Some("application/cbor"),
             &cap,
-            true,  // CLI mode
-        ).unwrap();
+            true, // CLI mode
+        )
+        .unwrap();
 
         let factory = runtime.find_handler(&cap.urn_string()).unwrap();
 
@@ -5148,7 +5793,10 @@ mod tests {
 
         // Verify handler received file bytes
         let received = received_payload.lock().unwrap();
-        assert_eq!(&*received, test_content, "Handler receives file bytes after auto-conversion");
+        assert_eq!(
+            &*received, test_content,
+            "Handler receives file bytes after auto-conversion"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -5162,24 +5810,31 @@ mod tests {
             "batch",
             vec![CapArg::new(
                 "media:file-path;textable;list",
-                false,  // Not required
-                vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
-                ],
+                false, // Not required
+                vec![ArgSource::Stdin {
+                    stdin: "media:".to_string(),
+                }],
             )],
         );
 
         // Build CBOR payload with empty Array value (CBOR mode)
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Array(vec![])),  // Empty array
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Array(vec![]),
+            ), // Empty array
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         // Do file-path conversion with is_cli_mode=false (CBOR mode allows Arrays)
-        let result = extract_effective_payload(&payload, Some("application/cbor"), &cap, false).unwrap();
+        let result =
+            extract_effective_payload(&payload, Some("application/cbor"), &cap, false).unwrap();
 
         // Decode and verify empty array is preserved
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -5191,7 +5846,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected map"),
         };
-        let value_array = result_map.iter()
+        let value_array = result_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| match v {
                 ciborium::Value::Array(arr) => arr,
@@ -5199,7 +5855,11 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(value_array.len(), 0, "Empty array should produce empty result");
+        assert_eq!(
+            value_array.len(),
+            0,
+            "Empty array should produce empty result"
+        );
     }
 
     // TEST352: file permission denied error is clear (Unix-specific)
@@ -5236,7 +5896,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5249,10 +5911,18 @@ mod tests {
         let cap = &runtime.manifest.as_ref().unwrap().caps[0];
 
         // Build full CBOR payload and attempt file-path conversion
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -5262,7 +5932,10 @@ mod tests {
 
         assert!(result.is_err(), "Should fail on permission denied");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("test352_noperm.txt"), "Error should mention the file");
+        assert!(
+            err.contains("test352_noperm.txt"),
+            "Error should mention the file"
+        );
 
         // Cleanup: restore permissions then delete
         let mut perms = std::fs::metadata(&test_file).unwrap().permissions();
@@ -5282,7 +5955,9 @@ mod tests {
                 "media:text;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:text;textable".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:text;textable".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5313,7 +5988,8 @@ mod tests {
         assert_eq!(arg_map.len(), 2, "Argument should have media_urn and value");
 
         // Check media_urn key
-        let media_urn_val = arg_map.iter()
+        let media_urn_val = arg_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "media_urn"))
             .map(|(_, v)| v)
             .expect("Should have media_urn key");
@@ -5324,7 +6000,8 @@ mod tests {
         }
 
         // Check value key
-        let value_val = arg_map.iter()
+        let value_val = arg_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| v)
             .expect("Should have value key");
@@ -5348,7 +6025,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5359,13 +6038,21 @@ mod tests {
 
         // Glob pattern that matches nothing - should FAIL HARD (no fallback to empty array)
         let pattern = format!("{}/nonexistent_*.xyz", temp_dir.display());
-        let cli_args = vec![pattern];  // NOT JSON - just the pattern
+        let cli_args = vec![pattern]; // NOT JSON - just the pattern
 
         // Build CBOR payload and try conversion - should fail when glob matches nothing
-        let (raw_value, _) = runtime.extract_arg_value(&cap.args[0], &cli_args, None).unwrap();
+        let (raw_value, _) = runtime
+            .extract_arg_value(&cap.args[0], &cli_args, None)
+            .unwrap();
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(raw_value.unwrap())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(raw_value.unwrap()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -5373,9 +6060,15 @@ mod tests {
 
         let result = extract_effective_payload(&payload, Some("application/cbor"), &cap, true);
 
-        assert!(result.is_err(), "Should fail hard when glob matches nothing - NO FALLBACK");
+        assert!(
+            result.is_err(),
+            "Should fail hard when glob matches nothing - NO FALLBACK"
+        );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("No files matched") || err.contains("nonexistent"), "Error should explain glob matched nothing");
+        assert!(
+            err.contains("No files matched") || err.contains("nonexistent"),
+            "Error should explain glob matched nothing"
+        );
     }
 
     // TEST355: Glob pattern skips directories
@@ -5398,7 +6091,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5409,14 +6104,18 @@ mod tests {
 
         // Glob that matches both file and directory
         let pattern = format!("{}/*", temp_dir.display());
-        let cli_args = vec![pattern];  // NOT JSON - just the glob pattern
+        let cli_args = vec![pattern]; // NOT JSON - just the glob pattern
         let cap = &runtime.manifest.as_ref().unwrap().caps[0];
 
         // Use helper to test file-path array conversion
         let files_array = test_filepath_array_conversion(cap, &cli_args, &runtime);
 
         // Should only include the file, not the directory
-        assert_eq!(files_array.len(), 1, "Should only include files, not directories");
+        assert_eq!(
+            files_array.len(),
+            1,
+            "Should only include files, not directories"
+        );
         assert_eq!(files_array[0], b"content1");
 
         std::fs::remove_dir_all(temp_dir).ok();
@@ -5441,7 +6140,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5456,11 +6157,17 @@ mod tests {
 
         // Build CBOR payload with Array of patterns
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Array(vec![
-                ciborium::Value::Text(pattern1),
-                ciborium::Value::Text(pattern2),
-            ])),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Array(vec![
+                    ciborium::Value::Text(pattern1),
+                    ciborium::Value::Text(pattern2),
+                ]),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -5469,7 +6176,8 @@ mod tests {
         let cap = &runtime.manifest.as_ref().unwrap().caps[0];
 
         // Do file-path conversion with is_cli_mode=false (CBOR mode allows Arrays)
-        let result = extract_effective_payload(&payload, Some("application/cbor"), cap, false).unwrap();
+        let result =
+            extract_effective_payload(&payload, Some("application/cbor"), cap, false).unwrap();
 
         // Decode and verify both files found
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -5481,7 +6189,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected map"),
         };
-        let files_array = result_map.iter()
+        let files_array = result_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| match v {
                 ciborium::Value::Array(arr) => arr,
@@ -5489,7 +6198,11 @@ mod tests {
             })
             .unwrap();
 
-        assert_eq!(files_array.len(), 2, "Should find both files from different patterns");
+        assert_eq!(
+            files_array.len(),
+            2,
+            "Should find both files from different patterns"
+        );
 
         // Collect contents (order may vary)
         let mut contents = Vec::new();
@@ -5529,7 +6242,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5544,7 +6259,10 @@ mod tests {
         // Use helper to test file-path conversion
         let result = test_filepath_conversion(cap, &cli_args, &runtime);
 
-        assert_eq!(result, b"real content", "Should follow symlink and read real file");
+        assert_eq!(
+            result, b"real content",
+            "Should follow symlink and read real file"
+        );
 
         std::fs::remove_dir_all(temp_dir).ok();
     }
@@ -5567,7 +6285,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5595,7 +6315,9 @@ mod tests {
                 "media:file-path;textable;list",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5609,8 +6331,14 @@ mod tests {
 
         // Build CBOR payload with invalid pattern
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Text(pattern.to_string())),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Text(pattern.to_string()),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
@@ -5623,7 +6351,10 @@ mod tests {
 
         assert!(result.is_err(), "Should fail on invalid glob pattern");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("Invalid glob pattern") || err.contains("Pattern"), "Error should mention invalid glob");
+        assert!(
+            err.contains("Invalid glob pattern") || err.contains("Pattern"),
+            "Error should mention invalid glob"
+        );
     }
 
     // TEST360: Extract effective payload handles file-path data correctly
@@ -5642,7 +6373,9 @@ mod tests {
                 "media:file-path;textable",
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:pdf".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5663,8 +6396,9 @@ mod tests {
             &raw_payload,
             Some("application/cbor"),
             &cap,
-            true,  // CLI mode
-        ).unwrap();
+            true, // CLI mode
+        )
+        .unwrap();
 
         // NEW REGIME: Parse CBOR array and extract file bytes
         let result_cbor: ciborium::Value = ciborium::from_reader(&effective[..]).unwrap();
@@ -5696,8 +6430,8 @@ mod tests {
 
                 if let (Some(urn_str), Some(val)) = (arg_urn_str, arg_value) {
                     if let Ok(arg_urn) = MediaUrn::from_string(&urn_str) {
-                        let matches = in_spec.accepts(&arg_urn).unwrap_or(false) ||
-                                     arg_urn.conforms_to(&in_spec).unwrap_or(false);
+                        let matches = in_spec.accepts(&arg_urn).unwrap_or(false)
+                            || arg_urn.conforms_to(&in_spec).unwrap_or(false);
                         if matches {
                             found_value = Some(val);
                             break;
@@ -5707,7 +6441,11 @@ mod tests {
             }
         }
 
-        assert_eq!(found_value, Some(pdf_content.to_vec()), "File-path auto-converted to bytes");
+        assert_eq!(
+            found_value,
+            Some(pdf_content.to_vec()),
+            "File-path auto-converted to bytes"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -5728,7 +6466,9 @@ mod tests {
                 MEDIA_FILE_PATH,
                 true,
                 vec![
-                    ArgSource::Stdin { stdin: "media:pdf".to_string() },
+                    ArgSource::Stdin {
+                        stdin: "media:pdf".to_string(),
+                    },
                     ArgSource::Position { position: 0 },
                 ],
             )],
@@ -5739,14 +6479,16 @@ mod tests {
 
         // CLI mode: pass file path as positional argument
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let payload = runtime.build_payload_from_cli(
-            &runtime.manifest.as_ref().unwrap().caps[0],
-            &cli_args
-        ).unwrap();
+        let payload = runtime
+            .build_payload_from_cli(&runtime.manifest.as_ref().unwrap().caps[0], &cli_args)
+            .unwrap();
 
         // Verify payload is CBOR array with file-path argument
         let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
-        assert!(matches!(cbor_val, ciborium::Value::Array(_)), "CLI mode produces CBOR array");
+        assert!(
+            matches!(cbor_val, ciborium::Value::Array(_)),
+            "CLI mode produces CBOR array"
+        );
 
         std::fs::remove_file(test_file).ok();
     }
@@ -5774,7 +6516,9 @@ mod tests {
             vec![CapArg::new(
                 "media:pdf",
                 true,
-                vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
+                vec![ArgSource::Stdin {
+                    stdin: "media:pdf".to_string(),
+                }],
             )],
         );
 
@@ -5785,7 +6529,9 @@ mod tests {
         let mock_stdin = Cursor::new(pdf_content.clone());
 
         // Build payload from streaming reader (what CLI piped mode does)
-        let payload = runtime.build_payload_from_streaming_reader(&cap, mock_stdin, Limits::default().max_chunk).unwrap();
+        let payload = runtime
+            .build_payload_from_streaming_reader(&cap, mock_stdin, Limits::default().max_chunk)
+            .unwrap();
 
         // Verify payload is CBOR array with correct structure
         let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
@@ -5815,7 +6561,11 @@ mod tests {
                         }
                     }
 
-                    assert_eq!(media_urn, Some("media:pdf".to_string()), "Media URN matches cap in_spec");
+                    assert_eq!(
+                        media_urn,
+                        Some("media:pdf".to_string()),
+                        "Media URN matches cap in_spec"
+                    );
                     assert_eq!(value, Some(pdf_content), "Binary content preserved exactly");
                 } else {
                     panic!("Expected Map in CBOR array");
@@ -5841,24 +6591,32 @@ mod tests {
             vec![CapArg::new(
                 "media:pdf",
                 true,
-                vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
+                vec![ArgSource::Stdin {
+                    stdin: "media:pdf".to_string(),
+                }],
             )],
         );
 
         let manifest = create_test_manifest("TestCartridge", "1.0.0", "Test", vec![cap.clone()]);
         let mut runtime = CartridgeRuntime::with_manifest(manifest);
         runtime.register_op(&cap.urn_string(), move || {
-            Box::new(ExtractValueOp { received: Arc::clone(&received_clone) }) as Box<dyn Op<()>>
+            Box::new(ExtractValueOp {
+                received: Arc::clone(&received_clone),
+            }) as Box<dyn Op<()>>
         });
 
         // Build CBOR payload with pdf_content
         let mut payload_bytes = Vec::new();
-        let cbor_args = ciborium::Value::Array(vec![
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:pdf".to_string())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(pdf_content.clone())),
-            ]),
-        ]);
+        let cbor_args = ciborium::Value::Array(vec![ciborium::Value::Map(vec![
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:pdf".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Bytes(pdf_content.clone()),
+            ),
+        ])]);
         ciborium::into_writer(&cbor_args, &mut payload_bytes).unwrap();
 
         let factory = runtime.find_handler(&cap.urn_string()).unwrap();
@@ -5868,7 +6626,11 @@ mod tests {
         let (output, _out_rx) = test_output_stream();
         invoke_op(&factory, input, output).await.unwrap();
 
-        assert_eq!(*received.lock().unwrap(), pdf_content, "Handler receives chunked content");
+        assert_eq!(
+            *received.lock().unwrap(),
+            pdf_content,
+            "Handler receives chunked content"
+        );
     }
 
     // TEST364: CBOR mode with file path - send file path in CBOR arguments (auto-conversion)
@@ -5886,22 +6648,33 @@ mod tests {
             vec![CapArg::new(
                 MEDIA_FILE_PATH,
                 true,
-                vec![ArgSource::Stdin { stdin: "media:pdf".to_string() }],
+                vec![ArgSource::Stdin {
+                    stdin: "media:pdf".to_string(),
+                }],
             )],
         );
 
         // Build CBOR arguments with file-path URN
         let args = vec![CapArgumentValue::new(
             MEDIA_FILE_PATH.to_string(),
-            test_file.to_string_lossy().as_bytes().to_vec()
+            test_file.to_string_lossy().as_bytes().to_vec(),
         )];
         let mut payload = Vec::new();
-        let cbor_args: Vec<ciborium::Value> = args.iter().map(|arg| {
-            ciborium::Value::Map(vec![
-                (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text(arg.media_urn.clone())),
-                (ciborium::Value::Text("value".to_string()), ciborium::Value::Bytes(arg.value.clone())),
-            ])
-        }).collect();
+        let cbor_args: Vec<ciborium::Value> = args
+            .iter()
+            .map(|arg| {
+                ciborium::Value::Map(vec![
+                    (
+                        ciborium::Value::Text("media_urn".to_string()),
+                        ciborium::Value::Text(arg.media_urn.clone()),
+                    ),
+                    (
+                        ciborium::Value::Text("value".to_string()),
+                        ciborium::Value::Bytes(arg.value.clone()),
+                    ),
+                ])
+            })
+            .collect();
         ciborium::into_writer(&ciborium::Value::Array(cbor_args), &mut payload).unwrap();
 
         // Extract effective payload (triggers file-path auto-conversion)
@@ -5909,8 +6682,9 @@ mod tests {
             &payload,
             Some("application/cbor"),
             &cap,
-            false,  // CBOR mode
-        ).unwrap();
+            false, // CBOR mode
+        )
+        .unwrap();
 
         // Verify the result is modified CBOR with PDF bytes (not file path)
         let result: ciborium::Value = ciborium::from_reader(&effective[..]).unwrap();
@@ -5935,8 +6709,16 @@ mod tests {
                         }
                     }
                 }
-                assert_eq!(media_urn, Some(&"media:pdf".to_string()), "URN converted to expected input");
-                assert_eq!(value, Some(&pdf_content.to_vec()), "File auto-converted to bytes");
+                assert_eq!(
+                    media_urn,
+                    Some(&"media:pdf".to_string()),
+                    "URN converted to expected input"
+                );
+                assert_eq!(
+                    value,
+                    Some(&pdf_content.to_vec()),
+                    "File auto-converted to bytes"
+                );
             }
         }
 
@@ -5964,27 +6746,34 @@ mod tests {
             vec![CapArg::new(
                 "media:file-path;textable;list",
                 true,
-                vec![
-                    ArgSource::Stdin { stdin: "media:".to_string() },
-                ],
+                vec![ArgSource::Stdin {
+                    stdin: "media:".to_string(),
+                }],
             )],
         );
 
         // Build CBOR payload with Array of file paths (CBOR mode only)
         let arg = ciborium::Value::Map(vec![
-            (ciborium::Value::Text("media_urn".to_string()), ciborium::Value::Text("media:file-path;textable;list".to_string())),
-            (ciborium::Value::Text("value".to_string()), ciborium::Value::Array(vec![
-                ciborium::Value::Text(file1.to_string_lossy().to_string()),
-                ciborium::Value::Text(file2.to_string_lossy().to_string()),
-                ciborium::Value::Text(file3.to_string_lossy().to_string()),
-            ])),
+            (
+                ciborium::Value::Text("media_urn".to_string()),
+                ciborium::Value::Text("media:file-path;textable;list".to_string()),
+            ),
+            (
+                ciborium::Value::Text("value".to_string()),
+                ciborium::Value::Array(vec![
+                    ciborium::Value::Text(file1.to_string_lossy().to_string()),
+                    ciborium::Value::Text(file2.to_string_lossy().to_string()),
+                    ciborium::Value::Text(file3.to_string_lossy().to_string()),
+                ]),
+            ),
         ]);
         let args = ciborium::Value::Array(vec![arg]);
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
         // Do file-path conversion with is_cli_mode=false (CBOR mode allows Arrays)
-        let result = extract_effective_payload(&payload, Some("application/cbor"), &cap, false).unwrap();
+        let result =
+            extract_effective_payload(&payload, Some("application/cbor"), &cap, false).unwrap();
 
         // Decode and verify all three files read
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -5996,7 +6785,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected map"),
         };
-        let files_array = result_map.iter()
+        let files_array = result_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| match v {
                 ciborium::Value::Array(arr) => arr,
@@ -6005,7 +6795,11 @@ mod tests {
             .unwrap();
 
         // Verify all three files were read
-        assert_eq!(files_array.len(), 3, "Should read all three files from CBOR Array");
+        assert_eq!(
+            files_array.len(),
+            3,
+            "Should read all three files from CBOR Array"
+        );
 
         // Verify contents
         let mut contents = Vec::new();
@@ -6016,17 +6810,28 @@ mod tests {
             }
         }
         contents.sort();
-        assert_eq!(contents, vec![b"content1".to_vec(), b"content2".to_vec(), b"content3".to_vec()]);
+        assert_eq!(
+            contents,
+            vec![
+                b"content1".to_vec(),
+                b"content2".to_vec(),
+                b"content3".to_vec()
+            ]
+        );
 
         // Verify media_urn was converted
-        let media_urn = result_map.iter()
+        let media_urn = result_map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "media_urn"))
             .map(|(_, v)| match v {
                 ciborium::Value::Text(s) => s,
                 _ => panic!("Expected text"),
             })
             .unwrap();
-        assert_eq!(media_urn, "media:", "media_urn should be converted to stdin source");
+        assert_eq!(
+            media_urn, "media:",
+            "media_urn should be converted to stdin source"
+        );
 
         std::fs::remove_dir_all(temp_dir).ok();
     }
@@ -6047,7 +6852,9 @@ mod tests {
         let data = b"small payload";
         let reader = Cursor::new(data.to_vec());
 
-        let payload = runtime.build_payload_from_streaming_reader(&cap, reader, Limits::default().max_chunk).unwrap();
+        let payload = runtime
+            .build_payload_from_streaming_reader(&cap, reader, Limits::default().max_chunk)
+            .unwrap();
 
         // Verify CBOR structure
         let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
@@ -6056,7 +6863,8 @@ mod tests {
                 assert_eq!(arr.len(), 1, "Should have one argument");
                 match &arr[0] {
                     ciborium::Value::Map(map) => {
-                        let value = map.iter()
+                        let value = map
+                            .iter()
                             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
                             .map(|(_, v)| v)
                             .unwrap();
@@ -6091,7 +6899,9 @@ mod tests {
         let data: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
         let reader = Cursor::new(data.clone());
 
-        let payload = runtime.build_payload_from_streaming_reader(&cap, reader, 100).unwrap();
+        let payload = runtime
+            .build_payload_from_streaming_reader(&cap, reader, 100)
+            .unwrap();
 
         let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
         let arr = match cbor_val {
@@ -6102,7 +6912,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected Map"),
         };
-        let value = map.iter()
+        let value = map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| v)
             .unwrap();
@@ -6130,7 +6941,9 @@ mod tests {
         let runtime = CartridgeRuntime::new(VALID_MANIFEST.as_bytes());
         let reader = Cursor::new(Vec::<u8>::new());
 
-        let payload = runtime.build_payload_from_streaming_reader(&cap, reader, Limits::default().max_chunk).unwrap();
+        let payload = runtime
+            .build_payload_from_streaming_reader(&cap, reader, Limits::default().max_chunk)
+            .unwrap();
 
         let cbor_val: ciborium::Value = ciborium::from_reader(&payload[..]).unwrap();
         let arr = match cbor_val {
@@ -6141,7 +6954,8 @@ mod tests {
             ciborium::Value::Map(m) => m,
             _ => panic!("Expected Map"),
         };
-        let value = map.iter()
+        let value = map
+            .iter()
             .find(|(k, _)| matches!(k, ciborium::Value::Text(s) if s == "value"))
             .map(|(_, v)| v)
             .unwrap();
@@ -6159,7 +6973,10 @@ mod tests {
         struct ErrorReader;
         impl std::io::Read for ErrorReader {
             fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "simulated read error"))
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "simulated read error",
+                ))
             }
         }
 
@@ -6171,7 +6988,11 @@ mod tests {
         );
 
         let runtime = CartridgeRuntime::new(VALID_MANIFEST.as_bytes());
-        let result = runtime.build_payload_from_streaming_reader(&cap, ErrorReader, Limits::default().max_chunk);
+        let result = runtime.build_payload_from_streaming_reader(
+            &cap,
+            ErrorReader,
+            Limits::default().max_chunk,
+        );
 
         assert!(result.is_err(), "IO error should propagate");
         match result {
@@ -6189,17 +7010,25 @@ mod tests {
         let runtime = CartridgeRuntime::new(VALID_MANIFEST.as_bytes());
 
         // Identity handler must be registered at exact CAP_IDENTITY URN
-        assert!(runtime.find_handler(CAP_IDENTITY).is_some(),
-            "CartridgeRuntime must auto-register identity handler");
+        assert!(
+            runtime.find_handler(CAP_IDENTITY).is_some(),
+            "CartridgeRuntime must auto-register identity handler"
+        );
 
         // Discard handler must be registered at exact CAP_DISCARD URN
-        assert!(runtime.find_handler(CAP_DISCARD).is_some(),
-            "CartridgeRuntime must auto-register discard handler");
+        assert!(
+            runtime.find_handler(CAP_DISCARD).is_some(),
+            "CartridgeRuntime must auto-register discard handler"
+        );
 
         // Standard handlers must NOT match arbitrary specific requests
         // (request is pattern, registered cap is instance — broad caps don't satisfy specific patterns)
-        assert!(runtime.find_handler("cap:in=\"media:void\";op=nonexistent;out=\"media:void\"").is_none(),
-            "Standard handlers must not catch arbitrary specific requests");
+        assert!(
+            runtime
+                .find_handler("cap:in=\"media:void\";op=nonexistent;out=\"media:void\"")
+                .is_none(),
+            "Standard handlers must not catch arbitrary specific requests"
+        );
     }
 
     // TEST479: Custom identity Op overrides auto-registered default
@@ -6213,14 +7042,18 @@ mod tests {
             async fn perform(&self, _dry: &mut DryContext, _wet: &mut WetContext) -> OpResult<()> {
                 Err(OpError::ExecutionFailed("custom identity".to_string()))
             }
-            fn metadata(&self) -> OpMetadata { OpMetadata::builder("FailOp").build() }
+            fn metadata(&self) -> OpMetadata {
+                OpMetadata::builder("FailOp").build()
+            }
         }
 
         let mut runtime = CartridgeRuntime::new(VALID_MANIFEST.as_bytes());
 
         // Auto-registered identity handler must exist
-        assert!(runtime.find_handler(CAP_IDENTITY).is_some(),
-            "Auto-registered identity must exist before override");
+        assert!(
+            runtime.find_handler(CAP_IDENTITY).is_some(),
+            "Auto-registered identity must exist before override"
+        );
 
         // Count handlers before override
         let handlers_before = runtime.handlers.len();
@@ -6229,16 +7062,23 @@ mod tests {
         runtime.register_op_type::<FailOp>(CAP_IDENTITY);
 
         // Handler count must not change (HashMap insert replaces, doesn't add)
-        assert_eq!(runtime.handlers.len(), handlers_before,
-            "Overriding identity must replace, not add a new entry");
+        assert_eq!(
+            runtime.handlers.len(),
+            handlers_before,
+            "Overriding identity must replace, not add a new entry"
+        );
 
         // The handler at CAP_IDENTITY must still be findable
-        assert!(runtime.find_handler(CAP_IDENTITY).is_some(),
-            "Identity handler must be findable after override");
+        assert!(
+            runtime.find_handler(CAP_IDENTITY).is_some(),
+            "Identity handler must be findable after override"
+        );
 
         // Also verify discard was NOT affected by the override
-        assert!(runtime.find_handler(CAP_DISCARD).is_some(),
-            "Discard handler must still be present after overriding identity");
+        assert!(
+            runtime.find_handler(CAP_DISCARD).is_some(),
+            "Discard handler must still be present after overriding identity"
+        );
     }
 
     // =========================================================================
@@ -6250,7 +7090,10 @@ mod tests {
     use tokio::sync::mpsc::unbounded_channel;
 
     // Helper: Create test InputStream from chunks (using tokio channels)
-    fn create_test_input_stream(media_urn: &str, chunks: Vec<Result<Value, StreamError>>) -> InputStream {
+    fn create_test_input_stream(
+        media_urn: &str,
+        chunks: Vec<Result<Value, StreamError>>,
+    ) -> InputStream {
         let (tx, rx) = unbounded_channel();
         for chunk in chunks {
             match chunk {
@@ -6281,9 +7124,18 @@ mod tests {
             collected.push(item);
         }
         assert_eq!(collected.len(), 3);
-        assert_eq!(collected[0].as_ref().unwrap(), &Value::Bytes(b"chunk1".to_vec()));
-        assert_eq!(collected[1].as_ref().unwrap(), &Value::Bytes(b"chunk2".to_vec()));
-        assert_eq!(collected[2].as_ref().unwrap(), &Value::Bytes(b"chunk3".to_vec()));
+        assert_eq!(
+            collected[0].as_ref().unwrap(),
+            &Value::Bytes(b"chunk1".to_vec())
+        );
+        assert_eq!(
+            collected[1].as_ref().unwrap(),
+            &Value::Bytes(b"chunk2".to_vec())
+        );
+        assert_eq!(
+            collected[2].as_ref().unwrap(),
+            &Value::Bytes(b"chunk3".to_vec())
+        );
     }
 
     // TEST530: InputStream::collect_bytes concatenates byte chunks
@@ -6319,7 +7171,10 @@ mod tests {
         let chunks = vec![];
         let stream = create_test_input_stream("media:void", chunks);
 
-        let result = stream.collect_bytes().await.expect("empty stream must succeed");
+        let result = stream
+            .collect_bytes()
+            .await
+            .expect("empty stream must succeed");
         assert_eq!(result, b"");
     }
 
@@ -6359,14 +7214,20 @@ mod tests {
         // Send 3 streams
         for i in 0..3 {
             let (stream_tx, stream_rx) = unbounded_channel();
-            stream_tx.send(Ok((Value::Bytes(format!("stream{}", i).into_bytes()), None))).unwrap();
+            stream_tx
+                .send(Ok((
+                    Value::Bytes(format!("stream{}", i).into_bytes()),
+                    None,
+                )))
+                .unwrap();
             drop(stream_tx);
 
             tx.send(Ok(InputStream {
                 media_urn: format!("media:stream{}", i),
                 stream_meta: None,
                 rx: stream_rx,
-            })).unwrap();
+            }))
+            .unwrap();
         }
         drop(tx);
 
@@ -6395,23 +7256,29 @@ mod tests {
 
         // Stream 1: "hello"
         let (s1_tx, s1_rx) = unbounded_channel();
-        s1_tx.send(Ok((Value::Bytes(b"hello".to_vec()), None))).unwrap();
+        s1_tx
+            .send(Ok((Value::Bytes(b"hello".to_vec()), None)))
+            .unwrap();
         drop(s1_tx);
         tx.send(Ok(InputStream {
             media_urn: "media:s1".to_string(),
             stream_meta: None,
             rx: s1_rx,
-        })).unwrap();
+        }))
+        .unwrap();
 
         // Stream 2: " world"
         let (s2_tx, s2_rx) = unbounded_channel();
-        s2_tx.send(Ok((Value::Bytes(b" world".to_vec()), None))).unwrap();
+        s2_tx
+            .send(Ok((Value::Bytes(b" world".to_vec()), None)))
+            .unwrap();
         drop(s2_tx);
         tx.send(Ok(InputStream {
             media_urn: "media:s2".to_string(),
             stream_meta: None,
             rx: s2_rx,
-        })).unwrap();
+        }))
+        .unwrap();
 
         drop(tx);
 
@@ -6435,7 +7302,10 @@ mod tests {
             _demux_handle: None,
         };
 
-        let all_bytes = package.collect_all_bytes().await.expect("empty package must succeed");
+        let all_bytes = package
+            .collect_all_bytes()
+            .await
+            .expect("empty package must succeed");
         assert_eq!(all_bytes, b"");
     }
 
@@ -6446,23 +7316,29 @@ mod tests {
 
         // Good stream
         let (s1_tx, s1_rx) = unbounded_channel();
-        s1_tx.send(Ok((Value::Bytes(b"data".to_vec()), None))).unwrap();
+        s1_tx
+            .send(Ok((Value::Bytes(b"data".to_vec()), None)))
+            .unwrap();
         drop(s1_tx);
         tx.send(Ok(InputStream {
             media_urn: "media:good".to_string(),
             stream_meta: None,
             rx: s1_rx,
-        })).unwrap();
+        }))
+        .unwrap();
 
         // Error stream
         let (s2_tx, s2_rx) = unbounded_channel();
-        s2_tx.send(Err(StreamError::Protocol("stream error".to_string()))).unwrap();
+        s2_tx
+            .send(Err(StreamError::Protocol("stream error".to_string())))
+            .unwrap();
         drop(s2_tx);
         tx.send(Ok(InputStream {
             media_urn: "media:bad".to_string(),
             stream_meta: None,
             rx: s2_rx,
-        })).unwrap();
+        }))
+        .unwrap();
 
         drop(tx);
 
@@ -6511,12 +7387,17 @@ mod tests {
         );
 
         stream.start(false, None).expect("start must succeed");
-        stream.emit_cbor(&Value::Bytes(b"test".to_vec())).expect("write must succeed");
+        stream
+            .emit_cbor(&Value::Bytes(b"test".to_vec()))
+            .expect("write must succeed");
 
         let captured = frames.lock().unwrap();
         assert!(captured.len() >= 1, "must send at least STREAM_START");
-        assert_eq!(captured[0].frame_type, FrameType::StreamStart,
-                   "first frame must be STREAM_START");
+        assert_eq!(
+            captured[0].frame_type,
+            FrameType::StreamStart,
+            "first frame must be STREAM_START"
+        );
         assert_eq!(captured[0].stream_id, Some("stream-1".to_string()));
     }
 
@@ -6542,7 +7423,9 @@ mod tests {
         stream.close().expect("close must succeed");
 
         let captured = frames.lock().unwrap();
-        let stream_end = captured.iter().find(|f| f.frame_type == FrameType::StreamEnd)
+        let stream_end = captured
+            .iter()
+            .find(|f| f.frame_type == FrameType::StreamEnd)
             .expect("must have STREAM_END");
 
         assert_eq!(stream_end.chunk_count, Some(3), "chunk_count must be 3");
@@ -6569,11 +7452,16 @@ mod tests {
         stream.close().unwrap();
 
         let captured = frames.lock().unwrap();
-        let chunks: Vec<_> = captured.iter()
+        let chunks: Vec<_> = captured
+            .iter()
             .filter(|f| f.frame_type == FrameType::Chunk)
             .collect();
 
-        assert!(chunks.len() >= 3, "large data must be chunked (got {} chunks)", chunks.len());
+        assert!(
+            chunks.len() >= 3,
+            "large data must be chunked (got {} chunks)",
+            chunks.len()
+        );
     }
 
     // TEST542: OutputStream empty stream sends STREAM_START and STREAM_END only
@@ -6593,10 +7481,15 @@ mod tests {
         stream.close().expect("close must succeed");
 
         let captured = frames.lock().unwrap();
-        assert!(captured.iter().any(|f| f.frame_type == FrameType::StreamStart));
-        assert!(captured.iter().any(|f| f.frame_type == FrameType::StreamEnd));
+        assert!(captured
+            .iter()
+            .any(|f| f.frame_type == FrameType::StreamStart));
+        assert!(captured
+            .iter()
+            .any(|f| f.frame_type == FrameType::StreamEnd));
 
-        let chunk_count = captured.iter()
+        let chunk_count = captured
+            .iter()
             .filter(|f| f.frame_type == FrameType::Chunk)
             .count();
         assert_eq!(chunk_count, 0, "empty stream must have zero chunks");
@@ -6617,7 +7510,10 @@ mod tests {
 
         let arg_stream = peer.arg("media:argument");
         assert_eq!(arg_stream.media_urn, "media:argument");
-        assert!(!arg_stream.stream_id.is_empty(), "stream_id must be generated");
+        assert!(
+            !arg_stream.stream_id.is_empty(),
+            "stream_id must be generated"
+        );
     }
 
     // TEST544: PeerCall::finish sends END frame
@@ -6640,7 +7536,9 @@ mod tests {
         let _response = peer.finish().await.expect("finish must succeed");
 
         let captured = frames.lock().unwrap();
-        let end_frame = captured.iter().find(|f| f.frame_type == FrameType::End)
+        let end_frame = captured
+            .iter()
+            .find(|f| f.frame_type == FrameType::End)
             .expect("must send END frame");
 
         assert_eq!(end_frame.id, request_id, "END must have correct request ID");
@@ -6666,17 +7564,25 @@ mod tests {
         let mut cbor_payload = Vec::new();
         ciborium::into_writer(&Value::Bytes(raw_data.clone()), &mut cbor_payload).unwrap();
         let checksum = Frame::compute_checksum(&cbor_payload);
-        response_tx.send(Frame::chunk(
-            req_id.clone(),
-            "response-stream".to_string(),
-            0,
-            cbor_payload,
-            0,
-            checksum,
-        )).unwrap();
+        response_tx
+            .send(Frame::chunk(
+                req_id.clone(),
+                "response-stream".to_string(),
+                0,
+                cbor_payload,
+                0,
+                checksum,
+            ))
+            .unwrap();
 
         // STREAM_END
-        response_tx.send(Frame::stream_end(req_id.clone(), "response-stream".to_string(), 1)).unwrap();
+        response_tx
+            .send(Frame::stream_end(
+                req_id.clone(),
+                "response-stream".to_string(),
+                1,
+            ))
+            .unwrap();
         drop(response_tx);
 
         let peer = PeerCall {
@@ -6688,7 +7594,10 @@ mod tests {
 
         let response = peer.finish().await.expect("finish must succeed");
 
-        let bytes = response.collect_bytes().await.expect("collect must succeed");
+        let bytes = response
+            .collect_bytes()
+            .await
+            .expect("collect must succeed");
         assert_eq!(bytes, b"response data");
     }
 
@@ -6711,9 +7620,27 @@ mod tests {
 
         // Send LOG frames BEFORE any StreamStart — simulates modelcartridge
         // sending download progress before the actual data response
-        response_tx.send(Frame::progress(req_id.clone(), 0.1, "downloading file 1/10")).unwrap();
-        response_tx.send(Frame::progress(req_id.clone(), 0.5, "downloading file 5/10")).unwrap();
-        response_tx.send(Frame::log(req_id.clone(), "status", "large file in progress")).unwrap();
+        response_tx
+            .send(Frame::progress(
+                req_id.clone(),
+                0.1,
+                "downloading file 1/10",
+            ))
+            .unwrap();
+        response_tx
+            .send(Frame::progress(
+                req_id.clone(),
+                0.5,
+                "downloading file 5/10",
+            ))
+            .unwrap();
+        response_tx
+            .send(Frame::log(
+                req_id.clone(),
+                "status",
+                "large file in progress",
+            ))
+            .unwrap();
 
         let peer = PeerCall {
             sender: Arc::new(sender),
@@ -6762,11 +7689,20 @@ mod tests {
         let mut cbor_payload = Vec::new();
         ciborium::into_writer(&Value::Bytes(raw_data.clone()), &mut cbor_payload).unwrap();
         let checksum = Frame::compute_checksum(&cbor_payload);
-        response_tx.send(Frame::chunk(
-            req_id.clone(), "s1".to_string(), 0, cbor_payload, 0, checksum,
-        )).unwrap();
+        response_tx
+            .send(Frame::chunk(
+                req_id.clone(),
+                "s1".to_string(),
+                0,
+                cbor_payload,
+                0,
+                checksum,
+            ))
+            .unwrap();
 
-        response_tx.send(Frame::stream_end(req_id.clone(), "s1".to_string(), 1)).unwrap();
+        response_tx
+            .send(Frame::stream_end(req_id.clone(), "s1".to_string(), 1))
+            .unwrap();
         drop(response_tx);
 
         // Data must arrive after the LOGs
@@ -6779,7 +7715,10 @@ mod tests {
             PeerResponseItem::Log(_) => panic!("expected Data, got LOG"),
         }
 
-        assert!(response.recv().await.is_none(), "stream must end after STREAM_END");
+        assert!(
+            response.recv().await.is_none(),
+            "stream must end after STREAM_END"
+        );
     }
 
     // TEST840: PeerResponse::collect_bytes discards LOG frames
@@ -6797,22 +7736,37 @@ mod tests {
         response_tx.send(start).unwrap();
 
         // LOG frame (should be discarded by collect_bytes)
-        response_tx.send(Frame::progress(req_id.clone(), 0.25, "working")).unwrap();
-        response_tx.send(Frame::progress(req_id.clone(), 0.75, "almost")).unwrap();
+        response_tx
+            .send(Frame::progress(req_id.clone(), 0.25, "working"))
+            .unwrap();
+        response_tx
+            .send(Frame::progress(req_id.clone(), 0.75, "almost"))
+            .unwrap();
 
         // CHUNK
         let mut cbor_payload = Vec::new();
         ciborium::into_writer(&Value::Bytes(b"hello".to_vec()), &mut cbor_payload).unwrap();
         let checksum = Frame::compute_checksum(&cbor_payload);
-        response_tx.send(Frame::chunk(
-            req_id.clone(), "s1".to_string(), 0, cbor_payload, 0, checksum,
-        )).unwrap();
+        response_tx
+            .send(Frame::chunk(
+                req_id.clone(),
+                "s1".to_string(),
+                0,
+                cbor_payload,
+                0,
+                checksum,
+            ))
+            .unwrap();
 
         // Another LOG
-        response_tx.send(Frame::log(req_id.clone(), "info", "done")).unwrap();
+        response_tx
+            .send(Frame::log(req_id.clone(), "info", "done"))
+            .unwrap();
 
         // STREAM_END
-        response_tx.send(Frame::stream_end(req_id.clone(), "s1".to_string(), 1)).unwrap();
+        response_tx
+            .send(Frame::stream_end(req_id.clone(), "s1".to_string(), 1))
+            .unwrap();
         drop(response_tx);
 
         let peer = PeerCall {
@@ -6823,8 +7777,14 @@ mod tests {
         };
 
         let response = peer.finish().await.expect("finish must succeed");
-        let bytes = response.collect_bytes().await.expect("collect must succeed");
-        assert_eq!(bytes, b"hello", "collect_bytes must return only data, discarding all LOG frames");
+        let bytes = response
+            .collect_bytes()
+            .await
+            .expect("collect must succeed");
+        assert_eq!(
+            bytes, b"hello",
+            "collect_bytes must return only data, discarding all LOG frames"
+        );
     }
 
     // TEST841: PeerResponse::collect_value discards LOG frames
@@ -6842,19 +7802,32 @@ mod tests {
         response_tx.send(start).unwrap();
 
         // LOG frames before the data value
-        response_tx.send(Frame::progress(req_id.clone(), 0.5, "half")).unwrap();
-        response_tx.send(Frame::log(req_id.clone(), "debug", "processing")).unwrap();
+        response_tx
+            .send(Frame::progress(req_id.clone(), 0.5, "half"))
+            .unwrap();
+        response_tx
+            .send(Frame::log(req_id.clone(), "debug", "processing"))
+            .unwrap();
 
         // Single CHUNK with a CBOR integer
         let mut cbor_payload = Vec::new();
         ciborium::into_writer(&Value::Integer(42.into()), &mut cbor_payload).unwrap();
         let checksum = Frame::compute_checksum(&cbor_payload);
-        response_tx.send(Frame::chunk(
-            req_id.clone(), "s1".to_string(), 0, cbor_payload, 0, checksum,
-        )).unwrap();
+        response_tx
+            .send(Frame::chunk(
+                req_id.clone(),
+                "s1".to_string(),
+                0,
+                cbor_payload,
+                0,
+                checksum,
+            ))
+            .unwrap();
 
         // STREAM_END
-        response_tx.send(Frame::stream_end(req_id.clone(), "s1".to_string(), 1)).unwrap();
+        response_tx
+            .send(Frame::stream_end(req_id.clone(), "s1".to_string(), 1))
+            .unwrap();
         drop(response_tx);
 
         let peer = PeerCall {
@@ -6865,8 +7838,15 @@ mod tests {
         };
 
         let response = peer.finish().await.expect("finish must succeed");
-        let value = response.collect_value().await.expect("collect must succeed");
-        assert_eq!(value, Value::Integer(42.into()), "collect_value must skip LOG frames and return first data value");
+        let value = response
+            .collect_value()
+            .await
+            .expect("collect must succeed");
+        assert_eq!(
+            value,
+            Value::Integer(42.into()),
+            "collect_value must skip LOG frames and return first data value"
+        );
     }
 
     // ==================== find_stream / require_stream Tests ====================
@@ -6874,12 +7854,17 @@ mod tests {
     // TEST678: find_stream with exact equivalent URN (same tags, different order) succeeds
     #[test]
     fn test678_find_stream_equivalent_urn_different_tag_order() {
-        let streams = vec![
-            ("media:json;record;llm-generation-request".to_string(), b"data".to_vec(), None),
-        ];
+        let streams = vec![(
+            "media:json;record;llm-generation-request".to_string(),
+            b"data".to_vec(),
+            None,
+        )];
         // Tags in different order — is_equivalent is order-independent
         let found = super::find_stream(&streams, "media:llm-generation-request;json;record");
-        assert!(found.is_some(), "Same tags in different order must match via is_equivalent");
+        assert!(
+            found.is_some(),
+            "Same tags in different order must match via is_equivalent"
+        );
         assert_eq!(found.unwrap(), b"data");
     }
 
@@ -6889,9 +7874,11 @@ mod tests {
     // "media:llm-generation-request;json;record".
     #[test]
     fn test679_find_stream_base_urn_does_not_match_full_urn() {
-        let streams = vec![
-            ("media:llm-generation-request".to_string(), b"data".to_vec(), None),
-        ];
+        let streams = vec![(
+            "media:llm-generation-request".to_string(),
+            b"data".to_vec(),
+            None,
+        )];
         let found = super::find_stream(&streams, "media:llm-generation-request;json;record");
         assert!(
             found.is_none(),
@@ -6902,9 +7889,11 @@ mod tests {
     // TEST680: require_stream with missing URN returns hard StreamError
     #[test]
     fn test680_require_stream_missing_urn_returns_error() {
-        let streams = vec![
-            ("media:model-spec;textable".to_string(), b"gpt-4".to_vec(), None),
-        ];
+        let streams = vec![(
+            "media:model-spec;textable".to_string(),
+            b"gpt-4".to_vec(),
+            None,
+        )];
         let result = super::require_stream(&streams, "media:llm-generation-request;json;record");
         assert!(result.is_err(), "Missing stream must fail hard");
         let err = result.unwrap_err().to_string();
@@ -6919,9 +7908,21 @@ mod tests {
     #[test]
     fn test681_find_stream_multiple_streams_returns_correct() {
         let streams = vec![
-            ("media:model-spec;textable".to_string(), b"gpt-4".to_vec(), None),
-            ("media:llm-generation-request;json;record".to_string(), b"{\"prompt\":\"test\"}".to_vec(), None),
-            ("media:temperature;textable;numeric".to_string(), b"0.7".to_vec(), None),
+            (
+                "media:model-spec;textable".to_string(),
+                b"gpt-4".to_vec(),
+                None,
+            ),
+            (
+                "media:llm-generation-request;json;record".to_string(),
+                b"{\"prompt\":\"test\"}".to_vec(),
+                None,
+            ),
+            (
+                "media:temperature;textable;numeric".to_string(),
+                b"0.7".to_vec(),
+                None,
+            ),
         ];
         let found = super::find_stream(&streams, "media:llm-generation-request;json;record");
         assert!(found.is_some());
@@ -6931,9 +7932,7 @@ mod tests {
     // TEST682: require_stream_str returns UTF-8 string for text data
     #[test]
     fn test682_require_stream_str_returns_utf8() {
-        let streams = vec![
-            ("media:textable".to_string(), b"hello world".to_vec(), None),
-        ];
+        let streams = vec![("media:textable".to_string(), b"hello world".to_vec(), None)];
         let result = super::require_stream_str(&streams, "media:textable");
         assert_eq!(result.unwrap(), "hello world");
     }
@@ -6941,9 +7940,7 @@ mod tests {
     // TEST683: find_stream returns None for invalid media URN string (not a parse error — just None)
     #[test]
     fn test683_find_stream_invalid_urn_returns_none() {
-        let streams = vec![
-            ("media:valid".to_string(), b"data".to_vec(), None),
-        ];
+        let streams = vec![("media:valid".to_string(), b"data".to_vec(), None)];
         // Empty string is not a valid media URN
         let found = super::find_stream(&streams, "");
         assert!(found.is_none(), "Invalid URN must return None, not panic");
@@ -6963,15 +7960,22 @@ mod tests {
         );
 
         // Run a fast operation — no keepalive frame expected (interval is 30s)
-        let result: i32 = stream.run_with_keepalive(0.25, "Loading model", || {
-            42
-        }).await;
+        let result: i32 = stream
+            .run_with_keepalive(0.25, "Loading model", || 42)
+            .await;
         assert_eq!(result, 42, "Closure result must be returned");
 
         // No keepalive frame should have been emitted (operation was instant)
         let captured = frames.lock().unwrap();
-        let progress_frames: Vec<_> = captured.iter().filter(|f| f.frame_type == FrameType::Log).collect();
-        assert_eq!(progress_frames.len(), 0, "No keepalive frame for instant operation");
+        let progress_frames: Vec<_> = captured
+            .iter()
+            .filter(|f| f.frame_type == FrameType::Log)
+            .collect();
+        assert_eq!(
+            progress_frames.len(),
+            0,
+            "No keepalive frame for instant operation"
+        );
     }
 
     // TEST843: run_with_keepalive returns Ok/Err from closure
@@ -6987,9 +7991,9 @@ mod tests {
             DEFAULT_MAX_CHUNK,
         );
 
-        let result: Result<String, String> = stream.run_with_keepalive(0.5, "Loading", || {
-            Ok("model_loaded".to_string())
-        }).await;
+        let result: Result<String, String> = stream
+            .run_with_keepalive(0.5, "Loading", || Ok("model_loaded".to_string()))
+            .await;
         assert_eq!(result.unwrap(), "model_loaded");
     }
 
@@ -7006,9 +8010,11 @@ mod tests {
             DEFAULT_MAX_CHUNK,
         );
 
-        let result: Result<(), RuntimeError> = stream.run_with_keepalive(0.25, "Loading", || {
-            Err(RuntimeError::Handler("load failed".to_string()))
-        }).await;
+        let result: Result<(), RuntimeError> = stream
+            .run_with_keepalive(0.25, "Loading", || {
+                Err(RuntimeError::Handler("load failed".to_string()))
+            })
+            .await;
         assert!(result.is_err(), "Error from closure must propagate");
         let err = result.unwrap_err();
         match err {
@@ -7052,13 +8058,25 @@ mod tests {
     /// mechanism is broken and cartridges will report 0 footprint.
     #[test]
     #[cfg(target_os = "macos")]
-    fn test_get_own_memory_mb_returns_values() {
+    // TEST1270: Runtime memory inspection returns non-negative resident and virtual memory values.
+    fn test1270_get_own_memory_mb_returns_values() {
         let result = get_own_memory_mb();
-        assert!(result.is_some(), "proc_pid_rusage(getpid()) must succeed on macOS");
+        assert!(
+            result.is_some(),
+            "proc_pid_rusage(getpid()) must succeed on macOS"
+        );
         let (footprint_mb, rss_mb) = result.unwrap();
         // A running test process should use at least some memory
-        assert!(rss_mb > 0, "RSS should be non-zero for a running process, got {}", rss_mb);
+        assert!(
+            rss_mb > 0,
+            "RSS should be non-zero for a running process, got {}",
+            rss_mb
+        );
         // Footprint should also be non-zero (it's the physical memory charged to us)
-        assert!(footprint_mb > 0, "Footprint should be non-zero for a running process, got {}", footprint_mb);
+        assert!(
+            footprint_mb > 0,
+            "Footprint should be non-zero for a running process, got {}",
+            footprint_mb
+        );
     }
 }

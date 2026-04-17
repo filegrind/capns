@@ -346,14 +346,16 @@ pub fn parse_notation_ast(input: &str) -> NotationAST {
                     None => continue,
                 };
                 let alias = alias_pair.as_str().to_string();
-                let alias_span = pest_span_to_notation_span(&alias_pair.as_span(), trimmed, trim_start);
+                let alias_span =
+                    pest_span_to_notation_span(&alias_pair.as_span(), trimmed, trim_start);
 
                 let cap_urn_pair = match inner_pairs.next() {
                     Some(p) => p,
                     None => continue,
                 };
                 let cap_urn_str = cap_urn_pair.as_str().to_string();
-                let cap_urn_span = pest_span_to_notation_span(&cap_urn_pair.as_span(), trimmed, trim_start);
+                let cap_urn_span =
+                    pest_span_to_notation_span(&cap_urn_pair.as_span(), trimmed, trim_start);
 
                 let cap_urn = CapUrn::from_string(&cap_urn_str).ok();
 
@@ -384,7 +386,11 @@ pub fn parse_notation_ast(input: &str) -> NotationAST {
                 let arrow1 = inner_pairs.next();
                 let mut arrow_spans = Vec::new();
                 if let Some(ref a) = arrow1 {
-                    arrow_spans.push(pest_span_to_notation_span(&a.as_span(), trimmed, trim_start));
+                    arrow_spans.push(pest_span_to_notation_span(
+                        &a.as_span(),
+                        trimmed,
+                        trim_start,
+                    ));
                 }
 
                 // loop_cap (optional LOOP + alias)
@@ -398,7 +404,11 @@ pub fn parse_notation_ast(input: &str) -> NotationAST {
                 // Second arrow
                 let arrow2 = inner_pairs.next();
                 if let Some(ref a) = arrow2 {
-                    arrow_spans.push(pest_span_to_notation_span(&a.as_span(), trimmed, trim_start));
+                    arrow_spans.push(pest_span_to_notation_span(
+                        &a.as_span(),
+                        trimmed,
+                        trim_start,
+                    ));
                 }
 
                 // Target alias
@@ -407,7 +417,8 @@ pub fn parse_notation_ast(input: &str) -> NotationAST {
                     None => continue,
                 };
                 let target = target_pair.as_str().to_string();
-                let target_span = pest_span_to_notation_span(&target_pair.as_span(), trimmed, trim_start);
+                let target_span =
+                    pest_span_to_notation_span(&target_pair.as_span(), trimmed, trim_start);
 
                 let wiring = ParsedWiring {
                     sources,
@@ -536,12 +547,12 @@ pub fn should_suggest_loop_keyword(ast: &NotationAST, line: usize, character: us
             continue;
         };
 
-        let at_or_after_first_arrow =
-            line > first_arrow_span.end.line
-                || (line == first_arrow_span.end.line && character >= first_arrow_span.end.character);
+        let at_or_after_first_arrow = line > first_arrow_span.end.line
+            || (line == first_arrow_span.end.line && character >= first_arrow_span.end.character);
         let before_second_arrow = wiring.arrow_spans.get(1).map_or(true, |second_arrow_span| {
             line < second_arrow_span.start.line
-                || (line == second_arrow_span.start.line && character <= second_arrow_span.start.character)
+                || (line == second_arrow_span.start.line
+                    && character <= second_arrow_span.start.character)
         });
 
         if !at_or_after_first_arrow || !before_second_arrow {
@@ -552,7 +563,11 @@ pub fn should_suggest_loop_keyword(ast: &NotationAST, line: usize, character: us
             return false;
         };
 
-        return ast.node_is_sequence.get(source_name).copied().unwrap_or(false);
+        return ast
+            .node_is_sequence
+            .get(source_name)
+            .copied()
+            .unwrap_or(false);
     }
 
     false
@@ -572,7 +587,11 @@ pub fn should_suggest_loop_keyword(ast: &NotationAST, line: usize, character: us
 /// 3. Examine the text between `[` and cursor to determine context
 ///
 /// Returns the context type and the prefix string typed so far.
-pub fn get_completion_context(text: &str, line: usize, character: usize) -> (CompletionContextType, String) {
+pub fn get_completion_context(
+    text: &str,
+    line: usize,
+    character: usize,
+) -> (CompletionContextType, String) {
     // Convert (line, character) to byte offset
     let offset = match line_char_to_offset(text, line, character) {
         Some(o) => o,
@@ -770,7 +789,9 @@ pub fn build_editor_model(
                     kind: NotationEntityKind::CapUrn,
                     range: header.cap_urn_span.clone(),
                     label: header.cap_urn_str.clone(),
-                    detail: cap_details.get(&header.cap_urn_str).map(|(title, _, _)| title.clone()),
+                    detail: cap_details
+                        .get(&header.cap_urn_str)
+                        .map(|(title, _, _)| title.clone()),
                     hover_markdown: Some(format_cap_urn_hover(
                         &header.cap_urn_str,
                         &header.cap_urn,
@@ -866,7 +887,10 @@ pub fn build_editor_model(
                     kind: NotationEntityKind::Node,
                     range: wiring.target_span.clone(),
                     label: wiring.target.clone(),
-                    detail: ast.node_media.get(&wiring.target).map(|urn| urn.to_string()),
+                    detail: ast
+                        .node_media
+                        .get(&wiring.target)
+                        .map(|urn| urn.to_string()),
                     hover_markdown: Some(format_node_hover(
                         &wiring.target,
                         &ast.node_media,
@@ -989,10 +1013,7 @@ pub fn emit_semantic_tokens(ast: &NotationAST, _input: &str) -> Vec<SemanticToke
                 // level concept — breaking them up into a rainbow of
                 // per-subtoken colors is noise. The `CapPrefix` token
                 // type acts as the "cap URN" color.
-                tokens.push(span_to_token(
-                    &h.cap_urn_span,
-                    SemanticTokenType::CapPrefix,
-                ));
+                tokens.push(span_to_token(&h.cap_urn_span, SemanticTokenType::CapPrefix));
             }
             ParsedStatement::Wiring(w) => {
                 // Parens for fan-in groups
@@ -1032,7 +1053,9 @@ pub fn emit_semantic_tokens(ast: &NotationAST, _input: &str) -> Vec<SemanticToke
 
     // Sort by position
     tokens.sort_by(|a, b| {
-        a.line.cmp(&b.line).then(a.start_character.cmp(&b.start_character))
+        a.line
+            .cmp(&b.line)
+            .then(a.start_character.cmp(&b.start_character))
     });
 
     tokens
@@ -1115,7 +1138,10 @@ fn line_char_to_offset(text: &str, line: usize, character: usize) -> Option<usiz
 }
 
 fn is_completion_boundary_char(ch: char) -> bool {
-    matches!(ch, ' ' | '[' | ']' | ';' | '=' | '>' | '(' | ')' | ',' | '\n' | '\r' | '\t')
+    matches!(
+        ch,
+        ' ' | '[' | ']' | ';' | '=' | '>' | '(' | ')' | ',' | '\n' | '\r' | '\t'
+    )
 }
 
 /// Resolve the `(token_id, graph_id)` pair for a node by name, creating
@@ -1270,7 +1296,11 @@ fn parse_source_with_spans(
     pair: &pest::iterators::Pair<Rule>,
     source: &str,
     offset: usize,
-) -> (Vec<(String, NotationSpan)>, Option<(NotationSpan, NotationSpan)>, Vec<NotationSpan>) {
+) -> (
+    Vec<(String, NotationSpan)>,
+    Option<(NotationSpan, NotationSpan)>,
+    Vec<NotationSpan>,
+) {
     let mut sources = Vec::new();
     let mut paren_spans = None;
     let mut comma_spans = Vec::new();
@@ -1367,8 +1397,14 @@ fn parse_loop_cap_with_spans(
     let mut is_loop = false;
     let mut cap_alias = String::new();
     let mut cap_alias_span = NotationSpan {
-        start: NotationPosition { line: 0, character: 0 },
-        end: NotationPosition { line: 0, character: 0 },
+        start: NotationPosition {
+            line: 0,
+            character: 0,
+        },
+        end: NotationPosition {
+            line: 0,
+            character: 0,
+        },
         start_byte: 0,
         end_byte: 0,
     };
@@ -1378,7 +1414,8 @@ fn parse_loop_cap_with_spans(
         match inner.as_rule() {
             Rule::loop_keyword => {
                 is_loop = true;
-                loop_keyword_span = Some(pest_span_to_notation_span(&inner.as_span(), source, offset));
+                loop_keyword_span =
+                    Some(pest_span_to_notation_span(&inner.as_span(), source, offset));
             }
             Rule::alias => {
                 cap_alias = inner.as_str().to_string();
@@ -1415,7 +1452,10 @@ fn push_cap_urn_properties(md: &mut String, cap_urn: &CapUrn) {
     }
 }
 
-fn format_alias_hover(header: &ParsedHeader, cap_details: &HashMap<String, (String, String, Option<String>)>) -> String {
+fn format_alias_hover(
+    header: &ParsedHeader,
+    cap_details: &HashMap<String, (String, String, Option<String>)>,
+) -> String {
     let mut md = format!("**{}** — capability alias\n\n", header.alias);
 
     md.push_str(&format!("`{}`\n\n", header.cap_urn_str));
@@ -1659,13 +1699,18 @@ fn span_to_token(span: &NotationSpan, token_type: SemanticTokenType) -> Semantic
 mod tests {
     use super::*;
 
+    // TEST1192: Parsing a simple header and wiring produces a valid AST with both statements.
     #[test]
-    fn parse_simple_header_and_wiring() {
+    fn test1192_parse_simple_header_and_wiring() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
 [doc -> extract -> text]"#;
         let ast = parse_notation_ast(input);
 
-        assert!(ast.error.is_none(), "expected no error, got: {:?}", ast.error);
+        assert!(
+            ast.error.is_none(),
+            "expected no error, got: {:?}",
+            ast.error
+        );
         assert_eq!(ast.statements.len(), 2);
         assert_eq!(ast.bracket_spans.len(), 2);
 
@@ -1679,15 +1724,17 @@ mod tests {
         assert!(ast.node_media.contains_key("text"));
     }
 
+    // TEST1193: Parsing empty notation returns an error in the AST.
     #[test]
-    fn parse_empty_returns_error() {
+    fn test1193_parse_empty_returns_error() {
         let ast = parse_notation_ast("");
         assert!(matches!(ast.error, Some(MachineSyntaxError::Empty)));
         assert!(ast.statements.is_empty());
     }
 
+    // TEST1194: Parsing invalid notation still returns a partial AST alongside the error.
     #[test]
-    fn parse_invalid_returns_partial_ast() {
+    fn test1194_parse_invalid_returns_partial_ast() {
         let input = "[extract cap:in=broken";
         let ast = parse_notation_ast(input);
 
@@ -1696,8 +1743,9 @@ mod tests {
         assert!(!ast.bracket_spans.is_empty() || ast.statements.is_empty());
     }
 
+    // TEST1195: Parsing loop wiring records the loop structure in the notation AST.
     #[test]
-    fn parse_loop_wiring() {
+    fn test1195_parse_loop_wiring() {
         let input = concat!(
             r#"[p2t cap:in="media:page";op=page_to_text;out="media:txt"]"#,
             "\n[pages -> LOOP p2t -> texts]"
@@ -1707,7 +1755,11 @@ mod tests {
 
         // Find the wiring statement
         let wiring = ast.statements.iter().find_map(|s| {
-            if let ParsedStatement::Wiring(w) = s { Some(w) } else { None }
+            if let ParsedStatement::Wiring(w) = s {
+                Some(w)
+            } else {
+                None
+            }
         });
         let wiring = wiring.expect("should have a wiring statement");
         assert!(wiring.is_loop);
@@ -1715,17 +1767,26 @@ mod tests {
         assert_eq!(wiring.cap_alias, "p2t");
     }
 
+    // TEST1196: Parsing a fan-in group records grouped input sources correctly.
     #[test]
-    fn parse_fan_in_group() {
+    fn test1196_parse_fan_in_group() {
         let input = concat!(
             r#"[describe cap:in="media:image;png";op=describe;out="media:txt"]"#,
             "\n[(thumbnail, model_spec) -> describe -> description]"
         );
         let ast = parse_notation_ast(input);
 
-        let wiring = ast.statements.iter().find_map(|s| {
-            if let ParsedStatement::Wiring(w) = s { Some(w) } else { None }
-        }).expect("should have a wiring");
+        let wiring = ast
+            .statements
+            .iter()
+            .find_map(|s| {
+                if let ParsedStatement::Wiring(w) = s {
+                    Some(w)
+                } else {
+                    None
+                }
+            })
+            .expect("should have a wiring");
 
         assert_eq!(wiring.sources.len(), 2);
         assert_eq!(wiring.sources[0].0, "thumbnail");
@@ -1738,34 +1799,39 @@ mod tests {
     // Completion context detection
     // =========================================================================
 
+    // TEST1197: Completion context after an opening bracket identifies header-start context.
     #[test]
-    fn context_after_open_bracket() {
+    fn test1197_context_after_open_bracket() {
         let (ctx, _) = get_completion_context("[", 0, 1);
         assert_eq!(ctx, CompletionContextType::HeaderStart);
     }
 
+    // TEST1198: Completion context after the cap prefix identifies cap-URN editing context.
     #[test]
-    fn context_after_cap_prefix() {
+    fn test1198_context_after_cap_prefix() {
         let (ctx, prefix) = get_completion_context("[alias cap:", 0, 11);
         assert_eq!(ctx, CompletionContextType::CapUrn);
         assert!(prefix.starts_with("cap:"));
     }
 
+    // TEST1199: Completion context inside a media URN is recognized correctly.
     #[test]
-    fn context_in_media_urn() {
+    fn test1199_context_in_media_urn() {
         let (ctx, prefix) = get_completion_context(r#"[alias cap:in="media:pd"#, 0, 22);
         assert_eq!(ctx, CompletionContextType::MediaUrn);
         assert!(prefix.starts_with("media:"));
     }
 
+    // TEST1200: Completion context after an arrow identifies the expected next token position.
     #[test]
-    fn context_after_arrow() {
+    fn test1200_context_after_arrow() {
         let (ctx, _) = get_completion_context("[doc -> ", 0, 8);
         assert_eq!(ctx, CompletionContextType::WiringTarget);
     }
 
+    // TEST1201: Completion context outside brackets is recognized as the outer notation context.
     #[test]
-    fn context_outside_brackets() {
+    fn test1201_context_outside_brackets() {
         let (ctx, _) = get_completion_context("hello", 0, 3);
         assert_eq!(ctx, CompletionContextType::HeaderStart);
     }
@@ -1774,31 +1840,59 @@ mod tests {
     // Semantic tokens
     // =========================================================================
 
+    // TEST1202: Semantic token generation marks the expected token kinds for simple notation.
     #[test]
-    fn semantic_tokens_simple() {
+    fn test1202_semantic_tokens_simple() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt"]
 [doc -> extract -> text]"#;
         let ast = parse_notation_ast(input);
         let tokens = emit_semantic_tokens(&ast, input);
 
         // Should have bracket tokens (4 = 2 statements x 2 brackets)
-        let bracket_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Bracket).count();
+        let bracket_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::Bracket)
+            .count();
         assert_eq!(bracket_count, 4);
 
         // Should have arrow tokens
-        let arrow_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Arrow).count();
-        assert!(arrow_count >= 2, "expected at least 2 arrows, got {}", arrow_count);
+        let arrow_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::Arrow)
+            .count();
+        assert!(
+            arrow_count >= 2,
+            "expected at least 2 arrows, got {}",
+            arrow_count
+        );
 
         // Should have alias tokens (extract in header, extract in wiring)
-        let alias_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Alias).count();
-        assert!(alias_count >= 2, "expected at least 2 aliases, got {}", alias_count);
+        let alias_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::Alias)
+            .count();
+        assert!(
+            alias_count >= 2,
+            "expected at least 2 aliases, got {}",
+            alias_count
+        );
 
         // Should have node tokens (doc, text)
-        let node_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Node).count();
-        assert!(node_count >= 2, "expected at least 2 nodes, got {}", node_count);
+        let node_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::Node)
+            .count();
+        assert!(
+            node_count >= 2,
+            "expected at least 2 nodes, got {}",
+            node_count
+        );
 
         // Should have cap: prefix
-        let cap_prefix_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::CapPrefix).count();
+        let cap_prefix_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::CapPrefix)
+            .count();
         assert_eq!(cap_prefix_count, 1);
     }
 
@@ -1817,8 +1911,9 @@ mod tests {
             .expect("expected an entity at the given position")
     }
 
+    // TEST1203: Editor model hover metadata resolves correctly for an alias definition.
     #[test]
-    fn editor_model_entity_hover_for_alias_definition() {
+    fn test1203_editor_model_entity_hover_for_alias_definition() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt"]
 [doc -> extract -> text]"#;
         let ast = parse_notation_ast(input);
@@ -1827,15 +1922,19 @@ mod tests {
         let entity = entity_at(&entities, 0, 1);
         assert_eq!(entity.kind, NotationEntityKind::AliasDefinition);
         let md = entity.hover_markdown.as_deref().unwrap_or("");
-        assert!(md.contains("extract"), "alias hover should mention alias name");
+        assert!(
+            md.contains("extract"),
+            "alias hover should mention alias name"
+        );
         assert!(
             md.contains("capability alias"),
             "alias hover should identify type"
         );
     }
 
+    // TEST1204: Editor model hover metadata resolves correctly for a wiring source node reference.
     #[test]
-    fn editor_model_entity_hover_for_wiring_source_node() {
+    fn test1204_editor_model_entity_hover_for_wiring_source_node() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt"]
 [doc -> extract -> text]"#;
         let ast = parse_notation_ast(input);
@@ -1848,8 +1947,9 @@ mod tests {
         assert!(md.contains("node"), "node hover should identify type");
     }
 
+    // TEST1205: Editor model hover metadata resolves correctly for the loop keyword.
     #[test]
-    fn editor_model_entity_hover_for_loop_keyword() {
+    fn test1205_editor_model_entity_hover_for_loop_keyword() {
         let input = concat!(
             r#"[p2t cap:in="media:page";op=page_to_text;out="media:txt"]"#,
             "\n[pages -> LOOP p2t -> texts]"
@@ -1860,11 +1960,15 @@ mod tests {
         let entity = entity_at(&entities, 1, 10);
         assert_eq!(entity.kind, NotationEntityKind::LoopKeyword);
         let md = entity.hover_markdown.as_deref().unwrap_or("");
-        assert!(md.contains("ForEach"), "loop hover should explain semantics");
+        assert!(
+            md.contains("ForEach"),
+            "loop hover should explain semantics"
+        );
     }
 
+    // TEST1206: The editor model graph includes the expected nodes and edges from parsed notation.
     #[test]
-    fn editor_model_graph_contains_nodes_and_edges() {
+    fn test1206_editor_model_graph_contains_nodes_and_edges() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt"]
 [doc -> extract -> text]"#;
         let ast = parse_notation_ast(input);
@@ -1883,13 +1987,17 @@ mod tests {
             .filter(|e| e.kind == NotationGraphElementKind::Edge)
             .count();
 
-        assert_eq!(node_count, 2, "expected one node element per unique node name");
+        assert_eq!(
+            node_count, 2,
+            "expected one node element per unique node name"
+        );
         assert_eq!(cap_count, 1, "expected one cap element per wiring");
         assert_eq!(edge_count, 2, "expected one input edge and one output edge");
     }
 
+    // TEST1207: Cap alias tokens and arrow tokens share the same graph token identity for the cap.
     #[test]
-    fn editor_model_cap_alias_and_arrows_share_token_id_with_graph_cap() {
+    fn test1207_editor_model_cap_alias_and_arrows_share_token_id_with_graph_cap() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt"]
 [doc -> extract -> text]"#;
         let ast = parse_notation_ast(input);
@@ -1932,8 +2040,9 @@ mod tests {
         }
     }
 
+    // TEST1208: Node references share the same token identity as their graph node in the editor model.
     #[test]
-    fn editor_model_node_references_share_token_id_with_graph_node() {
+    fn test1208_editor_model_node_references_share_token_id_with_graph_node() {
         // Same node name referenced from two wirings should resolve to
         // ONE logical token and ONE graph node with a shared token_id.
         let input = concat!(
@@ -1981,65 +2090,81 @@ mod tests {
     // Line-based mode
     // =========================================================================
 
+    // TEST1209: Parsing line-based headers and wirings produces the expected AST.
     #[test]
-    fn parse_line_based_header_and_wiring() {
+    fn test1209_parse_line_based_header_and_wiring() {
         let input = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
 doc -> extract -> text"#;
         let ast = parse_notation_ast(input);
 
-        assert!(ast.error.is_none(), "expected no error, got: {:?}", ast.error);
+        assert!(
+            ast.error.is_none(),
+            "expected no error, got: {:?}",
+            ast.error
+        );
         assert_eq!(ast.statements.len(), 2);
         // Line-based statements have no bracket spans
         assert_eq!(ast.bracket_spans.len(), 0);
         assert!(ast.alias_map.contains_key("extract"));
     }
 
+    // TEST1210: Parsing mixed bracketed and line-based notation works within the same document.
     #[test]
-    fn parse_mixed_bracketed_and_line_based() {
+    fn test1210_parse_mixed_bracketed_and_line_based() {
         let input = r#"[extract cap:in="media:pdf";op=extract;out="media:txt;textable"]
 doc -> extract -> text"#;
         let ast = parse_notation_ast(input);
 
-        assert!(ast.error.is_none(), "expected no error, got: {:?}", ast.error);
+        assert!(
+            ast.error.is_none(),
+            "expected no error, got: {:?}",
+            ast.error
+        );
         assert_eq!(ast.statements.len(), 2);
         // Only the bracketed statement has bracket spans
         assert_eq!(ast.bracket_spans.len(), 1);
     }
 
+    // TEST1211: Line-based completion recognizes header context at the current cursor.
     #[test]
-    fn line_based_completion_context_header() {
+    fn test1211_line_based_completion_context_header() {
         let (ctx, _) = get_completion_context("extract cap:", 0, 12);
         assert_eq!(ctx, CompletionContextType::CapUrn);
     }
 
+    // TEST1212: Line-based completion recognizes wiring context at the current cursor.
     #[test]
-    fn line_based_completion_context_wiring() {
+    fn test1212_line_based_completion_context_wiring() {
         let (ctx, _) = get_completion_context("doc -> ", 0, 7);
         assert_eq!(ctx, CompletionContextType::WiringTarget);
     }
 
+    // TEST1213: Line-based completion recognizes an existing wiring source context.
     #[test]
-    fn line_based_completion_context_existing_wiring_source() {
+    fn test1213_line_based_completion_context_existing_wiring_source() {
         let (ctx, prefix) = get_completion_context("document -> extract -> text", 0, 3);
         assert_eq!(ctx, CompletionContextType::WiringSource);
         assert_eq!(prefix, "doc");
     }
 
+    // TEST1214: Bracketed completion recognizes an existing wiring source context.
     #[test]
-    fn bracketed_completion_context_existing_wiring_source() {
+    fn test1214_bracketed_completion_context_existing_wiring_source() {
         let (ctx, prefix) = get_completion_context("[document -> extract -> text]", 0, 4);
         assert_eq!(ctx, CompletionContextType::WiringSource);
         assert_eq!(prefix, "doc");
     }
 
+    // TEST1215: Line-based completion recognizes the start-of-line notation context.
     #[test]
-    fn line_based_completion_context_start() {
+    fn test1215_line_based_completion_context_start() {
         let (ctx, _) = get_completion_context("ex", 0, 2);
         assert_eq!(ctx, CompletionContextType::HeaderStart);
     }
 
+    // TEST1216: Loop keyword completion is suggested only when the source is a sequence.
     #[test]
-    fn loop_keyword_suggested_only_for_sequence_source() {
+    fn test1216_loop_keyword_suggested_only_for_sequence_source() {
         let ast = parse_notation_ast(concat!(
             r#"p2t cap:in="media:page";op=page_to_text;out="media:txt""#,
             "\n",
@@ -2052,8 +2177,9 @@ doc -> extract -> text"#;
         );
     }
 
+    // TEST1217: Loop keyword completion is not suggested for scalar sources.
     #[test]
-    fn loop_keyword_not_suggested_for_scalar_source() {
+    fn test1217_loop_keyword_not_suggested_for_scalar_source() {
         let ast = parse_notation_ast(concat!(
             r#"extract cap:in="media:pdf";op=extract;out="media:txt""#,
             "\n",
@@ -2066,45 +2192,67 @@ doc -> extract -> text"#;
         );
     }
 
+    // TEST1218: Semantic tokens are produced correctly for line-based notation without brackets.
     #[test]
-    fn line_based_semantic_tokens_no_brackets() {
+    fn test1218_line_based_semantic_tokens_no_brackets() {
         let input = r#"extract cap:in="media:pdf";op=extract;out="media:txt;textable"
 doc -> extract -> text"#;
         let ast = parse_notation_ast(input);
         let tokens = emit_semantic_tokens(&ast, input);
 
         // No bracket tokens for line-based statements
-        let bracket_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Bracket).count();
+        let bracket_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::Bracket)
+            .count();
         assert_eq!(bracket_count, 0);
 
         // Should still have other tokens
-        let alias_count = tokens.iter().filter(|t| t.token_type == SemanticTokenType::Alias).count();
-        assert!(alias_count >= 2, "expected at least 2 aliases, got {}", alias_count);
+        let alias_count = tokens
+            .iter()
+            .filter(|t| t.token_type == SemanticTokenType::Alias)
+            .count();
+        assert!(
+            alias_count >= 2,
+            "expected at least 2 aliases, got {}",
+            alias_count
+        );
     }
 
     // =========================================================================
     // Position conversion
     // =========================================================================
 
+    // TEST1219: Byte offsets are converted to line and character positions correctly.
     #[test]
-    fn byte_offset_to_position_works() {
+    fn test1219_byte_offset_to_position_works() {
         let text = "line0\nline1\nline2";
         assert_eq!(
             byte_offset_to_position(text, 0),
-            NotationPosition { line: 0, character: 0 }
+            NotationPosition {
+                line: 0,
+                character: 0
+            }
         );
         assert_eq!(
             byte_offset_to_position(text, 6),
-            NotationPosition { line: 1, character: 0 }
+            NotationPosition {
+                line: 1,
+                character: 0
+            }
         );
         assert_eq!(
             byte_offset_to_position(text, 12),
-            NotationPosition { line: 2, character: 0 }
+            NotationPosition {
+                line: 2,
+                character: 0
+            }
         );
     }
 
+    // TEST1220: Line and character coordinates are converted back to byte offsets correctly.
     #[test]
-    fn line_char_to_offset_works() {
+    fn test1220_line_char_to_offset_works() {
         let text = "line0\nline1\nline2";
         assert_eq!(line_char_to_offset(text, 0, 0), Some(0));
         assert_eq!(line_char_to_offset(text, 1, 0), Some(6));

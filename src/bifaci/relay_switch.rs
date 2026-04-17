@@ -54,7 +54,7 @@
 //! - Each execute_fanin spawns its own pump that cooperatively routes frames
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
-use crate::bifaci::io::{CborError, FrameReader, FrameWriter, identity_nonce};
+use crate::bifaci::io::{identity_nonce, CborError, FrameReader, FrameWriter};
 use crate::cap::registry::CapRegistry;
 use crate::planner::live_cap_graph::{LiveCapGraph, ReachableTargetInfo, Strand};
 use crate::urn::media_urn::MediaUrn;
@@ -63,8 +63,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{BufReader, BufWriter};
-use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{error, info, warn};
 
@@ -206,7 +206,8 @@ pub struct RelaySwitch {
     /// Used to know where to send frames back
     origin_map: RwLock<HashMap<(MessageId, MessageId), Option<usize>>>,
     /// Response channels for external execute_cap calls: (xid, rid) → sender
-    external_response_channels: RwLock<HashMap<(MessageId, MessageId), mpsc::UnboundedSender<Frame>>>,
+    external_response_channels:
+        RwLock<HashMap<(MessageId, MessageId), mpsc::UnboundedSender<Frame>>>,
     /// Aggregate capabilities (union of all masters)
     aggregate_capabilities: RwLock<Vec<u8>>,
     /// Aggregate installed cartridge identities (union of all healthy masters)
@@ -247,7 +248,10 @@ impl RelaySwitch {
     ///
     /// The cap_registry is used to look up Cap definitions for building the
     /// LiveCapGraph for path finding and reachability queries.
-    pub async fn new(sockets: Vec<UnixStream>, cap_registry: Arc<CapRegistry>) -> Result<Self, RelaySwitchError> {
+    pub async fn new(
+        sockets: Vec<UnixStream>,
+        cap_registry: Arc<CapRegistry>,
+    ) -> Result<Self, RelaySwitchError> {
         let mut masters = Vec::new();
         let (frame_tx, frame_rx) = mpsc::unbounded_channel();
         let xid_counter = AtomicU64::new(0);
@@ -262,11 +266,16 @@ impl RelaySwitch {
             let mut socket_writer = FrameWriter::new(BufWriter::new(write_half));
 
             // Read RelayNotify (first frame from each master)
-            let notify_frame = socket_reader.read().await
+            let notify_frame = socket_reader
+                .read()
+                .await
                 .map_err(|e| RelaySwitchError::Cbor(format!("master {}: {}", master_idx, e)))?
-                .ok_or_else(|| RelaySwitchError::Protocol(
-                    format!("master {}: connection closed before RelayNotify", master_idx)
-                ))?;
+                .ok_or_else(|| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: connection closed before RelayNotify",
+                        master_idx
+                    ))
+                })?;
 
             if notify_frame.frame_type != FrameType::RelayNotify {
                 return Err(RelaySwitchError::Protocol(format!(
@@ -275,10 +284,14 @@ impl RelaySwitch {
                 )));
             }
 
-            let mut caps_payload = notify_frame.relay_notify_manifest()
-                .ok_or_else(|| RelaySwitchError::Protocol(
-                    format!("master {}: RelayNotify has no manifest", master_idx)
-                ))?
+            let mut caps_payload = notify_frame
+                .relay_notify_manifest()
+                .ok_or_else(|| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: RelayNotify has no manifest",
+                        master_idx
+                    ))
+                })?
                 .to_vec();
 
             let mut payload = parse_relay_notify_payload(&caps_payload)?;
@@ -300,51 +313,89 @@ impl RelaySwitch {
                 let mut req = Frame::req(req_id.clone(), CAP_IDENTITY, vec![], "application/cbor");
                 req.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut req);
-                socket_writer.write(&req).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                    "master {}: identity verification send failed: {}", master_idx, e
-                )))?;
+                socket_writer.write(&req).await.map_err(|e| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: identity verification send failed: {}",
+                        master_idx, e
+                    ))
+                })?;
 
-                let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string(), None);
+                let mut ss = Frame::stream_start(
+                    req_id.clone(),
+                    stream_id.clone(),
+                    "media:".to_string(),
+                    None,
+                );
                 ss.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut ss);
-                socket_writer.write(&ss).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                    "master {}: identity verification send failed: {}", master_idx, e
-                )))?;
+                socket_writer.write(&ss).await.map_err(|e| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: identity verification send failed: {}",
+                        master_idx, e
+                    ))
+                })?;
 
                 let checksum = Frame::compute_checksum(&nonce);
-                let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, nonce.clone(), 0, checksum);
+                let mut chunk = Frame::chunk(
+                    req_id.clone(),
+                    stream_id.clone(),
+                    0,
+                    nonce.clone(),
+                    0,
+                    checksum,
+                );
                 chunk.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut chunk);
-                socket_writer.write(&chunk).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                    "master {}: identity verification send failed: {}", master_idx, e
-                )))?;
+                socket_writer.write(&chunk).await.map_err(|e| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: identity verification send failed: {}",
+                        master_idx, e
+                    ))
+                })?;
 
                 let mut se = Frame::stream_end(req_id.clone(), stream_id, 1);
                 se.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut se);
-                socket_writer.write(&se).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                    "master {}: identity verification send failed: {}", master_idx, e
-                )))?;
+                socket_writer.write(&se).await.map_err(|e| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: identity verification send failed: {}",
+                        master_idx, e
+                    ))
+                })?;
 
                 let mut end = Frame::end(req_id.clone(), None);
                 end.routing_id = Some(xid.clone());
                 seq_assigner.assign(&mut end);
-                socket_writer.write(&end).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                    "master {}: identity verification send failed: {}", master_idx, e
-                )))?;
+                socket_writer.write(&end).await.map_err(|e| {
+                    RelaySwitchError::Protocol(format!(
+                        "master {}: identity verification send failed: {}",
+                        master_idx, e
+                    ))
+                })?;
 
-                seq_assigner.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
+                seq_assigner.remove(&FlowKey {
+                    rid: req_id.clone(),
+                    xid: Some(xid.clone()),
+                });
 
                 // Read response — expect STREAM_START → CHUNK(s) → STREAM_END → END
                 let mut accumulated = Vec::new();
                 loop {
-                    let frame = socket_reader.read().await
-                        .map_err(|e| RelaySwitchError::Protocol(format!(
-                            "master {}: identity verification read failed: {}", master_idx, e
-                        )))?
-                        .ok_or_else(|| RelaySwitchError::Protocol(format!(
-                            "master {}: connection closed during identity verification", master_idx
-                        )))?;
+                    let frame = socket_reader
+                        .read()
+                        .await
+                        .map_err(|e| {
+                            RelaySwitchError::Protocol(format!(
+                                "master {}: identity verification read failed: {}",
+                                master_idx, e
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            RelaySwitchError::Protocol(format!(
+                                "master {}: connection closed during identity verification",
+                                master_idx
+                            ))
+                        })?;
 
                     match frame.frame_type {
                         FrameType::RelayNotify => {
@@ -379,7 +430,8 @@ impl RelaySwitch {
                             let code = frame.error_code().unwrap_or("UNKNOWN");
                             let msg = frame.error_message().unwrap_or("no message");
                             return Err(RelaySwitchError::Protocol(format!(
-                                "master {}: identity verification failed: [{code}] {msg}", master_idx
+                                "master {}: identity verification failed: [{code}] {msg}",
+                                master_idx
                             )));
                         }
                         other => {
@@ -419,20 +471,33 @@ impl RelaySwitch {
                         Ok(Some(frame)) => {
                             tracing::debug!(
                                 "[RelaySwitch] master {} reader: {:?} id={:?} xid={:?}",
-                                master_idx, frame.frame_type, frame.id, frame.routing_id
+                                master_idx,
+                                frame.frame_type,
+                                frame.id,
+                                frame.routing_id
                             );
                             if tx.send((master_idx, Ok(frame))).is_err() {
-                                tracing::warn!("[RelaySwitch] master {} reader: frame_tx closed", master_idx);
+                                tracing::warn!(
+                                    "[RelaySwitch] master {} reader: frame_tx closed",
+                                    master_idx
+                                );
                                 break;
                             }
                         }
                         Ok(None) => {
-                            tracing::warn!("[RelaySwitch] master {} reader: socket closed (EOF)", master_idx);
+                            tracing::warn!(
+                                "[RelaySwitch] master {} reader: socket closed (EOF)",
+                                master_idx
+                            );
                             let _ = tx.send((master_idx, Err(CborError::UnexpectedEof)));
                             break;
                         }
                         Err(e) => {
-                            tracing::error!("[RelaySwitch] master {} reader: socket error: {}", master_idx, e);
+                            tracing::error!(
+                                "[RelaySwitch] master {} reader: socket error: {}",
+                                master_idx,
+                                e
+                            );
                             let _ = tx.send((master_idx, Err(e)));
                             break;
                         }
@@ -529,7 +594,15 @@ impl RelaySwitch {
         F: FnMut(crate::planner::PathFindingEvent),
     {
         let graph = self.live_cap_graph.read().await;
-        graph.find_paths_streaming(source, target, is_sequence, max_depth, max_paths, cancelled, on_event)
+        graph.find_paths_streaming(
+            source,
+            target,
+            is_sequence,
+            max_depth,
+            max_paths,
+            cancelled,
+            on_event,
+        )
     }
 
     /// Get the cap registry used by this switch.
@@ -571,7 +644,10 @@ impl RelaySwitch {
     /// Get the count of healthy masters.
     pub async fn healthy_master_count(&self) -> usize {
         let masters = self.masters.read().await;
-        masters.iter().filter(|m| m.healthy.load(Ordering::SeqCst)).count()
+        masters
+            .iter()
+            .filter(|m| m.healthy.load(Ordering::SeqCst))
+            .count()
     }
 
     /// Execute a cap and return a receiver for streaming response frames.
@@ -606,16 +682,20 @@ impl RelaySwitch {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Find master that can handle this cap (no preference for internal requests)
-        let dest_idx = self.find_master_for_cap(cap_urn, None).await.ok_or_else(|| {
-            RelaySwitchError::NoHandler(cap_urn.to_string())
-        })?;
+        let dest_idx = self
+            .find_master_for_cap(cap_urn, None)
+            .await
+            .ok_or_else(|| RelaySwitchError::NoHandler(cap_urn.to_string()))?;
 
         // Assign XID
         let xid = MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
         let key = (xid.clone(), rid.clone());
 
         // Register response channel BEFORE sending
-        self.external_response_channels.write().await.insert(key.clone(), tx);
+        self.external_response_channels
+            .write()
+            .await
+            .insert(key.clone(), tx);
 
         // Record origin (None = external execute_cap caller)
         self.origin_map.write().await.insert(key.clone(), None);
@@ -630,7 +710,10 @@ impl RelaySwitch {
         );
 
         // Record RID → XID mapping for continuation frames (if caller sends them)
-        self.rid_to_xid.write().await.insert(rid.clone(), xid.clone());
+        self.rid_to_xid
+            .write()
+            .await
+            .insert(rid.clone(), xid.clone());
 
         // Build frame with XID
         let mut frame_with_xid = req_frame;
@@ -639,9 +722,13 @@ impl RelaySwitch {
         // Forward to destination
         tracing::info!(
             "[RelaySwitch] execute_cap: dispatching to master {} cap='{}' rid={:?} xid={:?}",
-            dest_idx, cap_urn, rid, frame_with_xid.routing_id
+            dest_idx,
+            cap_urn,
+            rid,
+            frame_with_xid.routing_id
         );
-        self.write_to_master_idx(dest_idx, &mut frame_with_xid).await?;
+        self.write_to_master_idx(dest_idx, &mut frame_with_xid)
+            .await?;
 
         Ok((rid, rx))
     }
@@ -664,9 +751,10 @@ impl RelaySwitch {
         preferred_cap: Option<&str>,
     ) -> Result<(MessageId, mpsc::UnboundedReceiver<Frame>), RelaySwitchError> {
         // Find master that can handle this cap
-        let dest_idx = self.find_master_for_cap(cap_urn, preferred_cap).await.ok_or_else(|| {
-            RelaySwitchError::NoHandler(cap_urn.to_string())
-        })?;
+        let dest_idx = self
+            .find_master_for_cap(cap_urn, preferred_cap)
+            .await
+            .ok_or_else(|| RelaySwitchError::NoHandler(cap_urn.to_string()))?;
 
         // Assign XID
         let xid = MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
@@ -676,7 +764,10 @@ impl RelaySwitch {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Register response channel BEFORE sending
-        self.external_response_channels.write().await.insert(key.clone(), tx);
+        self.external_response_channels
+            .write()
+            .await
+            .insert(key.clone(), tx);
 
         // Record origin (None = external caller)
         self.origin_map.write().await.insert(key.clone(), None);
@@ -691,9 +782,17 @@ impl RelaySwitch {
         );
 
         // Record RID → XID mapping for continuation frames
-        self.rid_to_xid.write().await.insert(rid.clone(), xid.clone());
+        self.rid_to_xid
+            .write()
+            .await
+            .insert(rid.clone(), xid.clone());
 
-        tracing::info!("[RelaySwitch] register_external_request: registered key=({:?}, {:?}) dest_master={}", xid, rid, dest_idx);
+        tracing::info!(
+            "[RelaySwitch] register_external_request: registered key=({:?}, {:?}) dest_master={}",
+            xid,
+            rid,
+            dest_idx
+        );
 
         Ok((xid, rx))
     }
@@ -710,7 +809,10 @@ impl RelaySwitch {
         let xid = match self.rid_to_xid.read().await.get(rid).cloned() {
             Some(xid) => xid,
             None => {
-                tracing::debug!("[RelaySwitch] cancel_request: unknown RID {:?} — ignoring", rid);
+                tracing::debug!(
+                    "[RelaySwitch] cancel_request: unknown RID {:?} — ignoring",
+                    rid
+                );
                 return;
             }
         };
@@ -723,7 +825,11 @@ impl RelaySwitch {
             match routing.get(&key) {
                 Some(entry) => entry.destination_master_idx,
                 None => {
-                    tracing::debug!("[RelaySwitch] cancel_request: no routing for ({:?}, {:?}) — ignoring", xid, rid);
+                    tracing::debug!(
+                        "[RelaySwitch] cancel_request: no routing for ({:?}, {:?}) — ignoring",
+                        xid,
+                        rid
+                    );
                     return;
                 }
             }
@@ -736,11 +842,19 @@ impl RelaySwitch {
         let _ = self.write_to_master_idx(dest_idx, &mut cancel_frame).await;
 
         // Collect child peer calls for recursive cancel
-        let children = self.peer_call_parents.write().await.remove(&key).unwrap_or_default();
+        let children = self
+            .peer_call_parents
+            .write()
+            .await
+            .remove(&key)
+            .unwrap_or_default();
 
         // Recursively cancel children
         for (child_xid, child_rid) in &children {
-            tracing::info!("[RelaySwitch] cancel_request: cascading cancel to child peer call rid={:?}", child_rid);
+            tracing::info!(
+                "[RelaySwitch] cancel_request: cascading cancel to child peer call rid={:?}",
+                child_rid
+            );
             // Use Box::pin for recursive async
             Box::pin(self.cancel_request(child_rid, force_kill)).await;
         }
@@ -766,13 +880,18 @@ impl RelaySwitch {
         // Snapshot all external-origin request RIDs (origin = None)
         let rids: Vec<MessageId> = {
             let origin_map = self.origin_map.read().await;
-            origin_map.iter()
+            origin_map
+                .iter()
                 .filter(|(_, origin)| origin.is_none())
                 .map(|((_, rid), _)| rid.clone())
                 .collect()
         };
 
-        tracing::info!("[RelaySwitch] cancel_all_requests: cancelling {} external requests, force_kill={}", rids.len(), force_kill);
+        tracing::info!(
+            "[RelaySwitch] cancel_all_requests: cancelling {} external requests, force_kill={}",
+            rids.len(),
+            force_kill
+        );
 
         for rid in &rids {
             self.cancel_request(rid, force_kill).await;
@@ -787,21 +906,23 @@ impl RelaySwitch {
     /// spawns a reader task, and returns the master index.
     ///
     /// This is used for dynamically connecting new hosts (e.g., Mac client connecting via gRPC).
-    pub async fn add_master(
-        &self,
-        socket: UnixStream,
-    ) -> Result<usize, RelaySwitchError> {
+    pub async fn add_master(&self, socket: UnixStream) -> Result<usize, RelaySwitchError> {
         let master_idx = self.masters.read().await.len();
         let (read_half, write_half) = socket.into_split();
         let mut socket_reader = FrameReader::new(BufReader::new(read_half));
         let mut socket_writer = FrameWriter::new(BufWriter::new(write_half));
 
         // Read RelayNotify
-        let notify_frame = socket_reader.read().await
+        let notify_frame = socket_reader
+            .read()
+            .await
             .map_err(|e| RelaySwitchError::Cbor(format!("new master {}: {}", master_idx, e)))?
-            .ok_or_else(|| RelaySwitchError::Protocol(
-                format!("new master {}: closed before RelayNotify", master_idx)
-            ))?;
+            .ok_or_else(|| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: closed before RelayNotify",
+                    master_idx
+                ))
+            })?;
 
         if notify_frame.frame_type != FrameType::RelayNotify {
             return Err(RelaySwitchError::Protocol(format!(
@@ -810,10 +931,14 @@ impl RelaySwitch {
             )));
         }
 
-        let mut caps_payload = notify_frame.relay_notify_manifest()
-            .ok_or_else(|| RelaySwitchError::Protocol(
-                format!("new master {}: RelayNotify has no manifest", master_idx)
-            ))?
+        let mut caps_payload = notify_frame
+            .relay_notify_manifest()
+            .ok_or_else(|| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: RelayNotify has no manifest",
+                    master_idx
+                ))
+            })?
             .to_vec();
 
         let mut payload = parse_relay_notify_payload(&caps_payload)?;
@@ -833,51 +958,89 @@ impl RelaySwitch {
             let mut req = Frame::req(req_id.clone(), CAP_IDENTITY, vec![], "application/cbor");
             req.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut req);
-            socket_writer.write(&req).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                "new master {}: identity send failed: {}", master_idx, e
-            )))?;
+            socket_writer.write(&req).await.map_err(|e| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: identity send failed: {}",
+                    master_idx, e
+                ))
+            })?;
 
-            let mut ss = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string(), None);
+            let mut ss = Frame::stream_start(
+                req_id.clone(),
+                stream_id.clone(),
+                "media:".to_string(),
+                None,
+            );
             ss.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut ss);
-            socket_writer.write(&ss).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                "new master {}: identity send failed: {}", master_idx, e
-            )))?;
+            socket_writer.write(&ss).await.map_err(|e| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: identity send failed: {}",
+                    master_idx, e
+                ))
+            })?;
 
             let checksum = Frame::compute_checksum(&nonce);
-            let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, nonce.clone(), 0, checksum);
+            let mut chunk = Frame::chunk(
+                req_id.clone(),
+                stream_id.clone(),
+                0,
+                nonce.clone(),
+                0,
+                checksum,
+            );
             chunk.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut chunk);
-            socket_writer.write(&chunk).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                "new master {}: identity send failed: {}", master_idx, e
-            )))?;
+            socket_writer.write(&chunk).await.map_err(|e| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: identity send failed: {}",
+                    master_idx, e
+                ))
+            })?;
 
             let mut se = Frame::stream_end(req_id.clone(), stream_id, 1);
             se.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut se);
-            socket_writer.write(&se).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                "new master {}: identity send failed: {}", master_idx, e
-            )))?;
+            socket_writer.write(&se).await.map_err(|e| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: identity send failed: {}",
+                    master_idx, e
+                ))
+            })?;
 
             let mut end = Frame::end(req_id.clone(), None);
             end.routing_id = Some(xid.clone());
             seq_assigner.assign(&mut end);
-            socket_writer.write(&end).await.map_err(|e| RelaySwitchError::Protocol(format!(
-                "new master {}: identity send failed: {}", master_idx, e
-            )))?;
+            socket_writer.write(&end).await.map_err(|e| {
+                RelaySwitchError::Protocol(format!(
+                    "new master {}: identity send failed: {}",
+                    master_idx, e
+                ))
+            })?;
 
-            seq_assigner.remove(&FlowKey { rid: req_id.clone(), xid: Some(xid.clone()) });
+            seq_assigner.remove(&FlowKey {
+                rid: req_id.clone(),
+                xid: Some(xid.clone()),
+            });
 
             // Read response
             let mut accumulated = Vec::new();
             loop {
-                let frame = socket_reader.read().await
-                    .map_err(|e| RelaySwitchError::Protocol(format!(
-                        "new master {}: identity read failed: {}", master_idx, e
-                    )))?
-                    .ok_or_else(|| RelaySwitchError::Protocol(format!(
-                        "new master {}: closed during identity verification", master_idx
-                    )))?;
+                let frame = socket_reader
+                    .read()
+                    .await
+                    .map_err(|e| {
+                        RelaySwitchError::Protocol(format!(
+                            "new master {}: identity read failed: {}",
+                            master_idx, e
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        RelaySwitchError::Protocol(format!(
+                            "new master {}: closed during identity verification",
+                            master_idx
+                        ))
+                    })?;
 
                 match frame.frame_type {
                     FrameType::RelayNotify => {
@@ -901,7 +1064,9 @@ impl RelaySwitch {
                         if accumulated != nonce {
                             return Err(RelaySwitchError::Protocol(format!(
                                 "new master {}: identity payload mismatch ({} vs {} bytes)",
-                                master_idx, nonce.len(), accumulated.len()
+                                master_idx,
+                                nonce.len(),
+                                accumulated.len()
                             )));
                         }
                         break;
@@ -910,12 +1075,14 @@ impl RelaySwitch {
                         let code = frame.error_code().unwrap_or("UNKNOWN");
                         let msg = frame.error_message().unwrap_or("no message");
                         return Err(RelaySwitchError::Protocol(format!(
-                            "new master {}: identity failed: [{code}] {msg}", master_idx
+                            "new master {}: identity failed: [{code}] {msg}",
+                            master_idx
                         )));
                     }
                     other => {
                         return Err(RelaySwitchError::Protocol(format!(
-                            "new master {}: identity: unexpected {:?}", master_idx, other
+                            "new master {}: identity: unexpected {:?}",
+                            master_idx, other
                         )));
                     }
                 }
@@ -932,21 +1099,34 @@ impl RelaySwitch {
                         if frame.frame_type != crate::bifaci::frame::FrameType::Log {
                             tracing::debug!(
                                 "[RelaySwitch] master {} reader: {:?} id={:?} xid={:?}",
-                                master_idx, frame.frame_type, frame.id, frame.routing_id
+                                master_idx,
+                                frame.frame_type,
+                                frame.id,
+                                frame.routing_id
                             );
                         }
                         if tx.send((master_idx, Ok(frame))).is_err() {
-                            tracing::warn!("[RelaySwitch] master {} reader: frame_tx closed", master_idx);
+                            tracing::warn!(
+                                "[RelaySwitch] master {} reader: frame_tx closed",
+                                master_idx
+                            );
                             break;
                         }
                     }
                     Ok(None) => {
-                        tracing::warn!("[RelaySwitch] master {} reader: socket closed (EOF)", master_idx);
+                        tracing::warn!(
+                            "[RelaySwitch] master {} reader: socket closed (EOF)",
+                            master_idx
+                        );
                         let _ = tx.send((master_idx, Err(CborError::UnexpectedEof)));
                         break;
                     }
                     Err(e) => {
-                        tracing::error!("[RelaySwitch] master {} reader: socket error: {}", master_idx, e);
+                        tracing::error!(
+                            "[RelaySwitch] master {} reader: socket error: {}",
+                            master_idx,
+                            e
+                        );
                         let _ = tx.send((master_idx, Err(e)));
                         break;
                     }
@@ -996,7 +1176,13 @@ impl RelaySwitch {
         mut frame: Frame,
         preferred_cap: Option<&str>,
     ) -> Result<(), RelaySwitchError> {
-        tracing::debug!("[RelaySwitch] send_to_master: {:?} id={:?} cap={:?} xid={:?}", frame.frame_type, frame.id, frame.cap, frame.routing_id);
+        tracing::debug!(
+            "[RelaySwitch] send_to_master: {:?} id={:?} cap={:?} xid={:?}",
+            frame.frame_type,
+            frame.id,
+            frame.cap,
+            frame.routing_id
+        );
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
@@ -1004,15 +1190,17 @@ impl RelaySwitch {
                 })?;
 
                 // Find master that can handle this cap
-                let dest_idx = self.find_master_for_cap(cap_urn, preferred_cap).await.ok_or_else(|| {
-                    RelaySwitchError::NoHandler(cap_urn.clone())
-                })?;
+                let dest_idx = self
+                    .find_master_for_cap(cap_urn, preferred_cap)
+                    .await
+                    .ok_or_else(|| RelaySwitchError::NoHandler(cap_urn.clone()))?;
 
                 // Assign XID if absent (first arrival at RelaySwitch)
                 let xid = if let Some(ref existing_xid) = frame.routing_id {
                     existing_xid.clone()
                 } else {
-                    let new_xid = MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
+                    let new_xid =
+                        MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
                     frame.routing_id = Some(new_xid.clone());
                     new_xid
                 };
@@ -1052,9 +1240,10 @@ impl RelaySwitch {
                     // Engine doesn't send XID - look it up from the REQ's RID → XID mapping
                     let rid = &frame.id;
                     let rid_to_xid = self.rid_to_xid.read().await;
-                    let looked_up_xid = rid_to_xid.get(rid).ok_or_else(|| {
-                        RelaySwitchError::UnknownRequest(rid.clone())
-                    })?.clone();
+                    let looked_up_xid = rid_to_xid
+                        .get(rid)
+                        .ok_or_else(|| RelaySwitchError::UnknownRequest(rid.clone()))?
+                        .clone();
                     frame.routing_id = Some(looked_up_xid.clone());
                     looked_up_xid
                 };
@@ -1063,9 +1252,9 @@ impl RelaySwitch {
 
                 let dest_idx = {
                     let routing = self.request_routing.read().await;
-                    let entry = routing.get(&key).ok_or_else(|| {
-                        RelaySwitchError::UnknownRequest(frame.id.clone())
-                    })?;
+                    let entry = routing
+                        .get(&key)
+                        .ok_or_else(|| RelaySwitchError::UnknownRequest(frame.id.clone()))?;
                     entry.destination_master_idx
                 };
 
@@ -1082,9 +1271,10 @@ impl RelaySwitch {
                 } else {
                     let rid = &frame.id;
                     let rid_to_xid = self.rid_to_xid.read().await;
-                    let looked_up_xid = rid_to_xid.get(rid).ok_or_else(|| {
-                        RelaySwitchError::UnknownRequest(rid.clone())
-                    })?.clone();
+                    let looked_up_xid = rid_to_xid
+                        .get(rid)
+                        .ok_or_else(|| RelaySwitchError::UnknownRequest(rid.clone()))?
+                        .clone();
                     frame.routing_id = Some(looked_up_xid.clone());
                     looked_up_xid
                 };
@@ -1093,9 +1283,9 @@ impl RelaySwitch {
 
                 let dest_idx = {
                     let routing = self.request_routing.read().await;
-                    let entry = routing.get(&key).ok_or_else(|| {
-                        RelaySwitchError::UnknownRequest(frame.id.clone())
-                    })?;
+                    let entry = routing
+                        .get(&key)
+                        .ok_or_else(|| RelaySwitchError::UnknownRequest(frame.id.clone()))?;
                     entry.destination_master_idx
                 };
 
@@ -1170,7 +1360,9 @@ impl RelaySwitch {
             }
             Err(mpsc::error::TryRecvError::Disconnected) => {
                 // All reader tasks have exited
-                Err(RelaySwitchError::Protocol("All masters disconnected".to_string()))
+                Err(RelaySwitchError::Protocol(
+                    "All masters disconnected".to_string(),
+                ))
             }
         }
     }
@@ -1178,7 +1370,10 @@ impl RelaySwitch {
     /// Wait for the next frame from any master with timeout.
     ///
     /// Returns Ok(Some(frame)) if a frame arrives, Ok(None) on timeout, Err on error.
-    pub async fn read_from_masters_timeout(&self, timeout: std::time::Duration) -> Result<Option<Frame>, RelaySwitchError> {
+    pub async fn read_from_masters_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<Option<Frame>, RelaySwitchError> {
         let start = std::time::Instant::now();
         loop {
             let remaining = timeout.saturating_sub(start.elapsed());
@@ -1200,7 +1395,9 @@ impl RelaySwitch {
                 Ok(Some((master_idx, Err(e)))) => Some((master_idx, Err(e))),
                 Ok(None) => {
                     drop(rx);
-                    return Err(RelaySwitchError::Protocol("All masters disconnected".to_string()));
+                    return Err(RelaySwitchError::Protocol(
+                        "All masters disconnected".to_string(),
+                    ));
                 }
                 Err(_elapsed) => {
                     drop(rx);
@@ -1234,8 +1431,18 @@ impl RelaySwitch {
 
     /// Low-level frame write that assigns seq and writes to the master transport.
     /// This helper does not perform master retirement on failure.
-    async fn write_to_master_idx_raw(&self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
-        tracing::debug!("[RelaySwitch] write_to_master_idx_raw: master={} {:?} id={:?} xid={:?}", master_idx, frame.frame_type, frame.id, frame.routing_id);
+    async fn write_to_master_idx_raw(
+        &self,
+        master_idx: usize,
+        frame: &mut Frame,
+    ) -> Result<(), CborError> {
+        tracing::debug!(
+            "[RelaySwitch] write_to_master_idx_raw: master={} {:?} id={:?} xid={:?}",
+            master_idx,
+            frame.frame_type,
+            frame.id,
+            frame.routing_id
+        );
 
         let masters = self.masters.read().await;
         let master = &masters[master_idx];
@@ -1261,8 +1468,18 @@ impl RelaySwitch {
 
     /// Write a frame to a master, assigning seq via the per-master SeqAssigner.
     /// Cleans up seq tracking on terminal frames (END/ERR).
-    async fn write_to_master_idx(&self, master_idx: usize, frame: &mut Frame) -> Result<(), CborError> {
-        tracing::debug!("[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}", master_idx, frame.frame_type, frame.id, frame.routing_id);
+    async fn write_to_master_idx(
+        &self,
+        master_idx: usize,
+        frame: &mut Frame,
+    ) -> Result<(), CborError> {
+        tracing::debug!(
+            "[RelaySwitch] write_to_master_idx: master={} {:?} id={:?} xid={:?}",
+            master_idx,
+            frame.frame_type,
+            frame.id,
+            frame.routing_id
+        );
 
         let write_result = self.write_to_master_idx_raw(master_idx, frame).await;
 
@@ -1270,7 +1487,10 @@ impl RelaySwitch {
             Ok(()) => Ok(()),
             Err(error) => {
                 let reason = format!("Write to master {} failed: {}", master_idx, error);
-                if let Err(cleanup_error) = self.handle_master_death_with_reason(master_idx, &reason).await {
+                if let Err(cleanup_error) = self
+                    .handle_master_death_with_reason(master_idx, &reason)
+                    .await
+                {
                     tracing::error!(
                         master_idx = master_idx,
                         write_error = %error,
@@ -1307,7 +1527,11 @@ impl RelaySwitch {
     /// Among dispatchable matches, the master whose registered cap is
     /// equivalent to the preferred cap wins. If no equivalent match, falls
     /// back to specificity-based ranking.
-    async fn find_master_for_cap(&self, cap_urn: &str, preferred_cap: Option<&str>) -> Option<usize> {
+    async fn find_master_for_cap(
+        &self,
+        cap_urn: &str,
+        preferred_cap: Option<&str>,
+    ) -> Option<usize> {
         let request_urn = match crate::CapUrn::from_string(cap_urn) {
             Ok(u) => u,
             Err(_) => return None,
@@ -1333,9 +1557,9 @@ impl RelaySwitch {
                     let specificity = registered_urn.specificity();
                     let signed_distance = specificity as isize - request_specificity as isize;
                     // Check if this registered cap is equivalent to the preferred cap
-                    let is_preferred = preferred_urn.as_ref().map_or(false, |pref| {
-                        pref.is_equivalent(&registered_urn)
-                    });
+                    let is_preferred = preferred_urn
+                        .as_ref()
+                        .map_or(false, |pref| pref.is_equivalent(&registered_urn));
                     matches.push((*master_idx, signed_distance, is_preferred));
                 }
             }
@@ -1380,40 +1604,58 @@ impl RelaySwitch {
         source_idx: usize,
         mut frame: Frame,
     ) -> Result<Option<Frame>, RelaySwitchError> {
-        tracing::debug!("[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} xid={:?}", source_idx, frame.frame_type, frame.id, frame.routing_id);
+        tracing::debug!(
+            "[RelaySwitch] handle_master_frame: from_master={} {:?} id={:?} xid={:?}",
+            source_idx,
+            frame.frame_type,
+            frame.id,
+            frame.routing_id
+        );
         match frame.frame_type {
             FrameType::Req => {
                 let cap_urn = frame.cap.as_ref().ok_or_else(|| {
                     RelaySwitchError::Protocol("REQ frame missing cap URN".to_string())
                 })?;
 
-
                 // Find destination master (no preference for peer requests)
-                let dest_idx = self.find_master_for_cap(cap_urn, None).await.ok_or_else(|| {
-                    RelaySwitchError::NoHandler(cap_urn.clone())
-                })?;
+                let dest_idx = self
+                    .find_master_for_cap(cap_urn, None)
+                    .await
+                    .ok_or_else(|| RelaySwitchError::NoHandler(cap_urn.clone()))?;
 
                 // Assign XID if absent (first arrival at RelaySwitch)
                 // REQs from cartridges should NOT have XID (per spec)
                 if frame.routing_id.is_some() {
                     return Err(RelaySwitchError::Protocol(
-                        "REQ from cartridge should not have XID".to_string()
+                        "REQ from cartridge should not have XID".to_string(),
                     ));
                 }
 
                 let xid = MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
                 frame.routing_id = Some(xid.clone());
 
-
                 let rid = frame.id.clone();
                 let key = (xid.clone(), rid.clone());
 
                 // Record RID → XID mapping for continuation frames
-                self.rid_to_xid.write().await.insert(rid.clone(), xid.clone());
+                self.rid_to_xid
+                    .write()
+                    .await
+                    .insert(rid.clone(), xid.clone());
 
                 // Record origin (where this request came from)
-                tracing::info!("[RelaySwitch] PEER_REQ: master {} → master {} cap='{}' rid={:?} xid={:?}", source_idx, dest_idx, cap_urn, rid, xid);
-                self.origin_map.write().await.insert(key.clone(), Some(source_idx));
+                tracing::info!(
+                    "[RelaySwitch] PEER_REQ: master {} → master {} cap='{}' rid={:?} xid={:?}",
+                    source_idx,
+                    dest_idx,
+                    cap_urn,
+                    rid,
+                    xid
+                );
+                self.origin_map
+                    .write()
+                    .await
+                    .insert(key.clone(), Some(source_idx));
 
                 // Register routing
                 self.request_routing.write().await.insert(
@@ -1428,8 +1670,11 @@ impl RelaySwitch {
                 self.peer_requests.write().await.insert(key.clone());
 
                 // Track parent→child for cancel cascade
-                if let Some(parent_rid) = frame.meta.as_ref().and_then(|m| m.get("parent_rid")).and_then(|v| {
-                    match v {
+                if let Some(parent_rid) = frame
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("parent_rid"))
+                    .and_then(|v| match v {
                         ciborium::Value::Bytes(bytes) if bytes.len() == 16 => {
                             let mut arr = [0u8; 16];
                             arr.copy_from_slice(bytes);
@@ -1440,12 +1685,15 @@ impl RelaySwitch {
                             Some(MessageId::Uint(n as u64))
                         }
                         _ => None,
-                    }
-                }) {
+                    })
+                {
                     // Find parent's XID from its RID
-                    if let Some(parent_xid) = self.rid_to_xid.read().await.get(&parent_rid).cloned() {
+                    if let Some(parent_xid) = self.rid_to_xid.read().await.get(&parent_rid).cloned()
+                    {
                         let parent_key = (parent_xid, parent_rid);
-                        self.peer_call_parents.write().await
+                        self.peer_call_parents
+                            .write()
+                            .await
                             .entry(parent_key)
                             .or_default()
                             .push(key);
@@ -1481,9 +1729,9 @@ impl RelaySwitch {
                     // Look up routing entry
                     let dest_idx = {
                         let routing = self.request_routing.read().await;
-                        let entry = routing.get(&key).ok_or_else(|| {
-                            RelaySwitchError::UnknownRequest(rid.clone())
-                        })?;
+                        let entry = routing
+                            .get(&key)
+                            .ok_or_else(|| RelaySwitchError::UnknownRequest(rid.clone()))?;
                         entry.destination_master_idx
                     };
 
@@ -1493,12 +1741,15 @@ impl RelaySwitch {
                         let result = origin.get(&key).copied();
                         tracing::debug!(target: "relay_switch", "origin_map lookup: key=({:?}, {:?}) result={:?}", xid, rid, result);
                         result.ok_or_else(|| {
-                            RelaySwitchError::Protocol(format!("No origin recorded for request ({:?}, {:?})", xid, rid))
+                            RelaySwitchError::Protocol(format!(
+                                "No origin recorded for request ({:?}, {:?})",
+                                xid, rid
+                            ))
                         })?
                     };
 
-                    let is_terminal = frame.frame_type == FrameType::End
-                        || frame.frame_type == FrameType::Err;
+                    let is_terminal =
+                        frame.frame_type == FrameType::End || frame.frame_type == FrameType::Err;
 
                     // Route back to origin
                     match origin_idx {
@@ -1554,7 +1805,10 @@ impl RelaySwitch {
                             }
                             self.write_to_master_idx(master_idx, &mut frame).await?;
                             if is_terminal {
-                                tracing::info!("[RelaySwitch] PEER_RESP: write to master {} completed", master_idx);
+                                tracing::info!(
+                                    "[RelaySwitch] PEER_RESP: write to master {} completed",
+                                    master_idx
+                                );
                             }
 
                             // Cleanup on terminal frame
@@ -1576,13 +1830,13 @@ impl RelaySwitch {
                     // Frame has no XID, so it's a request continuation flowing to destination
                     let rid = frame.id.clone();
 
-
                     // Look up XID from RID → XID mapping (added by the REQ)
                     let xid = {
                         let rid_to_xid = self.rid_to_xid.read().await;
-                        rid_to_xid.get(&rid).ok_or_else(|| {
-                            RelaySwitchError::UnknownRequest(rid.clone())
-                        })?.clone()
+                        rid_to_xid
+                            .get(&rid)
+                            .ok_or_else(|| RelaySwitchError::UnknownRequest(rid.clone()))?
+                            .clone()
                     };
 
                     let key = (xid.clone(), rid.clone());
@@ -1590,9 +1844,9 @@ impl RelaySwitch {
                     // Look up routing entry
                     let dest_idx = {
                         let routing = self.request_routing.read().await;
-                        let entry = routing.get(&key).ok_or_else(|| {
-                            RelaySwitchError::UnknownRequest(rid.clone())
-                        })?;
+                        let entry = routing
+                            .get(&key)
+                            .ok_or_else(|| RelaySwitchError::UnknownRequest(rid.clone()))?;
                         entry.destination_master_idx
                     };
 
@@ -1622,7 +1876,10 @@ impl RelaySwitch {
                         }
                         None => {
                             // Unknown RID — silently ignore (request may already be completed)
-                            tracing::debug!("[RelaySwitch] Cancel for unknown RID {:?} — ignoring", rid);
+                            tracing::debug!(
+                                "[RelaySwitch] Cancel for unknown RID {:?} — ignoring",
+                                rid
+                            );
                             return Ok(None);
                         }
                     }
@@ -1634,21 +1891,32 @@ impl RelaySwitch {
                     match routing.get(&key) {
                         Some(entry) => entry.destination_master_idx,
                         None => {
-                            tracing::debug!("[RelaySwitch] Cancel for unknown routing ({:?}, {:?}) — ignoring", xid, rid);
+                            tracing::debug!(
+                                "[RelaySwitch] Cancel for unknown routing ({:?}, {:?}) — ignoring",
+                                xid,
+                                rid
+                            );
                             return Ok(None);
                         }
                     }
                 };
 
-                tracing::info!("[RelaySwitch] Routing Cancel from master {} to master {} xid={:?} rid={:?}", source_idx, dest_idx, xid, rid);
+                tracing::info!(
+                    "[RelaySwitch] Routing Cancel from master {} to master {} xid={:?} rid={:?}",
+                    source_idx,
+                    dest_idx,
+                    xid,
+                    rid
+                );
                 self.write_to_master_idx(dest_idx, &mut frame).await?;
                 Ok(None)
             }
 
             FrameType::RelayNotify => {
                 // Capability update from host — update our cap table
-                let caps_payload = frame.relay_notify_manifest()
-                    .ok_or_else(|| RelaySwitchError::Protocol("RelayNotify has no payload".to_string()))?;
+                let caps_payload = frame.relay_notify_manifest().ok_or_else(|| {
+                    RelaySwitchError::Protocol("RelayNotify has no payload".to_string())
+                })?;
 
                 let payload = parse_relay_notify_payload(caps_payload)?;
                 let new_caps = payload.caps;
@@ -1684,7 +1952,8 @@ impl RelaySwitch {
 
     /// Handle master death: ERR all pending requests, mark unhealthy, rebuild tables.
     async fn handle_master_death(&self, master_idx: usize) -> Result<(), RelaySwitchError> {
-        self.handle_master_death_with_reason(master_idx, "Connection closed unexpectedly").await
+        self.handle_master_death_with_reason(master_idx, "Connection closed unexpectedly")
+            .await
     }
 
     /// Handle master death with a specific error reason.
@@ -1737,7 +2006,8 @@ impl RelaySwitch {
         // Find all pending requests for this master
         let dead_requests: Vec<((MessageId, MessageId), Option<usize>)> = {
             let routing = self.request_routing.read().await;
-            routing.iter()
+            routing
+                .iter()
                 .filter(|(_, entry)| entry.destination_master_idx == master_idx)
                 .map(|(key, entry)| (key.clone(), entry.source_master_idx))
                 .collect()
@@ -1782,7 +2052,9 @@ impl RelaySwitch {
                         masters[src_master_idx].healthy.load(Ordering::SeqCst)
                     };
                     if is_healthy {
-                        let _ = self.write_to_master_idx_raw(src_master_idx, &mut err_frame).await;
+                        let _ = self
+                            .write_to_master_idx_raw(src_master_idx, &mut err_frame)
+                            .await;
                     }
                 }
             }
@@ -1802,7 +2074,10 @@ impl RelaySwitch {
         // Log remaining healthy masters
         let (healthy_count, total_count) = {
             let masters = self.masters.read().await;
-            let healthy = masters.iter().filter(|m| m.healthy.load(Ordering::SeqCst)).count();
+            let healthy = masters
+                .iter()
+                .filter(|m| m.healthy.load(Ordering::SeqCst))
+                .count();
             let total = masters.len();
             (healthy, total)
         };
@@ -1839,7 +2114,8 @@ impl RelaySwitch {
     async fn rebuild_capabilities(&self) {
         // Collect caps per master for detailed logging
         let mut caps_by_master: Vec<(usize, bool, Vec<String>)> = Vec::new();
-        let mut installed_cartridges_by_master: Vec<(bool, Vec<InstalledCartridgeIdentity>)> = Vec::new();
+        let mut installed_cartridges_by_master: Vec<(bool, Vec<InstalledCartridgeIdentity>)> =
+            Vec::new();
         let masters = self.masters.read().await;
         for (idx, master) in masters.iter().enumerate() {
             let healthy = master.healthy.load(Ordering::SeqCst);
@@ -1871,7 +2147,8 @@ impl RelaySwitch {
         let changed = old_caps != all_caps;
 
         // Build manifest as JSON array (same format as RelayNotify payloads)
-        *self.aggregate_capabilities.write().await = serde_json::to_vec(&all_caps).unwrap_or_default();
+        *self.aggregate_capabilities.write().await =
+            serde_json::to_vec(&all_caps).unwrap_or_default();
         let mut all_installed_cartridges: Vec<InstalledCartridgeIdentity> = Vec::new();
         for (healthy, installed_cartridges) in installed_cartridges_by_master {
             if healthy {
@@ -1905,7 +2182,9 @@ impl RelaySwitch {
                     status = status,
                     cap_count = caps.len(),
                     "[RelaySwitch] Master {} caps: {} ({})",
-                    idx, caps.len(), status
+                    idx,
+                    caps.len(),
+                    status
                 );
                 // Log sample of caps (first 5) for debugging
                 for (i, cap) in caps.iter().take(5).enumerate() {
@@ -1914,7 +2193,8 @@ impl RelaySwitch {
                         cap_idx = i,
                         cap_urn = cap.as_str(),
                         "[RelaySwitch]   cap[{}]: {}",
-                        i, cap
+                        i,
+                        cap
                     );
                 }
                 if caps.len() > 5 {
@@ -1929,7 +2209,9 @@ impl RelaySwitch {
 
             // Rebuild the LiveCapGraph with the new set of available caps
             let mut graph = self.live_cap_graph.write().await;
-            graph.sync_from_cap_urns(&all_caps, &self.cap_registry).await;
+            graph
+                .sync_from_cap_urns(&all_caps, &self.cap_registry)
+                .await;
         }
     }
 
@@ -1970,25 +2252,28 @@ impl RelaySwitch {
 /// Parse capabilities payload from RelayNotify.
 /// RelayNotify contains a JSON object with capability URNs and installed cartridge identities.
 /// Validates that CAP_IDENTITY is present — hard-fail if missing.
-fn parse_relay_notify_payload(notify_payload: &[u8]) -> Result<RelayNotifyCapabilitiesPayload, RelaySwitchError> {
-    use crate::urn::cap_urn::CapUrn;
+fn parse_relay_notify_payload(
+    notify_payload: &[u8],
+) -> Result<RelayNotifyCapabilitiesPayload, RelaySwitchError> {
     use crate::standard::caps::CAP_IDENTITY;
+    use crate::urn::cap_urn::CapUrn;
 
     let payload: RelayNotifyCapabilitiesPayload = serde_json::from_slice(notify_payload)
         .map_err(|e| RelaySwitchError::Protocol(format!("Invalid RelayNotify payload: {}", e)))?;
 
     // Verify CAP_IDENTITY is present — mandatory for every host
-    let identity_urn = CapUrn::from_string(CAP_IDENTITY)
-        .expect("BUG: CAP_IDENTITY constant is invalid");
+    let identity_urn =
+        CapUrn::from_string(CAP_IDENTITY).expect("BUG: CAP_IDENTITY constant is invalid");
     let has_identity = payload.caps.iter().any(|cap_str| {
         CapUrn::from_string(cap_str)
             .map(|cap_urn| identity_urn.conforms_to(&cap_urn))
             .unwrap_or(false)
     });
     if !has_identity {
-        return Err(RelaySwitchError::Protocol(
-            format!("RelayNotify missing required CAP_IDENTITY ({})", CAP_IDENTITY)
-        ));
+        return Err(RelaySwitchError::Protocol(format!(
+            "RelayNotify missing required CAP_IDENTITY ({})",
+            CAP_IDENTITY
+        )));
     }
 
     Ok(payload)
@@ -2016,7 +2301,10 @@ mod tests {
         socket: UnixStream,
         caps_json: &serde_json::Value,
         limits: &Limits,
-    ) -> (FrameReader<BufReader<tokio::net::unix::OwnedReadHalf>>, FrameWriter<BufWriter<tokio::net::unix::OwnedWriteHalf>>) {
+    ) -> (
+        FrameReader<BufReader<tokio::net::unix::OwnedReadHalf>>,
+        FrameWriter<BufWriter<tokio::net::unix::OwnedWriteHalf>>,
+    ) {
         let (read_half, write_half) = socket.into_split();
         let mut reader = FrameReader::new(BufReader::new(read_half));
         let mut writer = FrameWriter::new(BufWriter::new(write_half));
@@ -2030,8 +2318,16 @@ mod tests {
         writer.write(&notify).await.unwrap();
 
         // Handle identity verification REQ
-        let req = reader.read().await.unwrap().expect("expected identity REQ after RelayNotify");
-        assert_eq!(req.frame_type, FrameType::Req, "first frame after RelayNotify must be identity REQ");
+        let req = reader
+            .read()
+            .await
+            .unwrap()
+            .expect("expected identity REQ after RelayNotify");
+        assert_eq!(
+            req.frame_type,
+            FrameType::Req,
+            "first frame after RelayNotify must be identity REQ"
+        );
 
         // Read request body: STREAM_START → CHUNK(s) → STREAM_END → END
         let mut payload = Vec::new();
@@ -2042,13 +2338,21 @@ mod tests {
                 FrameType::Chunk => payload.extend(f.payload.unwrap_or_default()),
                 FrameType::StreamEnd => {}
                 FrameType::End => break,
-                other => panic!("unexpected frame type during identity verification: {:?}", other),
+                other => panic!(
+                    "unexpected frame type during identity verification: {:?}",
+                    other
+                ),
             }
         }
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "identity-echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string(), None);
+        let ss = Frame::stream_start(
+            req.id.clone(),
+            stream_id.clone(),
+            "media:".to_string(),
+            None,
+        );
         writer.write(&ss).await.unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -2069,24 +2373,51 @@ mod tests {
 
         // Spawn slave 1 (identity cap only)
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock1,
-                &serde_json::json!(["cap:in=media:;out=media:"]), &Limits::default()).await;
+            slave_notify_with_identity(
+                slave_sock1,
+                &serde_json::json!(["cap:in=media:;out=media:"]),
+                &Limits::default(),
+            )
+            .await;
         });
 
         // Spawn slave 2 (identity + double cap)
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock2,
-                &serde_json::json!(["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]),
-                &Limits::default()).await;
+            slave_notify_with_identity(
+                slave_sock2,
+                &serde_json::json!([
+                    "cap:in=media:;out=media:",
+                    "cap:in=\"media:void\";op=double;out=\"media:void\""
+                ]),
+                &Limits::default(),
+            )
+            .await;
         });
 
         // Constructor reads RelayNotify + verifies identity for both masters
-        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry())
+            .await
+            .unwrap();
 
         // Verify routing (caps already populated during construction)
-        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:", None).await, Some(0));
-        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=double;out=\"media:void\"", None).await, Some(1));
-        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\"", None).await, None);
+        assert_eq!(
+            switch
+                .find_master_for_cap("cap:in=media:;out=media:", None)
+                .await,
+            Some(0)
+        );
+        assert_eq!(
+            switch
+                .find_master_for_cap("cap:in=\"media:void\";op=double;out=\"media:void\"", None)
+                .await,
+            Some(1)
+        );
+        assert_eq!(
+            switch
+                .find_master_for_cap("cap:in=\"media:void\";op=unknown;out=\"media:void\"", None)
+                .await,
+            None
+        );
 
         // Verify aggregate capabilities (plain JSON array)
         let cap_list: Vec<String> = serde_json::from_slice(&switch.capabilities().await).unwrap();
@@ -2100,15 +2431,23 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock,
-                &serde_json::json!(["cap:in=media:;out=media:"]), &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock,
+                &serde_json::json!(["cap:in=media:;out=media:"]),
+                &Limits::default(),
+            )
+            .await;
 
             // Read REQ frame
             let (req_id, xid) = if let Some(frame) = reader.read().await.unwrap() {
                 if frame.frame_type == FrameType::Req {
                     (Some(frame.id.clone()), frame.routing_id.clone())
-                } else { (None, None) }
-            } else { (None, None) };
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
 
             // Read END frame
             if let Some(frame) = reader.read().await.unwrap() {
@@ -2119,16 +2458,26 @@ mod tests {
                     response.routing_id = xid;
                     seq.assign(&mut response);
                     writer.write(&response).await.unwrap();
-                    seq.remove(&FlowKey { rid: rid.clone(), xid: xid_clone });
+                    seq.remove(&FlowKey {
+                        rid: rid.clone(),
+                        xid: xid_clone,
+                    });
                 }
             }
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
         // Send REQ + END (caps already populated from construction)
         let req_id = MessageId::Uint(1);
-        let req = Frame::req(req_id.clone(), "cap:in=media:;out=media:", vec![1, 2, 3], "text/plain");
+        let req = Frame::req(
+            req_id.clone(),
+            "cap:in=media:;out=media:",
+            vec![1, 2, 3],
+            "text/plain",
+        );
         switch.send_to_master(req, None).await.unwrap();
         let end = Frame::end(req_id.clone(), None);
         switch.send_to_master(end, None).await.unwrap();
@@ -2147,8 +2496,12 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock1,
-                &serde_json::json!(["cap:in=media:;out=media:"]), &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock1,
+                &serde_json::json!(["cap:in=media:;out=media:"]),
+                &Limits::default(),
+            )
+            .await;
             loop {
                 match reader.read().await.unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
@@ -2158,7 +2511,10 @@ mod tests {
                         response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).await.unwrap();
-                        seq.remove(&FlowKey { rid: rid.clone(), xid });
+                        seq.remove(&FlowKey {
+                            rid: rid.clone(),
+                            xid,
+                        });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -2169,9 +2525,15 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock2,
-                &serde_json::json!(["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]),
-                &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock2,
+                &serde_json::json!([
+                    "cap:in=media:;out=media:",
+                    "cap:in=\"media:void\";op=double;out=\"media:void\""
+                ]),
+                &Limits::default(),
+            )
+            .await;
             loop {
                 match reader.read().await.unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
@@ -2181,7 +2543,10 @@ mod tests {
                         response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).await.unwrap();
-                        seq.remove(&FlowKey { rid: rid.clone(), xid });
+                        seq.remove(&FlowKey {
+                            rid: rid.clone(),
+                            xid,
+                        });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -2190,18 +2555,48 @@ mod tests {
             }
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry())
+            .await
+            .unwrap();
 
         // Caps already populated from construction — send requests directly
         let req1_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req1_id.clone(), "cap:in=media:;out=media:", vec![], "text/plain"), None).await.unwrap();
-        switch.send_to_master(Frame::end(req1_id, None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(
+                    req1_id.clone(),
+                    "cap:in=media:;out=media:",
+                    vec![],
+                    "text/plain",
+                ),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req1_id, None), None)
+            .await
+            .unwrap();
         let resp1 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![1]));
 
         let req2_id = MessageId::Uint(2);
-        switch.send_to_master(Frame::req(req2_id.clone(), "cap:in=\"media:void\";op=double;out=\"media:void\"", vec![], "text/plain"), None).await.unwrap();
-        switch.send_to_master(Frame::end(req2_id, None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(
+                    req2_id.clone(),
+                    "cap:in=\"media:void\";op=double;out=\"media:void\"",
+                    vec![],
+                    "text/plain",
+                ),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req2_id, None), None)
+            .await
+            .unwrap();
         let resp2 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![2]));
     }
@@ -2212,16 +2607,30 @@ mod tests {
         let (engine_sock, slave_sock) = UnixStream::pair().unwrap();
 
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock,
-                &serde_json::json!(["cap:in=media:;out=media:"]), &Limits::default()).await;
+            slave_notify_with_identity(
+                slave_sock,
+                &serde_json::json!(["cap:in=media:;out=media:"]),
+                &Limits::default(),
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
-        let req = Frame::req(MessageId::Uint(1), "cap:in=\"media:void\";op=unknown;out=\"media:void\"", vec![], "text/plain");
+        let req = Frame::req(
+            MessageId::Uint(1),
+            "cap:in=\"media:void\";op=unknown;out=\"media:void\"",
+            vec![],
+            "text/plain",
+        );
         let result = switch.send_to_master(req, None).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RelaySwitchError::NoHandler(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            RelaySwitchError::NoHandler(_)
+        ));
     }
 
     // TEST430: Tie-breaking (same cap on multiple masters - first match wins, routing is consistent)
@@ -2234,8 +2643,12 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock1,
-                &serde_json::json!([same_cap]), &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock1,
+                &serde_json::json!([same_cap]),
+                &Limits::default(),
+            )
+            .await;
             loop {
                 match reader.read().await.unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
@@ -2245,7 +2658,10 @@ mod tests {
                         response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).await.unwrap();
-                        seq.remove(&FlowKey { rid: rid.clone(), xid });
+                        seq.remove(&FlowKey {
+                            rid: rid.clone(),
+                            xid,
+                        });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -2256,8 +2672,12 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock2,
-                &serde_json::json!([same_cap]), &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock2,
+                &serde_json::json!([same_cap]),
+                &Limits::default(),
+            )
+            .await;
             loop {
                 match reader.read().await.unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
@@ -2267,7 +2687,10 @@ mod tests {
                         response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).await.unwrap();
-                        seq.remove(&FlowKey { rid: rid.clone(), xid });
+                        seq.remove(&FlowKey {
+                            rid: rid.clone(),
+                            xid,
+                        });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -2276,19 +2699,39 @@ mod tests {
             }
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry())
+            .await
+            .unwrap();
 
         // First request — should go to master 0 (first match)
         let req1_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req1_id.clone(), same_cap, vec![], "text/plain"), None).await.unwrap();
-        switch.send_to_master(Frame::end(req1_id, None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(req1_id.clone(), same_cap, vec![], "text/plain"),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req1_id, None), None)
+            .await
+            .unwrap();
         let resp1 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![1]));
 
         // Second request — should ALSO go to master 0 (consistent routing)
         let req2_id = MessageId::Uint(2);
-        switch.send_to_master(Frame::req(req2_id.clone(), same_cap, vec![], "text/plain"), None).await.unwrap();
-        switch.send_to_master(Frame::end(req2_id, None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(req2_id.clone(), same_cap, vec![], "text/plain"),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req2_id, None), None)
+            .await
+            .unwrap();
         let resp2 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![1]));
     }
@@ -2300,9 +2743,15 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock,
-                &serde_json::json!(["cap:in=media:;out=media:", "cap:in=\"media:void\";op=test;out=\"media:void\""]),
-                &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock,
+                &serde_json::json!([
+                    "cap:in=media:;out=media:",
+                    "cap:in=\"media:void\";op=test;out=\"media:void\""
+                ]),
+                &Limits::default(),
+            )
+            .await;
 
             let req = reader.read().await.unwrap().unwrap();
             assert_eq!(req.frame_type, FrameType::Req);
@@ -2322,17 +2771,49 @@ mod tests {
             response.routing_id = xid;
             seq.assign(&mut response);
             writer.write(&response).await.unwrap();
-            seq.remove(&FlowKey { rid: rid.clone(), xid: xid_clone });
+            seq.remove(&FlowKey {
+                rid: rid.clone(),
+                xid: xid_clone,
+            });
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
         let req_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req_id.clone(), "cap:in=\"media:void\";op=test;out=\"media:void\"", vec![], "text/plain"), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(
+                    req_id.clone(),
+                    "cap:in=\"media:void\";op=test;out=\"media:void\"",
+                    vec![],
+                    "text/plain",
+                ),
+                None,
+            )
+            .await
+            .unwrap();
         let payload = vec![1, 2, 3];
         let checksum = Frame::compute_checksum(&payload);
-        switch.send_to_master(Frame::chunk(req_id.clone(), "stream1".to_string(), 0, payload, 0, checksum), None).await.unwrap();
-        switch.send_to_master(Frame::end(req_id.clone(), None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::chunk(
+                    req_id.clone(),
+                    "stream1".to_string(),
+                    0,
+                    payload,
+                    0,
+                    checksum,
+                ),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req_id.clone(), None), None)
+            .await
+            .unwrap();
 
         let response = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(response.frame_type, FrameType::End);
@@ -2349,7 +2830,12 @@ mod tests {
         assert!(caps.is_empty(), "empty switch should have no caps");
 
         // No handler for any cap
-        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:", None).await, None);
+        assert_eq!(
+            switch
+                .find_master_for_cap("cap:in=media:;out=media:", None)
+                .await,
+            None
+        );
     }
 
     // TEST433: Capability aggregation deduplicates caps
@@ -2359,27 +2845,46 @@ mod tests {
         let (engine_sock2, slave_sock2) = UnixStream::pair().unwrap();
 
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock1,
-                &serde_json::json!(["cap:in=media:;out=media:", "cap:in=\"media:void\";op=double;out=\"media:void\""]),
-                &Limits::default()).await;
+            slave_notify_with_identity(
+                slave_sock1,
+                &serde_json::json!([
+                    "cap:in=media:;out=media:",
+                    "cap:in=\"media:void\";op=double;out=\"media:void\""
+                ]),
+                &Limits::default(),
+            )
+            .await;
         });
 
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock2,
-                &serde_json::json!(["cap:in=media:;out=media:", "cap:in=\"media:void\";op=triple;out=\"media:void\""]),
-                &Limits::default()).await;
+            slave_notify_with_identity(
+                slave_sock2,
+                &serde_json::json!([
+                    "cap:in=media:;out=media:",
+                    "cap:in=\"media:void\";op=triple;out=\"media:void\""
+                ]),
+                &Limits::default(),
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry())
+            .await
+            .unwrap();
 
         // Caps already populated during construction (plain JSON array)
-        let mut cap_list: Vec<String> = serde_json::from_slice(&switch.capabilities().await).unwrap();
+        let mut cap_list: Vec<String> =
+            serde_json::from_slice(&switch.capabilities().await).unwrap();
         cap_list.sort();
 
         assert_eq!(cap_list.len(), 3);
-        assert!(cap_list.contains(&"cap:in=\"media:void\";op=double;out=\"media:void\"".to_string()));
+        assert!(
+            cap_list.contains(&"cap:in=\"media:void\";op=double;out=\"media:void\"".to_string())
+        );
         assert!(cap_list.contains(&"cap:in=media:;out=media:".to_string()));
-        assert!(cap_list.contains(&"cap:in=\"media:void\";op=triple;out=\"media:void\"".to_string()));
+        assert!(
+            cap_list.contains(&"cap:in=\"media:void\";op=triple;out=\"media:void\"".to_string())
+        );
     }
 
     // TEST434: Limits negotiation takes minimum
@@ -2389,18 +2894,34 @@ mod tests {
         let (engine_sock2, slave_sock2) = UnixStream::pair().unwrap();
 
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock1,
+            slave_notify_with_identity(
+                slave_sock1,
                 &serde_json::json!(["cap:in=media:;out=media:"]),
-                &Limits { max_frame: 1_000_000, max_chunk: 100_000, ..Limits::default() }).await;
+                &Limits {
+                    max_frame: 1_000_000,
+                    max_chunk: 100_000,
+                    ..Limits::default()
+                },
+            )
+            .await;
         });
 
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock2,
+            slave_notify_with_identity(
+                slave_sock2,
                 &serde_json::json!(["cap:in=media:;out=media:"]),
-                &Limits { max_frame: 2_000_000, max_chunk: 50_000, ..Limits::default() }).await;
+                &Limits {
+                    max_frame: 2_000_000,
+                    max_chunk: 50_000,
+                    ..Limits::default()
+                },
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock1, engine_sock2], test_cap_registry())
+            .await
+            .unwrap();
 
         // Limits already negotiated during construction
         assert_eq!(switch.limits().await.max_frame, 1_000_000);
@@ -2416,8 +2937,12 @@ mod tests {
 
         tokio::spawn(async move {
             let mut seq = SeqAssigner::new();
-            let (mut reader, mut writer) = slave_notify_with_identity(slave_sock,
-                &serde_json::json!(["cap:in=media:;out=media:", registered_cap]), &Limits::default()).await;
+            let (mut reader, mut writer) = slave_notify_with_identity(
+                slave_sock,
+                &serde_json::json!(["cap:in=media:;out=media:", registered_cap]),
+                &Limits::default(),
+            )
+            .await;
             loop {
                 match reader.read().await.unwrap() {
                     Some(frame) if frame.frame_type == FrameType::Req => {
@@ -2427,7 +2952,10 @@ mod tests {
                         response.routing_id = xid.clone();
                         seq.assign(&mut response);
                         writer.write(&response).await.unwrap();
-                        seq.remove(&FlowKey { rid: rid.clone(), xid });
+                        seq.remove(&FlowKey {
+                            rid: rid.clone(),
+                            xid,
+                        });
                     }
                     Some(frame) if frame.frame_type == FrameType::End => {}
                     None => break,
@@ -2436,12 +2964,23 @@ mod tests {
             }
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
         // Exact match should work
         let req1_id = MessageId::Uint(1);
-        switch.send_to_master(Frame::req(req1_id.clone(), registered_cap, vec![], "text/plain"), None).await.unwrap();
-        switch.send_to_master(Frame::end(req1_id, None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(req1_id.clone(), registered_cap, vec![], "text/plain"),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req1_id, None), None)
+            .await
+            .unwrap();
         let resp1 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp1.payload, Some(vec![42]));
 
@@ -2449,16 +2988,38 @@ mod tests {
         // Input (contravariant): request's `media:text;utf8;normalized` conforms to provider's `media:text;utf8`
         // Output (covariant): provider's `media:text;utf8` conforms to request's `media:text`
         let req2_id = MessageId::Uint(2);
-        switch.send_to_master(Frame::req(req2_id.clone(), "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"", vec![], "text/plain"), None).await.unwrap();
-        switch.send_to_master(Frame::end(req2_id, None), None).await.unwrap();
+        switch
+            .send_to_master(
+                Frame::req(
+                    req2_id.clone(),
+                    "cap:in=\"media:text;utf8;normalized\";op=process;out=\"media:text\"",
+                    vec![],
+                    "text/plain",
+                ),
+                None,
+            )
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(req2_id, None), None)
+            .await
+            .unwrap();
         let resp2 = switch.read_from_masters().await.unwrap().unwrap();
         assert_eq!(resp2.payload, Some(vec![42]));
 
         // Request with INCOMPATIBLE input should NOT match (different type family)
-        let req3 = Frame::req(MessageId::Uint(3), "cap:in=\"media:image;png\";op=process;out=\"media:text\"", vec![], "text/plain");
+        let req3 = Frame::req(
+            MessageId::Uint(3),
+            "cap:in=\"media:image;png\";op=process;out=\"media:text\"",
+            vec![],
+            "text/plain",
+        );
         let result = switch.send_to_master(req3, None).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RelaySwitchError::NoHandler(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            RelaySwitchError::NoHandler(_)
+        ));
     }
 
     // =========================================================================
@@ -2479,32 +3040,50 @@ mod tests {
         // Master 0: generic thumbnail handler (like internal ThumbnailProvider)
         let generic_cap = "cap:in=media:;op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock0,
+            slave_notify_with_identity(
+                slave_sock0,
                 &serde_json::json!(["cap:in=media:;out=media:", generic_cap]),
-                &Limits::default()).await;
+                &Limits::default(),
+            )
+            .await;
         });
 
         // Master 1: specific thumbnail handler (like pdfcartridge)
-        let specific_cap = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
+        let specific_cap =
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock1,
+            slave_notify_with_identity(
+                slave_sock1,
                 &serde_json::json!(["cap:in=media:;out=media:", specific_cap]),
-                &Limits::default()).await;
+                &Limits::default(),
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock0, engine_sock1], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock0, engine_sock1], test_cap_registry())
+            .await
+            .unwrap();
 
         // Specific request for PDF thumbnail
-        let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
+        let request =
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
 
         // Without preference: routes to master 1 (specific, closest-specificity)
         assert_eq!(switch.find_master_for_cap(request, None).await, Some(1));
 
         // With preference for generic cap: routes to master 0 (generic, via is_equivalent)
-        assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)).await, Some(0));
+        assert_eq!(
+            switch.find_master_for_cap(request, Some(generic_cap)).await,
+            Some(0)
+        );
 
         // With preference for specific cap: routes to master 1 (specific, matches preference)
-        assert_eq!(switch.find_master_for_cap(request, Some(specific_cap)).await, Some(1));
+        assert_eq!(
+            switch
+                .find_master_for_cap(request, Some(specific_cap))
+                .await,
+            Some(1)
+        );
     }
 
     // TEST438: find_master_for_cap with preference falls back to closest-specificity
@@ -2514,20 +3093,31 @@ mod tests {
         let (engine_sock, slave_sock) = UnixStream::pair().unwrap();
 
         // Master 0: only has a specific cap
-        let registered = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
+        let registered =
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock,
+            slave_notify_with_identity(
+                slave_sock,
                 &serde_json::json!(["cap:in=media:;out=media:", registered]),
-                &Limits::default()).await;
+                &Limits::default(),
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
-        let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
+        let request =
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
 
         // Preference for an unrelated cap — no equivalent match, falls back to closest-specificity
-        let unrelated = "cap:in=\"media:txt;textable\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
-        assert_eq!(switch.find_master_for_cap(request, Some(unrelated)).await, Some(0));
+        let unrelated =
+            "cap:in=\"media:txt;textable\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
+        assert_eq!(
+            switch.find_master_for_cap(request, Some(unrelated)).await,
+            Some(0)
+        );
     }
 
     // TEST439: Generic provider CAN dispatch specific request
@@ -2543,22 +3133,34 @@ mod tests {
         // Master 0: only generic handler (in=media: wildcard)
         let generic_cap = "cap:in=media:;op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock,
+            slave_notify_with_identity(
+                slave_sock,
                 &serde_json::json!(["cap:in=media:;out=media:", generic_cap]),
-                &Limits::default()).await;
+                &Limits::default(),
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
         // Specific PDF request — generic handler CAN dispatch it
         // because provider's wildcard input (media:) accepts any input type
-        let request = "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
-        assert_eq!(switch.find_master_for_cap(request, None).await, Some(0),
-            "Generic provider can dispatch specific request as fallback");
+        let request =
+            "cap:in=\"media:pdf\";op=generate_thumbnail;out=\"media:image;png;thumbnail\"";
+        assert_eq!(
+            switch.find_master_for_cap(request, None).await,
+            Some(0),
+            "Generic provider can dispatch specific request as fallback"
+        );
 
         // With preference for generic — routes to master 0
-        assert_eq!(switch.find_master_for_cap(request, Some(generic_cap)).await, Some(0),
-            "Preference routes to generic provider");
+        assert_eq!(
+            switch.find_master_for_cap(request, Some(generic_cap)).await,
+            Some(0),
+            "Preference routes to generic provider"
+        );
     }
 
     // =========================================================================
@@ -2571,16 +3173,34 @@ mod tests {
         let (engine_sock, slave_sock) = UnixStream::pair().unwrap();
 
         tokio::spawn(async move {
-            slave_notify_with_identity(slave_sock,
-                &serde_json::json!(["cap:in=media:;out=media:", "cap:in=\"media:void\";op=test;out=\"media:void\""]),
-                &Limits::default()).await;
+            slave_notify_with_identity(
+                slave_sock,
+                &serde_json::json!([
+                    "cap:in=media:;out=media:",
+                    "cap:in=\"media:void\";op=test;out=\"media:void\""
+                ]),
+                &Limits::default(),
+            )
+            .await;
         });
 
-        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![engine_sock], test_cap_registry())
+            .await
+            .unwrap();
 
         // Construction succeeded — caps are populated
-        assert_eq!(switch.find_master_for_cap("cap:in=media:;out=media:", None).await, Some(0));
-        assert_eq!(switch.find_master_for_cap("cap:in=\"media:void\";op=test;out=\"media:void\"", None).await, Some(0));
+        assert_eq!(
+            switch
+                .find_master_for_cap("cap:in=media:;out=media:", None)
+                .await,
+            Some(0)
+        );
+        assert_eq!(
+            switch
+                .find_master_for_cap("cap:in=\"media:void\";op=test;out=\"media:void\"", None)
+                .await,
+            Some(0)
+        );
     }
 
     // TEST488: RelaySwitch construction fails when master's identity verification fails
@@ -2598,7 +3218,8 @@ mod tests {
                 "caps": ["cap:in=media:;out=media:"],
                 "installed_cartridges": [],
             });
-            let notify = Frame::relay_notify(&serde_json::to_vec(&caps).unwrap(), &Limits::default());
+            let notify =
+                Frame::relay_notify(&serde_json::to_vec(&caps).unwrap(), &Limits::default());
             writer.write(&notify).await.unwrap();
 
             // Read identity REQ, respond with ERR
@@ -2609,17 +3230,25 @@ mod tests {
         });
 
         let result = RelaySwitch::new(vec![engine_sock], test_cap_registry()).await;
-        assert!(result.is_err(), "construction must fail when identity verification fails");
+        assert!(
+            result.is_err(),
+            "construction must fail when identity verification fails"
+        );
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("identity verification failed"),
-            "error must mention identity verification: {}", err);
+        assert!(
+            err.to_string().contains("identity verification failed"),
+            "error must mention identity verification: {}",
+            err
+        );
     }
 
     // TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessCartridgeHost roundtrip
     #[tokio::test]
     async fn test905_send_to_master_build_request_frames_roundtrip() {
-        use crate::bifaci::in_process_host::{InProcessCartridgeHost, FrameHandler, ResponseWriter, accumulate_input};
         use crate::bifaci::cartridge_runtime::PeerInvoker;
+        use crate::bifaci::in_process_host::{
+            accumulate_input, FrameHandler, InProcessCartridgeHost, ResponseWriter,
+        };
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::caller::CapArgumentValue;
         use crate::cap::definition::Cap;
@@ -2688,12 +3317,17 @@ mod tests {
             slave.run(socket_reader, socket_writer, None).await.unwrap();
         });
 
-        let switch = RelaySwitch::new(vec![switch_sock], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![switch_sock], test_cap_registry())
+            .await
+            .unwrap();
 
         // Verify the switch has our echo cap registered
         let caps_json: Vec<String> = serde_json::from_slice(&switch.capabilities().await).unwrap();
-        assert!(caps_json.iter().any(|c| c.contains("echo")),
-            "switch should have echo cap, got: {:?}", caps_json);
+        assert!(
+            caps_json.iter().any(|c| c.contains("echo")),
+            "switch should have echo cap, got: {:?}",
+            caps_json
+        );
 
         // Build request frames using the helper
         let rid = MessageId::new_uuid();
@@ -2701,7 +3335,10 @@ mod tests {
         let frames = CapArgumentValue::build_request_frames(
             &rid,
             cap_urn_str,
-            &[CapArgumentValue::new("media:text", b"hello streaming world".to_vec())],
+            &[CapArgumentValue::new(
+                "media:text",
+                b"hello streaming world".to_vec(),
+            )],
             max_chunk,
         );
 
@@ -2716,7 +3353,10 @@ mod tests {
         let mut got_end = false;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while std::time::Instant::now() < deadline {
-            match switch.read_from_masters_timeout(std::time::Duration::from_millis(200)).await {
+            match switch
+                .read_from_masters_timeout(std::time::Duration::from_millis(200))
+                .await
+            {
                 Ok(Some(frame)) if frame.id == rid => {
                     match frame.frame_type {
                         FrameType::Chunk => {
@@ -2725,9 +3365,15 @@ mod tests {
                                 let value: ciborium::Value = ciborium::from_reader(&payload[..])
                                     .expect("response chunk not valid CBOR");
                                 match value {
-                                    ciborium::Value::Bytes(b) => response_data.extend_from_slice(&b),
-                                    ciborium::Value::Text(s) => response_data.extend_from_slice(s.as_bytes()),
-                                    other => panic!("unexpected CBOR type in response: {:?}", other),
+                                    ciborium::Value::Bytes(b) => {
+                                        response_data.extend_from_slice(&b)
+                                    }
+                                    ciborium::Value::Text(s) => {
+                                        response_data.extend_from_slice(s.as_bytes())
+                                    }
+                                    other => {
+                                        panic!("unexpected CBOR type in response: {:?}", other)
+                                    }
                                 }
                             }
                         }
@@ -2736,7 +3382,11 @@ mod tests {
                             break;
                         }
                         FrameType::Err => {
-                            panic!("Got ERR: [{:?}] {:?}", frame.error_code(), frame.error_message());
+                            panic!(
+                                "Got ERR: [{:?}] {:?}",
+                                frame.error_code(),
+                                frame.error_message()
+                            );
                         }
                         _ => {} // STREAM_START, STREAM_END — skip
                     }
@@ -2748,7 +3398,10 @@ mod tests {
         }
 
         assert!(got_end, "should have received END frame");
-        assert_eq!(response_data, b"hello streaming world", "echo handler should return input");
+        assert_eq!(
+            response_data, b"hello streaming world",
+            "echo handler should return input"
+        );
 
         drop(switch);
         drop(slave_task);
@@ -2758,8 +3411,10 @@ mod tests {
     // TEST489: add_master dynamically connects new host to running switch
     #[tokio::test]
     async fn test489_add_master_dynamic() {
-        use crate::bifaci::in_process_host::{InProcessCartridgeHost, FrameHandler, ResponseWriter};
         use crate::bifaci::cartridge_runtime::PeerInvoker;
+        use crate::bifaci::in_process_host::{
+            FrameHandler, InProcessCartridgeHost, ResponseWriter,
+        };
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::caller::CapArgumentValue;
         use crate::cap::definition::Cap;
@@ -2781,7 +3436,9 @@ mod tests {
             ) {
                 // Drain input
                 while let Some(frame) = input.recv().await {
-                    if frame.frame_type == FrameType::End { break; }
+                    if frame.frame_type == FrameType::End {
+                        break;
+                    }
                 }
                 output.emit_response("media:", self.0.as_bytes());
             }
@@ -2790,7 +3447,11 @@ mod tests {
         // Helper to wire up host + slave and return switch-side socket + task handles
         async fn wire_host(
             host: InProcessCartridgeHost,
-        ) -> (UnixStream, tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
+        ) -> (
+            UnixStream,
+            tokio::task::JoinHandle<()>,
+            tokio::task::JoinHandle<()>,
+        ) {
             let (host_sock, slave_local_sock) = UnixStream::pair().unwrap();
             let (slave_sock, switch_sock) = UnixStream::pair().unwrap();
 
@@ -2832,7 +3493,9 @@ mod tests {
         )]);
 
         let (switch_sock_a, ht_a, st_a) = wire_host(host_a).await;
-        let switch = RelaySwitch::new(vec![switch_sock_a], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(vec![switch_sock_a], test_cap_registry())
+            .await
+            .unwrap();
         assert_eq!(switch.masters.read().await.len(), 1);
 
         // Add handler B dynamically
@@ -2877,24 +3540,25 @@ mod tests {
         let mut response_data = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while std::time::Instant::now() < deadline {
-            match switch.read_from_masters_timeout(std::time::Duration::from_millis(200)).await {
-                Ok(Some(frame)) if frame.id == rid => {
-                    match frame.frame_type {
-                        FrameType::Chunk => {
-                            if let Some(p) = &frame.payload {
-                                let value: ciborium::Value = ciborium::from_reader(&p[..])
-                                    .expect("response chunk not valid CBOR");
-                                match value {
-                                    ciborium::Value::Bytes(b) => response_data.extend_from_slice(&b),
-                                    other => panic!("unexpected CBOR: {:?}", other),
-                                }
+            match switch
+                .read_from_masters_timeout(std::time::Duration::from_millis(200))
+                .await
+            {
+                Ok(Some(frame)) if frame.id == rid => match frame.frame_type {
+                    FrameType::Chunk => {
+                        if let Some(p) = &frame.payload {
+                            let value: ciborium::Value = ciborium::from_reader(&p[..])
+                                .expect("response chunk not valid CBOR");
+                            match value {
+                                ciborium::Value::Bytes(b) => response_data.extend_from_slice(&b),
+                                other => panic!("unexpected CBOR: {:?}", other),
                             }
                         }
-                        FrameType::End => break,
-                        FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
-                        _ => {}
                     }
-                }
+                    FrameType::End => break,
+                    FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
+                    _ => {}
+                },
                 Ok(Some(_)) => {}
                 Ok(None) => {}
                 Err(e) => panic!("read error: {}", e),
@@ -2913,8 +3577,10 @@ mod tests {
     // TEST666: Preferred cap routing - routes to exact equivalent when multiple masters match
     #[tokio::test]
     async fn test666_preferred_cap_routing() {
-        use crate::bifaci::in_process_host::{InProcessCartridgeHost, FrameHandler, ResponseWriter};
         use crate::bifaci::cartridge_runtime::PeerInvoker;
+        use crate::bifaci::in_process_host::{
+            FrameHandler, InProcessCartridgeHost, ResponseWriter,
+        };
         use crate::bifaci::relay::RelaySlave;
         use crate::cap::definition::Cap;
         use async_trait::async_trait;
@@ -2935,7 +3601,9 @@ mod tests {
             ) {
                 // Drain input
                 while let Some(frame) = input.recv().await {
-                    if frame.frame_type == FrameType::End { break; }
+                    if frame.frame_type == FrameType::End {
+                        break;
+                    }
                 }
                 output.emit_response("media:", self.0.as_bytes());
             }
@@ -2944,7 +3612,11 @@ mod tests {
         // Helper to wire up host + slave
         async fn wire_host(
             host: InProcessCartridgeHost,
-        ) -> (UnixStream, tokio::task::JoinHandle<()>, tokio::task::JoinHandle<()>) {
+        ) -> (
+            UnixStream,
+            tokio::task::JoinHandle<()>,
+            tokio::task::JoinHandle<()>,
+        ) {
             let (host_sock, slave_local_sock) = UnixStream::pair().unwrap();
             let (slave_sock, switch_sock) = UnixStream::pair().unwrap();
 
@@ -3008,15 +3680,28 @@ mod tests {
         let (switch_sock_exact, ht_exact, st_exact) = wire_host(host_exact).await;
         let (switch_sock_extra, ht_extra, st_extra) = wire_host(host_extra).await;
 
-        let switch = RelaySwitch::new(vec![switch_sock_exact, switch_sock_extra], test_cap_registry()).await.unwrap();
+        let switch = RelaySwitch::new(
+            vec![switch_sock_exact, switch_sock_extra],
+            test_cap_registry(),
+        )
+        .await
+        .unwrap();
         assert_eq!(switch.masters.read().await.len(), 2);
 
         // Test 1: Without preferred_cap, routes to exact match (closest specificity)
         let req_cap = "cap:in=\"media:void\";op=test;out=\"media:void\"";
-        let req1 = Frame::req(MessageId::Uint(1), req_cap, Vec::new(), "application/octet-stream");
+        let req1 = Frame::req(
+            MessageId::Uint(1),
+            req_cap,
+            Vec::new(),
+            "application/octet-stream",
+        );
 
         switch.send_to_master(req1.clone(), None).await.unwrap();
-        switch.send_to_master(Frame::end(MessageId::Uint(1), None), None).await.unwrap();
+        switch
+            .send_to_master(Frame::end(MessageId::Uint(1), None), None)
+            .await
+            .unwrap();
 
         let mut response_data1 = Vec::new();
         for _ in 0..10 {
@@ -3026,7 +3711,8 @@ mod tests {
                         FrameType::Chunk => {
                             // Chunk payload is CBOR-encoded bytes — decode it
                             let payload = frame.payload.as_ref().unwrap();
-                            let val: ciborium::Value = ciborium::from_reader(payload.as_slice()).unwrap();
+                            let val: ciborium::Value =
+                                ciborium::from_reader(payload.as_slice()).unwrap();
                             if let ciborium::Value::Bytes(b) = val {
                                 response_data1.extend_from_slice(&b);
                             }
@@ -3042,36 +3728,52 @@ mod tests {
         }
 
         // Test 2: With preferred_cap = cap_extra, routes to extra handler (preferred override)
-        let req2 = Frame::req(MessageId::Uint(2), req_cap, Vec::new(), "application/octet-stream");
+        let req2 = Frame::req(
+            MessageId::Uint(2),
+            req_cap,
+            Vec::new(),
+            "application/octet-stream",
+        );
 
-        switch.send_to_master(req2.clone(), Some(cap_extra)).await.unwrap();
-        switch.send_to_master(Frame::end(MessageId::Uint(2), None), None).await.unwrap();
+        switch
+            .send_to_master(req2.clone(), Some(cap_extra))
+            .await
+            .unwrap();
+        switch
+            .send_to_master(Frame::end(MessageId::Uint(2), None), None)
+            .await
+            .unwrap();
 
         let mut response_data2 = Vec::new();
         for _ in 0..10 {
             match switch.read_from_masters().await {
-                Ok(Some(frame)) => {
-                    match frame.frame_type {
-                        FrameType::Chunk => {
-                            let payload = frame.payload.as_ref().unwrap();
-                            let val: ciborium::Value = ciborium::from_reader(payload.as_slice()).unwrap();
-                            if let ciborium::Value::Bytes(b) = val {
-                                response_data2.extend_from_slice(&b);
-                            }
+                Ok(Some(frame)) => match frame.frame_type {
+                    FrameType::Chunk => {
+                        let payload = frame.payload.as_ref().unwrap();
+                        let val: ciborium::Value =
+                            ciborium::from_reader(payload.as_slice()).unwrap();
+                        if let ciborium::Value::Bytes(b) = val {
+                            response_data2.extend_from_slice(&b);
                         }
-                        FrameType::End => break,
-                        FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
-                        _ => {}
                     }
-                }
+                    FrameType::End => break,
+                    FrameType::Err => panic!("ERR: {:?}", frame.error_message()),
+                    _ => {}
+                },
                 Ok(None) => break,
                 Err(e) => panic!("read error: {}", e),
             }
         }
 
         // Verify routing: without preference routes to exact match (closest), with preference routes to extra (override)
-        assert_eq!(response_data1, b"EXACT", "Without preferred_cap, should route to exact-match handler (closest specificity)");
-        assert_eq!(response_data2, b"EXTRA", "With preferred_cap, should route to extra handler (preferred override)");
+        assert_eq!(
+            response_data1, b"EXACT",
+            "Without preferred_cap, should route to exact-match handler (closest specificity)"
+        );
+        assert_eq!(
+            response_data2, b"EXTRA",
+            "With preferred_cap, should route to extra handler (preferred override)"
+        );
 
         drop(switch);
         drop(st_exact);

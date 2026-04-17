@@ -153,11 +153,7 @@ fn build_serialization_plan(machine: &Machine) -> SerializationPlan {
 
 /// Emit one wiring statement (without enclosing brackets or
 /// trailing newline) for a single edge inside a strand.
-fn format_wiring(
-    edge: &MachineEdge,
-    alias: &str,
-    strand_plan: &StrandPlan,
-) -> String {
+fn format_wiring(edge: &MachineEdge, alias: &str, strand_plan: &StrandPlan) -> String {
     // Sources, in the canonical (cap-arg-sorted) assignment
     // order. The serializer surfaces this canonical form so
     // round-trip is byte-stable.
@@ -198,8 +194,7 @@ fn emit_bracketed(
             write!(
                 output,
                 "[{} {}]",
-                strand_plan.edge_aliases[edge_idx],
-                edge.cap_urn
+                strand_plan.edge_aliases[edge_idx], edge.cap_urn
             )
             .unwrap();
         }
@@ -208,11 +203,7 @@ fn emit_bracketed(
     // Wirings across all strands.
     for (strand, strand_plan) in machine.strands().iter().zip(plan.strands.iter()) {
         for (edge_idx, edge) in strand.edges().iter().enumerate() {
-            let wiring = format_wiring(
-                edge,
-                &strand_plan.edge_aliases[edge_idx],
-                strand_plan,
-            );
+            let wiring = format_wiring(edge, &strand_plan.edge_aliases[edge_idx], strand_plan);
             write!(output, "[{}]", wiring).unwrap();
         }
     }
@@ -263,11 +254,7 @@ fn emit_multiline(
     }
     for (strand, strand_plan) in machine.strands().iter().zip(plan.strands.iter()) {
         for (edge_idx, edge) in strand.edges().iter().enumerate() {
-            let wiring = format_wiring(
-                edge,
-                &strand_plan.edge_aliases[edge_idx],
-                strand_plan,
-            );
+            let wiring = format_wiring(edge, &strand_plan.edge_aliases[edge_idx], strand_plan);
             lines.push(format!("[{}]", wiring));
         }
     }
@@ -448,9 +435,7 @@ fn json_escape(s: &str) -> String {
 mod tests {
     use super::NotationFormat;
     use crate::machine::graph::Machine;
-    use crate::machine::test_fixtures::{
-        build_cap, cap_step, registry_with, strand_from_steps,
-    };
+    use crate::machine::test_fixtures::{build_cap, cap_step, registry_with, strand_from_steps};
 
     fn extract_cap_def() -> crate::cap::definition::Cap {
         build_cap(
@@ -490,8 +475,9 @@ mod tests {
         )
     }
 
+    // TEST1172: Serializing a two-step strand emits the expected aliases and node names.
     #[test]
-    fn serialize_two_step_strand_emits_global_aliases_and_node_names() {
+    fn test1172_serialize_two_step_strand_emits_global_aliases_and_node_names() {
         let registry = registry_with(vec![extract_cap_def(), embed_cap_def()]);
         let machine = Machine::from_strand(&pdf_to_vec_strand(), &registry).unwrap();
         let notation = machine.to_machine_notation().unwrap();
@@ -512,13 +498,13 @@ mod tests {
         );
     }
 
+    // TEST1173: Serializing and reparsing a machine preserves strict machine equivalence.
     #[test]
-    fn serialize_then_parse_round_trip_preserves_strict_equivalence() {
+    fn test1173_serialize_then_parse_round_trip_preserves_strict_equivalence() {
         let registry = registry_with(vec![extract_cap_def(), embed_cap_def()]);
         let m1 = Machine::from_strand(&pdf_to_vec_strand(), &registry).unwrap();
         let notation = m1.to_machine_notation().unwrap();
-        let m2 = Machine::from_string(&notation, &registry)
-            .expect("re-parse must succeed");
+        let m2 = Machine::from_string(&notation, &registry).expect("re-parse must succeed");
         assert!(
             m1.is_equivalent(&m2),
             "machine and its parse-reserialize must be strictly equivalent"
@@ -532,8 +518,9 @@ mod tests {
         );
     }
 
+    // TEST1174: The line-based notation format round-trips back to the same machine.
     #[test]
-    fn line_based_format_round_trips_to_same_machine() {
+    fn test1174_line_based_format_round_trips_to_same_machine() {
         let registry = registry_with(vec![extract_cap_def(), embed_cap_def()]);
         let m1 = Machine::from_strand(&pdf_to_vec_strand(), &registry).unwrap();
         let line_based = m1
@@ -545,20 +532,21 @@ mod tests {
             !line_based.contains('['),
             "line-based form must not contain brackets, got: {line_based}"
         );
-        let m2 = Machine::from_string(&line_based, &registry)
-            .expect("line-based form must parse");
+        let m2 = Machine::from_string(&line_based, &registry).expect("line-based form must parse");
         assert!(m1.is_equivalent(&m2));
     }
 
+    // TEST1175: Serializing an empty machine produces an empty string.
     #[test]
-    fn empty_machine_serializes_to_empty_string() {
+    fn test1175_empty_machine_serializes_to_empty_string() {
         let machine = Machine::from_resolved_strands(vec![]);
         let notation = machine.to_machine_notation().unwrap();
         assert!(notation.is_empty());
     }
 
+    // TEST1176: Rendering payload JSON includes strand anchor metadata for a populated machine.
     #[test]
-    fn render_payload_json_includes_strand_with_anchors() {
+    fn test1176_render_payload_json_includes_strand_with_anchors() {
         let registry = registry_with(vec![extract_cap_def(), embed_cap_def()]);
         let machine = Machine::from_strand(&pdf_to_vec_strand(), &registry).unwrap();
         let payload = machine.to_render_payload_json().unwrap();
@@ -576,8 +564,9 @@ mod tests {
         assert!(payload.contains("op=embed"));
     }
 
+    // TEST1177: Rendering payload JSON for an empty machine emits an empty strands array.
     #[test]
-    fn render_payload_for_empty_machine_has_empty_strands_array() {
+    fn test1177_render_payload_for_empty_machine_has_empty_strands_array() {
         let machine = Machine::from_resolved_strands(vec![]);
         let payload = machine.to_render_payload_json().unwrap();
         assert_eq!(payload, "{\"strands\":[]}");

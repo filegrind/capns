@@ -9,9 +9,11 @@
 //! testcartridge provides simple, predictable test caps without heavy dependencies
 //! The testcartridge binary will be auto-built if missing or outdated
 
-use capdag::orchestrator::{parse_machine_to_cap_dag, execute_dag, NodeData, ParseOrchestrationError};
 use capdag::cap::definition::{ArgSource, CapArg, CapOutput};
-use capdag::{Cap, CapUrn, CapRegistry};
+use capdag::orchestrator::{
+    execute_dag, parse_machine_to_cap_dag, NodeData, ParseOrchestrationError,
+};
+use capdag::{Cap, CapRegistry, CapUrn};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -38,7 +40,10 @@ fn build_testcartridge_cap(urn_str: &str) -> Cap {
     let out_spec = cap_urn.out_spec().to_string();
     Cap {
         urn: cap_urn.clone(),
-        title: format!("Test {}", cap_urn.get_tag("op").map_or("unknown", |s| s.as_str())),
+        title: format!(
+            "Test {}",
+            cap_urn.get_tag("op").map_or("unknown", |s| s.as_str())
+        ),
         cap_description: None,
         documentation: None,
         metadata: HashMap::new(),
@@ -155,7 +160,10 @@ fn build_testcartridge() {
     }
 
     if !output.status.success() {
-        panic!("Failed to build testcartridge (exit code: {:?})", output.status.code());
+        panic!(
+            "Failed to build testcartridge (exit code: {:?})",
+            output.status.code()
+        );
     }
 
     eprintln!("[TestcartridgeTest] Successfully built testcartridge");
@@ -185,7 +193,10 @@ fn testcartridge_bin() -> PathBuf {
     }
 
     if !bin_path.exists() {
-        panic!("testcartridge binary not found at {:?} after build attempt", bin_path);
+        panic!(
+            "testcartridge binary not found at {:?} after build attempt",
+            bin_path
+        );
     }
 
     bin_path
@@ -210,17 +221,37 @@ fn setup_test_env() -> (TempDir, PathBuf, Vec<PathBuf>) {
 fn create_test_cap_registry() -> Arc<CapRegistry> {
     let registry = CapRegistry::new_for_test();
     let caps = vec![
-        build_testcartridge_cap(r#"cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node3;textable";op=test_edge3;out="media:node4;list;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node4;list;textable";op=test_edge4;out="media:node5;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node7;textable";op=test_edge9;out="media:node8;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node8;textable";op=test_edge10;out="media:node1;textable""#),
+        build_testcartridge_cap(
+            r#"cap:in="media:node1;textable";op=test_edge1;out="media:node2;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node2;textable";op=test_edge2;out="media:node3;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node3;textable";op=test_edge3;out="media:node4;list;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node4;list;textable";op=test_edge4;out="media:node5;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node3;textable";op=test_edge7;out="media:node6;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node6;textable";op=test_edge8;out="media:node7;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node7;textable";op=test_edge9;out="media:node8;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node8;textable";op=test_edge10;out="media:node1;textable""#,
+        ),
         build_testcartridge_cap(r#"cap:in="media:void";op=test_large;out="media:""#),
-        build_testcartridge_cap(r#"cap:in="media:node1;textable";op=test_peer;out="media:node3;textable""#),
-        build_testcartridge_cap(r#"cap:in="media:node1;textable";op=identity;out="media:node1;textable""#),
+        build_testcartridge_cap(
+            r#"cap:in="media:node1;textable";op=test_peer;out="media:node3;textable""#,
+        ),
+        build_testcartridge_cap(
+            r#"cap:in="media:node1;textable";op=identity;out="media:node1;textable""#,
+        ),
     ];
     registry.add_caps_to_cache(caps);
     Arc::new(registry)
@@ -265,7 +296,9 @@ async fn test889_execute_single_edge_dag() {
 [input -> test_edge1 -> output]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     // Create initial input
     let mut initial_inputs = HashMap::new();
@@ -281,7 +314,8 @@ async fn test889_execute_single_edge_dag() {
         dev_binaries,
         cap_registry,
         None,
-    ).await;
+    )
+    .await;
 
     assert!(result.is_ok(), "Execution failed: {:?}", result.err());
 
@@ -310,7 +344,9 @@ async fn test888_execute_edge1_to_edge2_chain() {
 [B -> test_edge2 -> C]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("CHAIN".to_string()));
@@ -324,7 +360,9 @@ async fn test888_execute_edge1_to_edge2_chain() {
         dev_binaries,
         cap_registry,
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     let final_output = outputs.get("C").expect("No final output");
 
@@ -349,7 +387,9 @@ async fn test887_execute_with_file_input() {
 [input -> test_edge1 -> output]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     // Create test input file
     let input_file = temp.path().join("input.txt");
@@ -366,7 +406,9 @@ async fn test887_execute_with_file_input() {
         dev_binaries,
         create_test_cap_registry(),
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     let output = outputs.get("output").expect("No output");
 
@@ -390,7 +432,9 @@ async fn test952_execute_large_payload() {
 [input -> test_large -> output]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     // test-large generates payload based on size, but with media:void input
     let mut initial_inputs = HashMap::new();
@@ -404,7 +448,9 @@ async fn test952_execute_large_payload() {
         dev_binaries,
         create_test_cap_registry(),
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     let output = outputs.get("output").expect("No output");
 
@@ -437,7 +483,9 @@ async fn test951_fan_in_pattern() {
 [D -> test_edge2 -> E]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("PATH1".to_string()));
@@ -451,7 +499,9 @@ async fn test951_fan_in_pattern() {
         dev_binaries,
         create_test_cap_registry(),
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     // Both paths should reach E (one will overwrite the other)
     assert!(outputs.contains_key("E"));
@@ -512,10 +562,7 @@ async fn test949_empty_graph() {
 async fn test948_invalid_cap_urn() {
     let registry = create_test_cap_registry();
 
-    let route = concat!(
-        r#"[bad cap:INVALID]"#,
-        "[A -> bad -> B]"
-    );
+    let route = concat!(r#"[bad cap:INVALID]"#, "[A -> bad -> B]");
 
     let result = parse_machine_to_cap_dag(route, &*registry).await;
     assert!(result.is_err(), "Should reject invalid cap URN");
@@ -565,7 +612,9 @@ async fn test946_four_machine() {
 [D -> test_edge8 -> E]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
@@ -578,7 +627,9 @@ async fn test946_four_machine() {
         dev_binaries,
         create_test_cap_registry(),
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     let final_output = outputs.get("E").expect("No final output");
 
@@ -616,7 +667,9 @@ async fn test945_five_machine() {
 [E -> test_edge9 -> F]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
@@ -629,7 +682,9 @@ async fn test945_five_machine() {
         dev_binaries,
         create_test_cap_registry(),
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     let final_output = outputs.get("F").expect("No final output");
 
@@ -667,7 +722,9 @@ async fn test944_six_machine() {
 [F -> test_edge10 -> G]
 "#;
 
-    let graph = parse_machine_to_cap_dag(route, &*registry).await.expect("Parse failed");
+    let graph = parse_machine_to_cap_dag(route, &*registry)
+        .await
+        .expect("Parse failed");
 
     let mut initial_inputs = HashMap::new();
     initial_inputs.insert("A".to_string(), NodeData::Text("hello".to_string()));
@@ -680,7 +737,9 @@ async fn test944_six_machine() {
         dev_binaries,
         create_test_cap_registry(),
         None,
-    ).await.expect("Execution failed");
+    )
+    .await
+    .expect("Execution failed");
 
     let final_output = outputs.get("G").expect("No final output");
 
@@ -706,16 +765,28 @@ async fn test944_six_machine() {
         assert_eq!(String::from_utf8(b.clone()).unwrap(), "[PREPEND]hello");
     }
     if let NodeData::Bytes(b) = outputs.get("C").unwrap() {
-        assert_eq!(String::from_utf8(b.clone()).unwrap(), "[PREPEND]hello[APPEND]");
+        assert_eq!(
+            String::from_utf8(b.clone()).unwrap(),
+            "[PREPEND]hello[APPEND]"
+        );
     }
     if let NodeData::Bytes(b) = outputs.get("D").unwrap() {
-        assert_eq!(String::from_utf8(b.clone()).unwrap(), "[PREPEND]HELLO[APPEND]");
+        assert_eq!(
+            String::from_utf8(b.clone()).unwrap(),
+            "[PREPEND]HELLO[APPEND]"
+        );
     }
     if let NodeData::Bytes(b) = outputs.get("E").unwrap() {
-        assert_eq!(String::from_utf8(b.clone()).unwrap(), "]DNEPPA[OLLEH]DNEPERP[");
+        assert_eq!(
+            String::from_utf8(b.clone()).unwrap(),
+            "]DNEPPA[OLLEH]DNEPERP["
+        );
     }
     if let NodeData::Bytes(b) = outputs.get("F").unwrap() {
-        assert_eq!(String::from_utf8(b.clone()).unwrap(), "<<]DNEPPA[OLLEH]DNEPERP[>>");
+        assert_eq!(
+            String::from_utf8(b.clone()).unwrap(),
+            "<<]DNEPPA[OLLEH]DNEPERP[>>"
+        );
     }
 }
 
@@ -729,11 +800,11 @@ async fn test944_six_machine() {
 #[tokio::test]
 #[ignore]
 async fn test394_peer_invoke_roundtrip() {
-    use capdag::{CartridgeHost, CapArgumentValue};
     use capdag::local_cartridge_router::LocalCartridgeRouter;
-    use tokio::process::Command;
+    use capdag::{CapArgumentValue, CartridgeHost};
     use std::process::Stdio;
     use std::sync::Arc;
+    use tokio::process::Command;
 
     let testcartridge = testcartridge_bin();
 
@@ -758,25 +829,28 @@ async fn test394_peer_invoke_roundtrip() {
 
     // Get manifest to discover all caps
     let manifest_bytes = host.cartridge_manifest();
-    let manifest: capdag::CapManifest = serde_json::from_slice(manifest_bytes)
-        .expect("Failed to parse manifest");
+    let manifest: capdag::CapManifest =
+        serde_json::from_slice(manifest_bytes).expect("Failed to parse manifest");
 
-    eprintln!("[TEST394] Discovered {} caps from testcartridge", manifest.caps.len());
+    eprintln!(
+        "[TEST394] Discovered {} caps from testcartridge",
+        manifest.caps.len()
+    );
 
     // Register all caps with the router (pointing to this same host)
     let host_arc = Arc::new(host);
     for cap in &manifest.caps {
         let cap_urn = cap.urn.to_string();
         eprintln!("[TEST394] Registering cap: {}", cap_urn);
-        router.register_cartridge(&cap_urn, Arc::clone(&host_arc)).await;
+        router
+            .register_cartridge(&cap_urn, Arc::clone(&host_arc))
+            .await;
     }
 
     // Now call test-peer, which will peer invoke test-edge1 and test-edge2
     let test_peer_urn = r#"cap:in="media:node1;textable";op=test_peer;out="media:node5;textable""#;
     let input_data = b"CHAIN".to_vec();
-    let arguments = vec![
-        CapArgumentValue::new("media:node1;textable", input_data),
-    ];
+    let arguments = vec![CapArgumentValue::new("media:node1;textable", input_data)];
 
     eprintln!("[TEST394] Calling test-peer with input: CHAIN");
 
@@ -806,11 +880,14 @@ async fn test394_peer_invoke_roundtrip() {
     }
 
     // Debug: print raw bytes
-    eprintln!("[TEST394] Raw response bytes: {:?}", &result_data[..std::cmp::min(result_data.len(), 30)]);
+    eprintln!(
+        "[TEST394] Raw response bytes: {:?}",
+        &result_data[..std::cmp::min(result_data.len(), 30)]
+    );
 
     // Decode CBOR response
-    let cbor_value: ciborium::Value = ciborium::from_reader(&result_data[..])
-        .expect("Failed to decode CBOR response");
+    let cbor_value: ciborium::Value =
+        ciborium::from_reader(&result_data[..]).expect("Failed to decode CBOR response");
 
     eprintln!("[TEST394] Decoded CBOR value: {:?}", cbor_value);
 
@@ -820,8 +897,7 @@ async fn test394_peer_invoke_roundtrip() {
         _ => panic!("Expected CBOR Bytes, got: {:?}", cbor_value),
     };
 
-    let result_str = String::from_utf8(result_bytes)
-        .expect("Invalid UTF-8 in result");
+    let result_str = String::from_utf8(result_bytes).expect("Invalid UTF-8 in result");
 
     eprintln!("[TEST394] Final result: {}", result_str);
 
@@ -830,6 +906,8 @@ async fn test394_peer_invoke_roundtrip() {
     // 2. Calls peer.invoke(test-edge1, "CHAIN") -> "[PREPEND]CHAIN"
     // 3. Calls peer.invoke(test-edge2, "[PREPEND]CHAIN") -> "[PREPEND]CHAIN[APPEND]"
     // 4. Returns final result
-    assert_eq!(result_str, "[PREPEND]CHAIN[APPEND]",
-        "Peer invoke chain should prepend and append correctly");
+    assert_eq!(
+        result_str, "[PREPEND]CHAIN[APPEND]",
+        "Peer invoke chain should prepend and append correctly"
+    );
 }

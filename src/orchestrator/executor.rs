@@ -20,9 +20,8 @@
 
 use super::types::{ResolvedEdge, ResolvedGraph};
 use crate::{
-    Frame, FrameType, FrameReader, FrameWriter, Limits,
-    CartridgeHostRuntime, RelaySlave, RelaySwitch, CartridgeRepo,
-    CapManifest, CapUrn, CapRegistry, handshake, DEFAULT_MAX_CHUNK,
+    handshake, CapManifest, CapRegistry, CapUrn, CartridgeHostRuntime, CartridgeRepo, Frame,
+    FrameReader, FrameType, FrameWriter, Limits, RelaySlave, RelaySwitch, DEFAULT_MAX_CHUNK,
 };
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -165,7 +164,9 @@ pub enum ExecutionError {
     #[error("Registry error: {0}")]
     RegistryError(String),
 
-    #[error("Activity timeout for cap {cap_urn}: no activity for {idle_secs}s (limit: {limit_secs}s)")]
+    #[error(
+        "Activity timeout for cap {cap_urn}: no activity for {idle_secs}s (limit: {limit_secs}s)"
+    )]
     ActivityTimeout {
         cap_urn: String,
         idle_secs: u64,
@@ -194,13 +195,13 @@ impl NodeData {
         match self {
             NodeData::Bytes(b) => Ok(b),
             NodeData::Text(t) => Ok(t.into_bytes()),
-            NodeData::FilePath(path) => {
-                tokio::fs::read(&path).await.map_err(|e| {
-                    ExecutionError::HostError(format!(
-                        "Failed to read file '{}': {}", path.display(), e
-                    ))
-                })
-            }
+            NodeData::FilePath(path) => tokio::fs::read(&path).await.map_err(|e| {
+                ExecutionError::HostError(format!(
+                    "Failed to read file '{}': {}",
+                    path.display(),
+                    e
+                ))
+            }),
         }
     }
 }
@@ -335,7 +336,8 @@ impl CartridgeManager {
                         let entry_point = cj.resolve_entry_point(&p);
                         tracing::info!(
                             "[DevMode] Directory cartridge at {:?}: entry point {:?}",
-                            p, entry_point
+                            p,
+                            entry_point
                         );
                         resolved.push(entry_point);
                     }
@@ -361,7 +363,8 @@ impl CartridgeManager {
                     Err(e) => {
                         tracing::error!(
                             "[DevMode] Invalid cartridge.json in {:?}: {} — skipping",
-                            p, e
+                            p,
+                            e
                         );
                     }
                 }
@@ -375,9 +378,10 @@ impl CartridgeManager {
             dev_cartridges: resolved
                 .into_iter()
                 .map(|p| {
-                    (p, CapManifest::new(
-                        String::new(), String::new(), String::new(), vec![],
-                    ))
+                    (
+                        p,
+                        CapManifest::new(String::new(), String::new(), String::new(), vec![]),
+                    )
                 })
                 .collect(),
         }
@@ -410,11 +414,7 @@ impl CartridgeManager {
         Ok(())
     }
 
-    async fn discover_manifest(
-        &self,
-        bin_path: &Path,
-    ) -> Result<CapManifest, ExecutionError> {
-
+    async fn discover_manifest(&self, bin_path: &Path) -> Result<CapManifest, ExecutionError> {
         let mut child = Command::new(bin_path)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -434,9 +434,8 @@ impl CartridgeManager {
             .await
             .map_err(|e| ExecutionError::HostError(format!("Handshake failed: {:?}", e)))?;
 
-        let manifest: CapManifest =
-            serde_json::from_slice(&result.manifest)
-                .map_err(|e| ExecutionError::HostError(format!("Bad manifest: {}", e)))?;
+        let manifest: CapManifest = serde_json::from_slice(&result.manifest)
+            .map_err(|e| ExecutionError::HostError(format!("Bad manifest: {}", e)))?;
 
         let _ = child.kill().await;
         Ok(manifest)
@@ -496,11 +495,10 @@ impl CartridgeManager {
         &self,
         cap_urn: &str,
     ) -> Result<(PathBuf, String), ExecutionError> {
-        let requested_urn = CapUrn::from_string(cap_urn).map_err(|e| {
-            ExecutionError::CartridgeNotFound {
+        let requested_urn =
+            CapUrn::from_string(cap_urn).map_err(|e| ExecutionError::CartridgeNotFound {
                 cap_urn: format!("Invalid URN: {}: {}", cap_urn, e),
-            }
-        })?;
+            })?;
 
         // Check dev cartridges first - use is_dispatchable to find any cartridge
         // that can legally handle the requested cap.
@@ -592,15 +590,14 @@ impl CartridgeManager {
         Some(versions.into_iter().next()?.1)
     }
 
-    async fn verify_cartridge_integrity(
-        &self,
-        cartridge_id: &str,
-    ) -> Result<(), ExecutionError> {
-        let cartridge_info = self.cartridge_repo.get_cartridge(cartridge_id).await.ok_or_else(|| {
-            ExecutionError::CartridgeNotFound {
+    async fn verify_cartridge_integrity(&self, cartridge_id: &str) -> Result<(), ExecutionError> {
+        let cartridge_info = self
+            .cartridge_repo
+            .get_cartridge(cartridge_id)
+            .await
+            .ok_or_else(|| ExecutionError::CartridgeNotFound {
                 cap_urn: format!("Cartridge {} not found in registry", cartridge_id),
-            }
-        })?;
+            })?;
 
         if cartridge_info.team_id.is_empty() || cartridge_info.signed_at.is_empty() {
             return Err(ExecutionError::CartridgeExecutionFailed {
@@ -618,11 +615,13 @@ impl CartridgeManager {
     /// Download a cartridge package from the registry and install it into the
     /// versioned directory layout: {cartridge_dir}/{id}/{version}/cartridge.json + binary.
     async fn download_cartridge(&self, cartridge_id: &str) -> Result<PathBuf, ExecutionError> {
-        let cartridge_info = self.cartridge_repo.get_cartridge(cartridge_id).await.ok_or_else(|| {
-            ExecutionError::CartridgeNotFound {
+        let cartridge_info = self
+            .cartridge_repo
+            .get_cartridge(cartridge_id)
+            .await
+            .ok_or_else(|| ExecutionError::CartridgeNotFound {
                 cap_urn: format!("Cartridge {} not found in registry", cartridge_id),
-            }
-        })?;
+            })?;
 
         if cartridge_info.team_id.is_empty() || cartridge_info.signed_at.is_empty() {
             return Err(ExecutionError::CartridgeDownloadFailed(format!(
@@ -633,13 +632,17 @@ impl CartridgeManager {
 
         // Find the build for this platform
         let platform = detect_platform();
-        let build = cartridge_info.build_for_platform(&platform).ok_or_else(|| {
-            ExecutionError::CartridgeDownloadFailed(format!(
-                "Cartridge {} v{} has no build for platform '{}'. Available: {:?}",
-                cartridge_id, cartridge_info.version, platform,
-                cartridge_info.available_platforms()
-            ))
-        })?;
+        let build = cartridge_info
+            .build_for_platform(&platform)
+            .ok_or_else(|| {
+                ExecutionError::CartridgeDownloadFailed(format!(
+                    "Cartridge {} v{} has no build for platform '{}'. Available: {:?}",
+                    cartridge_id,
+                    cartridge_info.version,
+                    platform,
+                    cartridge_info.available_platforms()
+                ))
+            })?;
 
         let package = &build.package;
 
@@ -651,12 +654,15 @@ impl CartridgeManager {
 
         tracing::info!(
             "Downloading cartridge {} v{} ({}) from {}",
-            cartridge_id, cartridge_info.version, platform, download_url
+            cartridge_id,
+            cartridge_info.version,
+            platform,
+            download_url
         );
 
-        let response = reqwest::get(&download_url)
-            .await
-            .map_err(|e| ExecutionError::CartridgeDownloadFailed(format!("Download failed: {}", e)))?;
+        let response = reqwest::get(&download_url).await.map_err(|e| {
+            ExecutionError::CartridgeDownloadFailed(format!("Download failed: {}", e))
+        })?;
 
         if !response.status().is_success() {
             return Err(ExecutionError::CartridgeDownloadFailed(format!(
@@ -685,7 +691,8 @@ impl CartridgeManager {
         }
 
         // Create versioned directory layout
-        let version_dir = self.cartridge_dir
+        let version_dir = self
+            .cartridge_dir
             .join(cartridge_id)
             .join(&cartridge_info.version);
         fs::create_dir_all(&version_dir)?;
@@ -716,12 +723,18 @@ impl CartridgeManager {
             package_size: package.size,
         };
         cj.write_to_dir(&version_dir).map_err(|e| {
-            ExecutionError::CartridgeDownloadFailed(format!("Failed to write cartridge.json: {}", e))
+            ExecutionError::CartridgeDownloadFailed(format!(
+                "Failed to write cartridge.json: {}",
+                e
+            ))
         })?;
 
         tracing::info!(
             "Installed cartridge {} v{} ({}) to {:?}",
-            cartridge_id, cartridge_info.version, platform, version_dir
+            cartridge_id,
+            cartridge_info.version,
+            platform,
+            version_dir
         );
 
         Ok(binary_path)
@@ -782,7 +795,11 @@ impl ExecutionContext {
             .map_err(|e| ExecutionError::HostError(format!("RelaySwitch init: {}", e)))?;
 
         let max_chunk = switch.limits().await.max_chunk as usize;
-        let max_chunk = if max_chunk == 0 { DEFAULT_MAX_CHUNK as usize } else { max_chunk };
+        let max_chunk = if max_chunk == 0 {
+            DEFAULT_MAX_CHUNK as usize
+        } else {
+            max_chunk
+        };
 
         Ok(Self {
             switch: Arc::new(switch),
@@ -800,7 +817,11 @@ impl ExecutionContext {
     /// Each context has its own isolated node_data.
     pub async fn from_switch(switch: Arc<RelaySwitch>) -> Result<Self, ExecutionError> {
         let max_chunk = switch.limits().await.max_chunk as usize;
-        let max_chunk = if max_chunk == 0 { DEFAULT_MAX_CHUNK as usize } else { max_chunk };
+        let max_chunk = if max_chunk == 0 {
+            DEFAULT_MAX_CHUNK as usize
+        } else {
+            max_chunk
+        };
 
         Ok(Self {
             switch,
@@ -823,11 +844,10 @@ impl ExecutionContext {
     /// (e.g., an InProcessCartridgeHost or external cartridge connection).
     ///
     /// Returns the master index on success.
-    pub async fn add_master(
-        &mut self,
-        socket: UnixStream,
-    ) -> Result<usize, ExecutionError> {
-        let idx = self.switch.add_master(socket)
+    pub async fn add_master(&mut self, socket: UnixStream) -> Result<usize, ExecutionError> {
+        let idx = self
+            .switch
+            .add_master(socket)
             .await
             .map_err(|e| ExecutionError::HostError(format!("add_master: {}", e)))?;
 
@@ -853,10 +873,8 @@ impl ExecutionContext {
         // Create socket pairs:
         //   switch_sock <-> slave_ext_sock (switch to slave)
         //   slave_int_sock <-> host_sock (slave to host runtime)
-        let (switch_sock, slave_ext_sock) =
-            UnixStream::pair().map_err(ExecutionError::IoError)?;
-        let (slave_int_sock, host_sock) =
-            UnixStream::pair().map_err(ExecutionError::IoError)?;
+        let (switch_sock, slave_ext_sock) = UnixStream::pair().map_err(ExecutionError::IoError)?;
+        let (slave_int_sock, host_sock) = UnixStream::pair().map_err(ExecutionError::IoError)?;
 
         // --- CartridgeHostRuntime (async, in tokio task) ---
         let mut host = CartridgeHostRuntime::new();
@@ -887,17 +905,22 @@ impl ExecutionContext {
         let (slave_ext_read, slave_ext_write) = slave_ext_sock.into_split();
 
         let slave_handle = tokio::spawn(async move {
-            if let Err(e) = slave.run(
-                FrameReader::new(BufReader::new(slave_ext_read)),
-                FrameWriter::new(BufWriter::new(slave_ext_write)),
-                Some((&initial_caps_json, &Limits::default())),
-            ).await {
+            if let Err(e) = slave
+                .run(
+                    FrameReader::new(BufReader::new(slave_ext_read)),
+                    FrameWriter::new(BufWriter::new(slave_ext_write)),
+                    Some((&initial_caps_json, &Limits::default())),
+                )
+                .await
+            {
                 tracing::error!("[RelaySlave] Fatal: {}", e);
             }
         });
 
         // --- Add to switch ---
-        let master_idx = self.switch.add_master(switch_sock)
+        let master_idx = self
+            .switch
+            .add_master(switch_sock)
             .await
             .map_err(|e| ExecutionError::HostError(format!("add_master: {}", e)))?;
 
@@ -913,7 +936,11 @@ impl ExecutionContext {
     /// Update max_chunk from current switch limits.
     async fn update_max_chunk(&mut self) {
         let chunk = self.switch.limits().await.max_chunk as usize;
-        self.max_chunk = if chunk == 0 { DEFAULT_MAX_CHUNK as usize } else { chunk };
+        self.max_chunk = if chunk == 0 {
+            DEFAULT_MAX_CHUNK as usize
+        } else {
+            chunk
+        };
     }
 
     /// Get the current max chunk size.
@@ -1032,12 +1059,17 @@ impl ExecutionContext {
         extra_args: &[(String, Vec<u8>)],
         progress_fn: Option<&CapProgressFn>,
     ) -> Result<(), ExecutionError> {
-        assert!(!edges.is_empty(), "execute_fanin requires at least one edge");
+        assert!(
+            !edges.is_empty(),
+            "execute_fanin requires at least one edge"
+        );
 
         let cap_urn = &edges[0].cap_urn;
         let to = &edges[0].to;
 
-        let activity_timeout_secs = edges[0].cap.metadata
+        let activity_timeout_secs = edges[0]
+            .cap
+            .metadata
             .get(ACTIVITY_TIMEOUT_METADATA_KEY)
             .and_then(|v| v.parse::<u64>().ok())
             .filter(|&v| v > 0)
@@ -1082,7 +1114,11 @@ impl ExecutionContext {
             .execute_cap(cap_urn, vec![], "application/cbor")
             .await
             .map_err(|e| ExecutionError::HostError(format!("execute_cap: {}", e)))?;
-        tracing::info!("[execute_fanin] dispatched cap='{}' request_id={:?}", cap_urn, request_id);
+        tracing::info!(
+            "[execute_fanin] dispatched cap='{}' request_id={:?}",
+            cap_urn,
+            request_id
+        );
 
         // Send each input as a separate named stream
         for (data, in_media) in &inputs {
@@ -1291,7 +1327,12 @@ impl ExecutionContext {
             }
         }
 
-        tracing::info!("[execute_fanin] got End for cap='{}' request_id={:?} response_len={}", cap_urn, request_id, response_chunks.len());
+        tracing::info!(
+            "[execute_fanin] got End for cap='{}' request_id={:?} response_len={}",
+            cap_urn,
+            request_id,
+            response_chunks.len()
+        );
 
         // Branch on is_sequence flag from STREAM_START.
         //
@@ -1387,16 +1428,11 @@ pub async fn execute_dag(
     let n_groups = group_order.len();
     tracing::debug!(target: "execute_dag", "{} edge groups to execute", n_groups);
 
-    tracing::info!(
-        "Executing {} cap group(s) in topological order",
-        n_groups
-    );
+    tracing::info!("Executing {} cap group(s) in topological order", n_groups);
 
     // Pre-compute group boundaries for deterministic progress subdivision
     let group_boundaries: Vec<f32> = if n_groups > 0 {
-        (0..=n_groups)
-            .map(|i| i as f32 / n_groups as f32)
-            .collect()
+        (0..=n_groups).map(|i| i as f32 / n_groups as f32).collect()
     } else {
         vec![0.0]
     };
@@ -1412,11 +1448,16 @@ pub async fn execute_dag(
             ProgressMapper::new(parent, base, weight).as_cap_progress_fn()
         });
 
-        ctx.execute_fanin(&groups[*idx].edges, &[], group_pfn.as_ref()).await?;
+        ctx.execute_fanin(&groups[*idx].edges, &[], group_pfn.as_ref())
+            .await?;
 
         // Report group completion
         if let Some(pfn) = &progress_fn {
-            pfn(group_boundaries[i + 1], &groups[*idx].edges[0].cap_urn, "Completed");
+            pfn(
+                group_boundaries[i + 1],
+                &groups[*idx].edges[0].cap_urn,
+                "Completed",
+            );
         }
 
         tracing::debug!(target: "execute_dag", "Group {} complete", i+1);
@@ -1456,7 +1497,7 @@ mod tests {
 
         // Clamping: values outside [0, 1] are clamped before mapping
         assert_eq!(map_progress(-0.5, 0.2, 0.6), 0.2); // clamp to 0 → base
-        assert_eq!(map_progress(1.5, 0.2, 0.6), 0.8);  // clamp to 1 → base+weight
+        assert_eq!(map_progress(1.5, 0.2, 0.6), 0.8); // clamp to 1 → base+weight
     }
 
     // TEST1126: map_progress is deterministic — same inputs always produce same output
@@ -1480,7 +1521,9 @@ mod tests {
             assert!(
                 curr >= prev,
                 "map_progress must be monotonic: p={}, prev={}, curr={}",
-                p, prev, curr
+                p,
+                prev,
+                curr
             );
             prev = curr;
         }
@@ -1497,7 +1540,12 @@ mod tests {
             assert!(
                 result >= base && result <= base + weight,
                 "map_progress({}, {}, {}) = {} must be in [{}, {}]",
-                p, base, weight, result, base, base + weight
+                p,
+                base,
+                weight,
+                result,
+                base,
+                base + weight
             );
         }
     }
@@ -1520,7 +1568,10 @@ mod tests {
         assert_eq!(reports.len(), 3);
         assert!((reports[0].0 - 0.2).abs() < 0.001, "0% maps to base=0.2");
         assert!((reports[1].0 - 0.5).abs() < 0.001, "50% maps to 0.5");
-        assert!((reports[2].0 - 0.8).abs() < 0.001, "100% maps to base+weight=0.8");
+        assert!(
+            (reports[2].0 - 0.8).abs() < 0.001,
+            "100% maps to base+weight=0.8"
+        );
     }
 
     // TEST913: ProgressMapper.as_cap_progress_fn produces same mapping
@@ -1583,9 +1634,7 @@ mod tests {
         });
 
         let n_groups: usize = 5;
-        let boundaries: Vec<f32> = (0..=n_groups)
-            .map(|i| i as f32 / n_groups as f32)
-            .collect();
+        let boundaries: Vec<f32> = (0..=n_groups).map(|i| i as f32 / n_groups as f32).collect();
 
         for i in 0..n_groups {
             let base = boundaries[i];
@@ -1606,7 +1655,9 @@ mod tests {
             assert!(
                 progress[i] >= progress[i - 1],
                 "monotonic violation at index {}: {} < {}",
-                i, progress[i], progress[i - 1]
+                i,
+                progress[i],
+                progress[i - 1]
             );
         }
 
@@ -1615,7 +1666,8 @@ mod tests {
             assert!(
                 p >= 0.0 && p <= 1.0,
                 "Progress[{}]={} must be in [0.0, 1.0]",
-                i, p
+                i,
+                p
             );
         }
 
@@ -1662,16 +1714,33 @@ mod tests {
         assert_eq!(progress.len(), 8); // 4 items * 2 reports
 
         // Item 0 start: body_base = 0.05
-        assert!((progress[0] - 0.05).abs() < 0.01, "item 0 start: got {}", progress[0]);
+        assert!(
+            (progress[0] - 0.05).abs() < 0.01,
+            "item 0 start: got {}",
+            progress[0]
+        );
         // Item 0 end: boundary[1] = 0.05 + 0.90 * 0.25 = 0.275
-        assert!((progress[1] - 0.275).abs() < 0.01, "item 0 end: got {}", progress[1]);
+        assert!(
+            (progress[1] - 0.275).abs() < 0.01,
+            "item 0 end: got {}",
+            progress[1]
+        );
         // Item 3 end: boundary[4] = 0.05 + 0.90 * 1.0 = 0.95
-        assert!((progress[7] - 0.95).abs() < 0.01, "item 3 end: got {}", progress[7]);
+        assert!(
+            (progress[7] - 0.95).abs() < 0.01,
+            "item 3 end: got {}",
+            progress[7]
+        );
 
         // All monotonic — this is the core invariant
         for i in 1..progress.len() {
-            assert!(progress[i] >= progress[i - 1],
-                "monotonic violation at index {}: {} < {}", i, progress[i], progress[i - 1]);
+            assert!(
+                progress[i] >= progress[i - 1],
+                "monotonic violation at index {}: {} < {}",
+                i,
+                progress[i],
+                progress[i - 1]
+            );
         }
     }
 
@@ -1689,9 +1758,13 @@ mod tests {
         let parent: CapProgressFn = Arc::new(move |p: f32, _cap: &str, _msg: &str| {
             count_clone.fetch_add(1, Ordering::Relaxed);
             let mut max = max_clone.lock().unwrap();
-            if p > *max { *max = p; }
+            if p > *max {
+                *max = p;
+            }
             let mut min = min_clone.lock().unwrap();
-            if p < *min { *min = p; }
+            if p < *min {
+                *min = p;
+            }
         });
 
         let mapper = ProgressMapper::new(&parent, 0.1, 0.8);

@@ -44,9 +44,8 @@ pub use graph::{
     NodeId,
 };
 pub use notation_ast::{
-    parse_notation_ast, get_completion_context, emit_semantic_tokens,
-    build_editor_model, byte_offset_to_position,
-    CompletionContextType, NotationAST, NotationEntityInfo, NotationEntityKind,
+    build_editor_model, byte_offset_to_position, emit_semantic_tokens, get_completion_context,
+    parse_notation_ast, CompletionContextType, NotationAST, NotationEntityInfo, NotationEntityKind,
     NotationGraphElementInfo, NotationGraphElementKind, NotationPosition, NotationSpan,
     ParsedHeader, ParsedStatement, ParsedWiring, SemanticTokenInfo, SemanticTokenType,
 };

@@ -17,9 +17,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::standard::media::{
-    PROFILE_STR, PROFILE_INT, PROFILE_NUM, PROFILE_BOOL,
-    PROFILE_OBJ, PROFILE_STR_ARRAY, PROFILE_NUM_ARRAY,
-    PROFILE_BOOL_ARRAY, PROFILE_OBJ_ARRAY,
+    PROFILE_BOOL, PROFILE_BOOL_ARRAY, PROFILE_INT, PROFILE_NUM, PROFILE_NUM_ARRAY, PROFILE_OBJ,
+    PROFILE_OBJ_ARRAY, PROFILE_STR, PROFILE_STR_ARRAY,
 };
 
 const CACHE_DURATION_HOURS: u64 = 24 * 7; // Cache for 1 week
@@ -203,16 +202,21 @@ impl ProfileSchemaRegistry {
             let cache_file = self.cache_file_path(profile_url);
 
             if !cache_file.exists() {
-                let schema_json: JsonValue = serde_json::from_str(schema_json_str)
-                    .map_err(|e| ProfileSchemaError::ParseError(format!(
-                        "Failed to parse embedded schema for {}: {}", profile_url, e
-                    )))?;
+                let schema_json: JsonValue =
+                    serde_json::from_str(schema_json_str).map_err(|e| {
+                        ProfileSchemaError::ParseError(format!(
+                            "Failed to parse embedded schema for {}: {}",
+                            profile_url, e
+                        ))
+                    })?;
 
                 // Compile to verify it's valid
-                let compiled = JSONSchema::compile(&schema_json)
-                    .map_err(|e| ProfileSchemaError::InvalidSchema(format!(
-                        "Failed to compile embedded schema for {}: {}", profile_url, e
-                    )))?;
+                let compiled = JSONSchema::compile(&schema_json).map_err(|e| {
+                    ProfileSchemaError::InvalidSchema(format!(
+                        "Failed to compile embedded schema for {}: {}",
+                        profile_url, e
+                    ))
+                })?;
 
                 // Create cache entry
                 let cache_entry = CacheEntry {
@@ -225,14 +229,17 @@ impl ProfileSchemaRegistry {
                     ttl_hours: CACHE_DURATION_HOURS,
                 };
 
-                let cache_content = serde_json::to_string_pretty(&cache_entry)
-                    .map_err(|e| ProfileSchemaError::CacheError(format!(
-                        "Failed to serialize schema for {}: {}", profile_url, e
-                    )))?;
+                let cache_content = serde_json::to_string_pretty(&cache_entry).map_err(|e| {
+                    ProfileSchemaError::CacheError(format!(
+                        "Failed to serialize schema for {}: {}",
+                        profile_url, e
+                    ))
+                })?;
 
                 fs::write(&cache_file, cache_content).map_err(|e| {
                     ProfileSchemaError::CacheError(format!(
-                        "Failed to write schema to cache for {}: {}", profile_url, e
+                        "Failed to write schema to cache for {}: {}",
+                        profile_url, e
                     ))
                 })?;
 
@@ -240,7 +247,10 @@ impl ProfileSchemaRegistry {
                 if let Ok(mut schemas) = self.compiled_schemas.lock() {
                     schemas.insert(
                         profile_url.to_string(),
-                        Arc::new(CompiledSchema { compiled, source: schema_json }),
+                        Arc::new(CompiledSchema {
+                            compiled,
+                            source: schema_json,
+                        }),
                     );
                 }
             }
@@ -255,10 +265,9 @@ impl ProfileSchemaRegistry {
     }
 
     fn get_cache_dir() -> Result<PathBuf, ProfileSchemaError> {
-        let cache_dir = dirs::cache_dir()
-            .ok_or_else(|| ProfileSchemaError::CacheError(
-                "Could not determine cache directory".to_string()
-            ))?;
+        let cache_dir = dirs::cache_dir().ok_or_else(|| {
+            ProfileSchemaError::CacheError("Could not determine cache directory".to_string())
+        })?;
         Ok(cache_dir.join("capdag").join("profile_schemas"))
     }
 
@@ -273,7 +282,9 @@ impl ProfileSchemaRegistry {
         self.cache_dir.join(format!("{}.json", &key[..16]))
     }
 
-    fn load_all_cached_schemas(cache_dir: &PathBuf) -> Result<HashMap<String, Arc<CompiledSchema>>, ProfileSchemaError> {
+    fn load_all_cached_schemas(
+        cache_dir: &PathBuf,
+    ) -> Result<HashMap<String, Arc<CompiledSchema>>, ProfileSchemaError> {
         let mut schemas = HashMap::new();
 
         if !cache_dir.exists() {
@@ -290,10 +301,12 @@ impl ProfileSchemaRegistry {
             let path = entry.path();
             if let Some(extension) = path.extension() {
                 if extension == "json" {
-                    let content = fs::read_to_string(&path)
-                        .map_err(|e| ProfileSchemaError::CacheError(format!(
-                            "Failed to read cache file {:?}: {}", path, e
-                        )))?;
+                    let content = fs::read_to_string(&path).map_err(|e| {
+                        ProfileSchemaError::CacheError(format!(
+                            "Failed to read cache file {:?}: {}",
+                            path, e
+                        ))
+                    })?;
 
                     let cache_entry: CacheEntry = match serde_json::from_str(&content) {
                         Ok(entry) => entry,
@@ -323,7 +336,11 @@ impl ProfileSchemaRegistry {
         Ok(schemas)
     }
 
-    fn save_to_cache(&self, profile_url: &str, schema_json: &JsonValue) -> Result<(), ProfileSchemaError> {
+    fn save_to_cache(
+        &self,
+        profile_url: &str,
+        schema_json: &JsonValue,
+    ) -> Result<(), ProfileSchemaError> {
         let cache_file = self.cache_file_path(profile_url);
         let cache_entry = CacheEntry {
             schema_json: schema_json.clone(),
@@ -339,8 +356,9 @@ impl ProfileSchemaRegistry {
             ProfileSchemaError::CacheError(format!("Failed to serialize cache entry: {}", e))
         })?;
 
-        fs::write(&cache_file, content)
-            .map_err(|e| ProfileSchemaError::CacheError(format!("Failed to write cache file: {}", e)))?;
+        fs::write(&cache_file, content).map_err(|e| {
+            ProfileSchemaError::CacheError(format!("Failed to write cache file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -378,24 +396,36 @@ impl ProfileSchemaRegistry {
         }
     }
 
-    async fn fetch_schema(&self, profile_url: &str) -> Result<(JsonValue, JSONSchema), ProfileSchemaError> {
+    async fn fetch_schema(
+        &self,
+        profile_url: &str,
+    ) -> Result<(JsonValue, JSONSchema), ProfileSchemaError> {
         if self.offline_flag.load(Ordering::Relaxed) {
             return Err(ProfileSchemaError::NetworkBlocked(format!(
-                "Network access blocked by policy — cannot fetch schema '{}'", profile_url
+                "Network access blocked by policy — cannot fetch schema '{}'",
+                profile_url
             )));
         }
         let response = self.client.get(profile_url).send().await.map_err(|e| {
-            ProfileSchemaError::HttpError(format!("Failed to fetch schema from {}: {}", profile_url, e))
+            ProfileSchemaError::HttpError(format!(
+                "Failed to fetch schema from {}: {}",
+                profile_url, e
+            ))
         })?;
 
         if !response.status().is_success() {
             return Err(ProfileSchemaError::NotFound(format!(
-                "Schema not found at {} (HTTP {})", profile_url, response.status()
+                "Schema not found at {} (HTTP {})",
+                profile_url,
+                response.status()
             )));
         }
 
         let content = response.text().await.map_err(|e| {
-            ProfileSchemaError::HttpError(format!("Failed to read response from {}: {}", profile_url, e))
+            ProfileSchemaError::HttpError(format!(
+                "Failed to read response from {}: {}",
+                profile_url, e
+            ))
         })?;
 
         let schema_json: JsonValue = serde_json::from_str(&content).map_err(|e| {
@@ -403,7 +433,10 @@ impl ProfileSchemaRegistry {
         })?;
 
         let compiled = JSONSchema::compile(&schema_json).map_err(|e| {
-            ProfileSchemaError::InvalidSchema(format!("Invalid JSON Schema from {}: {}", profile_url, e))
+            ProfileSchemaError::InvalidSchema(format!(
+                "Invalid JSON Schema from {}: {}",
+                profile_url, e
+            ))
         })?;
 
         Ok((schema_json, compiled))
@@ -414,19 +447,18 @@ impl ProfileSchemaRegistry {
     /// Returns Err with validation errors if invalid.
     pub async fn validate(&self, profile_url: &str, value: &JsonValue) -> Result<(), Vec<String>> {
         match self.get_schema(profile_url).await {
-            Some(schema) => {
-                match schema.compiled.validate(value) {
-                    Ok(()) => Ok(()),
-                    Err(errors) => {
-                        let error_messages: Vec<String> = errors
-                            .map(|e| e.to_string())
-                            .collect();
-                        Err(error_messages)
-                    }
+            Some(schema) => match schema.compiled.validate(value) {
+                Ok(()) => Ok(()),
+                Err(errors) => {
+                    let error_messages: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    Err(error_messages)
                 }
-            }
+            },
             None => {
-                tracing::warn!("Schema not available for profile '{}' - skipping validation", profile_url);
+                tracing::warn!(
+                    "Schema not available for profile '{}' - skipping validation",
+                    profile_url
+                );
                 Ok(())
             }
         }
@@ -442,17 +474,13 @@ impl ProfileSchemaRegistry {
         };
 
         match schemas.get(profile_url) {
-            Some(schema) => {
-                match schema.compiled.validate(value) {
-                    Ok(()) => Ok(()),
-                    Err(errors) => {
-                        let error_messages: Vec<String> = errors
-                            .map(|e| e.to_string())
-                            .collect();
-                        Err(error_messages)
-                    }
+            Some(schema) => match schema.compiled.validate(value) {
+                Ok(()) => Ok(()),
+                Err(errors) => {
+                    let error_messages: Vec<String> = errors.map(|e| e.to_string()).collect();
+                    Err(error_messages)
                 }
-            }
+            },
             None => Ok(()), // Schema not cached - skip validation
         }
     }
@@ -479,17 +507,20 @@ impl ProfileSchemaRegistry {
     pub fn clear_cache(&self) -> Result<(), ProfileSchemaError> {
         // Clear in-memory cache
         {
-            let mut schemas = self.compiled_schemas.lock()
-                .map_err(|e| ProfileSchemaError::CacheError(format!("Failed to lock cache: {}", e)))?;
+            let mut schemas = self.compiled_schemas.lock().map_err(|e| {
+                ProfileSchemaError::CacheError(format!("Failed to lock cache: {}", e))
+            })?;
             schemas.clear();
         }
 
         // Clear disk cache
         if self.cache_dir.exists() {
-            fs::remove_dir_all(&self.cache_dir)
-                .map_err(|e| ProfileSchemaError::CacheError(format!("Failed to clear cache: {}", e)))?;
-            fs::create_dir_all(&self.cache_dir)
-                .map_err(|e| ProfileSchemaError::CacheError(format!("Failed to recreate cache: {}", e)))?;
+            fs::remove_dir_all(&self.cache_dir).map_err(|e| {
+                ProfileSchemaError::CacheError(format!("Failed to clear cache: {}", e))
+            })?;
+            fs::create_dir_all(&self.cache_dir).map_err(|e| {
+                ProfileSchemaError::CacheError(format!("Failed to recreate cache: {}", e))
+            })?;
         }
 
         Ok(())
@@ -497,7 +528,9 @@ impl ProfileSchemaRegistry {
 
     /// Check if a profile URL is one of the embedded defaults
     pub fn is_embedded_profile(profile_url: &str) -> bool {
-        embedded_schemas::all().iter().any(|(url, _)| *url == profile_url)
+        embedded_schemas::all()
+            .iter()
+            .any(|(url, _)| *url == profile_url)
     }
 }
 
@@ -567,7 +600,10 @@ mod tests {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string
-        assert!(registry.validate(PROFILE_STR, &json!("hello")).await.is_ok());
+        assert!(registry
+            .validate(PROFILE_STR, &json!("hello"))
+            .await
+            .is_ok());
 
         // Invalid: not a string
         assert!(registry.validate(PROFILE_STR, &json!(42)).await.is_err());
@@ -585,7 +621,10 @@ mod tests {
         assert!(registry.validate(PROFILE_INT, &json!(3.14)).await.is_err());
 
         // Invalid: not a number
-        assert!(registry.validate(PROFILE_INT, &json!("hello")).await.is_err());
+        assert!(registry
+            .validate(PROFILE_INT, &json!("hello"))
+            .await
+            .is_err());
     }
 
     // TEST622: Verify number schema validates integers and floats, rejects strings
@@ -600,7 +639,10 @@ mod tests {
         assert!(registry.validate(PROFILE_NUM, &json!(3.14)).await.is_ok());
 
         // Invalid: not a number
-        assert!(registry.validate(PROFILE_NUM, &json!("hello")).await.is_err());
+        assert!(registry
+            .validate(PROFILE_NUM, &json!("hello"))
+            .await
+            .is_err());
     }
 
     // TEST623: Verify boolean schema validates true/false and rejects string "true"
@@ -613,7 +655,10 @@ mod tests {
         assert!(registry.validate(PROFILE_BOOL, &json!(false)).await.is_ok());
 
         // Invalid: not a boolean
-        assert!(registry.validate(PROFILE_BOOL, &json!("true")).await.is_err());
+        assert!(registry
+            .validate(PROFILE_BOOL, &json!("true"))
+            .await
+            .is_err());
     }
 
     // TEST624: Verify object schema validates objects and rejects arrays
@@ -622,10 +667,16 @@ mod tests {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid object
-        assert!(registry.validate(PROFILE_OBJ, &json!({"key": "value"})).await.is_ok());
+        assert!(registry
+            .validate(PROFILE_OBJ, &json!({"key": "value"}))
+            .await
+            .is_ok());
 
         // Invalid: not an object
-        assert!(registry.validate(PROFILE_OBJ, &json!([1, 2, 3])).await.is_err());
+        assert!(registry
+            .validate(PROFILE_OBJ, &json!([1, 2, 3]))
+            .await
+            .is_err());
     }
 
     // TEST625: Verify string array schema validates string arrays and rejects mixed arrays
@@ -634,13 +685,22 @@ mod tests {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string array
-        assert!(registry.validate(PROFILE_STR_ARRAY, &json!(["a", "b", "c"])).await.is_ok());
+        assert!(registry
+            .validate(PROFILE_STR_ARRAY, &json!(["a", "b", "c"]))
+            .await
+            .is_ok());
 
         // Invalid: contains non-strings
-        assert!(registry.validate(PROFILE_STR_ARRAY, &json!(["a", 1, "c"])).await.is_err());
+        assert!(registry
+            .validate(PROFILE_STR_ARRAY, &json!(["a", 1, "c"]))
+            .await
+            .is_err());
 
         // Invalid: not an array
-        assert!(registry.validate(PROFILE_STR_ARRAY, &json!("hello")).await.is_err());
+        assert!(registry
+            .validate(PROFILE_STR_ARRAY, &json!("hello"))
+            .await
+            .is_err());
     }
 
     // TEST626: Verify unknown profile URL skips validation and returns Ok
@@ -649,7 +709,9 @@ mod tests {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Unknown profile should return Ok - skip validation
-        let result = registry.validate("https://example.com/unknown-profile", &json!("anything")).await;
+        let result = registry
+            .validate("https://example.com/unknown-profile", &json!("anything"))
+            .await;
         assert!(result.is_ok());
     }
 
@@ -658,28 +720,42 @@ mod tests {
     fn test627_is_embedded_profile() {
         assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_STR));
         assert!(ProfileSchemaRegistry::is_embedded_profile(PROFILE_INT));
-        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://example.com/custom"));
+        assert!(!ProfileSchemaRegistry::is_embedded_profile(
+            "https://example.com/custom"
+        ));
     }
 
     // TEST611: is_embedded_profile recognizes all 9 embedded profiles and rejects non-embedded
     #[test]
     fn test611_is_embedded_profile_comprehensive() {
         let embedded = [
-            PROFILE_STR, PROFILE_INT, PROFILE_NUM, PROFILE_BOOL, PROFILE_OBJ,
-            PROFILE_STR_ARRAY, PROFILE_NUM_ARRAY, PROFILE_BOOL_ARRAY, PROFILE_OBJ_ARRAY,
+            PROFILE_STR,
+            PROFILE_INT,
+            PROFILE_NUM,
+            PROFILE_BOOL,
+            PROFILE_OBJ,
+            PROFILE_STR_ARRAY,
+            PROFILE_NUM_ARRAY,
+            PROFILE_BOOL_ARRAY,
+            PROFILE_OBJ_ARRAY,
         ];
 
         for url in &embedded {
             assert!(
                 ProfileSchemaRegistry::is_embedded_profile(url),
-                "'{}' should be recognized as embedded", url
+                "'{}' should be recognized as embedded",
+                url
             );
         }
 
         // Non-embedded profiles
-        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://capdag.com/schema/custom"));
+        assert!(!ProfileSchemaRegistry::is_embedded_profile(
+            "https://capdag.com/schema/custom"
+        ));
         assert!(!ProfileSchemaRegistry::is_embedded_profile(""));
-        assert!(!ProfileSchemaRegistry::is_embedded_profile("https://example.com/schema/str"));
+        assert!(!ProfileSchemaRegistry::is_embedded_profile(
+            "https://example.com/schema/str"
+        ));
     }
 
     // TEST612: clear_cache empties all in-memory schemas
@@ -705,7 +781,9 @@ mod tests {
         let (registry, _temp_dir) = create_test_registry().await;
 
         // Valid string against string schema
-        assert!(registry.validate_cached(PROFILE_STR, &json!("hello")).is_ok());
+        assert!(registry
+            .validate_cached(PROFILE_STR, &json!("hello"))
+            .is_ok());
 
         // Invalid: number against string schema
         let result = registry.validate_cached(PROFILE_STR, &json!(42));
@@ -715,13 +793,17 @@ mod tests {
         assert!(registry.validate_cached(PROFILE_INT, &json!(42)).is_ok());
 
         // Valid object array
-        assert!(registry.validate_cached(PROFILE_OBJ_ARRAY, &json!([{"a": 1}])).is_ok());
+        assert!(registry
+            .validate_cached(PROFILE_OBJ_ARRAY, &json!([{"a": 1}]))
+            .is_ok());
 
         // Invalid: string array against object array schema
         let result = registry.validate_cached(PROFILE_OBJ_ARRAY, &json!(["a", "b"]));
         assert!(result.is_err());
 
         // Non-cached profile returns Ok (skip validation)
-        assert!(registry.validate_cached("https://example.com/unknown", &json!("anything")).is_ok());
+        assert!(registry
+            .validate_cached("https://example.com/unknown", &json!("anything"))
+            .is_ok());
     }
 }

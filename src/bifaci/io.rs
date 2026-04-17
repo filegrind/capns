@@ -15,7 +15,10 @@
 //!
 //! The CBOR payload is a map with integer keys (see cbor_frame.rs).
 
-use crate::bifaci::frame::{keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_CHUNK, DEFAULT_MAX_FRAME, DEFAULT_MAX_REORDER_BUFFER};
+use crate::bifaci::frame::{
+    keys, Frame, FrameType, Limits, MessageId, DEFAULT_MAX_CHUNK, DEFAULT_MAX_FRAME,
+    DEFAULT_MAX_REORDER_BUFFER,
+};
 use ciborium::Value;
 use std::collections::BTreeMap;
 use std::io;
@@ -125,11 +128,17 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CborError> {
     }
 
     if let Some(ref stream_id) = frame.stream_id {
-        map.push((Value::Integer(keys::STREAM_ID.into()), Value::Text(stream_id.clone())));
+        map.push((
+            Value::Integer(keys::STREAM_ID.into()),
+            Value::Text(stream_id.clone()),
+        ));
     }
 
     if let Some(ref media_urn) = frame.media_urn {
-        map.push((Value::Integer(keys::MEDIA_URN.into()), Value::Text(media_urn.clone())));
+        map.push((
+            Value::Integer(keys::MEDIA_URN.into()),
+            Value::Text(media_urn.clone()),
+        ));
     }
 
     if let Some(ref routing_id) = frame.routing_id {
@@ -157,30 +166,35 @@ pub fn encode_frame(frame: &Frame) -> Result<Vec<u8>, CborError> {
     if let Some(checksum) = frame.checksum {
         map.push((
             Value::Integer(keys::CHECKSUM.into()),
-            Value::Integer(checksum.into()),  // Keep unsigned - checksum is u64
+            Value::Integer(checksum.into()), // Keep unsigned - checksum is u64
         ));
     }
 
     if let Some(is_sequence) = frame.is_sequence {
-        map.push((Value::Integer(keys::IS_SEQUENCE.into()), Value::Bool(is_sequence)));
+        map.push((
+            Value::Integer(keys::IS_SEQUENCE.into()),
+            Value::Bool(is_sequence),
+        ));
     }
 
     if let Some(force_kill) = frame.force_kill {
-        map.push((Value::Integer(keys::FORCE_KILL.into()), Value::Bool(force_kill)));
+        map.push((
+            Value::Integer(keys::FORCE_KILL.into()),
+            Value::Bool(force_kill),
+        ));
     }
 
     let value = Value::Map(map);
     let mut buf = Vec::new();
-    ciborium::into_writer(&value, &mut buf)
-        .map_err(|e| CborError::Encode(e.to_string()))?;
+    ciborium::into_writer(&value, &mut buf).map_err(|e| CborError::Encode(e.to_string()))?;
 
     Ok(buf)
 }
 
 /// Decode a frame from CBOR bytes
 pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
-    let value: Value = ciborium::from_reader(bytes)
-        .map_err(|e| CborError::Decode(e.to_string()))?;
+    let value: Value =
+        ciborium::from_reader(bytes).map_err(|e| CborError::Decode(e.to_string()))?;
 
     let map = match value {
         Value::Map(m) => m,
@@ -393,15 +407,21 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, CborError> {
     match frame.frame_type {
         FrameType::Chunk => {
             if frame.chunk_index.is_none() {
-                return Err(CborError::InvalidFrame("CHUNK frame missing required field: chunk_index".to_string()));
+                return Err(CborError::InvalidFrame(
+                    "CHUNK frame missing required field: chunk_index".to_string(),
+                ));
             }
             if frame.checksum.is_none() {
-                return Err(CborError::InvalidFrame("CHUNK frame missing required field: checksum".to_string()));
+                return Err(CborError::InvalidFrame(
+                    "CHUNK frame missing required field: checksum".to_string(),
+                ));
             }
         }
         FrameType::StreamEnd => {
             if frame.chunk_count.is_none() {
-                return Err(CborError::InvalidFrame("STREAM_END frame missing required field: chunk_count".to_string()));
+                return Err(CborError::InvalidFrame(
+                    "STREAM_END frame missing required field: chunk_count".to_string(),
+                ));
             }
         }
         _ => {} // Other frame types don't require these fields
@@ -620,7 +640,14 @@ impl<W: AsyncWrite + Unpin> FrameWriter<W> {
             let chunk_data = data[offset..offset + chunk_size].to_vec();
             let checksum = Frame::compute_checksum(&chunk_data);
 
-            let mut frame = Frame::chunk(id.clone(), stream_id.clone(), 0, chunk_data, chunk_index, checksum);
+            let mut frame = Frame::chunk(
+                id.clone(),
+                stream_id.clone(),
+                0,
+                chunk_data,
+                chunk_index,
+                checksum,
+            );
             frame.offset = Some(offset as u64);
 
             // Set content_type and total len on first chunk (chunk_index-based, not seq-based)
@@ -669,13 +696,17 @@ pub async fn handshake<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     // Extract manifest - REQUIRED for cartridges
     let manifest = their_frame
         .hello_manifest()
-        .ok_or_else(|| CborError::Handshake("Cartridge HELLO missing required manifest".to_string()))?
+        .ok_or_else(|| {
+            CborError::Handshake("Cartridge HELLO missing required manifest".to_string())
+        })?
         .to_vec();
 
     // Negotiate minimum of both
     let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
     let their_max_chunk = their_frame.hello_max_chunk().unwrap_or(DEFAULT_MAX_CHUNK);
-    let their_max_reorder_buffer = their_frame.hello_max_reorder_buffer().unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
+    let their_max_reorder_buffer = their_frame
+        .hello_max_reorder_buffer()
+        .unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
 
     let limits = Limits {
         max_frame: DEFAULT_MAX_FRAME.min(their_max_frame),
@@ -714,7 +745,9 @@ pub async fn handshake_accept<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     // Negotiate minimum of both
     let their_max_frame = their_frame.hello_max_frame().unwrap_or(DEFAULT_MAX_FRAME);
     let their_max_chunk = their_frame.hello_max_chunk().unwrap_or(DEFAULT_MAX_CHUNK);
-    let their_max_reorder_buffer = their_frame.hello_max_reorder_buffer().unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
+    let their_max_reorder_buffer = their_frame
+        .hello_max_reorder_buffer()
+        .unwrap_or(DEFAULT_MAX_REORDER_BUFFER);
 
     let limits = Limits {
         max_frame: DEFAULT_MAX_FRAME.min(their_max_frame),
@@ -757,8 +790,8 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     reader: &mut FrameReader<R>,
     writer: &mut FrameWriter<W>,
 ) -> Result<(), CborError> {
-    use crate::standard::caps::CAP_IDENTITY;
     use crate::bifaci::frame::SeqAssigner;
+    use crate::standard::caps::CAP_IDENTITY;
 
     let nonce = identity_nonce();
     let req_id = MessageId::new_uuid();
@@ -773,7 +806,12 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     writer.write(&req).await?;
 
     // Send request body: STREAM_START → CHUNK → STREAM_END → END
-    let mut stream_start = Frame::stream_start(req_id.clone(), stream_id.clone(), "media:".to_string(), None);
+    let mut stream_start = Frame::stream_start(
+        req_id.clone(),
+        stream_id.clone(),
+        "media:".to_string(),
+        None,
+    );
     stream_start.routing_id = Some(xid.clone());
     seq.assign(&mut stream_start);
     writer.write(&stream_start).await?;
@@ -783,7 +821,14 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     ciborium::into_writer(&Value::Bytes(nonce.clone()), &mut cbor_nonce)
         .expect("BUG: failed to CBOR-encode nonce");
     let checksum = Frame::compute_checksum(&cbor_nonce);
-    let mut chunk = Frame::chunk(req_id.clone(), stream_id.clone(), 0, cbor_nonce, 0, checksum);
+    let mut chunk = Frame::chunk(
+        req_id.clone(),
+        stream_id.clone(),
+        0,
+        cbor_nonce,
+        0,
+        checksum,
+    );
     chunk.routing_id = Some(xid.clone());
     seq.assign(&mut chunk);
     writer.write(&chunk).await?;
@@ -811,8 +856,9 @@ pub async fn verify_identity<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
             FrameType::Chunk => {
                 if let Some(cbor_payload) = frame.payload {
                     // Decode CBOR chunk
-                    let value: Value = ciborium::from_reader(&cbor_payload[..])
-                        .map_err(|e| CborError::Protocol(format!("Failed to decode CBOR chunk: {}", e)))?;
+                    let value: Value = ciborium::from_reader(&cbor_payload[..]).map_err(|e| {
+                        CborError::Protocol(format!("Failed to decode CBOR chunk: {}", e))
+                    })?;
                     if let Value::Bytes(bytes) = value {
                         cbor_chunks.push(bytes);
                     } else {
@@ -863,7 +909,12 @@ mod tests {
     #[test]
     fn test205_encode_decode_roundtrip() {
         let id = MessageId::new_uuid();
-        let original = Frame::req(id.clone(), r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
+        let original = Frame::req(
+            id.clone(),
+            r#"cap:in="media:void";op=test;out="media:void""#,
+            b"payload".to_vec(),
+            "application/json",
+        );
 
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
@@ -879,7 +930,11 @@ mod tests {
     // TEST206: Test HELLO frame encode/decode roundtrip preserves max_frame, max_chunk, max_reorder_buffer
     #[test]
     fn test206_hello_frame_roundtrip() {
-        let original = Frame::hello(&Limits { max_frame: 500_000, max_chunk: 50_000, max_reorder_buffer: 128 });
+        let original = Frame::hello(&Limits {
+            max_frame: 500_000,
+            max_chunk: 50_000,
+            max_reorder_buffer: 128,
+        });
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
@@ -939,7 +994,10 @@ mod tests {
 
             // Inspect raw Value before encode
             let raw_progress_val = original.meta.as_ref().unwrap().get("progress").unwrap();
-            eprintln!("[{}] raw Value before encode: {:?}", label, raw_progress_val);
+            eprintln!(
+                "[{}] raw Value before encode: {:?}",
+                label, raw_progress_val
+            );
 
             let bytes = encode_frame(&original).expect("encode should succeed");
 
@@ -966,7 +1024,10 @@ mod tests {
             assert!(
                 (p - progress).abs() < 0.001,
                 "progress roundtrip for {} ({}): expected {}, got {}",
-                label, progress, progress, p
+                label,
+                progress,
+                progress,
+                p
             );
         }
     }
@@ -999,12 +1060,15 @@ mod tests {
             assert!(
                 lp.is_some(),
                 "progress={}: log_progress() returned None, raw={:?}",
-                progress, raw_val
+                progress,
+                raw_val
             );
             assert!(
                 (lp.unwrap() - progress).abs() < 0.001,
                 "progress={}: expected {}, got {}",
-                progress, progress, lp.unwrap()
+                progress,
+                progress,
+                lp.unwrap()
             );
         }
     }
@@ -1030,7 +1094,14 @@ mod tests {
     #[test]
     fn test211_hello_with_manifest_roundtrip() {
         let manifest = b"{\"name\":\"Test\",\"version\":\"1.0\"}";
-        let original = Frame::hello_with_manifest(&Limits { max_frame: 1_000_000, max_chunk: 100_000, max_reorder_buffer: 48 }, manifest);
+        let original = Frame::hello_with_manifest(
+            &Limits {
+                max_frame: 1_000_000,
+                max_chunk: 100_000,
+                max_reorder_buffer: 48,
+            },
+            manifest,
+        );
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
@@ -1047,7 +1118,17 @@ mod tests {
         let stream_id = "stream-test".to_string();
         let payload = b"data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
-        let original = Frame::chunk_with_offset(id.clone(), stream_id, 0, payload, 100, Some(5000), true, 0, checksum);
+        let original = Frame::chunk_with_offset(
+            id.clone(),
+            stream_id,
+            0,
+            payload,
+            100,
+            Some(5000),
+            true,
+            0,
+            checksum,
+        );
         let bytes = encode_frame(&original).expect("encode should succeed");
         let decoded = decode_frame(&bytes).expect("decode should succeed");
 
@@ -1079,11 +1160,18 @@ mod tests {
     async fn test214_frame_io_roundtrip() {
         let limits = Limits::default();
         let id = MessageId::new_uuid();
-        let original = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, b"payload".to_vec(), "application/json");
+        let original = Frame::req(
+            id,
+            r#"cap:in="media:void";op=test;out="media:void""#,
+            b"payload".to_vec(),
+            "application/json",
+        );
 
         // Write to buffer using duplex stream
         let (mut client, mut server) = tokio::io::duplex(64 * 1024);
-        write_frame(&mut client, &original, &limits).await.expect("write should succeed");
+        write_frame(&mut client, &original, &limits)
+            .await
+            .expect("write should succeed");
         drop(client); // Close write side to signal EOF
 
         // Read back
@@ -1106,10 +1194,22 @@ mod tests {
         let id2 = MessageId::new_uuid();
         let id3 = MessageId::new_uuid();
 
-        let f1 = Frame::req(id1.clone(), r#"cap:in="media:void";op=first;out="media:void""#, b"one".to_vec(), "text/plain");
+        let f1 = Frame::req(
+            id1.clone(),
+            r#"cap:in="media:void";op=first;out="media:void""#,
+            b"one".to_vec(),
+            "text/plain",
+        );
         let payload2 = b"two".to_vec();
         let checksum2 = Frame::compute_checksum(&payload2);
-        let f2 = Frame::chunk(id2.clone(), "stream-2".to_string(), 0, payload2, 0, checksum2);
+        let f2 = Frame::chunk(
+            id2.clone(),
+            "stream-2".to_string(),
+            0,
+            payload2,
+            0,
+            checksum2,
+        );
         let f3 = Frame::end(id3.clone(), Some(b"three".to_vec()));
 
         let (mut client, mut server) = tokio::io::duplex(64 * 1024);
@@ -1146,7 +1246,12 @@ mod tests {
 
         let id = MessageId::new_uuid();
         let large_payload = vec![0u8; 200];
-        let frame = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, large_payload, "application/octet-stream");
+        let frame = Frame::req(
+            id,
+            r#"cap:in="media:void";op=test;out="media:void""#,
+            large_payload,
+            "application/octet-stream",
+        );
 
         let (mut client, _server) = tokio::io::duplex(64 * 1024);
         let result = write_frame(&mut client, &frame, &limits).await;
@@ -1156,15 +1261,30 @@ mod tests {
     // TEST217: Test read_frame rejects incoming frames exceeding the negotiated max_frame limit
     #[tokio::test]
     async fn test217_read_frame_too_large() {
-        let write_limits = Limits { max_frame: 10_000_000, max_chunk: 1_000_000, ..Limits::default() };
-        let read_limits = Limits { max_frame: 50, max_chunk: 50, ..Limits::default() };
+        let write_limits = Limits {
+            max_frame: 10_000_000,
+            max_chunk: 1_000_000,
+            ..Limits::default()
+        };
+        let read_limits = Limits {
+            max_frame: 50,
+            max_chunk: 50,
+            ..Limits::default()
+        };
 
         // Write a frame with generous limits
         let id = MessageId::new_uuid();
-        let frame = Frame::req(id, r#"cap:in="media:void";op=test;out="media:void""#, vec![0u8; 200], "text/plain");
+        let frame = Frame::req(
+            id,
+            r#"cap:in="media:void";op=test;out="media:void""#,
+            vec![0u8; 200],
+            "text/plain",
+        );
 
         let (mut client, mut server) = tokio::io::duplex(64 * 1024);
-        write_frame(&mut client, &frame, &write_limits).await.unwrap();
+        write_frame(&mut client, &frame, &write_limits)
+            .await
+            .unwrap();
         drop(client);
 
         // Try to read with strict limits
@@ -1210,20 +1330,34 @@ mod tests {
                 Some(f) => {
                     assert_eq!(f.frame_type, FrameType::Chunk);
                     assert_eq!(f.id, id);
-                    assert_eq!(f.seq, 0, "write_chunked produces seq=0; SeqAssigner assigns at output stage");
+                    assert_eq!(
+                        f.seq, 0,
+                        "write_chunked produces seq=0; SeqAssigner assigns at output stage"
+                    );
                     // chunk_index tracks ordering within the chunked write
-                    assert_eq!(f.chunk_index, Some(chunk_count), "chunk_index must increment monotonically");
+                    assert_eq!(
+                        f.chunk_index,
+                        Some(chunk_count),
+                        "chunk_index must increment monotonically"
+                    );
 
                     if chunk_count == 0 {
                         first_chunk_had_len = f.len.is_some();
                         first_chunk_had_content_type = f.content_type.is_some();
-                        assert_eq!(f.len, Some(data.len() as u64), "first chunk must carry total len");
+                        assert_eq!(
+                            f.len,
+                            Some(data.len() as u64),
+                            "first chunk must carry total len"
+                        );
                         assert_eq!(f.content_type, Some("text/plain".to_string()));
                     }
 
                     let is_eof = f.is_eof();
                     if let Some(payload) = f.payload {
-                        assert!(payload.len() <= limits.max_chunk, "chunk must not exceed max_chunk");
+                        assert!(
+                            payload.len() <= limits.max_chunk,
+                            "chunk must not exceed max_chunk"
+                        );
                         received.extend_from_slice(&payload);
                     }
 
@@ -1237,23 +1371,39 @@ mod tests {
         }
 
         assert_eq!(received, data);
-        assert!(chunk_count > 0, "data larger than max_chunk must produce multiple chunks");
+        assert!(
+            chunk_count > 0,
+            "data larger than max_chunk must produce multiple chunks"
+        );
         assert!(first_chunk_had_len, "first chunk must carry total length");
-        assert!(first_chunk_had_content_type, "first chunk must carry content_type");
+        assert!(
+            first_chunk_had_content_type,
+            "first chunk must carry content_type"
+        );
     }
 
     // TEST219: Test write_chunked with empty data produces a single EOF chunk
     #[tokio::test]
     async fn test219_write_chunked_empty_data() {
-        let limits = Limits { max_frame: 1_000_000, max_chunk: 100, ..Limits::default() };
+        let limits = Limits {
+            max_frame: 1_000_000,
+            max_chunk: 100,
+            ..Limits::default()
+        };
 
         let id = MessageId::new_uuid();
         let (client, mut server) = tokio::io::duplex(64 * 1024);
         let mut writer = FrameWriter::with_limits(client, limits);
-        writer.write_chunked(id.clone(), "stream-empty".to_string(), "text/plain", b"").await.unwrap();
+        writer
+            .write_chunked(id.clone(), "stream-empty".to_string(), "text/plain", b"")
+            .await
+            .unwrap();
         drop(writer);
 
-        let frame = read_frame(&mut server, &limits).await.unwrap().expect("should have frame");
+        let frame = read_frame(&mut server, &limits)
+            .await
+            .unwrap()
+            .expect("should have frame");
         assert_eq!(frame.frame_type, FrameType::Chunk);
         assert!(frame.is_eof(), "empty data must produce immediate EOF");
         assert_eq!(frame.len, Some(0), "empty payload must report len=0");
@@ -1263,16 +1413,26 @@ mod tests {
     // TEST220: Test write_chunked with data exactly equal to max_chunk produces exactly one chunk
     #[tokio::test]
     async fn test220_write_chunked_exact_fit() {
-        let limits = Limits { max_frame: 1_000_000, max_chunk: 10, ..Limits::default() };
+        let limits = Limits {
+            max_frame: 1_000_000,
+            max_chunk: 10,
+            ..Limits::default()
+        };
 
         let id = MessageId::new_uuid();
         let data = b"0123456789"; // exactly 10 bytes = max_chunk
         let (client, mut server) = tokio::io::duplex(64 * 1024);
         let mut writer = FrameWriter::with_limits(client, limits);
-        writer.write_chunked(id.clone(), "stream-1mb".to_string(), "text/plain", data).await.unwrap();
+        writer
+            .write_chunked(id.clone(), "stream-1mb".to_string(), "text/plain", data)
+            .await
+            .unwrap();
         drop(writer);
 
-        let frame = read_frame(&mut server, &limits).await.unwrap().expect("should have frame");
+        let frame = read_frame(&mut server, &limits)
+            .await
+            .unwrap()
+            .expect("should have frame");
         assert!(frame.is_eof(), "single-chunk data must be EOF");
         assert_eq!(frame.payload, Some(data.to_vec()));
         assert_eq!(frame.seq, 0);
@@ -1353,8 +1513,14 @@ mod tests {
     fn test226_decode_missing_version() {
         // Build CBOR map with frame_type and id but missing version
         let map = ciborium::Value::Map(vec![
-            (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(1.into())),
-            (ciborium::Value::Integer(keys::ID.into()), ciborium::Value::Integer(0.into())),
+            (
+                ciborium::Value::Integer(keys::FRAME_TYPE.into()),
+                ciborium::Value::Integer(1.into()),
+            ),
+            (
+                ciborium::Value::Integer(keys::ID.into()),
+                ciborium::Value::Integer(0.into()),
+            ),
         ]);
         let mut bytes = Vec::new();
         ciborium::into_writer(&map, &mut bytes).unwrap();
@@ -1367,9 +1533,18 @@ mod tests {
     #[test]
     fn test227_decode_invalid_frame_type_value() {
         let map = ciborium::Value::Map(vec![
-            (ciborium::Value::Integer(keys::VERSION.into()), ciborium::Value::Integer(1.into())),
-            (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(99.into())),
-            (ciborium::Value::Integer(keys::ID.into()), ciborium::Value::Integer(0.into())),
+            (
+                ciborium::Value::Integer(keys::VERSION.into()),
+                ciborium::Value::Integer(1.into()),
+            ),
+            (
+                ciborium::Value::Integer(keys::FRAME_TYPE.into()),
+                ciborium::Value::Integer(99.into()),
+            ),
+            (
+                ciborium::Value::Integer(keys::ID.into()),
+                ciborium::Value::Integer(0.into()),
+            ),
         ]);
         let mut bytes = Vec::new();
         ciborium::into_writer(&map, &mut bytes).unwrap();
@@ -1382,8 +1557,14 @@ mod tests {
     #[test]
     fn test228_decode_missing_id() {
         let map = ciborium::Value::Map(vec![
-            (ciborium::Value::Integer(keys::VERSION.into()), ciborium::Value::Integer(1.into())),
-            (ciborium::Value::Integer(keys::FRAME_TYPE.into()), ciborium::Value::Integer(1.into())),
+            (
+                ciborium::Value::Integer(keys::VERSION.into()),
+                ciborium::Value::Integer(1.into()),
+            ),
+            (
+                ciborium::Value::Integer(keys::FRAME_TYPE.into()),
+                ciborium::Value::Integer(1.into()),
+            ),
             // No ID field
         ]);
         let mut bytes = Vec::new();
@@ -1400,7 +1581,11 @@ mod tests {
         let mut reader = FrameReader::new(server);
         let mut writer = FrameWriter::new(client);
 
-        let custom = Limits { max_frame: 500, max_chunk: 100, ..Limits::default() };
+        let custom = Limits {
+            max_frame: 500,
+            max_chunk: 100,
+            ..Limits::default()
+        };
         reader.set_limits(custom);
         writer.set_limits(custom);
 
@@ -1423,7 +1608,9 @@ mod tests {
         let cartridge_handle = tokio::spawn(async move {
             let mut reader = FrameReader::new(TokioBufReader::new(cartridge_from_host));
             let mut writer = FrameWriter::new(TokioBufWriter::new(cartridge_to_host));
-            handshake_accept(&mut reader, &mut writer, &manifest_clone).await.unwrap()
+            handshake_accept(&mut reader, &mut writer, &manifest_clone)
+                .await
+                .unwrap()
         });
 
         // Host side
@@ -1436,7 +1623,10 @@ mod tests {
         // Both sides must agree on limits
         assert_eq!(result.limits.max_frame, cartridge_limits.max_frame);
         assert_eq!(result.limits.max_chunk, cartridge_limits.max_chunk);
-        assert_eq!(result.limits.max_reorder_buffer, cartridge_limits.max_reorder_buffer);
+        assert_eq!(
+            result.limits.max_reorder_buffer,
+            cartridge_limits.max_reorder_buffer
+        );
         assert_eq!(result.manifest, manifest.to_vec());
     }
 
@@ -1453,14 +1643,22 @@ mod tests {
             // Read host's HELLO (consume it)
             let _ = reader.read().await.unwrap();
             // Send a REQ instead of HELLO
-            let bad_frame = Frame::req(MessageId::Uint(1), r#"cap:in="media:void";op=bad;out="media:void""#, vec![], "text/plain");
+            let bad_frame = Frame::req(
+                MessageId::Uint(1),
+                r#"cap:in="media:void";op=bad;out="media:void""#,
+                vec![],
+                "text/plain",
+            );
             writer.write(&bad_frame).await.unwrap();
         });
 
         let mut reader = FrameReader::new(TokioBufReader::new(host_from_cartridge));
         let mut writer = FrameWriter::new(TokioBufWriter::new(host_to_cartridge));
         let result = handshake(&mut reader, &mut writer).await;
-        assert!(result.is_err(), "handshake must fail when peer sends non-HELLO");
+        assert!(
+            result.is_err(),
+            "handshake must fail when peer sends non-HELLO"
+        );
         let err = result.unwrap_err();
         assert!(matches!(err, CborError::Handshake(_)));
 
@@ -1478,14 +1676,21 @@ mod tests {
             let mut reader = FrameReader::new(TokioBufReader::new(cartridge_from_host));
             let mut writer = FrameWriter::new(TokioBufWriter::new(cartridge_to_host));
             let _ = reader.read().await.unwrap(); // consume host HELLO
-            let no_manifest_hello = Frame::hello(&Limits { max_frame: 1_000_000, max_chunk: 200_000, max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER });
+            let no_manifest_hello = Frame::hello(&Limits {
+                max_frame: 1_000_000,
+                max_chunk: 200_000,
+                max_reorder_buffer: DEFAULT_MAX_REORDER_BUFFER,
+            });
             writer.write(&no_manifest_hello).await.unwrap();
         });
 
         let mut reader = FrameReader::new(TokioBufReader::new(host_from_cartridge));
         let mut writer = FrameWriter::new(TokioBufWriter::new(host_to_cartridge));
         let result = handshake(&mut reader, &mut writer).await;
-        assert!(result.is_err(), "handshake must fail when manifest is missing");
+        assert!(
+            result.is_err(),
+            "handshake must fail when manifest is missing"
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -1499,7 +1704,12 @@ mod tests {
         }
 
         let id = MessageId::new_uuid();
-        let frame = Frame::req(id.clone(), r#"cap:in="media:void";op=binary;out="media:void""#, data.clone(), "application/octet-stream");
+        let frame = Frame::req(
+            id.clone(),
+            r#"cap:in="media:void";op=binary;out="media:void""#,
+            data.clone(),
+            "application/octet-stream",
+        );
 
         let encoded = encode_frame(&frame).unwrap();
         let decoded = decode_frame(&encoded).unwrap();
@@ -1519,7 +1729,11 @@ mod tests {
     #[test]
     fn test848_relay_notify_roundtrip() {
         let manifest = br#"{"caps":["cap:in=\"media:void\";op=test;out=\"media:void\"","cap:in=\"media:void\";op=convert;out=\"media:void\""]}"#;
-        let limits = crate::bifaci::frame::Limits { max_frame: 2_000_000, max_chunk: 128_000, ..crate::bifaci::frame::Limits::default() };
+        let limits = crate::bifaci::frame::Limits {
+            max_frame: 2_000_000,
+            max_chunk: 128_000,
+            ..crate::bifaci::frame::Limits::default()
+        };
         let frame = Frame::relay_notify(manifest, &limits);
 
         let encoded = encode_frame(&frame).unwrap();
@@ -1577,7 +1791,10 @@ mod tests {
         assert_eq!(decoded.frame_type, FrameType::StreamEnd);
         assert_eq!(decoded.id, id);
         assert_eq!(decoded.stream_id.as_deref(), Some("stream-xyz-789"));
-        assert!(decoded.media_urn.is_none(), "StreamEnd should not have media_urn");
+        assert!(
+            decoded.media_urn.is_none(),
+            "StreamEnd should not have media_urn"
+        );
     }
 
     // TEST497: Verify CHUNK frame with corrupted payload is rejected by checksum
@@ -1589,7 +1806,14 @@ mod tests {
         let checksum = Frame::compute_checksum(&payload);
 
         // Create CHUNK with correct checksum
-        let chunk = Frame::chunk(id.clone(), stream_id.clone(), 0, payload.clone(), 0, checksum);
+        let chunk = Frame::chunk(
+            id.clone(),
+            stream_id.clone(),
+            0,
+            payload.clone(),
+            0,
+            checksum,
+        );
 
         // Encode it
         let encoded = encode_frame(&chunk).unwrap();
@@ -1603,8 +1827,15 @@ mod tests {
 
         // Verify checksum doesn't match corrupted payload
         let corrupted_checksum = Frame::compute_checksum(decoded.payload.as_ref().unwrap());
-        assert_ne!(corrupted_checksum, checksum, "Checksums should differ for corrupted data");
-        assert_eq!(decoded.checksum, Some(checksum), "Frame still has original checksum");
+        assert_ne!(
+            corrupted_checksum, checksum,
+            "Checksums should differ for corrupted data"
+        );
+        assert_eq!(
+            decoded.checksum,
+            Some(checksum),
+            "Frame still has original checksum"
+        );
 
         // This proves that if someone modifies the payload in transit,
         // the checksum will not match and verification will fail
@@ -1618,7 +1849,14 @@ mod tests {
         let payload = b"test chunk data".to_vec();
         let checksum = Frame::compute_checksum(&payload);
 
-        let frame = Frame::chunk(id.clone(), stream_id.clone(), 5, payload.clone(), 3, checksum);
+        let frame = Frame::chunk(
+            id.clone(),
+            stream_id.clone(),
+            5,
+            payload.clone(),
+            3,
+            checksum,
+        );
 
         let encoded = encode_frame(&frame).unwrap();
         let decoded = decode_frame(&encoded).unwrap();
@@ -1662,7 +1900,12 @@ mod tests {
         let (client, server) = tokio::io::duplex(64 * 1024);
         let mut writer = FrameWriter::with_limits(client, limits);
         writer
-            .write_chunked(id.clone(), "s".to_string(), "application/octet-stream", b"abcdefghij")
+            .write_chunked(
+                id.clone(),
+                "s".to_string(),
+                "application/octet-stream",
+                b"abcdefghij",
+            )
             .await
             .unwrap();
         drop(writer);
@@ -1675,7 +1918,9 @@ mod tests {
                 Some(f) => {
                     let is_eof = f.is_eof();
                     frames.push(f);
-                    if is_eof { break; }
+                    if is_eof {
+                        break;
+                    }
                 }
                 None => break,
             }
@@ -1685,7 +1930,13 @@ mod tests {
         assert_eq!(frames.len(), 2);
         for (i, f) in frames.iter().enumerate() {
             assert_eq!(f.seq, 0, "chunk {} must have seq=0", i);
-            assert_eq!(f.chunk_index, Some(i as u64), "chunk {} must have chunk_index={}", i, i);
+            assert_eq!(
+                f.chunk_index,
+                Some(i as u64),
+                "chunk {} must have chunk_index={}",
+                i,
+                i
+            );
         }
     }
 
@@ -1753,7 +2004,9 @@ mod tests {
     ) {
         let mut reader = FrameReader::new(TokioBufReader::new(from_host));
         let mut writer = FrameWriter::new(TokioBufWriter::new(to_host));
-        handshake_accept(&mut reader, &mut writer, manifest).await.unwrap();
+        handshake_accept(&mut reader, &mut writer, manifest)
+            .await
+            .unwrap();
 
         // Read REQ
         let req = reader.read().await.unwrap().expect("expected REQ");
@@ -1774,7 +2027,12 @@ mod tests {
 
         // Echo response: STREAM_START → CHUNK → STREAM_END → END
         let stream_id = "echo".to_string();
-        let ss = Frame::stream_start(req.id.clone(), stream_id.clone(), "media:".to_string(), None);
+        let ss = Frame::stream_start(
+            req.id.clone(),
+            stream_id.clone(),
+            "media:".to_string(),
+            None,
+        );
         writer.write(&ss).await.unwrap();
         let checksum = Frame::compute_checksum(&payload);
         let chunk = Frame::chunk(req.id.clone(), stream_id.clone(), 0, payload, 0, checksum);
@@ -1803,7 +2061,11 @@ mod tests {
         let _hs = handshake(&mut reader, &mut writer).await.unwrap();
 
         let result = verify_identity(&mut reader, &mut writer).await;
-        assert!(result.is_ok(), "verify_identity must succeed: {:?}", result.unwrap_err());
+        assert!(
+            result.is_ok(),
+            "verify_identity must succeed: {:?}",
+            result.unwrap_err()
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -1818,7 +2080,9 @@ mod tests {
         let cartridge_handle = tokio::spawn(async move {
             let mut reader = FrameReader::new(TokioBufReader::new(cartridge_from_host));
             let mut writer = FrameWriter::new(TokioBufWriter::new(cartridge_to_host));
-            handshake_accept(&mut reader, &mut writer, &manifest).await.unwrap();
+            handshake_accept(&mut reader, &mut writer, &manifest)
+                .await
+                .unwrap();
 
             // Read REQ, respond with ERR
             let req = reader.read().await.unwrap().expect("expected REQ");
@@ -1837,7 +2101,11 @@ mod tests {
         let result = verify_identity(&mut reader, &mut writer).await;
         assert!(result.is_err(), "verify_identity must fail on ERR");
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("BROKEN"), "error must contain error code: {}", err);
+        assert!(
+            err.to_string().contains("BROKEN"),
+            "error must contain error code: {}",
+            err
+        );
 
         cartridge_handle.await.unwrap();
     }
@@ -1852,7 +2120,9 @@ mod tests {
         let cartridge_handle = tokio::spawn(async move {
             let mut reader = FrameReader::new(TokioBufReader::new(cartridge_from_host));
             let mut writer = FrameWriter::new(TokioBufWriter::new(cartridge_to_host));
-            handshake_accept(&mut reader, &mut writer, &manifest).await.unwrap();
+            handshake_accept(&mut reader, &mut writer, &manifest)
+                .await
+                .unwrap();
 
             // Read REQ but close connection without responding
             let _req = reader.read().await.unwrap().expect("expected REQ");
@@ -1865,9 +2135,11 @@ mod tests {
         handshake(&mut reader, &mut writer).await.unwrap();
 
         let result = verify_identity(&mut reader, &mut writer).await;
-        assert!(result.is_err(), "verify_identity must fail on connection close");
+        assert!(
+            result.is_err(),
+            "verify_identity must fail on connection close"
+        );
 
         cartridge_handle.await.unwrap();
     }
-
 }

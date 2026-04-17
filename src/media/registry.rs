@@ -17,8 +17,8 @@
 //! tracing::info!("Title: {:?}", spec.title);
 //! ```
 
-use crate::media::spec::MediaSpecDef;
 use crate::cap::registry::RegistryConfig;
+use crate::media::spec::MediaSpecDef;
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -183,7 +183,9 @@ impl MediaUrnRegistry {
     }
 
     /// Build extension index from a map of specs
-    fn build_extension_index(specs: &HashMap<String, StoredMediaSpec>) -> HashMap<String, Vec<String>> {
+    fn build_extension_index(
+        specs: &HashMap<String, StoredMediaSpec>,
+    ) -> HashMap<String, Vec<String>> {
         let mut index: HashMap<String, Vec<String>> = HashMap::new();
         for spec in specs.values() {
             for ext in &spec.extensions {
@@ -348,7 +350,6 @@ impl MediaUrnRegistry {
                 if let Ok(mut cached_specs) = self.cached_specs.lock() {
                     cached_specs.insert(normalized_urn.clone(), spec);
                 }
-
             } else {
                 // Spec already cached, but still need to ensure extension index is up to date
                 if let Ok(cached_specs) = self.cached_specs.lock() {
@@ -373,7 +374,9 @@ impl MediaUrnRegistry {
                 continue;
             }
 
-            let filename = file.path().file_name()
+            let filename = file
+                .path()
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("<unknown>");
 
@@ -444,9 +447,10 @@ impl MediaUrnRegistry {
 
     /// Get all currently cached media specs
     pub async fn get_cached_specs(&self) -> Result<Vec<StoredMediaSpec>, MediaRegistryError> {
-        let cached_specs = self.cached_specs.lock().map_err(|e| {
-            MediaRegistryError::CacheError(format!("Failed to lock cache: {}", e))
-        })?;
+        let cached_specs = self
+            .cached_specs
+            .lock()
+            .map_err(|e| MediaRegistryError::CacheError(format!("Failed to lock cache: {}", e)))?;
         Ok(cached_specs.values().cloned().collect())
     }
 
@@ -476,7 +480,10 @@ impl MediaUrnRegistry {
     /// let urns = registry.media_urns_for_extension("pdf")?;
     /// // May return ["media:pdf", "media:pdf;list"]
     /// ```
-    pub fn media_urns_for_extension(&self, extension: &str) -> Result<Vec<String>, MediaRegistryError> {
+    pub fn media_urns_for_extension(
+        &self,
+        extension: &str,
+    ) -> Result<Vec<String>, MediaRegistryError> {
         let ext_lower = extension.to_lowercase();
         let index = self.extension_index.lock().map_err(|e| {
             MediaRegistryError::CacheError(format!("Failed to lock extension index: {}", e))
@@ -605,7 +612,8 @@ impl MediaUrnRegistry {
     async fn fetch_from_registry(&self, urn: &str) -> Result<StoredMediaSpec, MediaRegistryError> {
         if self.offline_flag.load(Ordering::Relaxed) {
             return Err(MediaRegistryError::NetworkBlocked(format!(
-                "Network access blocked by policy — cannot fetch media spec '{}'", urn
+                "Network access blocked by policy — cannot fetch media spec '{}'",
+                urn
             )));
         }
         let normalized_urn = normalize_media_urn(urn);
@@ -659,7 +667,10 @@ impl MediaUrnRegistry {
         // Clear extension index
         {
             let mut extension_index = self.extension_index.lock().map_err(|e| {
-                MediaRegistryError::CacheError(format!("Failed to lock extension index for clearing: {}", e))
+                MediaRegistryError::CacheError(format!(
+                    "Failed to lock extension index for clearing: {}",
+                    e
+                ))
             })?;
             extension_index.clear();
         }
@@ -670,10 +681,7 @@ impl MediaUrnRegistry {
                 MediaRegistryError::CacheError(format!("Failed to clear cache directory: {}", e))
             })?;
             fs::create_dir_all(&self.cache_dir).map_err(|e| {
-                MediaRegistryError::CacheError(format!(
-                    "Failed to recreate cache directory: {}",
-                    e
-                ))
+                MediaRegistryError::CacheError(format!("Failed to recreate cache directory: {}", e))
             })?;
         }
         Ok(())
@@ -794,7 +802,11 @@ mod tests {
         assert!(result.is_err(), "Unknown extension should return error");
         match result.unwrap_err() {
             MediaRegistryError::ExtensionNotFound(msg) => {
-                assert!(msg.contains("zzzzunknown"), "Error should mention the extension: {}", msg);
+                assert!(
+                    msg.contains("zzzzunknown"),
+                    "Error should mention the extension: {}",
+                    msg
+                );
             }
             other => panic!("Expected ExtensionNotFound, got: {:?}", other),
         }
@@ -826,12 +838,20 @@ mod tests {
         }
         registry.update_extension_index(&spec);
 
-        let urns = registry.media_urns_for_extension("pdf").expect("pdf should be found");
+        let urns = registry
+            .media_urns_for_extension("pdf")
+            .expect("pdf should be found");
         assert!(!urns.is_empty(), "Should have at least one URN for pdf");
-        assert!(urns.iter().any(|u| u.contains("pdf")), "URNs should contain pdf: {:?}", urns);
+        assert!(
+            urns.iter().any(|u| u.contains("pdf")),
+            "URNs should contain pdf: {:?}",
+            urns
+        );
 
         // Case-insensitive
-        let urns_upper = registry.media_urns_for_extension("PDF").expect("PDF should work case-insensitively");
+        let urns_upper = registry
+            .media_urns_for_extension("PDF")
+            .expect("PDF should work case-insensitively");
         assert_eq!(urns, urns_upper);
     }
 
@@ -846,19 +866,31 @@ mod tests {
                 urn: urn.to_string(),
                 media_type: "application/octet-stream".to_string(),
                 title: "Test".to_string(),
-                profile_uri: None, schema: None, description: None,
+                profile_uri: None,
+                schema: None,
+                description: None,
                 documentation: None,
-                validation: None, metadata: None,
+                validation: None,
+                metadata: None,
                 extensions: vec![ext.to_string()],
             };
-            registry.cached_specs.lock().unwrap().insert(urn.to_string(), spec.clone());
+            registry
+                .cached_specs
+                .lock()
+                .unwrap()
+                .insert(urn.to_string(), spec.clone());
             registry.update_extension_index(&spec);
         }
 
-        let mappings = registry.get_extension_mappings().expect("should return mappings");
+        let mappings = registry
+            .get_extension_mappings()
+            .expect("should return mappings");
         let ext_names: Vec<String> = mappings.iter().map(|(k, _)| k.clone()).collect();
         assert!(ext_names.contains(&"pdf".to_string()), "Should contain pdf");
-        assert!(ext_names.contains(&"epub".to_string()), "Should contain epub");
+        assert!(
+            ext_names.contains(&"epub".to_string()),
+            "Should contain epub"
+        );
     }
 
     // TEST610: get_cached_spec returns None for unknown and Some for known
@@ -867,19 +899,29 @@ mod tests {
         let (registry, _temp_dir) = registry_with_temp_cache().await;
 
         // Unknown spec
-        assert!(registry.get_cached_spec("media:nonexistent;xyzzy").is_none());
+        assert!(registry
+            .get_cached_spec("media:nonexistent;xyzzy")
+            .is_none());
 
         // Add a spec and verify we can retrieve it
         let spec = StoredMediaSpec {
             urn: "media:test;spec;textable".to_string(),
             media_type: "text/plain".to_string(),
             title: "Test Spec".to_string(),
-            profile_uri: None, schema: None, description: None,
+            profile_uri: None,
+            schema: None,
+            description: None,
             documentation: None,
-            validation: None, metadata: None, extensions: vec![],
+            validation: None,
+            metadata: None,
+            extensions: vec![],
         };
         let normalized = normalize_media_urn(&spec.urn);
-        registry.cached_specs.lock().unwrap().insert(normalized.clone(), spec);
+        registry
+            .cached_specs
+            .lock()
+            .unwrap()
+            .insert(normalized.clone(), spec);
 
         let retrieved = registry.get_cached_spec("media:test;spec;textable");
         assert!(retrieved.is_some(), "Should find spec by URN");
@@ -1008,9 +1050,12 @@ mod tests {
 
         for (urn, expected_ext) in &expected {
             let normalized = normalize_media_urn(urn);
-            let spec = registry.get_cached_spec(&normalized)
+            let spec = registry
+                .get_cached_spec(&normalized)
                 .unwrap_or_else(|| panic!("Spec not found for {}", urn));
-            let actual_ext = spec.extensions.first()
+            let actual_ext = spec
+                .extensions
+                .first()
                 .unwrap_or_else(|| panic!("No extensions for {}", urn));
             assert_eq!(
                 actual_ext, expected_ext,
