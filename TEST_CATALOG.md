@@ -8,6 +8,8 @@
 
 **Numbered Tests Missing Descriptions:** 0
 
+**Numbering Mismatches:** 45
+
 All numbered test numbers are unique.
 
 This catalog lists all tests in the CapDag (Rust) codebase.
@@ -1138,8 +1140,61 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test1293 | `test1293_roundtrip_requires_cap_steps` | TEST1293: IDDFS round-trip does not produce paths with 0 cap steps. Identity-only round trips (no real transformation) must be excluded. | src/planner/live_cap_graph.rs:2403 |
 ---
 
+## Numbering Mismatches
+
+These tests have a numbering disagreement between the function name and the authoritative immediate TEST comment/docstring above the test. This is reported explicitly so comment sync does not silently overwrite a misnumbered test.
+
+- `test880` / `test887` / `test880_no_duplicates_with_unique_caps` — src/planner/plan_builder.rs:816
+- `test881` / `test016` / `test881_pdf_full_intelligence_pipeline` — tests/cartridge_scenarios.rs:1077
+- `test882` / `test022` / `test882_candle_describe_image` — tests/cartridge_scenarios.rs:1418
+- `test883` / `test021` / `test883_text_embedding` — tests/cartridge_scenarios.rs:1366
+- `test884` / `test020` / `test884_model_availability_plus_status` — tests/cartridge_scenarios.rs:1324
+- `test885` / `test019` / `test885_model_plus_dimensions` — tests/cartridge_scenarios.rs:1268
+- `test887` / `test004` / `test887_execute_with_file_input` — tests/orchestrator_integration.rs:381
+- `test888` / `test003` / `test888_execute_edge1_to_edge2_chain` — tests/orchestrator_integration.rs:336
+- `test889` / `test002` / `test889_execute_single_edge_dag` — tests/orchestrator_integration.rs:290
+- `test906` / `test489` / `test906_full_path_identity_verification` — src/bifaci/integration_tests.rs:1351
+- `test919` / `test001` / `test919_parse_simple_testcartridge_graph` — tests/orchestrator_integration.rs:266
+- `test944` / `test013` / `test944_six_machine` — tests/orchestrator_integration.rs:706
+- `test945` / `test012` / `test945_five_machine` — tests/orchestrator_integration.rs:653
+- `test946` / `test011` / `test946_four_machine` — tests/orchestrator_integration.rs:600
+- `test947` / `test010` / `test947_cap_not_found` — tests/orchestrator_integration.rs:573
+- `test948` / `test009` / `test948_invalid_cap_urn` — tests/orchestrator_integration.rs:562
+- `test949` / `test008` / `test949_empty_graph` — tests/orchestrator_integration.rs:544
+- `test950` / `test007` / `test950_reject_cycles` — tests/orchestrator_integration.rs:522
+- `test951` / `test006` / `test951_fan_in_pattern` — tests/orchestrator_integration.rs:472
+- `test952` / `test005` / `test952_execute_large_payload` — tests/orchestrator_integration.rs:426
+- `test1032` / `test023` / `test1032_audio_transcription` — tests/cartridge_scenarios.rs:1464
+- `test1034` / `test024` / `test1034_pdf_complete_analysis` — tests/cartridge_scenarios.rs:1514
+- `test1035` / `test025` / `test1035_model_full_inspection` — tests/cartridge_scenarios.rs:1580
+- `test1037` / `test026` / `test1037_two_format_full_analysis` — tests/cartridge_scenarios.rs:1655
+- `test1038` / `test027` / `test1038_model_plus_pdf_combined` — tests/cartridge_scenarios.rs:1735
+- `test1040` / `test028` / `test1040_three_cartridge_pipeline` — tests/cartridge_scenarios.rs:1803
+- `test1041` / `test029` / `test1041_txt_document_intelligence` — tests/cartridge_scenarios.rs:1940
+- `test1042` / `test030` / `test1042_rst_document_intelligence` — tests/cartridge_scenarios.rs:1985
+- `test1043` / `test031` / `test1043_log_document_intelligence` — tests/cartridge_scenarios.rs:2034
+- `test1044` / `test032` / `test1044_all_text_formats_intelligence` — tests/cartridge_scenarios.rs:2078
+- `test1046` / `test033` / `test1046_model_list_models` — tests/cartridge_scenarios.rs:2179
+- `test1048` / `test034` / `test1048_gguf_embeddings_dimensions` — tests/cartridge_scenarios.rs:2221
+- `test1049` / `test035` / `test1049_gguf_llm_model_info` — tests/cartridge_scenarios.rs:2274
+- `test1050` / `test036` / `test1050_gguf_llm_vocab` — tests/cartridge_scenarios.rs:2323
+- `test1051` / `test037` / `test1051_gguf_model_info_plus_vocab` — tests/cartridge_scenarios.rs:2375
+- `test1052` / `test038` / `test1052_gguf_llm_inference` — tests/cartridge_scenarios.rs:2433
+- `test1053` / `test039` / `test1053_gguf_llm_inference_constrained` — tests/cartridge_scenarios.rs:2486
+- `test1054` / `test040` / `test1054_gguf_generate_embeddings` — tests/cartridge_scenarios.rs:2542
+- `test1057` / `test041` / `test1057_gguf_describe_image` — tests/cartridge_scenarios.rs:2600
+- `test1058` / `test042` / `test1058_pdf_thumbnail_to_gguf_vision` — tests/cartridge_scenarios.rs:2655
+- `test1059` / `test043` / `test1059_gguf_all_llm_ops` — tests/cartridge_scenarios.rs:2722
+- `test1069` / `test014` / `test1069_pdf_document_intelligence` — tests/cartridge_scenarios.rs:960
+- `test1070` / `test015` / `test1070_pdf_thumbnail_to_image_embedding` — tests/cartridge_scenarios.rs:1023
+- `test1071` / `test017` / `test1071_text_document_intelligence` — tests/cartridge_scenarios.rs:1148
+- `test1072` / `test018` / `test1072_multi_format_document_processing` — tests/cartridge_scenarios.rs:1199
+
+---
+
 *Generated from CapDag (Rust) source tree*
 *Total tests: 1122*
 *Total numbered tests: 1122*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
+*Total numbering mismatches: 45*

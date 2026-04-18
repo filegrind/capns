@@ -4408,12 +4408,10 @@ mod tests {
         )
     }
 
-    /// Test manifest JSON with identity and a test cap for basic tests.
-    /// Note: cap URN uses "cap:op=test" which lacks in/out tags, so CapManifest deserialization
-    /// may fail because Cap requires in/out specs. For tests that only need raw manifest bytes
-    /// (CBOR mode handshake), this is fine. For tests that need parsed CapManifest, use
-    /// VALID_MANIFEST instead.
-    const TEST_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}"#;
+    /// Test manifest JSON with identity and a test cap.
+    /// Uses cap_groups format. The test cap URN "cap:op=test" has no in/out tags;
+    /// CapUrn defaults both to media: (wildcard), which is valid.
+    const TEST_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}]}"#;
 
     /// Valid manifest with proper in/out specs for tests that need parsed CapManifest
     const VALID_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}],"adapter_urns":[]}]}"#;
@@ -4648,16 +4646,16 @@ mod tests {
     // TEST256: Test CartridgeRuntime::with_manifest_json stores manifest data and parses when valid
     #[test]
     fn test256_with_manifest_json() {
-        // TEST_MANIFEST has "cap:op=test" — missing in/out defaults to media: (wildcard).
-        // Manifest must declare CAP_IDENTITY explicitly or it will fail validation.
+        // TEST_MANIFEST uses cap_groups format with identity + test cap.
+        // "cap:op=test" has no in/out tags; CapUrn defaults both to media: (wildcard).
         let runtime_basic = CartridgeRuntime::with_manifest_json(TEST_MANIFEST);
         assert!(!runtime_basic.manifest_data.is_empty());
         assert!(
             runtime_basic.manifest.is_some(),
-            "cap:op=test is valid (defaults to media: for in/out)"
+            "TEST_MANIFEST must parse: cap:op=test is valid (in/out default to media:)"
         );
         let manifest = runtime_basic.manifest.unwrap();
-        assert_eq!(manifest.all_caps().len(), 2, "Original cap + auto-added identity");
+        assert_eq!(manifest.all_caps().len(), 2, "Two caps declared: identity + test");
 
         // VALID_MANIFEST has proper in/out specs
         let runtime_valid = CartridgeRuntime::with_manifest_json(VALID_MANIFEST);
@@ -5175,7 +5173,7 @@ mod tests {
 
         // Simulate CLI invocation: cartridge process /path/to/file.pdf
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
         let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
 
         // Extract effective payload (simulates what run_cli_mode does)
@@ -5227,7 +5225,7 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
         let result = runtime
             .extract_arg_value(&cap.args[0], &cli_args, None)
             .unwrap();
@@ -5415,7 +5413,7 @@ mod tests {
 
         let cli_args = vec![test_file.to_string_lossy().to_string()];
         let stdin_data = b"stdin content 341";
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         let (result, _) = runtime
             .extract_arg_value(&cap.args[0], &cli_args, Some(stdin_data))
@@ -5490,7 +5488,7 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec!["mlx-community/Llama-3.2-3B-Instruct-4bit".to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
         let (result, _) = runtime
             .extract_arg_value(&cap.args[0], &cli_args, None)
             .unwrap();
@@ -5721,10 +5719,10 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Use helper to properly test file-path conversion
-        let result = test_filepath_conversion(cap, &cli_args, &runtime);
+        let result = test_filepath_conversion(&cap, &cli_args, &runtime);
 
         // Position source tried first, so file is read
         assert_eq!(
@@ -5766,10 +5764,10 @@ mod tests {
 
         // Only provide position arg, no --file flag
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Use helper to properly test file-path conversion
-        let result = test_filepath_conversion(cap, &cli_args, &runtime);
+        let result = test_filepath_conversion(&cap, &cli_args, &runtime);
 
         assert_eq!(
             result, b"content 349",
@@ -5823,7 +5821,7 @@ mod tests {
 
         // Simulate full CLI invocation
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
         let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
 
         // Extract effective payload (what run_cli_mode does)
@@ -5958,7 +5956,7 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Build full CBOR payload and attempt file-path conversion
         let (raw_value, _) = runtime
@@ -5978,7 +5976,7 @@ mod tests {
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
-        let result = extract_effective_payload(&payload, Some("application/cbor"), cap, true);
+        let result = extract_effective_payload(&payload, Some("application/cbor"), &cap, true);
 
         assert!(result.is_err(), "Should fail on permission denied");
         let err = result.unwrap_err().to_string();
@@ -6017,7 +6015,7 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec!["test value".to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
         let payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
 
         // Decode CBOR payload
@@ -6155,10 +6153,10 @@ mod tests {
         // Glob that matches both file and directory
         let pattern = format!("{}/*", temp_dir.display());
         let cli_args = vec![pattern]; // NOT JSON - just the glob pattern
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Use helper to test file-path array conversion
-        let files_array = test_filepath_array_conversion(cap, &cli_args, &runtime);
+        let files_array = test_filepath_array_conversion(&cap, &cli_args, &runtime);
 
         // Should only include the file, not the directory
         assert_eq!(
@@ -6223,11 +6221,11 @@ mod tests {
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Do file-path conversion with is_cli_mode=false (CBOR mode allows Arrays)
         let result =
-            extract_effective_payload(&payload, Some("application/cbor"), cap, false).unwrap();
+            extract_effective_payload(&payload, Some("application/cbor"), &cap, false).unwrap();
 
         // Decode and verify both files found
         let result_cbor: ciborium::Value = ciborium::from_reader(&result[..]).unwrap();
@@ -6304,10 +6302,10 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec![link_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Use helper to test file-path conversion
-        let result = test_filepath_conversion(cap, &cli_args, &runtime);
+        let result = test_filepath_conversion(&cap, &cli_args, &runtime);
 
         assert_eq!(
             result, b"real content",
@@ -6394,10 +6392,10 @@ mod tests {
         let mut payload = Vec::new();
         ciborium::into_writer(&args, &mut payload).unwrap();
 
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Try file-path conversion with invalid glob - should fail
-        let result = extract_effective_payload(&payload, Some("application/cbor"), cap, true);
+        let result = extract_effective_payload(&payload, Some("application/cbor"), &cap, true);
 
         assert!(result.is_err(), "Should fail on invalid glob pattern");
         let err = result.unwrap_err().to_string();
@@ -6435,7 +6433,7 @@ mod tests {
         let runtime = CartridgeRuntime::with_manifest(manifest);
 
         let cli_args = vec![test_file.to_string_lossy().to_string()];
-        let cap = &runtime.manifest.as_ref().unwrap().caps[0];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
 
         // Build CBOR payload (what build_payload_from_cli does)
         let raw_payload = runtime.build_payload_from_cli(&cap, &cli_args).unwrap();
@@ -6529,8 +6527,9 @@ mod tests {
 
         // CLI mode: pass file path as positional argument
         let cli_args = vec![test_file.to_string_lossy().to_string()];
+        let cap = runtime.manifest.as_ref().unwrap().all_caps()[0].clone();
         let payload = runtime
-            .build_payload_from_cli(&runtime.manifest.as_ref().unwrap().caps[0], &cli_args)
+            .build_payload_from_cli(&cap, &cli_args)
             .unwrap();
 
         // Verify payload is CBOR array with file-path argument

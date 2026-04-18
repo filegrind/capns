@@ -1728,7 +1728,7 @@ mod tests {
     // TEST848: RelayNotify encode/decode roundtrip preserves manifest and limits
     #[test]
     fn test848_relay_notify_roundtrip() {
-        let manifest = br#"{"caps":["cap:in=\"media:void\";op=test;out=\"media:void\"","cap:in=\"media:void\";op=convert;out=\"media:void\""]}"#;
+        let manifest = br#"{"name":"Test","version":"1.0","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"},{"urn":"cap:in=\"media:void\";op=convert;out=\"media:void\"","title":"Convert","command":"convert"}]}]}"#;
         let limits = crate::bifaci::frame::Limits {
             max_frame: 2_000_000,
             max_chunk: 128_000,
@@ -1949,7 +1949,7 @@ mod tests {
             max_chunk: DEFAULT_MAX_CHUNK,
             max_reorder_buffer: 32,
         };
-        let manifest = br#"{"name":"test","version":"1.0","caps":[]}"#;
+        let manifest = br#"{"name":"test","version":"1.0","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity"}]}]}"#;
 
         // Write cartridge's HELLO with manifest to a duplex stream
         let (mut cartridge_write, mut cartridge_read) = tokio::io::duplex(64 * 1024);
@@ -1993,7 +1993,7 @@ mod tests {
     // =========================================================================
 
     /// Manifest with only CAP_IDENTITY (minimum valid manifest)
-    const IDENTITY_MANIFEST: &str = r#"{"name":"Test","version":"1.0","description":"Test","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]}]}"#;
+    const IDENTITY_MANIFEST: &str = r#"{"name":"Test","version":"1.0","description":"Test","cap_groups":[{"name":"default","caps":[{"urn":"cap:in=media:;out=media:","title":"Identity","command":"identity","args":[]}]}]}"#;
 
     /// Simulate cartridge side: handshake_accept, then handle one identity REQ
     /// by echoing back the payload (like the standard identity handler).
