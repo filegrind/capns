@@ -136,10 +136,10 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test136 | `test136_cache_key_generation` | TEST136: Test cache key generation produces consistent hashes for same URN | src/cap/registry.rs:701 |
 | test137 | `test137_parse_registry_json` | TEST137: Test parsing registry JSON without stdin args verifies cap structure | src/cap/registry.rs:797 |
 | test138 | `test138_parse_registry_json_with_stdin` | TEST138: Test parsing registry JSON with stdin args verifies stdin media URN extraction | src/cap/registry.rs:810 |
-| test139 | `test139_url_keeps_cap_prefix_literal` | / Test that URL construction keeps "cap:" literal and only encodes the tags part / This guards against the bug where encoding "cap:" as "cap%3A" causes 404s TEST139: Test URL construction keeps cap prefix literal and only encodes tags part | src/cap/registry.rs:829 |
-| test140 | `test140_url_encodes_quoted_media_urns` | / Test that media URNs in cap URNs are properly URL-encoded TEST140: Test URL encodes media URNs with proper percent encoding for special characters | src/cap/registry.rs:851 |
-| test141 | `test141_exact_url_format` | / Test the URL format for a simple cap URN TEST141: Test exact URL format contains properly encoded media URN components | src/cap/registry.rs:874 |
-| test142 | `test142_normalize_handles_different_tag_orders` | / Test that normalization handles various input formats TEST142: Test normalize handles different tag orders producing same canonical form | src/cap/registry.rs:897 |
+| test139 | `test139_url_keeps_cap_prefix_literal` | TEST139: Test URL construction keeps cap prefix literal and only encodes tags part | src/cap/registry.rs:829 |
+| test140 | `test140_url_encodes_quoted_media_urns` | TEST140: Test URL encodes media URNs with proper percent encoding for special characters | src/cap/registry.rs:851 |
+| test141 | `test141_exact_url_format` | TEST141: Test exact URL format contains properly encoded media URN components | src/cap/registry.rs:874 |
+| test142 | `test142_normalize_handles_different_tag_orders` | TEST142: Test normalize handles different tag orders producing same canonical form | src/cap/registry.rs:897 |
 | test143 | `test143_default_config` | TEST143: Test default config uses capdag.com or environment variable values | src/cap/registry.rs:918 |
 | test144 | `test144_custom_registry_url` | TEST144: Test custom registry URL updates both registry and schema base URLs | src/cap/registry.rs:934 |
 | test145 | `test145_custom_registry_and_schema_url` | TEST145: Test custom registry and schema URLs set independently | src/cap/registry.rs:942 |
