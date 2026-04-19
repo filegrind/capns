@@ -1,4 +1,2 @@
-[extract_metadata cap:in="media:log;textable";op=extract_metadata;out="media:file-metadata;textable;record"]
-[generate_thumbnail cap:in="media:log;textable";op=generate_thumbnail;out="media:image;png;thumbnail"]
-[log_input -> extract_metadata -> metadata]
+[generate_thumbnail cap:in="media:log;textable";op=render_page_image;out="media:image;png"]
 [log_input -> generate_thumbnail -> thumbnail]

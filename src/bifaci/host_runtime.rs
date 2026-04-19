@@ -27,7 +27,7 @@
 
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{handshake, verify_identity, CborError, FrameReader, FrameWriter};
-use crate::bifaci::relay_switch::InstalledCartridgeIdentity;
+use crate::bifaci::relay_switch::{InstalledCartridgeIdentity, RelayNotifyCapabilitiesPayload};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -36,12 +36,6 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
-
-#[derive(Debug, Clone, serde::Serialize)]
-struct RelayNotifyCapabilitiesPayload {
-    caps: Vec<String>,
-    installed_cartridges: Vec<InstalledCartridgeIdentity>,
-}
 
 /// Interval between heartbeat probes sent to each running cartridge.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);

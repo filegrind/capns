@@ -1,4 +1,4 @@
-[generate_thumbnail cap:in=media:pdf;op=generate_thumbnail;out="media:image;png;thumbnail"]
+[generate_thumbnail cap:in=media:pdf;op=render_page_image;out="media:image;png"]
 [describe_image cap:gguf;in="media:image;png";ml-model;op=describe_image;out="media:image-description;textable";vision]
 [pdf_input -> generate_thumbnail -> thumbnail]
 [(thumbnail, model_spec) -> describe_image -> description]

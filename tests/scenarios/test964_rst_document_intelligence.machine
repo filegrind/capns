@@ -1,6 +1,2 @@
-[extract_metadata cap:in="media:rst;textable";op=extract_metadata;out="media:file-metadata;textable;record"]
-[extract_outline cap:in="media:rst;textable";op=extract_outline;out="media:document-outline;textable;record"]
-[generate_thumbnail cap:in="media:rst;textable";op=generate_thumbnail;out="media:image;png;thumbnail"]
-[rst_input -> extract_metadata -> metadata]
-[rst_input -> extract_outline -> outline]
+[generate_thumbnail cap:in="media:rst;textable";op=render_page_image;out="media:image;png"]
 [rst_input -> generate_thumbnail -> thumbnail]

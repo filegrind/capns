@@ -115,7 +115,8 @@ pub use bifaci::in_process_host::{
 };
 pub use bifaci::relay::{RelayMaster, RelaySlave};
 pub use bifaci::relay_switch::{
-    InstalledCartridgeIdentity, MasterHealthStatus, RelaySwitch, RelaySwitchError,
+    InstalledCartridgeIdentity, MasterHealthStatus, RelayNotifyCapabilitiesPayload, RelaySwitch,
+    RelaySwitchError,
 };
 
 // Planner — planning, discovery, and execution for machines

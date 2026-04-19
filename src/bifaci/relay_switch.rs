@@ -143,9 +143,9 @@ pub struct InstalledCartridgeIdentity {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct RelayNotifyCapabilitiesPayload {
-    caps: Vec<String>,
-    installed_cartridges: Vec<InstalledCartridgeIdentity>,
+pub struct RelayNotifyCapabilitiesPayload {
+    pub caps: Vec<String>,
+    pub installed_cartridges: Vec<InstalledCartridgeIdentity>,
 }
 
 /// Connection to a single RelayMaster with its socket I/O.

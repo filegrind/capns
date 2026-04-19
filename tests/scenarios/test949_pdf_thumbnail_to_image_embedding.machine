@@ -1,4 +1,4 @@
-[generate_thumbnail cap:in=media:pdf;op=generate_thumbnail;out="media:image;png;thumbnail"]
+[generate_thumbnail cap:in=media:pdf;op=render_page_image;out="media:image;png"]
 [generate_image_embeddings cap:candle;in="media:image;png";ml-model;op=generate_image_embeddings;out="media:embedding-vector;textable;record"]
 [pdf_input -> generate_thumbnail -> thumbnail]
 [thumbnail -> generate_image_embeddings -> embedding]

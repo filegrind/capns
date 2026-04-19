@@ -1,6 +1,6 @@
-[generate_thumbnail_pdf cap:in=media:pdf;op=generate_thumbnail;out="media:image;png;thumbnail"]
+[generate_thumbnail_pdf cap:in=media:pdf;op=render_page_image;out="media:image;png"]
 [generate_image_embeddings_pdf cap:candle;in="media:image;png";ml-model;op=generate_image_embeddings;out="media:embedding-vector;textable;record"]
-[generate_thumbnail_md cap:in="media:md;textable";op=generate_thumbnail;out="media:image;png;thumbnail"]
+[generate_thumbnail_md cap:in="media:md;textable";op=render_page_image;out="media:image;png"]
 [generate_image_embeddings_md cap:candle;in="media:image;png";ml-model;op=generate_image_embeddings;out="media:embedding-vector;textable;record"]
 [pdf_input -> generate_thumbnail_pdf -> pdf_thumbnail]
 [pdf_thumbnail -> generate_image_embeddings_pdf -> pdf_img_embed]

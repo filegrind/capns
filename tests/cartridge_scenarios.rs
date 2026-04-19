@@ -439,7 +439,7 @@ fn gpu_feature_for_platform() -> Option<&'static str> {
     }
 }
 
-/// Build a cartridge in release mode with appropriate features
+/// Build a cartridge in debug mode with appropriate features
 fn build_cartridge(name: &str) -> Result<(), String> {
     let cart_dir =
         cartridge_dir(name).ok_or_else(|| format!("Cartridge directory not found for {}", name))?;
@@ -453,21 +453,21 @@ fn build_cartridge(name: &str) -> Result<(), String> {
     };
 
     let mut cmd = Command::new("cargo");
-    cmd.arg("build").arg("--release").current_dir(&cart_dir);
+    cmd.arg("build").current_dir(&cart_dir);
 
     if let Some(feature) = gpu_feature {
         cmd.arg("--features").arg(feature);
         eprintln!(
-            "[CartridgeTest] Building {} in release mode with {} GPU acceleration...",
+            "[CartridgeTest] Building {} in debug mode with {} GPU acceleration...",
             name, feature
         );
         eprintln!(
-            "[CartridgeTest]   Running: cargo build --release --features {}",
+            "[CartridgeTest]   Running: cargo build --features {}",
             feature
         );
     } else {
-        eprintln!("[CartridgeTest] Building {} in release mode...", name);
-        eprintln!("[CartridgeTest]   Running: cargo build --release");
+        eprintln!("[CartridgeTest] Building {} in debug mode...", name);
+        eprintln!("[CartridgeTest]   Running: cargo build");
     }
     eprintln!("[CartridgeTest]   Directory: {:?}", cart_dir);
 
@@ -503,36 +503,36 @@ fn build_cartridge(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Find the most recent release binary for a cartridge.
+/// Find the most recent debug binary for a cartridge.
 /// Looks for both unversioned (e.g., `pdfcartridge`) and versioned (e.g., `pdfcartridge-0.93.6217`)
-/// names in the cartridge's `target/release/` directory.
+/// names in the cartridge's `target/debug/` directory.
 fn find_cartridge_binary(name: &str) -> Option<PathBuf> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
     let manifest_path = PathBuf::from(&manifest_dir);
 
     // testcartridge is inside capdag/, others are at workspace root
-    let release_dir = if name == "testcartridge" {
-        manifest_path.join(name).join("target").join("release")
+    let bin_dir = if name == "testcartridge" {
+        manifest_path.join(name).join("target").join("debug")
     } else {
         manifest_path
             .parent()?
             .join(name)
             .join("target")
-            .join("release")
+            .join("debug")
     };
 
-    if !release_dir.exists() {
+    if !bin_dir.exists() {
         return None;
     }
 
     // Try exact name first
-    let exact = release_dir.join(name);
+    let exact = bin_dir.join(name);
     if exact.is_file() {
         return Some(exact);
     }
 
     // Try versioned names: find most recent file matching <name>-*
-    let mut candidates: Vec<PathBuf> = std::fs::read_dir(&release_dir)
+    let mut candidates: Vec<PathBuf> = std::fs::read_dir(&bin_dir)
         .ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
@@ -950,18 +950,18 @@ fn extract_text(outputs: &HashMap<String, NodeData>, node: &str) -> String {
 }
 
 // =============================================================================
-// Scenario 1: PDF Document Intelligence (3 caps, fan-out)
-// pdfcartridge: extract_metadata + extract_outline + generate_thumbnail
+// Scenario 1: PDF Document Intelligence (1 cap, render_page_image)
+// pdfcartridge: render_page_image
 // =============================================================================
 
-// TEST1069: PDF fan-out produces metadata, outline, and thumbnail from a single PDF input
+// TEST1069: PDF render_page_image produces a thumbnail from a single PDF input
 #[tokio::test]
 #[serial]
 async fn test1069_pdf_document_intelligence() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test948_pdf_document_intelligence").await;
-    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edges.len(), 1);
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -981,26 +981,6 @@ async fn test1069_pdf_document_intelligence() {
     )
     .await
     .expect("Execution failed");
-
-    // Verify metadata is JSON with expected keys
-    let metadata_text = extract_text(&outputs, "metadata");
-    eprintln!(
-        "[TEST014] metadata: {}",
-        &metadata_text[..metadata_text.len().min(200)]
-    );
-    assert!(
-        metadata_text.contains("page_count") || metadata_text.contains("pages"),
-        "Metadata should contain page information"
-    );
-
-    // Verify outline is JSON
-    let outline_text = extract_text(&outputs, "outline");
-    eprintln!(
-        "[TEST014] outline: {}",
-        &outline_text[..outline_text.len().min(200)]
-    );
-    // Outline might be empty for a blank PDF, but should be valid
-    assert!(!outline_text.is_empty(), "Outline should not be empty");
 
     // Verify thumbnail is PNG (starts with PNG signature)
     let thumbnail_bytes = extract_bytes(&outputs, "thumbnail");
@@ -1067,11 +1047,11 @@ async fn test1070_pdf_thumbnail_to_image_embedding() {
 }
 
 // =============================================================================
-// Scenario 3: PDF Full Intelligence Pipeline (5 caps, fan-out + chain)
-// pdfcartridge ×3 + candlecartridge: metadata + outline + thumbnail → image_embeddings
+// Scenario 3: PDF Full Intelligence Pipeline (2 caps, chain)
+// pdfcartridge + candlecartridge: render_page_image → generate_image_embeddings
 // =============================================================================
 
-// TEST881: Complete PDF intelligence pipeline with cross-cartridge image embedding
+// TEST881: PDF thumbnail to image embedding pipeline
 #[tokio::test]
 #[serial]
 async fn test881_pdf_full_intelligence_pipeline() {
@@ -1087,8 +1067,8 @@ async fn test881_pdf_full_intelligence_pipeline() {
     ensure_model_downloaded(MODEL_CLIP, modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test950_pdf_full_intelligence_pipeline").await;
-    assert_eq!(graph.edges.len(), 4);
-    assert_eq!(graph.nodes.len(), 5); // pdf_input, metadata, outline, thumbnail, img_embedding
+    assert_eq!(graph.edges.len(), 2);
+    assert_eq!(graph.nodes.len(), 3); // pdf_input, thumbnail, img_embedding
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1109,9 +1089,7 @@ async fn test881_pdf_full_intelligence_pipeline() {
     .await
     .expect("Execution failed");
 
-    // All 4 output nodes should have data
-    assert!(outputs.contains_key("metadata"), "Missing metadata output");
-    assert!(outputs.contains_key("outline"), "Missing outline output");
+    // Both output nodes must exist
     assert!(
         outputs.contains_key("thumbnail"),
         "Missing thumbnail output"
@@ -1128,28 +1106,24 @@ async fn test881_pdf_full_intelligence_pipeline() {
         "Thumbnail must be valid PNG"
     );
 
-    // Verify metadata is non-empty text
-    let meta = extract_text(&outputs, "metadata");
-    assert!(!meta.is_empty(), "Metadata must not be empty");
-
     // Verify embedding has data
     let emb = extract_text(&outputs, "img_embedding");
     assert!(!emb.is_empty(), "Image embedding must not be empty");
 }
 
 // =============================================================================
-// Scenario 4: Text Document Intelligence (3 caps, fan-out)
-// txtcartridge: extract_metadata + extract_outline + generate_thumbnail on markdown
+// Scenario 4: Text Document Intelligence (1 cap, render_page_image on markdown)
+// txtcartridge: render_page_image
 // =============================================================================
 
-// TEST1071: Markdown fan-out produces metadata, outline, and thumbnail
+// TEST1071: Markdown render_page_image produces thumbnail
 #[tokio::test]
 #[serial]
 async fn test1071_text_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test951_text_document_intelligence").await;
-    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edges.len(), 1);
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1170,16 +1144,6 @@ async fn test1071_text_document_intelligence() {
     .await
     .expect("Execution failed");
 
-    // Verify metadata
-    let meta = extract_text(&outputs, "metadata");
-    eprintln!("[TEST017] metadata: {}", &meta[..meta.len().min(200)]);
-    assert!(!meta.is_empty(), "Metadata must not be empty");
-
-    // Verify outline (markdown has headers so outline should have content)
-    let outline = extract_text(&outputs, "outline");
-    eprintln!("[TEST017] outline: {}", &outline[..outline.len().min(200)]);
-    assert!(!outline.is_empty(), "Outline must not be empty");
-
     // Verify thumbnail is PNG
     let thumb = extract_bytes(&outputs, "thumbnail");
     assert!(
@@ -1189,19 +1153,19 @@ async fn test1071_text_document_intelligence() {
 }
 
 // =============================================================================
-// Scenario 5: Multi-Format Document Processing (6 caps, parallel fan-outs)
-// pdfcartridge ×3 + txtcartridge ×3: two independent fan-outs from different inputs
+// Scenario 5: Multi-Format Document Processing (2 caps, parallel render_page_image)
+// pdfcartridge + txtcartridge: PDF and markdown each get a thumbnail
 // =============================================================================
 
-// TEST1072: Parallel processing of PDF and markdown through independent fan-outs
+// TEST1072: Parallel processing of PDF and markdown through independent render_page_image
 #[tokio::test]
 #[serial]
 async fn test1072_multi_format_document_processing() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test952_multi_format_document_processing").await;
-    assert_eq!(graph.edges.len(), 6);
-    assert_eq!(graph.nodes.len(), 8); // 2 inputs + 6 outputs
+    assert_eq!(graph.edges.len(), 2);
+    assert_eq!(graph.nodes.len(), 4); // 2 inputs + 2 outputs
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1226,24 +1190,12 @@ async fn test1072_multi_format_document_processing() {
     .await
     .expect("Execution failed");
 
-    // All 6 output nodes should have data
-    for node in &[
-        "pdf_metadata",
-        "pdf_outline",
-        "pdf_thumbnail",
-        "md_metadata",
-        "md_outline",
-        "md_thumbnail",
-    ] {
+    for node in &["pdf_thumbnail", "md_thumbnail"] {
         assert!(
             outputs.contains_key(*node),
             "Missing output node '{}'",
             node
         );
-    }
-
-    // Both thumbnails should be PNG
-    for node in &["pdf_thumbnail", "md_thumbnail"] {
         let thumb = extract_bytes(&outputs, node);
         assert!(
             thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
@@ -1251,10 +1203,6 @@ async fn test1072_multi_format_document_processing() {
             node
         );
     }
-
-    // Both metadata outputs should be non-empty
-    assert!(!extract_text(&outputs, "pdf_metadata").is_empty());
-    assert!(!extract_text(&outputs, "md_metadata").is_empty());
 }
 
 // =============================================================================
@@ -1504,19 +1452,19 @@ async fn test1032_audio_transcription() {
 }
 
 // =============================================================================
-// Scenario 11: PDF Complete Analysis (4 caps, all pdfcartridge ops)
-// pdfcartridge: extract_metadata + extract_outline + generate_thumbnail + disbind
+// Scenario 11: PDF Complete Analysis (2 caps, pdfcartridge ops)
+// pdfcartridge: render_page_image + disbind
 // =============================================================================
 
-// TEST1034: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
+// TEST1034: pdfcartridge ops on a single PDF — thumbnail + disbind pipeline
 #[tokio::test]
 #[serial]
 async fn test1034_pdf_complete_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test958_pdf_complete_analysis").await;
-    assert_eq!(graph.edges.len(), 4, "4 edges expected");
-    assert_eq!(graph.nodes.len(), 5, "1 input + 4 outputs");
+    assert_eq!(graph.edges.len(), 2, "2 edges expected");
+    assert_eq!(graph.nodes.len(), 3, "1 input + 2 outputs");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1537,24 +1485,14 @@ async fn test1034_pdf_complete_analysis() {
     .await
     .expect("Execution failed");
 
-    // All 4 output nodes must exist
-    for node in &["metadata", "outline", "thumbnail", "pages"] {
+    // Both output nodes must exist
+    for node in &["thumbnail", "pages"] {
         assert!(
             outputs.contains_key(*node),
             "Missing output node '{}'",
             node
         );
     }
-
-    // Metadata is JSON with page info
-    let meta = extract_text(&outputs, "metadata");
-    eprintln!("[TEST024] metadata: {}", &meta[..meta.len().min(200)]);
-    assert!(!meta.is_empty());
-
-    // Outline is valid (may be minimal for blank PDF)
-    let outline = extract_text(&outputs, "outline");
-    eprintln!("[TEST024] outline: {}", &outline[..outline.len().min(200)]);
-    assert!(!outline.is_empty());
 
     // Thumbnail is PNG
     let thumb = extract_bytes(&outputs, "thumbnail");
@@ -1644,20 +1582,20 @@ async fn test1035_model_full_inspection() {
 }
 
 // =============================================================================
-// Scenario 13: Two-Format Full Analysis (7 caps, pdf ×4 + md ×3)
-// pdfcartridge: metadata + outline + thumbnail + disbind
-// txtcartridge: metadata + outline + thumbnail (no disbind — markdown has no pages)
+// Scenario 13: Two-Format Full Analysis (3 caps, pdf ×2 + md ×1)
+// pdfcartridge: render_page_image + disbind
+// txtcartridge: render_page_image
 // =============================================================================
 
-// TEST1037: 7-cap parallel analysis — all pdf ops + all md ops on two documents
+// TEST1037: 3-cap parallel analysis — pdf thumbnail + disbind + md thumbnail
 #[tokio::test]
 #[serial]
 async fn test1037_two_format_full_analysis() {
     let dev_binaries = require_binaries(&["pdfcartridge", "txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test960_two_format_full_analysis").await;
-    assert_eq!(graph.edges.len(), 7, "7 edges expected");
-    assert_eq!(graph.nodes.len(), 9, "2 inputs + 7 outputs");
+    assert_eq!(graph.edges.len(), 3, "3 edges expected");
+    assert_eq!(graph.nodes.len(), 5, "2 inputs + 3 outputs");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1682,17 +1620,8 @@ async fn test1037_two_format_full_analysis() {
     .await
     .expect("Execution failed");
 
-    // All 7 output nodes must exist
-    let expected_nodes = [
-        "pdf_metadata",
-        "pdf_outline",
-        "pdf_thumbnail",
-        "pdf_pages",
-        "md_metadata",
-        "md_outline",
-        "md_thumbnail",
-    ];
-    for node in &expected_nodes {
+    // 3 output nodes must exist: pdf thumbnail, pdf pages, md thumbnail
+    for node in &["pdf_thumbnail", "pdf_pages", "md_thumbnail"] {
         assert!(
             outputs.contains_key(*node),
             "Missing output node '{}'",
@@ -1710,34 +1639,29 @@ async fn test1037_two_format_full_analysis() {
         );
     }
 
-    // All text outputs must be non-empty
-    for node in &expected_nodes {
-        if !node.contains("thumbnail") {
-            let text = extract_text(&outputs, node);
-            assert!(!text.is_empty(), "{} must not be empty", node);
-        }
-    }
+    let pages = extract_text(&outputs, "pdf_pages");
+    assert!(!pages.is_empty(), "pdf_pages must not be empty");
 
     eprintln!(
-        "[TEST026] All 7 outputs verified: {} nodes with data",
+        "[TEST026] All 3 outputs verified: {} nodes with data",
         outputs.len()
     );
 }
 
 // =============================================================================
-// Scenario 14: Model + PDF Combined Pipeline (5 caps, 2 sources)
-// modelcartridge ×2 + pdfcartridge ×3: model inspection + PDF analysis
+// Scenario 14: Model + PDF Combined Pipeline (3 caps, 2 sources)
+// modelcartridge ×2 + pdfcartridge ×1: model availability/status + PDF thumbnail
 // =============================================================================
 
-// TEST1038: 5-cap cross-domain pipeline — model inspection + PDF document analysis
+// TEST1038: 3-cap cross-domain pipeline — model inspection + PDF thumbnail
 #[tokio::test]
 #[serial]
 async fn test1038_model_plus_pdf_combined() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test961_model_plus_pdf_combined").await;
-    assert_eq!(graph.edges.len(), 5);
-    assert_eq!(graph.nodes.len(), 7); // 2 inputs + 5 outputs
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.nodes.len(), 5); // 2 inputs + 3 outputs
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1762,7 +1686,7 @@ async fn test1038_model_plus_pdf_combined() {
     .await
     .expect("Execution failed");
 
-    for node in &["availability", "status", "metadata", "outline", "thumbnail"] {
+    for node in &["availability", "status", "thumbnail"] {
         assert!(
             outputs.contains_key(*node),
             "Missing output node '{}'",
@@ -1779,33 +1703,30 @@ async fn test1038_model_plus_pdf_combined() {
     eprintln!("[TEST027] status: {}", &status[..status.len().min(200)]);
     assert!(!status.is_empty());
 
-    // PDF outputs
+    // PDF thumbnail
     let thumb = extract_bytes(&outputs, "thumbnail");
     assert!(
         thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
         "Thumbnail must be valid PNG"
     );
 
-    assert!(!extract_text(&outputs, "metadata").is_empty());
-    assert!(!extract_text(&outputs, "outline").is_empty());
-
-    eprintln!("[TEST027] 5-cap cross-domain pipeline complete");
+    eprintln!("[TEST027] 3-cap cross-domain pipeline complete");
 }
 
 // =============================================================================
-// Scenario 15: Three-Cartridge 6-Cap Pipeline (model + pdf + txt)
-// modelcartridge ×2 + pdfcartridge ×2 + txtcartridge ×2: 3 sources, 6 caps
+// Scenario 15: Three-Cartridge 4-Cap Pipeline (model + pdf + txt)
+// modelcartridge ×2 + pdfcartridge ×1 + txtcartridge ×1: 3 sources, 4 caps
 // =============================================================================
 
-// TEST1040: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
+// TEST1040: 4-cap three-cartridge pipeline — model availability/status + PDF + md thumbnails
 #[tokio::test]
 #[serial]
 async fn test1040_three_cartridge_pipeline() {
     let dev_binaries = require_binaries(&["modelcartridge", "pdfcartridge", "txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test962_three_cartridge_pipeline").await;
-    assert_eq!(graph.edges.len(), 6);
-    assert_eq!(graph.nodes.len(), 9); // 3 inputs + 6 outputs
+    assert_eq!(graph.edges.len(), 4);
+    assert_eq!(graph.nodes.len(), 7); // 3 inputs + 4 outputs
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1834,14 +1755,7 @@ async fn test1040_three_cartridge_pipeline() {
     .await
     .expect("Execution failed");
 
-    let expected = [
-        "availability",
-        "status",
-        "pdf_metadata",
-        "pdf_thumbnail",
-        "md_metadata",
-        "md_thumbnail",
-    ];
+    let expected = ["availability", "status", "pdf_thumbnail", "md_thumbnail"];
     for node in &expected {
         assert!(
             outputs.contains_key(*node),
@@ -1853,15 +1767,18 @@ async fn test1040_three_cartridge_pipeline() {
     // Both thumbnails are PNG
     for node in &["pdf_thumbnail", "md_thumbnail"] {
         let thumb = extract_bytes(&outputs, node);
+        eprintln!("[TEST028] {}: {} bytes, first 8: {:?}", node, thumb.len(), &thumb[..thumb.len().min(8)]);
         assert!(
             thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
-            "{} must be valid PNG",
-            node
+            "{} must be valid PNG (got {} bytes, first 8: {:?})",
+            node,
+            thumb.len(),
+            &thumb[..thumb.len().min(8)]
         );
     }
 
-    // All text outputs non-empty
-    for node in &["availability", "status", "pdf_metadata", "md_metadata"] {
+    // Model outputs non-empty
+    for node in &["availability", "status"] {
         assert!(
             !extract_text(&outputs, node).is_empty(),
             "{} must not be empty",
@@ -1870,7 +1787,7 @@ async fn test1040_three_cartridge_pipeline() {
     }
 
     eprintln!(
-        "[TEST028] 6-cap three-cartridge pipeline complete: {} outputs",
+        "[TEST028] 4-cap three-cartridge pipeline complete: {} outputs",
         outputs.len()
     );
 }
@@ -1930,18 +1847,18 @@ fn build_llm_constrained_request(model_spec: &str, prompt: &str) -> Vec<u8> {
 }
 
 // =============================================================================
-// Scenario 16: txtcartridge Plain Text Format (3 caps, fan-out)
-// txtcartridge: extract_metadata + extract_outline + generate_thumbnail on .txt
+// Scenario 16: txtcartridge Plain Text Format (1 cap, render_page_image on .txt)
+// txtcartridge: render_page_image
 // =============================================================================
 
-// TEST1041: Plain text fan-out produces metadata, outline, and thumbnail from txt input
+// TEST1041: Plain text render_page_image produces thumbnail from txt input
 #[tokio::test]
 #[serial]
 async fn test1041_txt_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test963_txt_document_intelligence").await;
-    assert_eq!(graph.edges.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -1962,10 +1879,6 @@ async fn test1041_txt_document_intelligence() {
     .await
     .expect("Execution failed");
 
-    let meta = extract_text(&outputs, "metadata");
-    eprintln!("[TEST029] metadata: {}", &meta[..meta.len().min(200)]);
-    assert!(!meta.is_empty(), "txt metadata must not be empty");
-
     let thumb = extract_bytes(&outputs, "thumbnail");
     eprintln!("[TEST029] thumbnail: {} bytes", thumb.len());
     assert!(
@@ -1975,18 +1888,18 @@ async fn test1041_txt_document_intelligence() {
 }
 
 // =============================================================================
-// Scenario 17: txtcartridge RST Format (3 caps, fan-out)
-// txtcartridge: extract_metadata + extract_outline + generate_thumbnail on .rst
+// Scenario 17: txtcartridge RST Format (1 cap, render_page_image on .rst)
+// txtcartridge: render_page_image
 // =============================================================================
 
-// TEST1042: RST document fan-out produces metadata, outline (with headers), and thumbnail
+// TEST1042: RST document render_page_image produces thumbnail
 #[tokio::test]
 #[serial]
 async fn test1042_rst_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test964_rst_document_intelligence").await;
-    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edges.len(), 1);
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -2007,15 +1920,6 @@ async fn test1042_rst_document_intelligence() {
     .await
     .expect("Execution failed");
 
-    let meta = extract_text(&outputs, "metadata");
-    eprintln!("[TEST030] metadata: {}", &meta[..meta.len().min(200)]);
-    assert!(!meta.is_empty(), "rst metadata must not be empty");
-
-    // RST has section headers — outline should have content
-    let outline = extract_text(&outputs, "outline");
-    eprintln!("[TEST030] outline: {}", &outline[..outline.len().min(200)]);
-    assert!(!outline.is_empty(), "rst outline must not be empty");
-
     let thumb = extract_bytes(&outputs, "thumbnail");
     assert!(
         thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
@@ -2024,18 +1928,18 @@ async fn test1042_rst_document_intelligence() {
 }
 
 // =============================================================================
-// Scenario 18: txtcartridge Log Format (3 caps, fan-out)
-// txtcartridge: extract_metadata + extract_outline + generate_thumbnail on .log
+// Scenario 18: txtcartridge Log Format (1 cap, render_page_image on .log)
+// txtcartridge: render_page_image
 // =============================================================================
 
-// TEST1043: Log file fan-out produces metadata, outline, and thumbnail from log input
+// TEST1043: Log file render_page_image produces thumbnail from log input
 #[tokio::test]
 #[serial]
 async fn test1043_log_document_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test965_log_document_intelligence").await;
-    assert_eq!(graph.edges.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -2056,33 +1960,30 @@ async fn test1043_log_document_intelligence() {
     .await
     .expect("Execution failed");
 
-    let meta = extract_text(&outputs, "metadata");
-    eprintln!("[TEST031] metadata: {}", &meta[..meta.len().min(200)]);
-    assert!(!meta.is_empty(), "log metadata must not be empty");
-
     let thumb = extract_bytes(&outputs, "thumbnail");
     assert!(
         thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
         "log thumbnail must be valid PNG"
     );
+    eprintln!("[TEST031] thumbnail: {} bytes", thumb.len());
 }
 
 // =============================================================================
-// Scenario 19: All Four Text Formats in One DAG (12 caps, 4 parallel fan-outs)
-// txtcartridge: txt + rst + log + md each → metadata + outline + thumbnail
+// Scenario 19: All Four Text Formats in One DAG (4 caps, 4 parallel render_page_image)
+// txtcartridge: txt + rst + log + md each → thumbnail
 // =============================================================================
 
-// TEST1044: 12-cap DAG processing all four text formats simultaneously
+// TEST1044: 4-cap DAG processing all four text formats simultaneously
 #[tokio::test]
 #[serial]
 async fn test1044_all_text_formats_intelligence() {
     let dev_binaries = require_binaries(&["txtcartridge"]);
 
     let (_route, graph) = load_and_parse_scenario("test966_all_text_formats_intelligence").await;
-    // md: 3 ops (metadata, outline, thumbnail), rst: 3 ops, txt: 2 ops, log: 2 ops = 10
-    assert_eq!(graph.edges.len(), 10, "10 edges expected");
-    // 4 inputs + 10 outputs = 14 nodes
-    assert_eq!(graph.nodes.len(), 14, "4 inputs + 10 outputs");
+    // md: render_page_image, txt: render_page_image, rst: render_page_image, log: render_page_image = 4
+    assert_eq!(graph.edges.len(), 4, "4 edges expected");
+    // 4 inputs + 4 outputs = 8 nodes
+    assert_eq!(graph.nodes.len(), 8, "4 inputs + 4 outputs");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -2115,17 +2016,11 @@ async fn test1044_all_text_formats_intelligence() {
     .await
     .expect("Execution failed");
 
-    // 10 output nodes must have data (outline only for md and rst)
+    // 4 output nodes (one thumbnail per format)
     let expected_nodes = [
-        "txt_metadata",
         "txt_thumbnail",
-        "rst_metadata",
-        "rst_outline",
         "rst_thumbnail",
-        "log_metadata",
         "log_thumbnail",
-        "md_metadata",
-        "md_outline",
         "md_thumbnail",
     ];
     for node in &expected_nodes {
@@ -2134,15 +2029,6 @@ async fn test1044_all_text_formats_intelligence() {
             "Missing output node '{}'",
             node
         );
-    }
-
-    // All thumbnails must be valid PNG
-    for node in &[
-        "txt_thumbnail",
-        "rst_thumbnail",
-        "log_thumbnail",
-        "md_thumbnail",
-    ] {
         let thumb = extract_bytes(&outputs, node);
         assert!(
             thumb.len() >= 8 && thumb[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
@@ -2151,21 +2037,7 @@ async fn test1044_all_text_formats_intelligence() {
         );
     }
 
-    // All metadata outputs must be non-empty
-    for node in &[
-        "txt_metadata",
-        "rst_metadata",
-        "log_metadata",
-        "md_metadata",
-    ] {
-        assert!(
-            !extract_text(&outputs, node).is_empty(),
-            "{} must not be empty",
-            node
-        );
-    }
-
-    eprintln!("[TEST032] All 10 outputs verified across 4 text formats");
+    eprintln!("[TEST032] All 4 thumbnails verified across 4 text formats");
 }
 
 // =============================================================================
@@ -3178,9 +3050,9 @@ async fn test985_audio_transcribe_to_embed() {
     eprintln!("[TEST051] Audio transcription complete");
 }
 
-/// TEST052: PDF fan-out with chain: metadata + outline + thumbnail → image embedding
-/// Flow: FAN-OUT (3 outputs) + CHAIN (thumbnail → embedding)
-/// Tests: Single input fanning out with one branch continuing to ML
+/// TEST052: PDF render_page_image chained to image embedding
+/// Flow: CHAIN (thumbnail → img_embedding)
+/// Tests: pdfcartridge thumbnail piped to candlecartridge image embedding
 #[tokio::test]
 #[serial]
 async fn test986_pdf_fanout_with_chain() {
@@ -3194,7 +3066,7 @@ async fn test986_pdf_fanout_with_chain() {
     ensure_model_downloaded(MODEL_CLIP, &modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test986_pdf_fanout_with_chain").await;
-    assert_eq!(graph.edges.len(), 4, "3 fan-out + 1 chain");
+    assert_eq!(graph.edges.len(), 2, "fan-out + chain");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -3215,7 +3087,7 @@ async fn test986_pdf_fanout_with_chain() {
     .await
     .expect("Execution failed");
 
-    let expected = ["metadata", "outline", "thumbnail", "img_embedding"];
+    let expected = ["thumbnail", "img_embedding"];
     for node in &expected {
         assert!(outputs.contains_key(*node), "Missing output '{}'", node);
     }
@@ -3227,7 +3099,7 @@ async fn test986_pdf_fanout_with_chain() {
     );
     assert!(!embedding.is_empty());
 
-    eprintln!("[TEST052] Fan-out with chain complete");
+    eprintln!("[TEST052] PDF thumbnail to image embedding complete");
 }
 
 /// TEST053: Multi-format parallel chains: PDF + MD both get thumbnails and embeddings
@@ -3290,7 +3162,7 @@ async fn test987_multi_format_parallel_chains() {
 }
 
 /// TEST054: Deep chain with parallel branches from intermediate node
-/// Flow: FAN-OUT from input + FAN-OUT from intermediate + CHAIN
+/// Flow: thumbnail → FAN-OUT (describe_image + img_embedding) + CHAIN (description → desc_embedding)
 /// Tests: Complex graph with branching at multiple levels
 #[tokio::test]
 #[serial]
@@ -3307,7 +3179,7 @@ async fn test988_deep_chain_with_parallel() {
     ensure_model_downloaded(MODEL_CLIP, &modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test988_deep_chain_with_parallel").await;
-    assert_eq!(graph.edges.len(), 5, "Complex 5-edge graph");
+    assert_eq!(graph.edges.len(), 4, "Complex 4-edge graph");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
@@ -3328,13 +3200,7 @@ async fn test988_deep_chain_with_parallel() {
     .await
     .expect("Execution failed");
 
-    let expected = [
-        "metadata",
-        "thumbnail",
-        "description",
-        "desc_embedding",
-        "img_embedding",
-    ];
+    let expected = ["thumbnail", "description", "desc_embedding", "img_embedding"];
     for node in &expected {
         assert!(outputs.contains_key(*node), "Missing output '{}'", node);
     }

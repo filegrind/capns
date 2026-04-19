@@ -21,7 +21,8 @@
 use super::types::{ResolvedEdge, ResolvedGraph};
 use crate::{
     handshake, CapManifest, CapRegistry, CapUrn, CartridgeHostRuntime, CartridgeRepo, Frame,
-    FrameReader, FrameType, FrameWriter, Limits, RelaySlave, RelaySwitch, DEFAULT_MAX_CHUNK,
+    FrameReader, FrameType, FrameWriter, Limits, RelayNotifyCapabilitiesPayload, RelaySlave,
+    RelaySwitch, DEFAULT_MAX_CHUNK,
 };
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -899,8 +900,11 @@ impl ExecutionContext {
 
         // Initial caps: just CAP_IDENTITY for handshake verification.
         // CartridgeHostRuntime sends full caps via RelayNotify.
-        let initial_caps_json = serde_json::to_vec(&[CAP_IDENTITY])
-            .map_err(|e| ExecutionError::HostError(format!("serialize caps: {}", e)))?;
+        let initial_caps_json = serde_json::to_vec(&RelayNotifyCapabilitiesPayload {
+            caps: vec![CAP_IDENTITY.to_string()],
+            installed_cartridges: vec![],
+        })
+        .map_err(|e| ExecutionError::HostError(format!("serialize caps: {}", e)))?;
 
         let (slave_ext_read, slave_ext_write) = slave_ext_sock.into_split();
 

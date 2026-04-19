@@ -26,7 +26,7 @@ use crate::bifaci::cartridge_runtime::{
 };
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{CborError, FrameReader, FrameWriter};
-use crate::bifaci::relay_switch::InstalledCartridgeIdentity;
+use crate::bifaci::relay_switch::{InstalledCartridgeIdentity, RelayNotifyCapabilitiesPayload};
 use crate::cap::caller::CapArgumentValue;
 use crate::cap::definition::Cap;
 use crate::standard::caps::CAP_IDENTITY;
@@ -37,12 +37,6 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct RelayNotifyCapabilitiesPayload {
-    caps: Vec<String>,
-    installed_cartridges: Vec<InstalledCartridgeIdentity>,
-}
 
 // =============================================================================
 // FRAME HANDLER TRAIT
