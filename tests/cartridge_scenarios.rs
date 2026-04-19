@@ -954,7 +954,7 @@ fn extract_text(outputs: &HashMap<String, NodeData>, node: &str) -> String {
 // pdfcartridge: extract_metadata + extract_outline + generate_thumbnail
 // =============================================================================
 
-// TEST014: PDF fan-out produces metadata, outline, and thumbnail from a single PDF input
+// TEST1069: PDF fan-out produces metadata, outline, and thumbnail from a single PDF input
 #[tokio::test]
 #[serial]
 async fn test1069_pdf_document_intelligence() {
@@ -1017,7 +1017,7 @@ async fn test1069_pdf_document_intelligence() {
 // pdfcartridge → candlecartridge (requires parser fix for media URN compatibility)
 // =============================================================================
 
-// TEST015: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding
+// TEST1070: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding
 #[tokio::test]
 #[serial]
 async fn test1070_pdf_thumbnail_to_image_embedding() {
@@ -1071,7 +1071,7 @@ async fn test1070_pdf_thumbnail_to_image_embedding() {
 // pdfcartridge ×3 + candlecartridge: metadata + outline + thumbnail → image_embeddings
 // =============================================================================
 
-// TEST016: Complete PDF intelligence pipeline with cross-cartridge image embedding
+// TEST881: Complete PDF intelligence pipeline with cross-cartridge image embedding
 #[tokio::test]
 #[serial]
 async fn test881_pdf_full_intelligence_pipeline() {
@@ -1142,7 +1142,7 @@ async fn test881_pdf_full_intelligence_pipeline() {
 // txtcartridge: extract_metadata + extract_outline + generate_thumbnail on markdown
 // =============================================================================
 
-// TEST017: Markdown fan-out produces metadata, outline, and thumbnail
+// TEST1071: Markdown fan-out produces metadata, outline, and thumbnail
 #[tokio::test]
 #[serial]
 async fn test1071_text_document_intelligence() {
@@ -1193,7 +1193,7 @@ async fn test1071_text_document_intelligence() {
 // pdfcartridge ×3 + txtcartridge ×3: two independent fan-outs from different inputs
 // =============================================================================
 
-// TEST018: Parallel processing of PDF and markdown through independent fan-outs
+// TEST1072: Parallel processing of PDF and markdown through independent fan-outs
 #[tokio::test]
 #[serial]
 async fn test1072_multi_format_document_processing() {
@@ -1262,7 +1262,7 @@ async fn test1072_multi_format_document_processing() {
 // modelcartridge + candlecartridge: model-spec → availability + candle_dimensions
 // =============================================================================
 
-// TEST019: Fan-out from model spec to availability check and embedding dimensions
+// TEST885: Fan-out from model spec to availability check and embedding dimensions
 #[tokio::test]
 #[serial]
 async fn test885_model_plus_dimensions() {
@@ -1318,7 +1318,7 @@ async fn test885_model_plus_dimensions() {
 // modelcartridge: model-spec → availability + status
 // =============================================================================
 
-// TEST020: Model spec fan-out to availability and status checks
+// TEST884: Model spec fan-out to availability and status checks
 #[tokio::test]
 #[serial]
 async fn test884_model_availability_plus_status() {
@@ -1360,7 +1360,7 @@ async fn test884_model_availability_plus_status() {
 // candlecartridge: text → BERT embedding vector
 // =============================================================================
 
-// TEST021: Generate text embedding with BERT via candlecartridge
+// TEST883: Generate text embedding with BERT via candlecartridge
 #[tokio::test]
 #[serial]
 async fn test883_text_embedding() {
@@ -1412,7 +1412,7 @@ async fn test883_text_embedding() {
 // candlecartridge: PNG → BLIP description
 // =============================================================================
 
-// TEST022: Generate image description with BLIP via candlecartridge
+// TEST882: Generate image description with BLIP via candlecartridge
 #[tokio::test]
 #[serial]
 async fn test882_candle_describe_image() {
@@ -1458,7 +1458,7 @@ async fn test882_candle_describe_image() {
 // candlecartridge: WAV → Whisper transcription
 // =============================================================================
 
-// TEST023: Transcribe audio with Whisper via candlecartridge
+// TEST1032: Transcribe audio with Whisper via candlecartridge
 #[tokio::test]
 #[serial]
 async fn test1032_audio_transcription() {
@@ -1508,7 +1508,7 @@ async fn test1032_audio_transcription() {
 // pdfcartridge: extract_metadata + extract_outline + generate_thumbnail + disbind
 // =============================================================================
 
-// TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
+// TEST1034: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline
 #[tokio::test]
 #[serial]
 async fn test1034_pdf_complete_analysis() {
@@ -1574,7 +1574,7 @@ async fn test1034_pdf_complete_analysis() {
 // modelcartridge: availability + status + contents + path
 // =============================================================================
 
-// TEST025: All 4 modelcartridge inspection ops on a single model spec
+// TEST1035: All 4 modelcartridge inspection ops on a single model spec
 #[tokio::test]
 #[serial]
 async fn test1035_model_full_inspection() {
@@ -1649,7 +1649,7 @@ async fn test1035_model_full_inspection() {
 // txtcartridge: metadata + outline + thumbnail (no disbind — markdown has no pages)
 // =============================================================================
 
-// TEST026: 7-cap parallel analysis — all pdf ops + all md ops on two documents
+// TEST1037: 7-cap parallel analysis — all pdf ops + all md ops on two documents
 #[tokio::test]
 #[serial]
 async fn test1037_two_format_full_analysis() {
@@ -1729,7 +1729,7 @@ async fn test1037_two_format_full_analysis() {
 // modelcartridge ×2 + pdfcartridge ×3: model inspection + PDF analysis
 // =============================================================================
 
-// TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis
+// TEST1038: 5-cap cross-domain pipeline — model inspection + PDF document analysis
 #[tokio::test]
 #[serial]
 async fn test1038_model_plus_pdf_combined() {
@@ -1797,7 +1797,7 @@ async fn test1038_model_plus_pdf_combined() {
 // modelcartridge ×2 + pdfcartridge ×2 + txtcartridge ×2: 3 sources, 6 caps
 // =============================================================================
 
-// TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
+// TEST1040: 6-cap three-cartridge pipeline — model + PDF + markdown analysis
 #[tokio::test]
 #[serial]
 async fn test1040_three_cartridge_pipeline() {
@@ -1934,7 +1934,7 @@ fn build_llm_constrained_request(model_spec: &str, prompt: &str) -> Vec<u8> {
 // txtcartridge: extract_metadata + extract_outline + generate_thumbnail on .txt
 // =============================================================================
 
-// TEST029: Plain text fan-out produces metadata, outline, and thumbnail from txt input
+// TEST1041: Plain text fan-out produces metadata, outline, and thumbnail from txt input
 #[tokio::test]
 #[serial]
 async fn test1041_txt_document_intelligence() {
@@ -1979,7 +1979,7 @@ async fn test1041_txt_document_intelligence() {
 // txtcartridge: extract_metadata + extract_outline + generate_thumbnail on .rst
 // =============================================================================
 
-// TEST030: RST document fan-out produces metadata, outline (with headers), and thumbnail
+// TEST1042: RST document fan-out produces metadata, outline (with headers), and thumbnail
 #[tokio::test]
 #[serial]
 async fn test1042_rst_document_intelligence() {
@@ -2028,7 +2028,7 @@ async fn test1042_rst_document_intelligence() {
 // txtcartridge: extract_metadata + extract_outline + generate_thumbnail on .log
 // =============================================================================
 
-// TEST031: Log file fan-out produces metadata, outline, and thumbnail from log input
+// TEST1043: Log file fan-out produces metadata, outline, and thumbnail from log input
 #[tokio::test]
 #[serial]
 async fn test1043_log_document_intelligence() {
@@ -2072,7 +2072,7 @@ async fn test1043_log_document_intelligence() {
 // txtcartridge: txt + rst + log + md each → metadata + outline + thumbnail
 // =============================================================================
 
-// TEST032: 12-cap DAG processing all four text formats simultaneously
+// TEST1044: 12-cap DAG processing all four text formats simultaneously
 #[tokio::test]
 #[serial]
 async fn test1044_all_text_formats_intelligence() {
@@ -2173,7 +2173,7 @@ async fn test1044_all_text_formats_intelligence() {
 // modelcartridge: model-repo → model-list
 // =============================================================================
 
-// TEST033: List all locally cached models via modelcartridge
+// TEST1046: List all locally cached models via modelcartridge
 #[tokio::test]
 #[serial]
 async fn test1046_model_list_models() {
@@ -2215,7 +2215,7 @@ async fn test1046_model_list_models() {
 // ggufcartridge: model-spec → embedding dimensions integer
 // =============================================================================
 
-// TEST034: Query GGUF embedding model dimensions via ggufcartridge
+// TEST1048: Query GGUF embedding model dimensions via ggufcartridge
 #[tokio::test]
 #[serial]
 async fn test1048_gguf_embeddings_dimensions() {
@@ -2268,7 +2268,7 @@ async fn test1048_gguf_embeddings_dimensions() {
 // ggufcartridge: llm-generation-request → llm-model-info
 // =============================================================================
 
-// TEST035: Query GGUF model metadata via llm_model_info cap
+// TEST1049: Query GGUF model metadata via llm_model_info cap
 #[tokio::test]
 #[serial]
 async fn test1049_gguf_llm_model_info() {
@@ -2317,7 +2317,7 @@ async fn test1049_gguf_llm_model_info() {
 // ggufcartridge: llm-generation-request → llm-vocab-response
 // =============================================================================
 
-// TEST036: Extract vocabulary tokens from a GGUF model via llm_vocab cap
+// TEST1050: Extract vocabulary tokens from a GGUF model via llm_vocab cap
 #[tokio::test]
 #[serial]
 async fn test1050_gguf_llm_vocab() {
@@ -2369,7 +2369,7 @@ async fn test1050_gguf_llm_vocab() {
 // ggufcartridge: same request → model_info + vocab
 // =============================================================================
 
-// TEST037: Fan-out from one LLM request to both model_info and vocab outputs
+// TEST1051: Fan-out from one LLM request to both model_info and vocab outputs
 #[tokio::test]
 #[serial]
 async fn test1051_gguf_model_info_plus_vocab() {
@@ -2427,7 +2427,7 @@ async fn test1051_gguf_model_info_plus_vocab() {
 // ggufcartridge: llm-generation-request → llm-text-stream
 // =============================================================================
 
-// TEST038: Generate text with a small GGUF LLM via llm_inference cap
+// TEST1052: Generate text with a small GGUF LLM via llm_inference cap
 #[tokio::test]
 #[serial]
 async fn test1052_gguf_llm_inference() {
@@ -2480,7 +2480,7 @@ async fn test1052_gguf_llm_inference() {
 // ggufcartridge: llm-generation-request (with JSON schema) → llm-text-stream
 // =============================================================================
 
-// TEST039: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap
+// TEST1053: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap
 #[tokio::test]
 #[serial]
 async fn test1053_gguf_llm_inference_constrained() {
@@ -2536,7 +2536,7 @@ async fn test1053_gguf_llm_inference_constrained() {
 // Fan-in via two edges with the same cap URN to the same output node.
 // =============================================================================
 
-// TEST040: Generate GGUF text embeddings with fan-in of text and model-spec inputs
+// TEST1054: Generate GGUF text embeddings with fan-in of text and model-spec inputs
 #[tokio::test]
 #[serial]
 async fn test1054_gguf_generate_embeddings() {
@@ -2594,7 +2594,7 @@ async fn test1054_gguf_generate_embeddings() {
 // ggufcartridge: image_input + model_spec → llm-text-stream (image analysis)
 // =============================================================================
 
-// TEST041: Describe image with GGUF vision model via fan-in of image and model-spec
+// TEST1057: Describe image with GGUF vision model via fan-in of image and model-spec
 #[tokio::test]
 #[serial]
 async fn test1057_gguf_describe_image() {
@@ -2649,7 +2649,7 @@ async fn test1057_gguf_describe_image() {
 // pdfcartridge → candlecartridge: thumbnail output feeds into gguf vision
 // =============================================================================
 
-// TEST042: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis
+// TEST1058: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis
 #[tokio::test]
 #[serial]
 async fn test1058_pdf_thumbnail_to_gguf_vision() {
@@ -2716,7 +2716,7 @@ async fn test1058_pdf_thumbnail_to_gguf_vision() {
 // ggufcartridge: request → model_info + vocab + inference + inference_constrained
 // =============================================================================
 
-// TEST043: Fan-out from one LLM request to all 4 ggufcartridge LLM operations
+// TEST1059: Fan-out from one LLM request to all 4 ggufcartridge LLM operations
 #[tokio::test]
 #[serial]
 async fn test1059_gguf_all_llm_ops() {

@@ -8,7 +8,7 @@
 
 **Numbered Tests Missing Descriptions:** 0
 
-**Numbering Mismatches:** 45
+**Numbering Mismatches:** 0
 
 All numbered test numbers are unique.
 
@@ -789,16 +789,16 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test858 | `test858_lub_three_inputs` | TEST858: LUB with three+ inputs narrows correctly | src/urn/media_urn.rs:1254 |
 | test859 | `test859_lub_valued_tags` | TEST859: LUB with valued tags (non-marker) that differ | src/urn/media_urn.rs:1269 |
 | test860 | `test860_seq_assigner_same_rid_different_xids_independent` | TEST860: Same RID with different XIDs get independent seq counters | src/bifaci/frame.rs:1880 |
-| test880 | `test880_no_duplicates_with_unique_caps` | TEST887: Tests duplicate detection passes for caps with unique URN combinations Verifies that check_for_duplicate_caps() correctly accepts caps with different op/in/out combinations | src/planner/plan_builder.rs:816 |
-| test881 | `test881_pdf_full_intelligence_pipeline` | TEST016: Complete PDF intelligence pipeline with cross-cartridge image embedding | tests/cartridge_scenarios.rs:1077 |
-| test882 | `test882_candle_describe_image` | TEST022: Generate image description with BLIP via candlecartridge | tests/cartridge_scenarios.rs:1418 |
-| test883 | `test883_text_embedding` | TEST021: Generate text embedding with BERT via candlecartridge | tests/cartridge_scenarios.rs:1366 |
-| test884 | `test884_model_availability_plus_status` | TEST020: Model spec fan-out to availability and status checks | tests/cartridge_scenarios.rs:1324 |
-| test885 | `test885_model_plus_dimensions` | TEST019: Fan-out from model spec to availability check and embedding dimensions | tests/cartridge_scenarios.rs:1268 |
+| test880 | `test880_no_duplicates_with_unique_caps` | TEST880: Tests duplicate detection passes for caps with unique URN combinations Verifies that check_for_duplicate_caps() correctly accepts caps with different op/in/out combinations | src/planner/plan_builder.rs:816 |
+| test881 | `test881_pdf_full_intelligence_pipeline` | TEST881: Complete PDF intelligence pipeline with cross-cartridge image embedding | tests/cartridge_scenarios.rs:1077 |
+| test882 | `test882_candle_describe_image` | TEST882: Generate image description with BLIP via candlecartridge | tests/cartridge_scenarios.rs:1418 |
+| test883 | `test883_text_embedding` | TEST883: Generate text embedding with BERT via candlecartridge | tests/cartridge_scenarios.rs:1366 |
+| test884 | `test884_model_availability_plus_status` | TEST884: Model spec fan-out to availability and status checks | tests/cartridge_scenarios.rs:1324 |
+| test885 | `test885_model_plus_dimensions` | TEST885: Fan-out from model spec to availability check and embedding dimensions | tests/cartridge_scenarios.rs:1268 |
 | test886 | `test886_optional_non_io_arg_with_default_has_default` | TEST886: Tests optional non-IO arguments with default values are marked as HasDefault Verifies that optional arguments with defaults behave the same as required ones with defaults | src/planner/plan_builder.rs:1108 |
-| test887 | `test887_execute_with_file_input` | TEST004: Execute with file-path input | tests/orchestrator_integration.rs:381 |
-| test888 | `test888_execute_edge1_to_edge2_chain` | TEST003: Execute two-edge chain (test-edge1 -> test-edge2) | tests/orchestrator_integration.rs:336 |
-| test889 | `test889_execute_single_edge_dag` | TEST002: Execute single-edge DAG (test-edge1) | tests/orchestrator_integration.rs:290 |
+| test887 | `test887_execute_with_file_input` | TEST887: Execute with file-path input | tests/orchestrator_integration.rs:381 |
+| test888 | `test888_execute_edge1_to_edge2_chain` | TEST888: Execute two-edge chain (test-edge1 -> test-edge2) | tests/orchestrator_integration.rs:336 |
+| test889 | `test889_execute_single_edge_dag` | TEST889: Execute single-edge DAG (test-edge1) | tests/orchestrator_integration.rs:290 |
 | test890 | `test890_direction_semantic_matching` | TEST890: Semantic direction matching - generic provider matches specific request | src/urn/cap_urn.rs:1913 |
 | test891 | `test891_direction_semantic_specificity` | TEST891: Semantic direction specificity - more media URN tags = higher specificity | src/urn/cap_urn.rs:1989 |
 | test892 | `test892_extensions_serialization` | TEST892: Test extensions serializes/deserializes correctly in MediaSpecDef | src/media/spec.rs:1146 |
@@ -815,7 +815,7 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test903 | `test903_chunk_with_chunk_index_and_checksum` | TEST903: Verify CHUNK frame can store chunk_index and checksum fields | src/bifaci/frame.rs:1720 |
 | test904 | `test904_stream_end_with_chunk_count` | TEST904: Verify STREAM_END frame can store chunk_count field | src/bifaci/frame.rs:1745 |
 | test905 | `test905_send_to_master_build_request_frames_roundtrip` | TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessCartridgeHost roundtrip | src/bifaci/relay_switch.rs:3370 |
-| test906 | `test906_full_path_identity_verification` | TEST489: Full path identity verification: engine → host (attach_cartridge) → cartridge This verifies that attach_cartridge completes identity verification end-to-end and the cartridge is ready to handle subsequent requests. | src/bifaci/integration_tests.rs:1351 |
+| test906 | `test906_full_path_identity_verification` | TEST906: Full path identity verification: engine → host (attach_cartridge) → cartridge This verifies that attach_cartridge completes identity verification end-to-end and the cartridge is ready to handle subsequent requests. | src/bifaci/integration_tests.rs:1351 |
 | test907 | `test907_offline_blocks_fetch` | TEST907: Offline flag blocks fetch_from_registry without making HTTP request | src/cap/registry.rs:716 |
 | test908 | `test908_cached_caps_accessible_when_offline` | TEST908: Cached caps remain accessible when offline | src/cap/registry.rs:741 |
 | test909 | `test909_set_offline_false_restores_fetch` | TEST909: set_offline(false) restores fetch ability (would fail with HTTP error, not NetworkBlocked) | src/cap/registry.rs:765 |
@@ -828,7 +828,7 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test916 | `test916_foreach_item_subdivision` | TEST916: ForEach item subdivision produces correct, monotonic ranges Mirrors the production code in interpreter.rs: pre-compute item boundaries from the same formula so the end of item N and the start of item N+1 are the same f32 value (no divergent accumulation paths). | src/orchestrator/executor.rs:1686 |
 | test917 | `test917_high_frequency_progress_bounded` | TEST917: High-frequency progress emission does not violate bounds (Regression test for the deadlock scenario — verifies computation stays bounded) | src/orchestrator/executor.rs:1750 |
 | test918 | `test918_activity_timeout_error_display` | TEST918: ActivityTimeout error formats correctly | src/orchestrator/executor.rs:1787 |
-| test919 | `test919_parse_simple_testcartridge_graph` | TEST001: Parse simple machine notation graph with test-edge1 | tests/orchestrator_integration.rs:266 |
+| test919 | `test919_parse_simple_testcartridge_graph` | TEST919: Parse simple machine notation graph with test-edge1 | tests/orchestrator_integration.rs:266 |
 | test920 | `test920_single_cap_plan` | TEST920: Tests creation of a simple execution plan with a single capability Verifies that single_cap() generates a valid plan with input_slot, cap node, and output node | src/planner/plan.rs:1035 |
 | test921 | `test921_linear_chain_plan` | TEST921: Tests creation of a linear chain of capabilities connected in sequence Verifies that linear_chain() correctly links multiple caps with proper edges and topological order | src/planner/plan.rs:1051 |
 | test922 | `test922_empty_plan` | TEST922: Tests creation and validation of an empty execution plan with no nodes Verifies that plans without capabilities are valid and handle zero nodes correctly | src/planner/plan.rs:1069 |
@@ -847,15 +847,15 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test935 | `test935_find_first_foreach_linear` | TEST935: find_first_foreach returns None for linear plans | src/planner/plan.rs:1714 |
 | test936 | `test936_has_foreach` | TEST936: has_foreach detects ForEach nodes | src/planner/plan.rs:1726 |
 | test937 | `test937_extract_prefix_to` | TEST937: extract_prefix_to extracts input_slot -> cap_0 as a standalone plan | src/planner/plan.rs:1767 |
-| test944 | `test944_six_machine` | TEST013: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase | tests/orchestrator_integration.rs:706 |
-| test945 | `test945_five_machine` | TEST012: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string | tests/orchestrator_integration.rs:653 |
-| test946 | `test946_four_machine` | TEST011: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP[" | tests/orchestrator_integration.rs:600 |
-| test947 | `test947_cap_not_found` | TEST010: Cap not found in registry | tests/orchestrator_integration.rs:573 |
-| test948 | `test948_invalid_cap_urn` | TEST009: Invalid cap URN in machine notation | tests/orchestrator_integration.rs:562 |
-| test949 | `test949_empty_graph` | TEST008: Empty machine notation (no edges) | tests/orchestrator_integration.rs:544 |
-| test950 | `test950_reject_cycles` | TEST007: Validate that cycles are rejected | tests/orchestrator_integration.rs:522 |
-| test951 | `test951_fan_in_pattern` | TEST006: Multi-input DAG (fan-in pattern) | tests/orchestrator_integration.rs:472 |
-| test952 | `test952_execute_large_payload` | TEST005: Execute large payload (test-large cap) | tests/orchestrator_integration.rs:426 |
+| test944 | `test944_six_machine` | TEST944: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10 Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1 Completes the round trip: unwrap markers + lowercase | tests/orchestrator_integration.rs:706 |
+| test945 | `test945_five_machine` | TEST945: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 node1 -> node2 -> node3 -> node6 -> node7 -> node8 adds <<...>> wrapping around the reversed string | tests/orchestrator_integration.rs:653 |
+| test946 | `test946_four_machine` | TEST946: 4-machine: edge1 -> edge2 -> edge7 -> edge8 node1 -> node2 -> node3 -> node6 -> node7 "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP[" | tests/orchestrator_integration.rs:600 |
+| test947 | `test947_cap_not_found` | TEST947: Cap not found in registry | tests/orchestrator_integration.rs:573 |
+| test948 | `test948_invalid_cap_urn` | TEST948: Invalid cap URN in machine notation | tests/orchestrator_integration.rs:562 |
+| test949 | `test949_empty_graph` | TEST949: Empty machine notation (no edges) | tests/orchestrator_integration.rs:544 |
+| test950 | `test950_reject_cycles` | TEST950: Validate that cycles are rejected | tests/orchestrator_integration.rs:522 |
+| test951 | `test951_fan_in_pattern` | TEST951: Multi-input DAG (fan-in pattern) | tests/orchestrator_integration.rs:472 |
+| test952 | `test952_execute_large_payload` | TEST952: Execute large payload (test-large cap) | tests/orchestrator_integration.rs:426 |
 | test953 | `test953_linear_plan_still_works` | TEST953: Linear plans (no ForEach/Collect) still convert successfully | src/orchestrator/plan_converter.rs:398 |
 | test954 | `test954_standalone_collect_passthrough` | TEST954: Standalone Collect nodes are handled as pass-through Plan: input → cap_0 → Collect → cap_1 → output The standalone Collect is transparent — the resolved edge from Collect to cap_1 should be rewritten to go from cap_0 to cap_1 directly. | src/orchestrator/plan_converter.rs:431 |
 | test955 | `test955_split_map_array` | TEST955: split_cbor_array with nested maps | src/orchestrator/cbor_util.rs:170 |
@@ -927,37 +927,37 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test1027 | `test1027_localized_excluded` | TEST1027: .localized is excluded | src/input_resolver/os_filter.rs:204 |
 | test1028 | `test1028_desktop_ini_excluded` | TEST1028: desktop.ini is excluded | src/input_resolver/os_filter.rs:210 |
 | test1029 | `test1029_normal_files_not_excluded` | TEST1029: Normal files are NOT excluded | src/input_resolver/os_filter.rs:216 |
-| test1032 | `test1032_audio_transcription` | TEST023: Transcribe audio with Whisper via candlecartridge | tests/cartridge_scenarios.rs:1464 |
-| test1034 | `test1034_pdf_complete_analysis` | TEST024: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline | tests/cartridge_scenarios.rs:1514 |
-| test1035 | `test1035_model_full_inspection` | TEST025: All 4 modelcartridge inspection ops on a single model spec | tests/cartridge_scenarios.rs:1580 |
-| test1037 | `test1037_two_format_full_analysis` | TEST026: 7-cap parallel analysis — all pdf ops + all md ops on two documents | tests/cartridge_scenarios.rs:1655 |
-| test1038 | `test1038_model_plus_pdf_combined` | TEST027: 5-cap cross-domain pipeline — model inspection + PDF document analysis | tests/cartridge_scenarios.rs:1735 |
-| test1040 | `test1040_three_cartridge_pipeline` | TEST028: 6-cap three-cartridge pipeline — model + PDF + markdown analysis | tests/cartridge_scenarios.rs:1803 |
-| test1041 | `test1041_txt_document_intelligence` | TEST029: Plain text fan-out produces metadata, outline, and thumbnail from txt input | tests/cartridge_scenarios.rs:1940 |
-| test1042 | `test1042_rst_document_intelligence` | TEST030: RST document fan-out produces metadata, outline (with headers), and thumbnail | tests/cartridge_scenarios.rs:1985 |
-| test1043 | `test1043_log_document_intelligence` | TEST031: Log file fan-out produces metadata, outline, and thumbnail from log input | tests/cartridge_scenarios.rs:2034 |
-| test1044 | `test1044_all_text_formats_intelligence` | TEST032: 12-cap DAG processing all four text formats simultaneously | tests/cartridge_scenarios.rs:2078 |
-| test1046 | `test1046_model_list_models` | TEST033: List all locally cached models via modelcartridge | tests/cartridge_scenarios.rs:2179 |
-| test1048 | `test1048_gguf_embeddings_dimensions` | TEST034: Query GGUF embedding model dimensions via ggufcartridge | tests/cartridge_scenarios.rs:2221 |
-| test1049 | `test1049_gguf_llm_model_info` | TEST035: Query GGUF model metadata via llm_model_info cap | tests/cartridge_scenarios.rs:2274 |
-| test1050 | `test1050_gguf_llm_vocab` | TEST036: Extract vocabulary tokens from a GGUF model via llm_vocab cap | tests/cartridge_scenarios.rs:2323 |
-| test1051 | `test1051_gguf_model_info_plus_vocab` | TEST037: Fan-out from one LLM request to both model_info and vocab outputs | tests/cartridge_scenarios.rs:2375 |
-| test1052 | `test1052_gguf_llm_inference` | TEST038: Generate text with a small GGUF LLM via llm_inference cap | tests/cartridge_scenarios.rs:2433 |
-| test1053 | `test1053_gguf_llm_inference_constrained` | TEST039: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap | tests/cartridge_scenarios.rs:2486 |
-| test1054 | `test1054_gguf_generate_embeddings` | TEST040: Generate GGUF text embeddings with fan-in of text and model-spec inputs | tests/cartridge_scenarios.rs:2542 |
-| test1057 | `test1057_gguf_describe_image` | TEST041: Describe image with GGUF vision model via fan-in of image and model-spec | tests/cartridge_scenarios.rs:2600 |
-| test1058 | `test1058_pdf_thumbnail_to_gguf_vision` | TEST042: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis | tests/cartridge_scenarios.rs:2655 |
-| test1059 | `test1059_gguf_all_llm_ops` | TEST043: Fan-out from one LLM request to all 4 ggufcartridge LLM operations | tests/cartridge_scenarios.rs:2722 |
+| test1032 | `test1032_audio_transcription` | TEST1032: Transcribe audio with Whisper via candlecartridge | tests/cartridge_scenarios.rs:1464 |
+| test1034 | `test1034_pdf_complete_analysis` | TEST1034: All 4 pdfcartridge ops on a single PDF — full document analysis pipeline | tests/cartridge_scenarios.rs:1514 |
+| test1035 | `test1035_model_full_inspection` | TEST1035: All 4 modelcartridge inspection ops on a single model spec | tests/cartridge_scenarios.rs:1580 |
+| test1037 | `test1037_two_format_full_analysis` | TEST1037: 7-cap parallel analysis — all pdf ops + all md ops on two documents | tests/cartridge_scenarios.rs:1655 |
+| test1038 | `test1038_model_plus_pdf_combined` | TEST1038: 5-cap cross-domain pipeline — model inspection + PDF document analysis | tests/cartridge_scenarios.rs:1735 |
+| test1040 | `test1040_three_cartridge_pipeline` | TEST1040: 6-cap three-cartridge pipeline — model + PDF + markdown analysis | tests/cartridge_scenarios.rs:1803 |
+| test1041 | `test1041_txt_document_intelligence` | TEST1041: Plain text fan-out produces metadata, outline, and thumbnail from txt input | tests/cartridge_scenarios.rs:1940 |
+| test1042 | `test1042_rst_document_intelligence` | TEST1042: RST document fan-out produces metadata, outline (with headers), and thumbnail | tests/cartridge_scenarios.rs:1985 |
+| test1043 | `test1043_log_document_intelligence` | TEST1043: Log file fan-out produces metadata, outline, and thumbnail from log input | tests/cartridge_scenarios.rs:2034 |
+| test1044 | `test1044_all_text_formats_intelligence` | TEST1044: 12-cap DAG processing all four text formats simultaneously | tests/cartridge_scenarios.rs:2078 |
+| test1046 | `test1046_model_list_models` | TEST1046: List all locally cached models via modelcartridge | tests/cartridge_scenarios.rs:2179 |
+| test1048 | `test1048_gguf_embeddings_dimensions` | TEST1048: Query GGUF embedding model dimensions via ggufcartridge | tests/cartridge_scenarios.rs:2221 |
+| test1049 | `test1049_gguf_llm_model_info` | TEST1049: Query GGUF model metadata via llm_model_info cap | tests/cartridge_scenarios.rs:2274 |
+| test1050 | `test1050_gguf_llm_vocab` | TEST1050: Extract vocabulary tokens from a GGUF model via llm_vocab cap | tests/cartridge_scenarios.rs:2323 |
+| test1051 | `test1051_gguf_model_info_plus_vocab` | TEST1051: Fan-out from one LLM request to both model_info and vocab outputs | tests/cartridge_scenarios.rs:2375 |
+| test1052 | `test1052_gguf_llm_inference` | TEST1052: Generate text with a small GGUF LLM via llm_inference cap | tests/cartridge_scenarios.rs:2433 |
+| test1053 | `test1053_gguf_llm_inference_constrained` | TEST1053: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap | tests/cartridge_scenarios.rs:2486 |
+| test1054 | `test1054_gguf_generate_embeddings` | TEST1054: Generate GGUF text embeddings with fan-in of text and model-spec inputs | tests/cartridge_scenarios.rs:2542 |
+| test1057 | `test1057_gguf_describe_image` | TEST1057: Describe image with GGUF vision model via fan-in of image and model-spec | tests/cartridge_scenarios.rs:2600 |
+| test1058 | `test1058_pdf_thumbnail_to_gguf_vision` | TEST1058: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis | tests/cartridge_scenarios.rs:2655 |
+| test1059 | `test1059_gguf_all_llm_ops` | TEST1059: Fan-out from one LLM request to all 4 ggufcartridge LLM operations | tests/cartridge_scenarios.rs:2722 |
 | test1060 | `test1060_mlx_generate_text` | / TEST044: MLX text generation / Flow: single cap / Tests: mlxcartridge generate_text cap | tests/cartridge_scenarios.rs:2806 |
 | test1061 | `test1061_mlx_describe_image` | / TEST045: MLX describe image / Flow: single cap / Tests: mlxcartridge describe_image cap (vision) | tests/cartridge_scenarios.rs:2850 |
 | test1062 | `test1062_mlx_generate_embeddings` | / TEST046: MLX generate embeddings / Flow: single cap / Tests: mlxcartridge generate_embeddings cap | tests/cartridge_scenarios.rs:2897 |
 | test1063 | `test1063_mlx_embeddings_dimensions` | / TEST047: MLX embeddings dimensions / Flow: single cap / Tests: mlxcartridge embeddings_dimensions cap | tests/cartridge_scenarios.rs:2941 |
 | test1064 | `test1064_model_download` | / TEST048: Model download / Flow: single cap / Tests: modelcartridge download-model cap | tests/cartridge_scenarios.rs:2987 |
 | test1066 | `test1066_pdf_to_thumbnail_to_describe_to_embed` | / TEST049: 3-step chain: PDF → thumbnail → candle describe → text embeddings / Flow: CHAIN (3 steps across 2 cartridges + ML inference) / Tests: Sequential data transformation across multiple cartridges | tests/cartridge_scenarios.rs:3029 |
-| test1069 | `test1069_pdf_document_intelligence` | TEST014: PDF fan-out produces metadata, outline, and thumbnail from a single PDF input | tests/cartridge_scenarios.rs:960 |
-| test1070 | `test1070_pdf_thumbnail_to_image_embedding` | TEST015: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding | tests/cartridge_scenarios.rs:1023 |
-| test1071 | `test1071_text_document_intelligence` | TEST017: Markdown fan-out produces metadata, outline, and thumbnail | tests/cartridge_scenarios.rs:1148 |
-| test1072 | `test1072_multi_format_document_processing` | TEST018: Parallel processing of PDF and markdown through independent fan-outs | tests/cartridge_scenarios.rs:1199 |
+| test1069 | `test1069_pdf_document_intelligence` | TEST1069: PDF fan-out produces metadata, outline, and thumbnail from a single PDF input | tests/cartridge_scenarios.rs:960 |
+| test1070 | `test1070_pdf_thumbnail_to_image_embedding` | TEST1070: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding | tests/cartridge_scenarios.rs:1023 |
+| test1071 | `test1071_text_document_intelligence` | TEST1071: Markdown fan-out produces metadata, outline, and thumbnail | tests/cartridge_scenarios.rs:1148 |
+| test1072 | `test1072_multi_format_document_processing` | TEST1072: Parallel processing of PDF and markdown through independent fan-outs | tests/cartridge_scenarios.rs:1199 |
 | test1090 | `test1090_single_file_scalar` | TEST1090: 1 file → is_sequence=false | src/input_resolver/resolver.rs:481 |
 | test1092 | `test1092_two_files` | TEST1092: 2 files → is_sequence=true | src/input_resolver/resolver.rs:493 |
 | test1093 | `test1093_dir_single_file` | TEST1093: 1 dir with 1 file → is_sequence=false | src/input_resolver/resolver.rs:506 |
@@ -1140,61 +1140,9 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test1293 | `test1293_roundtrip_requires_cap_steps` | TEST1293: IDDFS round-trip does not produce paths with 0 cap steps. Identity-only round trips (no real transformation) must be excluded. | src/planner/live_cap_graph.rs:2403 |
 ---
 
-## Numbering Mismatches
-
-These tests have a numbering disagreement between the function name and the authoritative immediate TEST comment/docstring above the test. This is reported explicitly so comment sync does not silently overwrite a misnumbered test.
-
-- `test880` / `test887` / `test880_no_duplicates_with_unique_caps` — src/planner/plan_builder.rs:816
-- `test881` / `test016` / `test881_pdf_full_intelligence_pipeline` — tests/cartridge_scenarios.rs:1077
-- `test882` / `test022` / `test882_candle_describe_image` — tests/cartridge_scenarios.rs:1418
-- `test883` / `test021` / `test883_text_embedding` — tests/cartridge_scenarios.rs:1366
-- `test884` / `test020` / `test884_model_availability_plus_status` — tests/cartridge_scenarios.rs:1324
-- `test885` / `test019` / `test885_model_plus_dimensions` — tests/cartridge_scenarios.rs:1268
-- `test887` / `test004` / `test887_execute_with_file_input` — tests/orchestrator_integration.rs:381
-- `test888` / `test003` / `test888_execute_edge1_to_edge2_chain` — tests/orchestrator_integration.rs:336
-- `test889` / `test002` / `test889_execute_single_edge_dag` — tests/orchestrator_integration.rs:290
-- `test906` / `test489` / `test906_full_path_identity_verification` — src/bifaci/integration_tests.rs:1351
-- `test919` / `test001` / `test919_parse_simple_testcartridge_graph` — tests/orchestrator_integration.rs:266
-- `test944` / `test013` / `test944_six_machine` — tests/orchestrator_integration.rs:706
-- `test945` / `test012` / `test945_five_machine` — tests/orchestrator_integration.rs:653
-- `test946` / `test011` / `test946_four_machine` — tests/orchestrator_integration.rs:600
-- `test947` / `test010` / `test947_cap_not_found` — tests/orchestrator_integration.rs:573
-- `test948` / `test009` / `test948_invalid_cap_urn` — tests/orchestrator_integration.rs:562
-- `test949` / `test008` / `test949_empty_graph` — tests/orchestrator_integration.rs:544
-- `test950` / `test007` / `test950_reject_cycles` — tests/orchestrator_integration.rs:522
-- `test951` / `test006` / `test951_fan_in_pattern` — tests/orchestrator_integration.rs:472
-- `test952` / `test005` / `test952_execute_large_payload` — tests/orchestrator_integration.rs:426
-- `test1032` / `test023` / `test1032_audio_transcription` — tests/cartridge_scenarios.rs:1464
-- `test1034` / `test024` / `test1034_pdf_complete_analysis` — tests/cartridge_scenarios.rs:1514
-- `test1035` / `test025` / `test1035_model_full_inspection` — tests/cartridge_scenarios.rs:1580
-- `test1037` / `test026` / `test1037_two_format_full_analysis` — tests/cartridge_scenarios.rs:1655
-- `test1038` / `test027` / `test1038_model_plus_pdf_combined` — tests/cartridge_scenarios.rs:1735
-- `test1040` / `test028` / `test1040_three_cartridge_pipeline` — tests/cartridge_scenarios.rs:1803
-- `test1041` / `test029` / `test1041_txt_document_intelligence` — tests/cartridge_scenarios.rs:1940
-- `test1042` / `test030` / `test1042_rst_document_intelligence` — tests/cartridge_scenarios.rs:1985
-- `test1043` / `test031` / `test1043_log_document_intelligence` — tests/cartridge_scenarios.rs:2034
-- `test1044` / `test032` / `test1044_all_text_formats_intelligence` — tests/cartridge_scenarios.rs:2078
-- `test1046` / `test033` / `test1046_model_list_models` — tests/cartridge_scenarios.rs:2179
-- `test1048` / `test034` / `test1048_gguf_embeddings_dimensions` — tests/cartridge_scenarios.rs:2221
-- `test1049` / `test035` / `test1049_gguf_llm_model_info` — tests/cartridge_scenarios.rs:2274
-- `test1050` / `test036` / `test1050_gguf_llm_vocab` — tests/cartridge_scenarios.rs:2323
-- `test1051` / `test037` / `test1051_gguf_model_info_plus_vocab` — tests/cartridge_scenarios.rs:2375
-- `test1052` / `test038` / `test1052_gguf_llm_inference` — tests/cartridge_scenarios.rs:2433
-- `test1053` / `test039` / `test1053_gguf_llm_inference_constrained` — tests/cartridge_scenarios.rs:2486
-- `test1054` / `test040` / `test1054_gguf_generate_embeddings` — tests/cartridge_scenarios.rs:2542
-- `test1057` / `test041` / `test1057_gguf_describe_image` — tests/cartridge_scenarios.rs:2600
-- `test1058` / `test042` / `test1058_pdf_thumbnail_to_gguf_vision` — tests/cartridge_scenarios.rs:2655
-- `test1059` / `test043` / `test1059_gguf_all_llm_ops` — tests/cartridge_scenarios.rs:2722
-- `test1069` / `test014` / `test1069_pdf_document_intelligence` — tests/cartridge_scenarios.rs:960
-- `test1070` / `test015` / `test1070_pdf_thumbnail_to_image_embedding` — tests/cartridge_scenarios.rs:1023
-- `test1071` / `test017` / `test1071_text_document_intelligence` — tests/cartridge_scenarios.rs:1148
-- `test1072` / `test018` / `test1072_multi_format_document_processing` — tests/cartridge_scenarios.rs:1199
-
----
-
 *Generated from CapDag (Rust) source tree*
 *Total tests: 1122*
 *Total numbered tests: 1122*
 *Total unnumbered tests: 0*
 *Total numbered tests missing descriptions: 0*
-*Total numbering mismatches: 45*
+*Total numbering mismatches: 0*

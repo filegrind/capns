@@ -1343,7 +1343,7 @@ mod tests {
     // Identity verification end-to-end tests
     // =========================================================================
 
-    // TEST489: Full path identity verification: engine → host (attach_cartridge) → cartridge
+    // TEST906: Full path identity verification: engine → host (attach_cartridge) → cartridge
     //
     // This verifies that attach_cartridge completes identity verification end-to-end
     // and the cartridge is ready to handle subsequent requests.

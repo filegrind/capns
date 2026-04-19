@@ -261,7 +261,7 @@ fn create_test_cap_registry() -> Arc<CapRegistry> {
 // Phase 1: Basic macino Functionality with testcartridge
 // =============================================================================
 
-// TEST001: Parse simple machine notation graph with test-edge1
+// TEST919: Parse simple machine notation graph with test-edge1
 #[tokio::test]
 async fn test919_parse_simple_testcartridge_graph() {
     let registry = create_test_cap_registry();
@@ -285,7 +285,7 @@ async fn test919_parse_simple_testcartridge_graph() {
     assert!(node_b.is_equivalent(&expected_b).unwrap());
 }
 
-// TEST002: Execute single-edge DAG (test-edge1)
+// TEST889: Execute single-edge DAG (test-edge1)
 #[tokio::test]
 async fn test889_execute_single_edge_dag() {
     let registry = create_test_cap_registry();
@@ -331,7 +331,7 @@ async fn test889_execute_single_edge_dag() {
     }
 }
 
-// TEST003: Execute two-edge chain (test-edge1 -> test-edge2)
+// TEST888: Execute two-edge chain (test-edge1 -> test-edge2)
 #[tokio::test]
 async fn test888_execute_edge1_to_edge2_chain() {
     let registry = create_test_cap_registry();
@@ -376,7 +376,7 @@ async fn test888_execute_edge1_to_edge2_chain() {
     }
 }
 
-// TEST004: Execute with file-path input
+// TEST887: Execute with file-path input
 #[tokio::test]
 async fn test887_execute_with_file_input() {
     let registry = create_test_cap_registry();
@@ -421,7 +421,7 @@ async fn test887_execute_with_file_input() {
     }
 }
 
-// TEST005: Execute large payload (test-large cap)
+// TEST952: Execute large payload (test-large cap)
 #[tokio::test]
 async fn test952_execute_large_payload() {
     let registry = create_test_cap_registry();
@@ -467,7 +467,7 @@ async fn test952_execute_large_payload() {
     }
 }
 
-// TEST006: Multi-input DAG (fan-in pattern)
+// TEST951: Multi-input DAG (fan-in pattern)
 #[tokio::test]
 async fn test951_fan_in_pattern() {
     let registry = create_test_cap_registry();
@@ -517,7 +517,7 @@ async fn test951_fan_in_pattern() {
     }
 }
 
-// TEST007: Validate that cycles are rejected
+// TEST950: Validate that cycles are rejected
 #[tokio::test]
 async fn test950_reject_cycles() {
     let registry = create_test_cap_registry();
@@ -539,7 +539,7 @@ async fn test950_reject_cycles() {
     }
 }
 
-// TEST008: Empty machine notation (no edges)
+// TEST949: Empty machine notation (no edges)
 #[tokio::test]
 async fn test949_empty_graph() {
     let registry = create_test_cap_registry();
@@ -557,7 +557,7 @@ async fn test949_empty_graph() {
     }
 }
 
-// TEST009: Invalid cap URN in machine notation
+// TEST948: Invalid cap URN in machine notation
 #[tokio::test]
 async fn test948_invalid_cap_urn() {
     let registry = create_test_cap_registry();
@@ -568,7 +568,7 @@ async fn test948_invalid_cap_urn() {
     assert!(result.is_err(), "Should reject invalid cap URN");
 }
 
-// TEST010: Cap not found in registry
+// TEST947: Cap not found in registry
 #[tokio::test]
 async fn test947_cap_not_found() {
     let registry = create_test_cap_registry();
@@ -593,7 +593,7 @@ async fn test947_cap_not_found() {
 // Phase 2: Long Chain Tests (4-6 caps)
 // =============================================================================
 
-// TEST011: 4-machine: edge1 -> edge2 -> edge7 -> edge8
+// TEST946: 4-machine: edge1 -> edge2 -> edge7 -> edge8
 // node1 -> node2 -> node3 -> node6 -> node7
 // "hello" -> "[PREPEND]hello" -> "[PREPEND]hello[APPEND]" -> "[PREPEND]HELLO[APPEND]" -> "]DNEPPA[OLLEH]DNEPERP["
 #[tokio::test]
@@ -646,7 +646,7 @@ async fn test946_four_machine() {
     }
 }
 
-// TEST012: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9
+// TEST945: 5-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9
 // node1 -> node2 -> node3 -> node6 -> node7 -> node8
 // adds <<...>> wrapping around the reversed string
 #[tokio::test]
@@ -699,7 +699,7 @@ async fn test945_five_machine() {
     }
 }
 
-// TEST013: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10
+// TEST944: 6-machine: edge1 -> edge2 -> edge7 -> edge8 -> edge9 -> edge10
 // Full cycle: node1 -> node2 -> node3 -> node6 -> node7 -> node8 -> node1
 // Completes the round trip: unwrap markers + lowercase
 #[tokio::test]

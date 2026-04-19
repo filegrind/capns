@@ -810,7 +810,7 @@ mod tests {
         Ok(edge_count)
     }
 
-    // TEST887: Tests duplicate detection passes for caps with unique URN combinations
+    // TEST880: Tests duplicate detection passes for caps with unique URN combinations
     // Verifies that check_for_duplicate_caps() correctly accepts caps with different op/in/out combinations
     #[test]
     fn test880_no_duplicates_with_unique_caps() -> Result<(), crate::urn::cap_urn::CapUrnError> {
