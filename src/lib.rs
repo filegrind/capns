@@ -188,6 +188,8 @@ pub use orchestrator::{
     parse_machine_to_cap_dag, plan_to_resolved_graph, split_cbor_array, split_cbor_sequence,
     CapProgressFn, CartridgeManager, CborUtilError, EdgeGroup, ExecutionContext, ExecutionError,
     NodeData, ParseOrchestrationError, ProgressMapper, ResolvedEdge, ResolvedGraph,
+    // Stream I/O — shared between orchestrator executor and machfab engine
+    decode_terminal_output, send_one_stream, unwrap_cbor_value, StreamIoError,
 };
 
 // InputResolver — unified input resolution with media detection

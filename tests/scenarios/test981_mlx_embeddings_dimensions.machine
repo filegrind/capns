@@ -1,2 +1,2 @@
-[embeddings_dimensions cap:in="media:model-spec;textable";ml-model;mlx;op=embeddings_dimensions;out="media:model-dim;integer;textable;numeric"]
+[embeddings_dimensions cap:in="media:embeddings;mlx;model-spec;textable";ml-model;mlx;op=embeddings_dimensions;out="media:integer;model-dim;numeric;textable"]
 [model_spec -> embeddings_dimensions -> dimensions]

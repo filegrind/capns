@@ -175,18 +175,21 @@ fn print_usage(program: &str) {
          Execute a machine notation pipeline on input files.\n\n\
          Options:\n\
            --mermaid                Output Mermaid diagram code and exit\n\
+           --gen-values             Output a values JSON template for the machine and exit\n\
            --dev-bins <binary> ...  Use local cartridge binaries\n\
+           --values <file.json>     Argument values per node\n\
            --help                   Show this help\n\n\
          Input paths can be:\n\
            - Single file:   /path/to/file.pdf\n\
            - Directory:     /path/to/pdfs/\n\
            - Glob pattern:  /path/to/*.pdf\n\n\
          Examples:\n\
+           {} --gen-values pipeline.machine > values.json\n\
            {} --mermaid pipeline.machine\n\
            {} pipeline.machine /tmp/test.pdf\n\
-           {} pipeline.machine /tmp/pdfs/\n\
+           {} --values values.json pipeline.machine /tmp/pdfs/\n\
            {} --dev-bins ./pdfcartridge pipeline.machine /tmp/*.pdf",
-        program, program, program, program, program
+        program, program, program, program, program, program
     );
 }
 
@@ -202,6 +205,8 @@ async fn main() {
     // Parse arguments
     let mut dev_binaries = Vec::new();
     let mut mermaid_mode = false;
+    let mut gen_values_mode = false;
+    let mut values_file: Option<String> = None;
     let mut arg_idx = 1;
 
     // Parse flags
@@ -213,6 +218,19 @@ async fn main() {
             }
             "--mermaid" => {
                 mermaid_mode = true;
+                arg_idx += 1;
+            }
+            "--gen-values" => {
+                gen_values_mode = true;
+                arg_idx += 1;
+            }
+            "--values" => {
+                arg_idx += 1;
+                if arg_idx >= args.len() {
+                    eprintln!("--values requires a JSON file path");
+                    process::exit(1);
+                }
+                values_file = Some(args[arg_idx].clone());
                 arg_idx += 1;
             }
             "--dev-bins" => {
@@ -276,6 +294,42 @@ async fn main() {
         process::exit(0);
     }
 
+    // --gen-values: output a values JSON template and exit.
+    // For each cap step in the graph, find non-stdin args (the ones
+    // that can't be wired via data-flow edges) and emit them keyed
+    // by target node name → arg media URN → default value.
+    if gen_values_mode {
+        let mut template: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        let mut seen_targets: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for edge in &graph.edges {
+            if !seen_targets.insert(edge.to.clone()) {
+                continue;
+            }
+            let mut node_args = serde_json::Map::new();
+            for arg in &edge.cap.args {
+                let has_stdin = arg.sources.iter().any(|s| matches!(s, capdag::cap::definition::ArgSource::Stdin { .. }));
+                if has_stdin {
+                    continue;
+                }
+                let value = arg
+                    .default_value
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null);
+                node_args.insert(arg.media_urn.clone(), value);
+            }
+            if !node_args.is_empty() {
+                template.insert(edge.to.clone(), serde_json::Value::Object(node_args));
+            }
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Object(template))
+                .expect("JSON serialization cannot fail for this structure")
+        );
+        process::exit(0);
+    }
+
     // Find input nodes automatically
     let input_nodes = find_input_nodes(&notation, registry.as_ref());
     if input_nodes.is_empty() {
@@ -320,12 +374,35 @@ async fn main() {
     // Registry URL
     let registry_url = "https://machinefabric.com/api/cartridges".to_string();
 
+    // Load argument values file
+    let node_values: HashMap<String, HashMap<String, serde_json::Value>> =
+        if let Some(ref vf) = values_file {
+            match fs::read_to_string(vf) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("Error parsing values file '{}': {}", vf, e);
+                        process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Error reading values file '{}': {}", vf, e);
+                    process::exit(1);
+                }
+            }
+        } else {
+            HashMap::new()
+        };
+
     eprintln!("\n=== Executing DAG ===\n");
     if !dev_binaries.is_empty() {
         eprintln!("Dev mode: {} local binaries", dev_binaries.len());
         for bin in &dev_binaries {
             eprintln!("  - {}", bin.display());
         }
+    }
+    if !node_values.is_empty() {
+        eprintln!("Values: {} node(s) configured", node_values.len());
     }
 
     // Process each file
@@ -351,6 +428,7 @@ async fn main() {
             dev_binaries.clone(),
             registry.clone(),
             Some(&progress),
+            &node_values,
         )
         .await
         {

@@ -23,6 +23,7 @@ pub mod cbor_util;
 pub mod executor;
 pub mod parser;
 pub mod plan_converter;
+pub mod stream_io;
 pub mod types;
 
 // Re-export key types
@@ -41,3 +42,5 @@ pub use executor::{
     execute_dag, map_progress, CapProgressFn, CartridgeManager, EdgeGroup, ExecutionContext,
     ExecutionError, NodeData, ProgressMapper,
 };
+
+pub use stream_io::{decode_terminal_output, send_one_stream, unwrap_cbor_value, StreamIoError};

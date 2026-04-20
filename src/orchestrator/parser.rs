@@ -122,22 +122,16 @@ pub async fn parse_machine_to_cap_dag(
 
             let target_name = lookup_node_name(&id_to_name, edge.target)?;
 
-            // Each binding becomes one ResolvedEdge. The
-            // executor expects fan-in caps to surface as
-            // multiple parallel edges into the same target.
-            //
-            // The binding's `cap_arg_media_urn` is the cap's
-            // **slot identity** (the arg's outer `media_urn`,
-            // e.g. `media:file-path;textable`). At the
-            // wire-level the executor labels each input stream
-            // with the source's data-type URN — what was
-            // declared as the arg's stdin source URN, which
-            // equals the source node's resolved URN. We use
-            // `strand.node_urn(binding.source)` for both the
-            // orchestrator's `node_media` map (the user's view
-            // of "what type of data flows here") AND the
-            // `ResolvedEdge.in_media` field (the wire URN the
-            // executor will tag the stream with).
+            // The cap's in= spec is the stream label for input data
+            // on the wire. This matches how plan_to_resolved_graph
+            // sets in_media, and ensures find_stream (which uses
+            // is_equivalent) in the cartridge handler matches the
+            // label against the cap arg's expected media URN.
+            let cap_in_media = edge
+                .cap_urn
+                .in_media_urn()
+                .map_err(|e| ParseOrchestrationError::MediaUrnParseError(format!("{:?}", e)))?;
+
             for binding in &edge.assignment {
                 let source_name = lookup_node_name(&id_to_name, binding.source)?;
                 let source_node_urn = strand.node_urn(binding.source).clone();
@@ -175,7 +169,7 @@ pub async fn parse_machine_to_cap_dag(
                     to: target_name.clone(),
                     cap_urn: cap_urn_str.clone(),
                     cap: cap.clone(),
-                    in_media: source_node_urn.to_string(),
+                    in_media: cap_in_media.to_string(),
                     out_media: cap_out_media.to_string(),
                 });
             }

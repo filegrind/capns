@@ -1090,26 +1090,23 @@ impl ExecutionContext {
         );
 
         // Collect all input data upfront — fail fast if any source is missing
-        let mut inputs: Vec<(Vec<u8>, String)> = edges
-            .iter()
-            .map(|edge| {
-                tracing::debug!(target: "execute_fanin", "Edge: {} -> {} (in_media={})", edge.from, edge.to, edge.in_media);
-                let data = self
-                    .node_data
-                    .get(&edge.from)
-                    .ok_or_else(|| ExecutionError::NoIncomingData {
-                        node: edge.from.clone(),
-                    })?
-                    .clone();
-                Ok((data, edge.in_media.clone()))
-            })
-            .collect::<Result<Vec<_>, ExecutionError>>()?;
-
-        // Add extra arguments as additional input streams
-        for (media_urn, data) in extra_args {
-            inputs.push((data.clone(), media_urn.clone()));
+        let mut inputs: Vec<(&[u8], &str, bool)> = Vec::new();
+        for edge in edges {
+            tracing::debug!(target: "execute_fanin", "Edge: {} -> {} (in_media={})", edge.from, edge.to, edge.in_media);
+            let data = self
+                .node_data
+                .get(&edge.from)
+                .ok_or_else(|| ExecutionError::NoIncomingData {
+                    node: edge.from.clone(),
+                })?;
+            let is_seq = self
+                .node_is_sequence
+                .get(&edge.from)
+                .copied()
+                .unwrap_or(false);
+            inputs.push((data.as_slice(), edge.in_media.as_str(), is_seq));
         }
-        tracing::debug!(target: "execute_fanin", "Collected {} inputs", inputs.len());
+        tracing::debug!(target: "execute_fanin", "Collected {} inputs + {} extra args", inputs.len(), extra_args.len());
 
         // Open ONE cap invocation for all inputs
         tracing::debug!(target: "execute_fanin", "Calling execute_cap...");
@@ -1124,80 +1121,33 @@ impl ExecutionContext {
             request_id
         );
 
-        // Send each input as a separate named stream
-        for (data, in_media) in &inputs {
-            let stream_id = uuid::Uuid::new_v4().to_string();
-
-            let ss = Frame::stream_start(
-                request_id.clone(),
-                stream_id.clone(),
-                in_media.clone(),
+        // Send each input as a separate named stream using shared stream I/O
+        for (data, in_media, is_seq) in &inputs {
+            super::stream_io::send_one_stream(
+                &self.switch,
+                &request_id,
+                in_media,
+                data,
                 None,
-            );
-            self.switch
-                .send_to_master(ss, None)
-                .await
-                .map_err(|e| ExecutionError::HostError(format!("STREAM_START: {}", e)))?;
-
-            let mut offset = 0;
-            let mut seq = 0u64;
-
-            if data.is_empty() {
-                // Send one empty chunk so the stream is well-formed
-                let cbor_value = ciborium::Value::Bytes(vec![]);
-                let mut cbor_payload = Vec::new();
-                ciborium::into_writer(&cbor_value, &mut cbor_payload)
-                    .map_err(|e| ExecutionError::HostError(format!("CBOR encode: {}", e)))?;
-                let checksum = Frame::compute_checksum(&cbor_payload);
-                let chunk = Frame::chunk(
-                    request_id.clone(),
-                    stream_id.clone(),
-                    0,
-                    cbor_payload,
-                    0,
-                    checksum,
-                );
-                self.switch
-                    .send_to_master(chunk, None)
-                    .await
-                    .map_err(|e| ExecutionError::HostError(format!("CHUNK: {}", e)))?;
-                seq = 1;
-            } else {
-                while offset < data.len() {
-                    let end = (offset + self.max_chunk).min(data.len());
-                    let chunk_data = &data[offset..end];
-
-                    // CBOR-encode each chunk as Bytes
-                    let cbor_value = ciborium::Value::Bytes(chunk_data.to_vec());
-                    let mut cbor_payload = Vec::new();
-                    ciborium::into_writer(&cbor_value, &mut cbor_payload)
-                        .map_err(|e| ExecutionError::HostError(format!("CBOR encode: {}", e)))?;
-
-                    let checksum = Frame::compute_checksum(&cbor_payload);
-                    let chunk = Frame::chunk(
-                        request_id.clone(),
-                        stream_id.clone(),
-                        seq,
-                        cbor_payload,
-                        seq,
-                        checksum,
-                    );
-                    self.switch
-                        .send_to_master(chunk, None)
-                        .await
-                        .map_err(|e| ExecutionError::HostError(format!("CHUNK: {}", e)))?;
-
-                    offset = end;
-                    seq += 1;
-                }
-            }
-
-            let se = Frame::stream_end(request_id.clone(), stream_id, seq);
-            self.switch
-                .send_to_master(se, None)
-                .await
-                .map_err(|e| ExecutionError::HostError(format!("STREAM_END: {}", e)))?;
-            tracing::debug!(target: "execute_fanin", "Sent STREAM_END for stream");
+                *is_seq,
+                self.max_chunk,
+            )
+            .await
+            .map_err(|e| ExecutionError::HostError(format!("{}", e)))?;
+        }
+        // Extra args are always scalar
+        for (media_urn, data) in extra_args {
+            super::stream_io::send_one_stream(
+                &self.switch,
+                &request_id,
+                media_urn,
+                data,
+                None,
+                false,
+                self.max_chunk,
+            )
+            .await
+            .map_err(|e| ExecutionError::HostError(format!("{}", e)))?;
         }
 
         // END — no more input streams
@@ -1338,41 +1288,32 @@ impl ExecutionContext {
             response_chunks.len()
         );
 
-        // Branch on is_sequence flag from STREAM_START.
-        //
-        // is_sequence=true (emit_list_item): response_chunks is an RFC 8742 CBOR
-        // sequence — concatenated raw CBOR fragment payloads. Store as-is for
-        // CborListAdapter to split.
-        //
-        // is_sequence=false/None (write/emit_cbor): response_chunks contains
-        // CBOR Bytes/Text transport wrappers. Unwrap each to recover the
-        // provider's raw payload.
+        // Decode response using shared stream I/O (matches machfab engine behavior).
+        // Unwraps CBOR transport wrappers so node_data always contains raw bytes.
+        let decoded_items =
+            super::stream_io::decode_terminal_output(&response_chunks, is_sequence)
+                .map_err(|e| ExecutionError::HostError(format!("{}", e)))?;
+
         if is_sequence == Some(true) {
             tracing::debug!(
                 target: "execute_fanin",
-                "Sequence output ({}): storing {} bytes as CBOR sequence",
-                edges[0].out_media, response_chunks.len()
+                "Sequence output ({}): {} items decoded",
+                edges[0].out_media, decoded_items.len()
             );
-            self.node_data.insert(to.clone(), response_chunks);
-        } else {
-            // Write mode: decode CBOR Bytes/Text transport wrappers, concatenate.
-            let mut output_bytes = Vec::new();
-            let mut cursor = std::io::Cursor::new(&response_chunks);
-            while (cursor.position() as usize) < response_chunks.len() {
-                let value: ciborium::Value = ciborium::from_reader(&mut cursor).map_err(|e| {
-                    ExecutionError::HostError(format!("CBOR decode response: {}", e))
+            // Re-encode as CBOR sequence for storage: each unwrapped item
+            // becomes a CBOR Bytes value so the sequence remains self-delimiting.
+            let mut cbor_seq = Vec::new();
+            for item in &decoded_items {
+                let cbor_value = ciborium::Value::Bytes(item.clone());
+                ciborium::into_writer(&cbor_value, &mut cbor_seq).map_err(|e| {
+                    ExecutionError::HostError(format!("CBOR re-encode sequence item: {}", e))
                 })?;
-                match value {
-                    ciborium::Value::Bytes(b) => output_bytes.extend(b),
-                    ciborium::Value::Text(t) => output_bytes.extend(t.into_bytes()),
-                    _ => {
-                        return Err(ExecutionError::HostError(format!(
-                            "Expected Bytes or Text in write-mode response, got {:?}",
-                            value
-                        )));
-                    }
-                }
             }
+            self.node_data.insert(to.clone(), cbor_seq);
+            self.node_is_sequence.insert(to.clone(), true);
+        } else {
+            // Scalar: decoded_items has one entry with concatenated raw bytes
+            let output_bytes = decoded_items.into_iter().next().unwrap_or_default();
             self.node_data.insert(to.clone(), output_bytes);
         }
         Ok(())
@@ -1392,6 +1333,7 @@ pub async fn execute_dag(
     dev_binaries: Vec<PathBuf>,
     cap_registry: Arc<CapRegistry>,
     progress_fn: Option<&CapProgressFn>,
+    node_values: &HashMap<String, HashMap<String, serde_json::Value>>,
 ) -> Result<HashMap<String, NodeData>, ExecutionError> {
     tracing::debug!(target: "execute_dag", "Starting...");
 
@@ -1452,7 +1394,30 @@ pub async fn execute_dag(
             ProgressMapper::new(parent, base, weight).as_cap_progress_fn()
         });
 
-        ctx.execute_fanin(&groups[*idx].edges, &[], group_pfn.as_ref())
+        // Resolve extra args from node_values for this group's target node.
+        // Only explicitly provided values are sent — default values are the
+        // cartridge's responsibility per the cap contract.
+        let extra_args: Vec<(String, Vec<u8>)> = match node_values.get(&groups[*idx].to) {
+            Some(args) => {
+                let mut resolved = Vec::with_capacity(args.len());
+                for (media_urn, value) in args {
+                    let bytes = match value {
+                        serde_json::Value::String(s) => s.as_bytes().to_vec(),
+                        other => serde_json::to_vec(other).map_err(|e| {
+                            ExecutionError::HostError(format!(
+                                "Failed to serialize node_values value for arg '{}' on node '{}': {}",
+                                media_urn, groups[*idx].to, e
+                            ))
+                        })?,
+                    };
+                    resolved.push((media_urn.clone(), bytes));
+                }
+                resolved
+            }
+            None => Vec::new(),
+        };
+
+        ctx.execute_fanin(&groups[*idx].edges, &extra_args, group_pfn.as_ref())
             .await?;
 
         // Report group completion

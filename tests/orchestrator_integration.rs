@@ -314,6 +314,7 @@ async fn test889_execute_single_edge_dag() {
         dev_binaries,
         cap_registry,
         None,
+        &std::collections::HashMap::new(),
     )
     .await;
 
@@ -360,6 +361,7 @@ async fn test888_execute_edge1_to_edge2_chain() {
         dev_binaries,
         cap_registry,
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -406,6 +408,7 @@ async fn test887_execute_with_file_input() {
         dev_binaries,
         create_test_cap_registry(),
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -448,6 +451,7 @@ async fn test952_execute_large_payload() {
         dev_binaries,
         create_test_cap_registry(),
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -499,6 +503,7 @@ async fn test951_fan_in_pattern() {
         dev_binaries,
         create_test_cap_registry(),
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -627,6 +632,7 @@ async fn test946_four_machine() {
         dev_binaries,
         create_test_cap_registry(),
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -682,6 +688,7 @@ async fn test945_five_machine() {
         dev_binaries,
         create_test_cap_registry(),
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -737,6 +744,7 @@ async fn test944_six_machine() {
         dev_binaries,
         create_test_cap_registry(),
         None,
+        &std::collections::HashMap::new(),
     )
     .await
     .expect("Execution failed");

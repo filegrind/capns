@@ -1047,6 +1047,40 @@ pub fn validate_cap_args(cap: &Cap) -> Result<(), ValidationError> {
         }
     }
 
+    // RULE11: Stdin source consistency with in= spec.
+    // If in= is media:void, no args may have stdin sources (the cap takes no data-flow input).
+    // If in= is anything else, at least one arg must have a stdin source (the cap's declared
+    // data-flow input must be receivable).
+    let in_media = cap
+        .urn
+        .in_media_urn()
+        .map_err(|e| ValidationError::InvalidCapSchema {
+            cap_urn: cap_urn.clone(),
+            issue: format!("RULE11: Failed to parse in= spec: {}", e),
+        })?;
+    let void_media = crate::MediaUrn::from_string(crate::urn::media_urn::MEDIA_VOID)
+        .expect("MEDIA_VOID is a valid MediaUrn");
+    let in_is_void = in_media.is_equivalent(&void_media).unwrap_or(false);
+
+    if in_is_void && !stdin_urns.is_empty() {
+        return Err(ValidationError::InvalidCapSchema {
+            cap_urn,
+            issue: format!(
+                "RULE11: Cap has in=media:void but {} arg(s) declare stdin sources — void-input caps must not accept stdin",
+                stdin_urns.len()
+            ),
+        });
+    }
+    if !in_is_void && stdin_urns.is_empty() {
+        return Err(ValidationError::InvalidCapSchema {
+            cap_urn,
+            issue: format!(
+                "RULE11: Cap has in='{}' but no args declare a stdin source — at least one arg must accept stdin to receive the declared input",
+                cap.urn.in_spec()
+            ),
+        });
+    }
+
     // RULE5: No two args may have same position
     let mut position_set = HashSet::new();
     for (position, media_urn) in &positions {
@@ -1412,7 +1446,18 @@ mod tests {
     // =========================================================================
 
     fn make_test_cap_with_args(args: Vec<CapArg>) -> Cap {
+        // Uses in=media:void — only for tests where no arg has a stdin source.
         let urn = CapUrn::from_string(&test_urn("op=test")).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+        for arg in args {
+            cap.add_arg(arg);
+        }
+        cap
+    }
+
+    fn make_test_cap_with_stdin_args(args: Vec<CapArg>) -> Cap {
+        // Uses in=media:textable — for tests where at least one arg has a stdin source.
+        let urn = CapUrn::from_string(r#"cap:in=media:textable;op=test;out="media:record""#).unwrap();
         let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
         for arg in args {
             cap.add_arg(arg);
@@ -1456,7 +1501,7 @@ mod tests {
     // TEST580: RULE3 - multiple stdin sources with different URNs rejected
     #[test]
     fn test580_rule3_different_stdin_urns() {
-        let cap = make_test_cap_with_args(vec![
+        let cap = make_test_cap_with_stdin_args(vec![
             CapArg::new(
                 MEDIA_STRING,
                 true,
@@ -1481,7 +1526,7 @@ mod tests {
     // TEST581: RULE3 - multiple stdin sources with same URN is OK
     #[test]
     fn test581_rule3_same_stdin_urns_ok() {
-        let cap = make_test_cap_with_args(vec![
+        let cap = make_test_cap_with_stdin_args(vec![
             CapArg::new(
                 MEDIA_STRING,
                 true,
@@ -1661,7 +1706,7 @@ mod tests {
     // TEST589: valid cap args with mixed sources pass all rules
     #[test]
     fn test589_all_rules_pass() {
-        let cap = make_test_cap_with_args(vec![
+        let cap = make_test_cap_with_stdin_args(vec![
             CapArg::new(
                 MEDIA_STRING,
                 true,
@@ -1682,6 +1727,84 @@ mod tests {
         assert!(
             result.is_ok(),
             "Valid cap args should pass: {:?}",
+            result.err()
+        );
+    }
+
+    // TEST1294: RULE11 - void-input cap with stdin source rejected
+    #[test]
+    fn test1294_rule11_void_input_with_stdin_rejected() {
+        let cap = make_test_cap_with_args(vec![CapArg::new(
+            MEDIA_STRING,
+            true,
+            vec![ArgSource::Stdin {
+                stdin: "media:textable".to_string(),
+            }],
+        )]);
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(
+            err.contains("RULE11"),
+            "Error should mention RULE11: {}",
+            err
+        );
+    }
+
+    // TEST1295: RULE11 - non-void-input cap without stdin source rejected
+    #[test]
+    fn test1295_rule11_non_void_input_without_stdin_rejected() {
+        let urn = CapUrn::from_string(r#"cap:in=media:textable;op=test;out="media:record""#).unwrap();
+        let mut cap = Cap::new(urn, "Test".to_string(), "cmd".to_string());
+        cap.add_arg(CapArg::new(
+            MEDIA_STRING,
+            true,
+            vec![ArgSource::CliFlag {
+                cli_flag: "--input".to_string(),
+            }],
+        ));
+        let result = validate_cap_args(&cap);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(
+            err.contains("RULE11"),
+            "Error should mention RULE11: {}",
+            err
+        );
+    }
+
+    // TEST1296: RULE11 - void-input cap with only cli_flag sources passes
+    #[test]
+    fn test1296_rule11_void_input_cli_only_ok() {
+        let cap = make_test_cap_with_args(vec![CapArg::new(
+            MEDIA_STRING,
+            true,
+            vec![ArgSource::CliFlag {
+                cli_flag: "--input".to_string(),
+            }],
+        )]);
+        let result = validate_cap_args(&cap);
+        assert!(
+            result.is_ok(),
+            "Void-input cap with only CLI sources should pass: {:?}",
+            result.err()
+        );
+    }
+
+    // TEST1297: RULE11 - non-void-input cap with stdin source passes
+    #[test]
+    fn test1297_rule11_non_void_input_with_stdin_ok() {
+        let cap = make_test_cap_with_stdin_args(vec![CapArg::new(
+            MEDIA_STRING,
+            true,
+            vec![ArgSource::Stdin {
+                stdin: "media:textable".to_string(),
+            }],
+        )]);
+        let result = validate_cap_args(&cap);
+        assert!(
+            result.is_ok(),
+            "Non-void-input cap with stdin should pass: {:?}",
             result.err()
         );
     }

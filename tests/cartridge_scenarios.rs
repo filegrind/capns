@@ -439,10 +439,46 @@ fn gpu_feature_for_platform() -> Option<&'static str> {
     }
 }
 
+/// Returns true if the cartridge is a Swift package (has Package.swift, no Cargo.toml).
+fn is_swift_cartridge(name: &str) -> bool {
+    if let Some(dir) = cartridge_dir(name) {
+        dir.join("Package.swift").exists() && !dir.join("Cargo.toml").exists()
+    } else {
+        false
+    }
+}
+
 /// Build a cartridge in debug mode with appropriate features
 fn build_cartridge(name: &str) -> Result<(), String> {
     let cart_dir =
         cartridge_dir(name).ok_or_else(|| format!("Cartridge directory not found for {}", name))?;
+
+    // Swift cartridges use `swift build` instead of `cargo build`
+    if is_swift_cartridge(name) {
+        eprintln!("[CartridgeTest] Building {} (Swift) in debug mode...", name);
+        eprintln!("[CartridgeTest]   Running: swift build");
+        eprintln!("[CartridgeTest]   Directory: {:?}", cart_dir);
+        let output = Command::new("swift")
+            .arg("build")
+            .current_dir(&cart_dir)
+            .output()
+            .map_err(|e| format!("Failed to run swift build for {}: {}", name, e))?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            for line in stderr.lines() {
+                eprintln!("[CartridgeTest]   {}", line);
+            }
+        }
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to build {} (swift, exit code: {:?})",
+                name,
+                output.status.code()
+            ));
+        }
+        eprintln!("[CartridgeTest] Successfully built {}", name);
+        return Ok(());
+    }
 
     // Determine if this cartridge supports GPU and what feature to use
     // Only use the feature if the cartridge actually defines it in Cargo.toml
@@ -510,15 +546,17 @@ fn find_cartridge_binary(name: &str) -> Option<PathBuf> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
     let manifest_path = PathBuf::from(&manifest_dir);
 
-    // testcartridge is inside capdag/, others are at workspace root
-    let bin_dir = if name == "testcartridge" {
-        manifest_path.join(name).join("target").join("debug")
+    let cart_root = if name == "testcartridge" {
+        manifest_path.join(name)
     } else {
-        manifest_path
-            .parent()?
-            .join(name)
-            .join("target")
-            .join("debug")
+        manifest_path.parent()?.join(name)
+    };
+
+    // Swift packages use .build/debug/, Rust uses target/debug/
+    let bin_dir = if is_swift_cartridge(name) {
+        cart_root.join(".build").join("debug")
+    } else {
+        cart_root.join("target").join("debug")
     };
 
     if !bin_dir.exists() {
@@ -901,6 +939,7 @@ async fn ensure_model_downloaded(model_spec: &str, modelcartridge_bin: &PathBuf)
         vec![modelcartridge_bin.clone()],
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     {
@@ -935,12 +974,21 @@ fn setup_test_env(dev_binaries: Vec<PathBuf>) -> (TempDir, PathBuf, Vec<PathBuf>
 }
 
 fn extract_bytes(outputs: &HashMap<String, NodeData>, node: &str) -> Vec<u8> {
-    match outputs
+    let raw = match outputs
         .get(node)
         .unwrap_or_else(|| panic!("Missing node '{}'", node))
     {
         NodeData::Bytes(b) => b.clone(),
         other => panic!("Expected Bytes at node '{}', got {:?}", node, other),
+    };
+    // If the bytes start with a valid CBOR byte-string tag, decode the first item.
+    // Sequence output (is_sequence=true) is stored as a concatenated CBOR sequence;
+    // unwrap the first item to get the raw bytes.
+    let mut cursor = std::io::Cursor::new(&raw);
+    if let Ok(ciborium::Value::Bytes(b)) = ciborium::from_reader::<ciborium::Value, _>(&mut cursor) {
+        b
+    } else {
+        raw
     }
 }
 
@@ -978,6 +1026,7 @@ async fn test1069_pdf_document_intelligence() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1030,6 +1079,7 @@ async fn test1070_pdf_thumbnail_to_image_embedding() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1085,6 +1135,7 @@ async fn test881_pdf_full_intelligence_pipeline() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1140,6 +1191,7 @@ async fn test1071_text_document_intelligence() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1186,6 +1238,7 @@ async fn test1072_multi_format_document_processing() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1242,6 +1295,7 @@ async fn test885_model_plus_dimensions() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1290,6 +1344,7 @@ async fn test884_model_availability_plus_status() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1340,6 +1395,7 @@ async fn test883_text_embedding() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1392,6 +1448,7 @@ async fn test882_candle_describe_image() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1438,6 +1495,7 @@ async fn test1032_audio_transcription() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1481,6 +1539,7 @@ async fn test1034_pdf_complete_analysis() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1545,6 +1604,7 @@ async fn test1035_model_full_inspection() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1616,6 +1676,7 @@ async fn test1037_two_format_full_analysis() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1682,6 +1743,7 @@ async fn test1038_model_plus_pdf_combined() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1751,6 +1813,7 @@ async fn test1040_three_cartridge_pipeline() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1875,6 +1938,7 @@ async fn test1041_txt_document_intelligence() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1916,6 +1980,7 @@ async fn test1042_rst_document_intelligence() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -1956,6 +2021,7 @@ async fn test1043_log_document_intelligence() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2012,6 +2078,7 @@ async fn test1044_all_text_formats_intelligence() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2067,6 +2134,7 @@ async fn test1046_model_list_models() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2117,6 +2185,7 @@ async fn test1048_gguf_embeddings_dimensions() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2170,6 +2239,7 @@ async fn test1049_gguf_llm_model_info() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2219,6 +2289,7 @@ async fn test1050_gguf_llm_vocab() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2272,6 +2343,7 @@ async fn test1051_gguf_model_info_plus_vocab() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2332,6 +2404,7 @@ async fn test1052_gguf_llm_inference() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2385,6 +2458,7 @@ async fn test1053_gguf_llm_inference_constrained() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2429,10 +2503,6 @@ async fn test1054_gguf_generate_embeddings() {
         "text_input".to_string(),
         NodeData::Text("The quick brown fox jumps over the lazy dog.".to_string()),
     );
-    inputs.insert(
-        "model_spec".to_string(),
-        NodeData::Text(MODEL_GGUF_EMBED.to_string()),
-    );
 
     let outputs = execute_dag(
         &graph,
@@ -2442,6 +2512,7 @@ async fn test1054_gguf_generate_embeddings() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2488,10 +2559,6 @@ async fn test1057_gguf_describe_image() {
         "image_input".to_string(),
         NodeData::Bytes(generate_test_png(64, 64, 100, 149, 237)), // blue image
     );
-    inputs.insert(
-        "model_spec".to_string(),
-        NodeData::Text(MODEL_GGUF_VISION.to_string()),
-    );
 
     let outputs = execute_dag(
         &graph,
@@ -2501,6 +2568,7 @@ async fn test1057_gguf_describe_image() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2535,17 +2603,13 @@ async fn test1058_pdf_thumbnail_to_gguf_vision() {
     ensure_model_downloaded(MODEL_GGUF_VISION, &modelcartridge_bin).await;
 
     let (_route, graph) = load_and_parse_scenario("test976_pdf_thumbnail_to_gguf_vision").await;
-    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edges.len(), 2);
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
     inputs.insert(
         "pdf_input".to_string(),
         NodeData::Bytes(generate_test_pdf()),
-    );
-    inputs.insert(
-        "model_spec".to_string(),
-        NodeData::Text(MODEL_GGUF_VISION.to_string()),
     );
 
     let outputs = execute_dag(
@@ -2556,6 +2620,7 @@ async fn test1058_pdf_thumbnail_to_gguf_vision() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2624,6 +2689,7 @@ async fn test1059_gguf_all_llm_ops() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2691,8 +2757,8 @@ async fn test1060_mlx_generate_text() {
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
     inputs.insert(
-        "model_spec".to_string(),
-        NodeData::Bytes(MODEL_MLX_LLM.as_bytes().to_vec()),
+        "text_input".to_string(),
+        NodeData::Text("What is the capital of France? Answer in one word.".to_string()),
     );
 
     let outputs = execute_dag(
@@ -2703,6 +2769,7 @@ async fn test1060_mlx_generate_text() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2747,6 +2814,7 @@ async fn test1061_mlx_describe_image() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2794,6 +2862,7 @@ async fn test1062_mlx_generate_embeddings() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2838,6 +2907,7 @@ async fn test1063_mlx_embeddings_dimensions() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2877,6 +2947,7 @@ async fn test1064_model_download() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2928,6 +2999,7 @@ async fn test1066_pdf_to_thumbnail_to_describe_to_embed() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -2964,18 +3036,14 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
 
     let (_route, graph) =
         load_and_parse_scenario("test984_pdf_thumbnail_to_gguf_describe_fanin").await;
-    // 3 edges: pdf→thumbnail, thumbnail→description, model_spec→description
-    assert_eq!(graph.edges.len(), 3, "Chain + fan-in pattern");
+    // 2 edges: pdf→thumbnail, thumbnail→description
+    assert_eq!(graph.edges.len(), 2, "Chain pattern");
 
     let (_temp, cartridge_dir, dev_bins) = setup_test_env(dev_binaries);
     let mut inputs = HashMap::new();
     inputs.insert(
         "pdf_input".to_string(),
         NodeData::Bytes(generate_test_pdf()),
-    );
-    inputs.insert(
-        "model_spec".to_string(),
-        NodeData::Bytes(MODEL_GGUF_VISION.as_bytes().to_vec()),
     );
 
     let outputs = execute_dag(
@@ -2986,6 +3054,7 @@ async fn test984_pdf_thumbnail_to_gguf_describe_fanin() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -3033,6 +3102,7 @@ async fn test985_audio_transcribe_to_embed() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -3083,6 +3153,7 @@ async fn test986_pdf_fanout_with_chain() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -3144,6 +3215,7 @@ async fn test987_multi_format_parallel_chains() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -3196,6 +3268,7 @@ async fn test988_deep_chain_with_parallel() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -3258,6 +3331,7 @@ async fn test989_five_cartridge_chain() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");
@@ -3321,6 +3395,7 @@ async fn test990_all_text_formats_to_image_embeds() {
         dev_bins,
         standard_registry(),
         Some(&test_progress_fn()),
+        &HashMap::new(),
     )
     .await
     .expect("Execution failed");

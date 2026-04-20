@@ -1,2 +1,2 @@
 [generate_embeddings cap:gguf;in="media:textable";ml-model;op=generate_embeddings;out="media:embedding-vector;textable;record"]
-[(text_input, model_spec) -> generate_embeddings -> embedding]
+[text_input -> generate_embeddings -> embedding]
