@@ -1741,10 +1741,26 @@ impl RelaySwitch {
                 })?;
 
                 // Find destination master (no preference for peer requests)
-                let dest_idx = self
-                    .find_master_for_cap(cap_urn, None)
-                    .await
-                    .ok_or_else(|| RelaySwitchError::NoHandler(cap_urn.clone()))?;
+                let dest_idx_opt = self.find_master_for_cap(cap_urn, None).await;
+                if dest_idx_opt.is_none() {
+                    // No handler registered for this cap. Rather than returning
+                    // Err(NoHandler) — which the pump logs and discards, leaving
+                    // the caller hanging until the 120s activity timeout — send
+                    // an ERR frame immediately back to the source master so the
+                    // peer call fails fast with a clear error.
+                    tracing::warn!(
+                        "[RelaySwitch] NO_HANDLER for peer REQ cap='{}' rid={:?} from_master={} — sending ERR to caller",
+                        cap_urn, frame.id, source_idx
+                    );
+                    let mut err_frame = Frame::err(
+                        frame.id.clone(),
+                        "NO_HANDLER",
+                        &format!("No handler found for cap: {}", cap_urn),
+                    );
+                    let _ = self.write_to_master_idx_raw(source_idx, &mut err_frame).await;
+                    return Ok(None);
+                }
+                let dest_idx = dest_idx_opt.unwrap();
 
                 // Assign XID if absent (first arrival at RelaySwitch)
                 // REQs from cartridges should NOT have XID (per spec)
