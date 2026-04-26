@@ -1,0 +1,2 @@
+[extract cap:in="media:mov;video";op=extract_audio_track;out="media:m4a;audio"]
+[input -> extract -> output]

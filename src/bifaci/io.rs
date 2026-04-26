@@ -992,23 +992,10 @@ mod tests {
         for (progress, label) in &test_values {
             let original = Frame::progress(id.clone(), *progress, "test phase");
 
-            // Inspect raw Value before encode
             let raw_progress_val = original.meta.as_ref().unwrap().get("progress").unwrap();
-            eprintln!(
-                "[{}] raw Value before encode: {:?}",
-                label, raw_progress_val
-            );
-
             let bytes = encode_frame(&original).expect("encode should succeed");
-
-            // Inspect raw CBOR bytes for the meta section
-            eprintln!("[{}] encoded frame: {} bytes", label, bytes.len());
-
             let decoded = decode_frame(&bytes).expect("decode should succeed");
-
-            // Inspect decoded Value
             let decoded_progress_val = decoded.meta.as_ref().unwrap().get("progress").unwrap();
-            eprintln!("[{}] decoded Value: {:?}", label, decoded_progress_val);
 
             assert_eq!(decoded.frame_type, FrameType::Log);
             assert_eq!(decoded.log_level(), Some("progress"));
@@ -1053,10 +1040,6 @@ mod tests {
 
             let raw_val = decoded2.meta.as_ref().unwrap().get("progress").unwrap();
             let lp = decoded2.log_progress();
-            eprintln!(
-                "[progress={}] after double roundtrip: raw={:?} log_progress={:?}",
-                progress, raw_val, lp
-            );
             assert!(
                 lp.is_some(),
                 "progress={}: log_progress() returned None, raw={:?}",

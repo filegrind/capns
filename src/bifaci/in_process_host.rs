@@ -279,11 +279,6 @@ struct InProcessPeerInvoker {
 impl PeerInvoker for InProcessPeerInvoker {
     fn call(&self, cap_urn: &str) -> Result<PeerCall, RuntimeError> {
         let request_id = MessageId::new_uuid();
-        tracing::info!(
-            "[InProcessCartridgeHost] PEER_CALL: cap='{}' peer_rid={:?}",
-            cap_urn,
-            request_id
-        );
 
         // Create channel for response frames
         let (sender, receiver) = mpsc::unbounded_channel();
@@ -608,16 +603,11 @@ impl InProcessCartridgeHost {
         local_read: R,
         local_write: W,
     ) -> Result<(), CborError> {
-        tracing::info!(
-            "[InProcessCartridgeHost] run() starting, handler_count={}",
-            self.handlers.len()
-        );
         let mut reader = FrameReader::new(local_read);
 
         // Writer runs in a separate task with SeqAssigner
         let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Frame>();
         let writer_task = tokio::spawn(async move {
-            tracing::info!("[InProcessCartridgeHost] writer task started");
             let mut writer = FrameWriter::new(local_write);
             let mut seq_assigner = SeqAssigner::new();
 
@@ -637,15 +627,10 @@ impl InProcessCartridgeHost {
                     seq_assigner.remove(&FlowKey::from_frame(&frame));
                 }
             }
-            tracing::info!("[InProcessCartridgeHost] writer task exiting");
         });
 
         // Send initial RelayNotify with aggregate caps
         let manifest = self.build_manifest();
-        tracing::info!(
-            "[InProcessCartridgeHost] sending RelayNotify, manifest_len={}",
-            manifest.len()
-        );
         let notify = Frame::relay_notify(&manifest, &Limits::default());
         write_tx
             .send(notify)
@@ -671,20 +656,10 @@ impl InProcessCartridgeHost {
         let max_chunk = Limits::default().max_chunk;
 
         // Main read loop — forward frames to handlers or peer response channels
-        tracing::info!("[InProcessCartridgeHost] entering main read loop");
         loop {
-            tracing::info!("[InProcessCartridgeHost] waiting for frame...");
             let frame = match reader.read().await {
-                Ok(Some(f)) => {
-                    tracing::info!(
-                        "[InProcessCartridgeHost] received frame type={:?} id={}",
-                        f.frame_type,
-                        f.id
-                    );
-                    f
-                }
+                Ok(Some(f)) => f,
                 Ok(None) => {
-                    tracing::info!("[InProcessCartridgeHost] read EOF — RelaySlave closed");
                     break;
                 }
                 Err(e) => {
@@ -709,11 +684,6 @@ impl InProcessCartridgeHost {
 
                     // Identity cap is "cap:" — exact string match, NOT conforms_to.
                     let is_identity = cap_urn == CAP_IDENTITY;
-                    tracing::info!(
-                        "[InProcessCartridgeHost] REQ cap_urn={} is_identity={}",
-                        cap_urn,
-                        is_identity
-                    );
 
                     let handler: Arc<dyn FrameHandler> = if is_identity {
                         Arc::clone(&identity_handler)
@@ -722,27 +692,11 @@ impl InProcessCartridgeHost {
                             "[InProcessCartridgeHost] searching cap_table with {} entries",
                             cap_table.len()
                         );
-                        for (i, (cap, idx)) in cap_table.iter().enumerate() {
-                            tracing::info!(
-                                "[InProcessCartridgeHost]   cap_table[{}]: cap={} handler_idx={}",
-                                i,
-                                cap,
-                                idx
-                            );
-                        }
                         match Self::find_handler_for_cap(&cap_table, &cap_urn) {
                             Some(idx) => {
-                                tracing::info!(
-                                    "[InProcessCartridgeHost] found handler at idx={}",
-                                    idx
-                                );
                                 Arc::clone(&handlers[idx].handler)
                             }
                             None => {
-                                tracing::info!(
-                                    "[InProcessCartridgeHost] NO_HANDLER for cap={}",
-                                    cap_urn
-                                );
                                 let mut err = Frame::err(
                                     rid,
                                     "NO_HANDLER",
@@ -773,17 +727,9 @@ impl InProcessCartridgeHost {
                     let cap_urn_owned = cap_urn.clone();
                     let handler_rid = rid.clone();
                     let handle = tokio::spawn(async move {
-                        tracing::info!(
-                            "[InProcessCartridgeHost] handler task starting for cap={}",
-                            cap_urn_owned
-                        );
                         handler
                             .handle_request(&cap_urn_owned, input_rx, output, peer)
                             .await;
-                        tracing::info!(
-                            "[InProcessCartridgeHost] handler task completed for cap={}",
-                            cap_urn_owned
-                        );
                     });
                     handler_handles.insert(handler_rid, handle);
                 }
@@ -827,10 +773,6 @@ impl InProcessCartridgeHost {
                     // Try peer response — send END then remove
                     let mut pending = pending_peer_requests.lock().unwrap();
                     if let Some(pr) = pending.remove(&frame.id) {
-                        tracing::info!(
-                            "[InProcessCartridgeHost] PEER_END received: peer_rid={:?}",
-                            frame.id
-                        );
                         let _ = pr.sender.send(frame);
                     }
                     drop(pending);
@@ -863,11 +805,6 @@ impl InProcessCartridgeHost {
                     let target_rid = frame.id.clone();
                     let xid = frame.routing_id.clone();
                     let force_kill = frame.force_kill.unwrap_or(false);
-                    tracing::info!(
-                        "[InProcessCartridgeHost] Cancel received: rid={:?} force_kill={}",
-                        target_rid,
-                        force_kill
-                    );
 
                     // Drop active sender → handler's input recv() returns None
                     active.remove(&target_rid);

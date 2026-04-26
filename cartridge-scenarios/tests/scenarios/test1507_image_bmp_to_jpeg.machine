@@ -1,0 +1,2 @@
+[convert cap:in="media:bmp;image";op=convert_image;out="media:jpeg;image"]
+[input -> convert -> output]

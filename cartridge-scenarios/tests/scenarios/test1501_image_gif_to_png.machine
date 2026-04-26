@@ -1,0 +1,2 @@
+[convert cap:in="media:gif;image";op=convert_image;out="media:image;png"]
+[input -> convert -> output]

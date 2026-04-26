@@ -1772,16 +1772,11 @@ mod tests {
         // Create cap URN strings as cartridges would report them
         let cap_urns: Vec<String> = vec![disbind.urn.to_string(), choose.urn.to_string()];
 
-        eprintln!("Cap URNs to sync: {:?}", cap_urns);
-
         // Sync from URNs
         let mut graph = LiveCapGraph::new();
         graph
             .sync_from_cap_urns(&cap_urns, &Arc::new(registry))
             .await;
-
-        eprintln!("Graph edges: {}", graph.edges.len());
-        eprintln!("Graph nodes: {}", graph.nodes.len());
 
         // Should have exactly 2 Cap edges (no pre-computed cardinality edges)
         assert_eq!(
@@ -1796,9 +1791,6 @@ mod tests {
     #[test]
     fn test790_identity_urn_is_specific() {
         let identity = crate::standard::caps::identity_urn();
-        eprintln!("Identity URN: {}", identity);
-        eprintln!("Identity in_spec: '{}'", identity.in_spec());
-        eprintln!("Identity out_spec: '{}'", identity.out_spec());
 
         // The identity URN should have wildcard in/out specs (media:)
         assert_eq!(identity.in_spec(), "media:");
@@ -1809,20 +1801,6 @@ mod tests {
             r#"cap:in=media:pdf;op=disbind;out="media:disbound-page;textable""#,
         )
         .unwrap();
-
-        eprintln!("Specific cap: {}", specific_cap);
-        eprintln!(
-            "specific.is_equivalent(&identity): {}",
-            specific_cap.is_equivalent(&identity)
-        );
-        eprintln!(
-            "identity.accepts(&specific): {}",
-            identity.accepts(&specific_cap)
-        );
-        eprintln!(
-            "specific.accepts(&identity): {}",
-            specific_cap.accepts(&identity)
-        );
 
         assert!(
             !specific_cap.is_equivalent(&identity),
@@ -1845,10 +1823,6 @@ mod tests {
 
         let in_spec = cap.urn.in_spec();
         let out_spec = cap.urn.out_spec();
-
-        eprintln!("Cap URN: {}", cap.urn);
-        eprintln!("in_spec: '{}'", in_spec);
-        eprintln!("out_spec: '{}'", out_spec);
 
         assert!(!in_spec.is_empty(), "in_spec should not be empty");
         assert!(!out_spec.is_empty(), "out_spec should not be empty");

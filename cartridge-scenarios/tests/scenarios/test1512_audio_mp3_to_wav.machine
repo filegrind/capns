@@ -1,0 +1,2 @@
+[convert cap:in="media:mp3;audio";op=convert_audio;out="media:wav;audio"]
+[input -> convert -> output]

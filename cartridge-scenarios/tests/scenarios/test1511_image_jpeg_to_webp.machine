@@ -1,0 +1,2 @@
+[convert cap:in="media:jpeg;image";op=convert_image;out="media:webp;image"]
+[input -> convert -> output]
