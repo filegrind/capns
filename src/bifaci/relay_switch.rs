@@ -218,16 +218,29 @@ impl CartridgeRuntimeStats {
 
 /// Identity of an installed cartridge as known to the bifaci protocol.
 ///
-/// `(channel, id)` is the install's full identity. The same id can
-/// independently be installed in both channels with different versions
-/// and metadata; the channel is sourced from `cartridge.json:channel`
-/// (written by the .pkg installer when the cartridge was published)
+/// `(registry_url, channel, id)` is the install's full identity. The
+/// same id can independently be installed in multiple registries × both
+/// channels with different versions and metadata; each combination is a
+/// distinct install that lives in its own subtree on disk
+/// (`{registry_slug}/{channel}/{id}/{version}/`).
+///
+/// `registry_url` is sourced from `cartridge.json:registry_url`
+/// (written by the installer when the cartridge was placed on disk)
 /// and round-trips out to every consumer that needs to render or act
-/// on installed cartridges.
+/// on installed cartridges. `None` ⇔ dev install (the cartridge was
+/// built and installed locally without `--registry`); the on-disk
+/// folder is the literal `dev`.
+///
+/// The field is required-but-nullable on the wire — missing
+/// `registry_url` is a parse error so a downstream reader can never
+/// silently accept an old-schema payload.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct InstalledCartridgeIdentity {
-    pub id: String,
+    /// Registry URL the cartridge was published from. `None` ⇔ dev
+    /// install. Compared byte-wise; never normalized.
+    pub registry_url: Option<String>,
     pub channel: crate::bifaci::cartridge_repo::CartridgeChannel,
+    pub id: String,
     pub version: String,
     pub sha256: String,
     /// Present when the cartridge failed attachment (manifest, handshake,
@@ -241,6 +254,15 @@ pub struct InstalledCartridgeIdentity {
     /// cartridges handled directly by the engine).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_stats: Option<CartridgeRuntimeStats>,
+}
+
+impl InstalledCartridgeIdentity {
+    /// On-disk slug derived from `registry_url`. Dev installs hash to
+    /// the literal `dev`; published installs hash to the first 16
+    /// hex chars of the URL's SHA-256.
+    pub fn registry_slug(&self) -> String {
+        crate::bifaci::cartridge_slug::slug_for(self.registry_url.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2504,8 +2526,17 @@ impl RelaySwitch {
             }
         }
         all_installed_cartridges.sort();
+        // Identity tuple is `(registry_url, channel, id, version, sha256)`.
+        // Two installs of the same id+version from different registries
+        // (or different channels) are distinct cartridges with their own
+        // attached process and on-disk tree; collapsing them here would
+        // make the second one invisible to the engine.
         all_installed_cartridges.dedup_by(|left, right| {
-            left.id == right.id && left.version == right.version && left.sha256 == right.sha256
+            left.registry_url == right.registry_url
+                && left.channel == right.channel
+                && left.id == right.id
+                && left.version == right.version
+                && left.sha256 == right.sha256
         });
         tracing::info!(
             target: "relay_switch",

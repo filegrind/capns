@@ -382,6 +382,11 @@ fn build_manifest() -> CapManifest {
         "testcartridge".to_string(),
         env!("CARGO_PKG_VERSION").to_string(),
         capdag::CartridgeChannel::from_build_env(env!("MFR_CARTRIDGE_CHANNEL")),
+        // Registry URL is baked at compile time via `MFR_REGISTRY_URL`.
+        // Unset (e.g. plain `cargo build`) ⇒ dev build, manifest emits
+        // null, and the install rule restricts the cartridge to the
+        // on-disk `dev/` folder.
+        option_env!("MFR_REGISTRY_URL").map(|s| s.to_string()),
         "Integration test cartridge for stream multiplexing protocol verification".to_string(),
         vec![capdag::CapGroup {
             name: "test-caps".to_string(),

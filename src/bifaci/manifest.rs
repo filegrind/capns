@@ -30,13 +30,22 @@ pub struct CapGroup {
 
 /// Unified cap manifest for --manifest output.
 ///
-/// `(name, version, channel)` is the cartridge's full identity. The
-/// channel is reported by the cartridge process during HELLO so the
-/// host can verify the cartridge it's about to attach matches what
-/// the install context (cartridge.json) declared. Mismatches at
-/// either end are caught early instead of silently merging release
-/// and nightly installs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `(registry_url, channel, name, version)` is the cartridge's full
+/// identity. The channel and registry are reported by the cartridge
+/// process during HELLO so the host can verify the cartridge it's
+/// about to attach matches what the install context (cartridge.json)
+/// declared. Mismatches at any leg are caught early instead of
+/// silently merging artefacts that came from different registries
+/// or channels.
+///
+/// `registry_url` is `None` for dev builds (the cartridge was built
+/// without `MFR_REGISTRY_URL` set). It is required-but-nullable on
+/// the wire — present-and-null means dev; absent means the cartridge
+/// SDK is too old to know the field exists, which is a parse error.
+/// The `Deserialize` impl is manual to enforce this stricter
+/// contract; stock serde collapses absent and explicit-null for
+/// `Option<T>`.
+#[derive(Debug, Clone, Serialize)]
 pub struct CapManifest {
     /// Component name
     pub name: String,
@@ -47,6 +56,15 @@ pub struct CapManifest {
     /// Distribution channel the cartridge was built for.
     /// (release / nightly). Required.
     pub channel: CartridgeChannel,
+
+    /// Registry the cartridge was built for. Baked into the binary
+    /// at compile time from `MFR_REGISTRY_URL` (Rust:
+    /// `option_env!()`). `None` means the cartridge was built as a
+    /// dev artefact and is only valid under the on-disk `dev/`
+    /// folder. Re-publishing a dev cartridge to a registry requires
+    /// rebuilding with the env var set; the registry URL is part
+    /// of the build's identity, not install-time metadata.
+    pub registry_url: Option<String>,
 
     /// Component description
     pub description: String,
@@ -65,15 +83,66 @@ pub struct CapManifest {
     pub page_url: Option<String>,
 }
 
+impl<'de> Deserialize<'de> for CapManifest {
+    /// Manual deserializer enforcing "required-but-nullable" for
+    /// `registry_url`: the JSON key MUST be present, the value MAY
+    /// be null. Mirrors the same enforcement in `CartridgeJson`.
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("CapManifest must be a JSON object"))?;
+        if !obj.contains_key("registry_url") {
+            return Err(D::Error::missing_field("registry_url"));
+        }
+
+        #[derive(Deserialize)]
+        struct CapManifestInner {
+            name: String,
+            version: String,
+            channel: CartridgeChannel,
+            registry_url: Option<String>,
+            description: String,
+            cap_groups: Vec<CapGroup>,
+            #[serde(default)]
+            author: Option<String>,
+            #[serde(default)]
+            page_url: Option<String>,
+        }
+        let inner =
+            serde_json::from_value::<CapManifestInner>(value).map_err(D::Error::custom)?;
+        Ok(CapManifest {
+            name: inner.name,
+            version: inner.version,
+            channel: inner.channel,
+            registry_url: inner.registry_url,
+            description: inner.description,
+            cap_groups: inner.cap_groups,
+            author: inner.author,
+            page_url: inner.page_url,
+        })
+    }
+}
+
 impl CapManifest {
     /// Create a new cap manifest with cap groups.
     /// `channel` is required — the cartridge must declare which
     /// channel it was built for so the install context (cartridge.json)
-    /// and the cartridge's self-report agree.
+    /// and the cartridge's self-report agree. `registry_url` is the
+    /// optional URL of the registry the cartridge was built for
+    /// (`None` ⇔ dev build); the cartridge SDK macro reads this from
+    /// `option_env!("MFR_REGISTRY_URL")` so it is set correctly at
+    /// compile time and never inferred at runtime.
     pub fn new(
         name: String,
         version: String,
         channel: CartridgeChannel,
+        registry_url: Option<String>,
         description: String,
         cap_groups: Vec<CapGroup>,
     ) -> Self {
@@ -81,6 +150,7 @@ impl CapManifest {
             name,
             version,
             channel,
+            registry_url,
             description,
             cap_groups,
             author: None,
@@ -174,12 +244,14 @@ mod tests {
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "A test component for validation".to_string(),
             vec![default_group(vec![cap])],
         );
 
         assert_eq!(manifest.name, "TestComponent");
         assert_eq!(manifest.channel, CartridgeChannel::Release);
+        assert!(manifest.registry_url.is_none());
         assert_eq!(manifest.cap_groups.len(), 1);
         assert_eq!(manifest.all_caps().len(), 1);
         assert!(manifest.author.is_none());
@@ -198,6 +270,7 @@ mod tests {
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             CartridgeChannel::Nightly,
+            Some("https://cartridges.machinefabric.com/manifest".to_string()),
             "Channel round-trip".to_string(),
             vec![default_group(vec![cap])],
         );
@@ -207,12 +280,27 @@ mod tests {
             "expected lowercase wire form, got: {}",
             json
         );
+        // registry_url round-trips as the exact string the operator
+        // typed — used to validate against the on-disk slug at scan
+        // time, so a single byte of drift here would silently break
+        // discovery.
+        assert!(
+            json.contains(
+                "\"registry_url\":\"https://cartridges.machinefabric.com/manifest\""
+            ),
+            "expected verbatim registry_url in serialized form, got: {}",
+            json
+        );
 
         let parsed: CapManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.channel, CartridgeChannel::Nightly);
+        assert_eq!(
+            parsed.registry_url.as_deref(),
+            Some("https://cartridges.machinefabric.com/manifest")
+        );
 
         // No-channel JSON must fail to parse.
-        let no_channel = r#"{"name":"X","version":"1.0.0","description":"x","cap_groups":[]}"#;
+        let no_channel = r#"{"name":"X","version":"1.0.0","registry_url":null,"description":"x","cap_groups":[]}"#;
         let result: Result<CapManifest, _> = serde_json::from_str(no_channel);
         assert!(
             result.is_err(),
@@ -220,14 +308,52 @@ mod tests {
             result
         );
 
+        // No-registry_url JSON must fail to parse — the field is
+        // required-but-nullable, so a missing key means an old SDK,
+        // which can't be trusted to know the new schema.
+        let no_registry = r#"{"name":"X","version":"1.0.0","channel":"nightly","description":"x","cap_groups":[]}"#;
+        let result: Result<CapManifest, _> = serde_json::from_str(no_registry);
+        assert!(
+            result.is_err(),
+            "manifest without `registry_url` must fail to parse, got: {:?}",
+            result
+        );
+
         // Bogus channel string must fail.
-        let bogus = r#"{"name":"X","version":"1.0.0","channel":"staging","description":"x","cap_groups":[]}"#;
+        let bogus = r#"{"name":"X","version":"1.0.0","channel":"staging","registry_url":null,"description":"x","cap_groups":[]}"#;
         let result: Result<CapManifest, _> = serde_json::from_str(bogus);
         assert!(
             result.is_err(),
             "manifest with channel='staging' must fail to parse, got: {:?}",
             result
         );
+    }
+
+    // TEST148c: A dev manifest (built without `MFR_REGISTRY_URL`) carries
+    // `registry_url: null` and serializes the field explicitly. The
+    // null-vs-absent distinction matters because the parser refuses
+    // to accept absent (test148b) — so an old SDK can't accidentally
+    // pass for a dev build.
+    #[test]
+    fn test148c_dev_manifest_registry_url_is_explicit_null() {
+        let urn = CapUrn::from_string(&test_urn("op=dev")).unwrap();
+        let cap = Cap::new(urn, "Dev".to_string(), "dev".to_string());
+        let manifest = CapManifest::new(
+            "DevComponent".to_string(),
+            "0.1.0".to_string(),
+            CartridgeChannel::Nightly,
+            None,
+            "Dev build".to_string(),
+            vec![default_group(vec![cap])],
+        );
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(
+            json.contains("\"registry_url\":null"),
+            "dev manifest must serialize registry_url=null explicitly, got: {}",
+            json
+        );
+        let parsed: CapManifest = serde_json::from_str(&json).unwrap();
+        assert!(parsed.registry_url.is_none());
     }
 
     // TEST149: Author field
@@ -240,6 +366,7 @@ mod tests {
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "A test component".to_string(),
             vec![default_group(vec![cap])],
         )
@@ -265,6 +392,7 @@ mod tests {
             "TestComponent".to_string(),
             "0.1.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "A test component".to_string(),
             vec![default_group(vec![cap])],
         )
@@ -303,6 +431,7 @@ mod tests {
             "MultiCapComponent".to_string(),
             "1.0.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "Component with multiple caps".to_string(),
             vec![default_group(vec![cap1, cap2])],
         );
@@ -321,6 +450,7 @@ mod tests {
             "EmptyComponent".to_string(),
             "1.0.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "Component with no caps".to_string(),
             vec![],
         );
@@ -342,6 +472,7 @@ mod tests {
             "ValidatorComponent".to_string(),
             "1.0.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "File validation component".to_string(),
             vec![default_group(vec![cap])],
         );
@@ -364,6 +495,7 @@ mod tests {
                     self.name.clone(),
                     "1.0.0".to_string(),
                     CartridgeChannel::Release,
+                    None,
                     "Test component".to_string(),
                     self.cap_groups.clone(),
                 )
@@ -392,6 +524,7 @@ mod tests {
             "TestCartridge".to_string(),
             "1.0.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "Test".to_string(),
             vec![default_group(vec![cap])],
         );
@@ -407,6 +540,7 @@ mod tests {
             "TestCartridge".to_string(),
             "1.0.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "Test".to_string(),
             vec![default_group(vec![cap])],
         );
@@ -431,6 +565,7 @@ mod tests {
             "TestCartridge".to_string(),
             "1.0.0".to_string(),
             CartridgeChannel::Release,
+            None,
             "Test".to_string(),
             vec![group],
         );

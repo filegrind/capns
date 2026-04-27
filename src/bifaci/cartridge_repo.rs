@@ -257,6 +257,12 @@ pub struct CartridgeInfo {
     /// must not synthesize this field — it comes from the registry's
     /// `channels` partitioning.
     pub channel: CartridgeChannel,
+    /// Registry URL this entry was fetched from. Stamped onto each
+    /// entry by `fetch_registry` based on the URL the manifest was
+    /// served from. Verbatim string — never trimmed, normalized, or
+    /// re-derived from the manifest body. Identity comparison is byte
+    /// equality.
+    pub registry_url: String,
 }
 
 /// The cartridge registry response from the API (flat format)
@@ -353,17 +359,26 @@ pub struct CartridgeRegistryChannels {
 /// The v5.0 cartridge registry (channel-partitioned schema). Both
 /// `release` and `nightly` are always present (possibly empty) so
 /// every consumer can iterate them without conditional fallbacks.
+///
+/// `registry_url` is self-referential — the verbatim URL operators
+/// use to reference this registry. The fetch path cross-checks the
+/// URL it dereferenced against this field; a mismatch is treated as
+/// manifest corruption rather than a silent reinterpretation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CartridgeRegistry {
     pub schema_version: String,
     pub last_updated: String,
+    pub registry_url: String,
     pub channels: CartridgeRegistryChannels,
 }
 
-/// A cartridge suggestion for a missing cap. `channel` reports which
-/// channel the suggesting cartridge lives in so the UI can show the
-/// release/nightly distinction.
+/// A cartridge suggestion for a missing cap. `channel` and
+/// `registry_url` together identify which (registry, channel) the
+/// suggesting cartridge lives in so the UI can show the
+/// (registry, release/nightly) distinction. The same id can be
+/// suggested from multiple registries simultaneously, each entry
+/// carrying its own provenance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CartridgeSuggestion {
     pub cartridge_id: String,
@@ -375,13 +390,22 @@ pub struct CartridgeSuggestion {
     pub repo_url: String,
     pub page_url: String,
     pub channel: CartridgeChannel,
+    /// Verbatim URL of the registry that surfaced this suggestion.
+    /// Always non-empty for registry-sourced suggestions; suggestions
+    /// never come from dev installs.
+    pub registry_url: String,
 }
 
-/// Composite key — a cartridge id is unique within a channel but can
-/// appear in both channels at the same time. `(channel, id)` is the
-/// authoritative cache key.
+/// Composite key — `(registry_url, channel, id)` is the authoritative
+/// cache key. A cartridge id is unique within a (registry × channel)
+/// pair but can appear independently across multiple registries and
+/// across both channels with completely different metadata. The
+/// registry URL is the verbatim byte string used to fetch the
+/// manifest; the cache holds one cartridge entry per (registry,
+/// channel, id) triple.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CartridgeKey {
+    registry_url: String,
     channel: CartridgeChannel,
     id: String,
 }
@@ -504,19 +528,35 @@ impl CartridgeRepo {
             CartridgeRepoError::ParseError(format!("Failed to parse from {}: {}", repo_url, e))
         })?;
 
-        // Flatten via the server transformer so `channel` is set on
-        // every CartridgeInfo and schema validation runs once at the
-        // entry point rather than smeared across the cache.
-        let server = CartridgeRepoServer::new(manifest)?;
+        // Self-referential check: the manifest declares its own URL.
+        // It must match the URL we just fetched from byte-for-byte —
+        // a mismatch is a manifest-corruption signal (the publisher
+        // wrote the wrong self-URL, or the manifest is being served
+        // from an unexpected mirror). Either way, refuse to ingest;
+        // identity downstream depends on this string.
+        if manifest.registry_url != repo_url {
+            return Err(CartridgeRepoError::ParseError(format!(
+                "Manifest from {} declares registry_url='{}' — these must match byte-for-byte",
+                repo_url, manifest.registry_url
+            )));
+        }
+
+        // Flatten via the server transformer so `channel` and
+        // `registry_url` are set on every CartridgeInfo and schema
+        // validation runs once at the entry point rather than smeared
+        // across the cache. The server stamps `registry_url` from the
+        // URL we just fetched the manifest from — verbatim string,
+        // identity comparison downstream is byte equality.
+        let server = CartridgeRepoServer::new(manifest, repo_url)?;
         server.get_cartridges()
     }
 
     /// Update cache from a registry response.
     ///
-    /// The flat response wrapper carries `channel` on every entry (set
-    /// by the transformer when flattening v5.0's channel-partitioned
-    /// schema). The cache key is `(channel, id)` so the same id can
-    /// coexist in release and nightly with separate metadata/versions.
+    /// The flat response wrapper carries `channel` and `registry_url`
+    /// on every entry. The cache key is `(registry_url, channel, id)`
+    /// so the same id can coexist across multiple registries × both
+    /// channels with separate metadata/versions.
     ///
     /// The cap-URN → cartridges index uses the *normalized* form of each
     /// declared URN as the key (parse via `CapUrn::from_string`, then
@@ -536,14 +576,15 @@ impl CartridgeRepo {
 
         for cartridge_info in registry.cartridges {
             let key = CartridgeKey {
+                registry_url: cartridge_info.registry_url.clone(),
                 channel: cartridge_info.channel,
                 id: cartridge_info.id.clone(),
             };
             for cap in cartridge_info.iter_caps() {
                 let parsed = CapUrn::from_string(&cap.urn).map_err(|e| {
                     CartridgeRepoError::ParseError(format!(
-                        "cartridge {} ({}): invalid cap URN '{}': {}",
-                        key.id, key.channel, cap.urn, e
+                        "cartridge {} ({} @ {}): invalid cap URN '{}': {}",
+                        key.id, key.channel, key.registry_url, cap.urn, e
                     ))
                 })?;
                 let normalized = parsed.to_string();
@@ -665,6 +706,7 @@ impl CartridgeRepo {
                     repo_url: cache.repo_url.clone(),
                     page_url,
                     channel: key.channel,
+                    registry_url: key.registry_url.clone(),
                 });
             }
         }
@@ -673,15 +715,24 @@ impl CartridgeRepo {
     }
 
     /// Get all available cartridges from all repos. Returns
-    /// `(channel, id, info)` so consumers can render the channel
-    /// distinction without looking it up separately.
-    pub async fn get_all_cartridges(&self) -> Vec<(CartridgeChannel, String, CartridgeInfo)> {
+    /// `(registry_url, channel, id, info)` so consumers can render
+    /// the (registry, channel) distinction without looking it up
+    /// separately. Registry URL is the verbatim string the operator
+    /// configured.
+    pub async fn get_all_cartridges(
+        &self,
+    ) -> Vec<(String, CartridgeChannel, String, CartridgeInfo)> {
         let caches = self.caches.read().await;
         let mut all_cartridges = Vec::new();
 
         for cache in caches.values() {
             for (key, cartridge_info) in &cache.cartridges {
-                all_cartridges.push((key.channel, key.id.clone(), cartridge_info.clone()));
+                all_cartridges.push((
+                    key.registry_url.clone(),
+                    key.channel,
+                    key.id.clone(),
+                    cartridge_info.clone(),
+                ));
             }
         }
 
@@ -715,25 +766,31 @@ impl CartridgeRepo {
         false
     }
 
-    /// Get cartridge info by `(channel, id)`. Channel is required because
-    /// the same id can independently exist in release and nightly with
+    /// Get cartridge info by `(registry_url, channel, id)`. All three
+    /// fields are required because the same id can independently
+    /// exist across multiple registries × both channels with
     /// distinct version sets and metadata — there is no implicit
-    /// fallback that picks one over the other.
+    /// fallback that picks one over another. `registry_url` is the
+    /// verbatim string the cache was indexed under (the URL the
+    /// operator configured).
     pub async fn get_cartridge(
         &self,
+        registry_url: &str,
         channel: CartridgeChannel,
         cartridge_id: &str,
     ) -> Option<CartridgeInfo> {
         let caches = self.caches.read().await;
         let key = CartridgeKey {
+            registry_url: registry_url.to_string(),
             channel,
             id: cartridge_id.to_string(),
         };
 
-        for cache in caches.values() {
-            if let Some(cartridge) = cache.cartridges.get(&key) {
-                return Some(cartridge.clone());
-            }
+        // Cache is keyed by repo_url at the outer level, so look up
+        // directly to avoid scanning every cache for unrelated
+        // registries.
+        if let Some(cache) = caches.get(registry_url) {
+            return cache.cartridges.get(&key).cloned();
         }
 
         None
@@ -761,22 +818,34 @@ impl CartridgeRepo {
 }
 
 /// Cartridge repository server - serves registry data with queries
-/// Transforms v3.0 nested registry schema to flat API response format
+/// Transforms v5.0 nested registry schema to flat API response format
 #[derive(Debug)]
 pub struct CartridgeRepoServer {
     registry: CartridgeRegistry,
+    /// Verbatim registry URL the manifest was served from. Stamped onto
+    /// every `CartridgeInfo` the server emits so consumers downstream
+    /// can carry the (registry_url, channel, id) identity without
+    /// re-deriving it. The server has no way to determine this on its
+    /// own — the caller passes the URL it just fetched from.
+    registry_url: String,
 }
 
 impl CartridgeRepoServer {
-    /// Create a new server instance from a v5.0 channel-partitioned registry.
-    pub fn new(registry: CartridgeRegistry) -> Result<Self> {
+    /// Create a new server instance from a v5.0 channel-partitioned
+    /// registry, tagged with the URL it was fetched from. The URL is
+    /// the verbatim string the operator/installer used; identity
+    /// comparison downstream is byte-equality.
+    pub fn new(registry: CartridgeRegistry, registry_url: impl Into<String>) -> Result<Self> {
         if registry.schema_version != "5.0" {
             return Err(CartridgeRepoError::ParseError(format!(
                 "Unsupported registry schema version: {}. Required: 5.0",
                 registry.schema_version
             )));
         }
-        Ok(Self { registry })
+        Ok(Self {
+            registry,
+            registry_url: registry_url.into(),
+        })
     }
 
     /// Validate version data has all required fields
@@ -854,8 +923,11 @@ impl CartridgeRepoServer {
     /// Transform a single channel-entry into a flat `CartridgeInfo`. Fails
     /// hard if the entry's `latestVersion` is not present in `versions`,
     /// or if the latest version has no valid build.
+    /// `registry_url` is the verbatim URL the manifest was served from
+    /// — stamped onto every entry as part of identity.
     fn entry_to_cartridge_info(
         channel: CartridgeChannel,
+        registry_url: &str,
         id: &str,
         entry: &CartridgeRegistryEntry,
     ) -> Result<CartridgeInfo> {
@@ -891,15 +963,21 @@ impl CartridgeRepoServer {
             versions: entry.versions.clone(),
             available_versions,
             channel,
+            registry_url: registry_url.to_string(),
         })
     }
 
     /// Transform the registry to a flat array of `CartridgeInfo`,
-    /// preserving channel provenance on every entry.
+    /// preserving (registry_url, channel) provenance on every entry.
     pub fn transform_to_cartridge_array(&self) -> Result<Vec<CartridgeInfo>> {
         let mut result = Vec::new();
         for (channel, id, entry) in self.iter_entries() {
-            result.push(Self::entry_to_cartridge_info(channel, id, entry)?);
+            result.push(Self::entry_to_cartridge_info(
+                channel,
+                &self.registry_url,
+                id,
+                entry,
+            )?);
         }
         Ok(result)
     }
@@ -923,7 +1001,9 @@ impl CartridgeRepoServer {
         };
         match entries.get(id) {
             None => Ok(None),
-            Some(entry) => Self::entry_to_cartridge_info(channel, id, entry).map(Some),
+            Some(entry) => {
+                Self::entry_to_cartridge_info(channel, &self.registry_url, id, entry).map(Some)
+            }
         }
     }
 
@@ -1078,6 +1158,10 @@ mod tests {
             versions,
             available_versions: vec!["1.0.0".to_string()],
             channel,
+            // Default test fixture lives at a fake URL; tests that
+            // care about (registry_url, channel, id) tuple distinctness
+            // use a different helper or override this field directly.
+            registry_url: "https://example.com/cartridges".to_string(),
         }
     }
 
@@ -1225,7 +1309,8 @@ mod tests {
             "tags": [],
             "versions": {},
             "availableVersions": [],
-            "channel": "release"
+            "channel": "release",
+            "registryUrl": "https://test.example/manifest"
         }"#;
         let cartridge: CartridgeInfo = serde_json::from_str(json).unwrap();
         assert_eq!(cartridge.id, "pdfcartridge");
@@ -1234,6 +1319,7 @@ mod tests {
         assert_eq!(cartridge.cap_groups[0].caps.len(), 2);
         assert_eq!(cartridge.iter_caps().count(), 2);
         assert_eq!(cartridge.channel, CartridgeChannel::Release);
+        assert_eq!(cartridge.registry_url, "https://test.example/manifest");
     }
 
     // TEST636: CartridgeInfo with null version/description/author still
@@ -1249,7 +1335,8 @@ mod tests {
             "author": null,
             "cap_groups": [],
             "versions": {},
-            "channel": "nightly"
+            "channel": "nightly",
+            "registryUrl": "https://test.example/manifest"
         }"#;
         let cartridge: CartridgeInfo = serde_json::from_str(json).unwrap();
         assert_eq!(cartridge.version, "");
@@ -1287,7 +1374,8 @@ mod tests {
                     "tags": [],
                     "versions": {},
                     "availableVersions": [],
-                    "channel": "release"
+                    "channel": "release",
+                    "registryUrl": "https://test.example/manifest"
                 },
                 {
                     "id": "imagecartridge",
@@ -1311,7 +1399,8 @@ mod tests {
                     "tags": [],
                     "versions": {},
                     "availableVersions": [],
-                    "channel": "nightly"
+                    "channel": "nightly",
+                    "registryUrl": "https://test.example/manifest"
                 }
             ],
             "total": 2,
@@ -1403,6 +1492,10 @@ mod tests {
         CartridgeRegistry {
             schema_version: "5.0".to_string(),
             last_updated: "2026-02-07".to_string(),
+            // Test fixture URL — matches the `https://test.example/manifest`
+            // used by the test calls to CartridgeRepoServer::new so the
+            // self-referential check downstream stays consistent.
+            registry_url: "https://test.example/manifest".to_string(),
             channels: CartridgeRegistryChannels {
                 release: CartridgeChannelEntries { cartridges: release_map },
                 nightly: CartridgeChannelEntries { cartridges: nightly_map },
@@ -1413,12 +1506,12 @@ mod tests {
     // TEST323: CartridgeRepoServer requires schema 5.0 and rejects older.
     #[test]
     fn test323_cartridge_repo_server_validate_registry() {
-        let server = CartridgeRepoServer::new(build_registry(vec![]));
+        let server = CartridgeRepoServer::new(build_registry(vec![]), "https://test.example/manifest");
         assert!(server.is_ok());
 
         let mut bad = build_registry(vec![]);
         bad.schema_version = "4.0".to_string();
-        let result = CartridgeRepoServer::new(bad);
+        let result = CartridgeRepoServer::new(bad, "https://test.example/manifest");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("5.0"));
     }
@@ -1433,7 +1526,7 @@ mod tests {
             vec!["media:test".to_string()],
         );
         let entry = build_registry_entry("Test Cartridge", vec![group]);
-        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)]), "https://test.example/manifest").unwrap();
 
         let array = server.transform_to_cartridge_array().unwrap();
         assert_eq!(array.len(), 1);
@@ -1451,7 +1544,7 @@ mod tests {
             "Test Cartridge",
             vec![build_cap_group("g", vec![build_cap("cap:in=media:;out=media:", "Identity", "identity")], vec![])],
         );
-        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)]), "https://test.example/manifest").unwrap();
         let response = server.get_cartridges().unwrap();
         assert_eq!(response.cartridges.len(), 1);
         assert_eq!(response.cartridges[0].id, "testcartridge");
@@ -1467,7 +1560,7 @@ mod tests {
             "Test Cartridge",
             vec![build_cap_group("g", vec![build_cap("cap:in=media:;out=media:", "Identity", "identity")], vec![])],
         );
-        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)]), "https://test.example/manifest").unwrap();
         assert!(server.get_cartridge_by_id(CartridgeChannel::Release, "testcartridge").unwrap().is_some());
         assert!(server.get_cartridge_by_id(CartridgeChannel::Release, "nonexistent").unwrap().is_none());
         // Looked up in the wrong channel — id exists only in release
@@ -1500,7 +1593,7 @@ mod tests {
             vec![("foocartridge", release_entry)],
             vec![("foocartridge", nightly_entry)],
         );
-        let server = CartridgeRepoServer::new(registry).unwrap();
+        let server = CartridgeRepoServer::new(registry, "https://test.example/manifest").unwrap();
 
         let r = server.get_cartridge_by_id(CartridgeChannel::Release, "foocartridge").unwrap().unwrap();
         assert_eq!(r.name, "Foo (release)");
@@ -1531,7 +1624,7 @@ mod tests {
         );
         entry.tags = vec!["document".to_string()];
         entry.description = "Process PDF documents".to_string();
-        let server = CartridgeRepoServer::new(build_registry(vec![("pdfcartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("pdfcartridge", entry)]), "https://test.example/manifest").unwrap();
 
         // Match on name.
         let by_name = server.search_cartridges("pdf").unwrap();
@@ -1553,7 +1646,7 @@ mod tests {
             vec![build_cap_group("g", vec![build_cap("cap:in=media:;out=media:", "Identity", "identity")], vec![])],
         );
         entry.categories = vec!["document".to_string()];
-        let server = CartridgeRepoServer::new(build_registry(vec![("doccartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("doccartridge", entry)]), "https://test.example/manifest").unwrap();
         assert_eq!(server.get_cartridges_by_category("document").unwrap().len(), 1);
         assert_eq!(server.get_cartridges_by_category("nonexistent").unwrap().len(), 0);
     }
@@ -1579,7 +1672,7 @@ mod tests {
                 vec![],
             )],
         );
-        let server = CartridgeRepoServer::new(build_registry(vec![("pdfcartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("pdfcartridge", entry)]), "https://test.example/manifest").unwrap();
 
         let exact = server.get_cartridges_by_cap(declared_urn).unwrap();
         assert_eq!(exact.len(), 1);
@@ -1621,13 +1714,13 @@ mod tests {
             .expect("update_cache must succeed for a well-formed registry");
         drop(caches);
         let cartridge = repo
-            .get_cartridge(CartridgeChannel::Release, "testcartridge")
+            .get_cartridge("https://example.com/cartridges", CartridgeChannel::Release, "testcartridge")
             .await;
         assert!(cartridge.is_some());
         assert_eq!(cartridge.unwrap().channel, CartridgeChannel::Release);
         // Same id in nightly is absent — channels are independent.
         assert!(repo
-            .get_cartridge(CartridgeChannel::Nightly, "testcartridge")
+            .get_cartridge("https://example.com/cartridges", CartridgeChannel::Nightly, "testcartridge")
             .await
             .is_none());
     }
@@ -1696,15 +1789,15 @@ mod tests {
         drop(caches);
 
         assert!(repo
-            .get_cartridge(CartridgeChannel::Nightly, "testcartridge")
+            .get_cartridge("https://example.com/cartridges", CartridgeChannel::Nightly, "testcartridge")
             .await
             .is_some());
         assert!(repo
-            .get_cartridge(CartridgeChannel::Release, "testcartridge")
+            .get_cartridge("https://example.com/cartridges", CartridgeChannel::Release, "testcartridge")
             .await
             .is_none());
         assert!(repo
-            .get_cartridge(CartridgeChannel::Nightly, "nonexistent")
+            .get_cartridge("https://example.com/cartridges", CartridgeChannel::Nightly, "nonexistent")
             .await
             .is_none());
     }
@@ -1772,7 +1865,7 @@ mod tests {
                 vec!["media:test".to_string()],
             )],
         );
-        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)])).unwrap();
+        let server = CartridgeRepoServer::new(build_registry(vec![("testcartridge", entry)]), "https://test.example/manifest").unwrap();
         let response = server.get_cartridges().unwrap();
 
         assert_eq!(response.cartridges.len(), 1);

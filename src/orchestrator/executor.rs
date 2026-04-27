@@ -341,11 +341,16 @@ impl CartridgeManager {
         // Files → standalone binary. Directories without cartridge.json → each
         // executable file inside is a separate binary cartridge.
         let mut resolved: Vec<PathBuf> = Vec::new();
+        // Dev cartridges resolved via this code path always live under
+        // the dev tree, so the expected slug is the dev sentinel.
+        // Registry-installed cartridges go through CartridgeManager's
+        // download path, not here.
+        let dev_slug = crate::bifaci::cartridge_slug::DEV_SLUG;
         for p in dev_binaries {
             if p.is_file() {
                 resolved.push(p);
             } else if p.is_dir() {
-                match CartridgeJson::read_from_dir(&p) {
+                match CartridgeJson::read_from_dir(&p, dev_slug) {
                     Ok(cj) => {
                         let entry_point = cj.resolve_entry_point(&p);
                         tracing::info!(
@@ -399,6 +404,7 @@ impl CartridgeManager {
                             String::new(),
                             String::new(),
                             crate::bifaci::cartridge_repo::CartridgeChannel::Release,
+                            None,
                             String::new(),
                             Vec::new(),
                         ),
@@ -557,14 +563,21 @@ impl CartridgeManager {
             return Ok(path);
         }
 
-        // Look for an existing installed cartridge in the channel-partitioned
-        // versioned layout: {cartridge_dir}/{channel}/{cartridge_id}/{version}/cartridge.json
+        // Look for an existing installed cartridge in the
+        // registry-partitioned, channel-partitioned versioned layout:
+        // `{cartridge_dir}/{registry_slug}/{channel}/{cartridge_id}/{version}/cartridge.json`.
+        // The orchestrator's manager is bound to a single registry
+        // (`self.registry_url`) — that's the registry it just fetched
+        // the manifest from, so the slug it walks is fixed.
+        let registry_slug =
+            crate::bifaci::cartridge_slug::slug_for(Some(self.registry_url.as_str()));
         let name_dir = self
             .cartridge_dir
+            .join(&registry_slug)
             .join(self.channel.as_str())
             .join(cartridge_id);
         if name_dir.is_dir() {
-            if let Some(entry_point) = self.find_latest_installed_entry_point(&name_dir) {
+            if let Some(entry_point) = self.find_latest_installed_entry_point(&name_dir, &registry_slug) {
                 return Ok(entry_point);
             }
         }
@@ -573,7 +586,15 @@ impl CartridgeManager {
     }
 
     /// Find the entry point of the latest installed version in a cartridge name directory.
-    fn find_latest_installed_entry_point(&self, name_dir: &Path) -> Option<PathBuf> {
+    /// `expected_slug` is the on-disk registry slug the caller reached
+    /// through (the slug for `self.registry_url`); the per-version
+    /// cartridge.json is validated against it via the three-place
+    /// rule.
+    fn find_latest_installed_entry_point(
+        &self,
+        name_dir: &Path,
+        expected_slug: &str,
+    ) -> Option<PathBuf> {
         let mut versions: Vec<(String, PathBuf)> = Vec::new();
 
         for entry in fs::read_dir(name_dir).ok()? {
@@ -582,7 +603,10 @@ impl CartridgeManager {
             if !version_dir.is_dir() {
                 continue;
             }
-            match crate::bifaci::cartridge_json::CartridgeJson::read_from_dir(&version_dir) {
+            match crate::bifaci::cartridge_json::CartridgeJson::read_from_dir(
+                &version_dir,
+                expected_slug,
+            ) {
                 Ok(cj) => {
                     // Hard mismatch — never run a cartridge from a different
                     // channel even if it landed under our channel's tree.
@@ -593,6 +617,24 @@ impl CartridgeManager {
                             version_dir,
                             cj.channel,
                             self.channel
+                        );
+                        continue;
+                    }
+                    // Three-place rule: cartridge.json's registry_url
+                    // must match the orchestrator's. The slug check
+                    // inside read_from_dir only proves folder ⇔ json
+                    // agreement; here we check json ⇔ orchestrator's
+                    // configured registry. Mismatches are skipped, not
+                    // deleted — a stale install from a previously
+                    // configured registry is a user-visible state, not
+                    // garbage.
+                    if cj.registry_url.as_deref() != Some(self.registry_url.as_str()) {
+                        tracing::warn!(
+                            "Skipping cartridge at {:?}: cartridge.json registry_url={:?} \
+                             does not match orchestrator registry_url='{}'",
+                            version_dir,
+                            cj.registry_url,
+                            self.registry_url
                         );
                         continue;
                     }
@@ -629,7 +671,7 @@ impl CartridgeManager {
     async fn verify_cartridge_integrity(&self, cartridge_id: &str) -> Result<(), ExecutionError> {
         let cartridge_info = self
             .cartridge_repo
-            .get_cartridge(self.channel, cartridge_id)
+            .get_cartridge(self.registry_url.as_str(), self.channel, cartridge_id)
             .await
             .ok_or_else(|| ExecutionError::CartridgeNotFound {
                 cap_urn: format!(
@@ -656,7 +698,7 @@ impl CartridgeManager {
     async fn download_cartridge(&self, cartridge_id: &str) -> Result<PathBuf, ExecutionError> {
         let cartridge_info = self
             .cartridge_repo
-            .get_cartridge(self.channel, cartridge_id)
+            .get_cartridge(self.registry_url.as_str(), self.channel, cartridge_id)
             .await
             .ok_or_else(|| ExecutionError::CartridgeNotFound {
                 cap_urn: format!(
@@ -731,10 +773,16 @@ impl CartridgeManager {
             )));
         }
 
-        // Channel-partitioned versioned layout:
-        // {cartridge_dir}/{channel}/{cartridge_id}/{version}/{binary} + cartridge.json
+        // Registry-partitioned, channel-partitioned versioned layout:
+        // `{cartridge_dir}/{registry_slug}/{channel}/{cartridge_id}/{version}/{binary}`
+        // + cartridge.json. The orchestrator only ever installs from
+        // its own configured `self.registry_url`, so the slug is
+        // fixed for the lifetime of this manager.
+        let registry_slug =
+            crate::bifaci::cartridge_slug::slug_for(Some(self.registry_url.as_str()));
         let version_dir = self
             .cartridge_dir
+            .join(&registry_slug)
             .join(self.channel.as_str())
             .join(cartridge_id)
             .join(&cartridge_info.version);
@@ -748,11 +796,15 @@ impl CartridgeManager {
         perms.set_mode(0o755);
         fs::set_permissions(&binary_path, perms)?;
 
-        // Write cartridge.json
+        // Write cartridge.json. `registry_url` is verbatim
+        // `self.registry_url`; the cartridge was downloaded from
+        // there, so the three-place rule (folder ⇔ provenance ⇔
+        // HELLO) is satisfied by construction.
         let cj = crate::CartridgeJson {
             name: cartridge_id.to_string(),
             version: cartridge_info.version.clone(),
             channel: self.channel,
+            registry_url: Some(self.registry_url.clone()),
             entry: binary_name.to_string(),
             installed_at: {
                 use std::time::SystemTime;
@@ -909,13 +961,17 @@ impl ExecutionContext {
     /// The ExecutionContext manages cleanup of these resources.
     ///
     /// # Arguments
-    /// * `channel` - Distribution channel of every cartridge in this batch.
-    ///   Channel partitions identity, so all cartridges that a single host
-    ///   serves must share a channel.
     /// * `cartridges` - Vec of (binary_path, cap_urns) to register with the host
+    /// * `dev_fallback_channel` - Channel to use when a binary has no
+    ///   cartridge.json provenance (dev/cargo-target binaries).
+    ///   Installed cartridges always read their channel from
+    ///   cartridge.json; this is only consulted for the dev-binary
+    ///   path. Pass the orchestrator's own channel so dev binaries
+    ///   inherit the right namespace.
     pub async fn add_cartridge_host(
         &mut self,
         cartridges: Vec<(PathBuf, Vec<String>)>,
+        dev_fallback_channel: crate::bifaci::cartridge_repo::CartridgeChannel,
     ) -> Result<usize, ExecutionError> {
         // Create socket pairs:
         //   switch_sock <-> slave_ext_sock (switch to slave)
@@ -924,30 +980,78 @@ impl ExecutionContext {
         let (slave_int_sock, host_sock) = UnixStream::pair().map_err(ExecutionError::IoError)?;
 
         // --- CartridgeHostRuntime (async, in tokio task) ---
-        // Channel is discovered from each cartridge's `cartridge.json`
-        // provenance file written by pkg.sh at install time. The binary
-        // sits at .../{channel}/{name}/{version}/{entry}; cartridge.json
-        // sits in the same {version} directory. No cartridge.json → not
-        // a properly-installed cartridge → refuse to register, rather
-        // than silently merging release/nightly under a guessed channel.
+        // Identity comes from one of two sources:
+        //
+        //   1. Installed cartridges live at
+        //      `.../{registry_slug}/{channel}/{name}/{version}/{entry}`.
+        //      The binary's parent dir holds cartridge.json; we read
+        //      it and verify the three-place rule (folder slug ⇔
+        //      provenance registry_url).
+        //
+        //   2. Dev binaries live wherever cargo dropped them
+        //      (`build/cargo/<name>/release/<name>` or similar) and
+        //      have no cartridge.json. We fall back to the
+        //      orchestrator's `dev_fallback_channel` and treat the
+        //      registry_url as `None` (dev install). The cartridge
+        //      itself reports the same via HELLO at attach time.
+        //
+        // We choose between these at runtime by checking for
+        // cartridge.json's presence; the file is absent for dev
+        // binaries (no installer wrote it) and present for installed
+        // ones. Anywhere else fails hard — we never silently guess.
         let mut host = CartridgeHostRuntime::new();
         for (path, caps) in &cartridges {
             let version_dir = path.parent().ok_or_else(|| {
                 ExecutionError::HostError(format!(
-                    "cartridge binary {} has no parent directory; cannot locate cartridge.json",
+                    "cartridge binary {} has no parent directory",
                     path.display()
                 ))
             })?;
-            let provenance =
-                crate::bifaci::cartridge_json::CartridgeJson::read_from_dir(version_dir)
-                    .map_err(|e| {
+            let cartridge_json_path = version_dir.join("cartridge.json");
+            if cartridge_json_path.exists() {
+                // Installed-cartridge path. Walk up: version → name
+                // → channel → slug. The slug folder is three levels
+                // up from the binary; pass it through so the
+                // three-place rule is enforced inside read_from_dir.
+                let expected_slug_owned = version_dir
+                    .ancestors()
+                    .nth(3)
+                    .and_then(|p| p.file_name())
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| {
                         ExecutionError::HostError(format!(
-                            "reading cartridge.json for {}: {}",
-                            path.display(),
-                            e
+                            "cartridge path {} is not under a valid \
+                             {{slug}}/{{channel}}/{{name}}/{{version}}/ tree",
+                            path.display()
                         ))
                     })?;
-            host.register_cartridge(path, provenance.channel, caps);
+                let provenance = crate::bifaci::cartridge_json::CartridgeJson::read_from_dir(
+                    version_dir,
+                    &expected_slug_owned,
+                )
+                .map_err(|e| {
+                    ExecutionError::HostError(format!(
+                        "reading cartridge.json for {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
+                host.register_cartridge(
+                    path,
+                    provenance.channel,
+                    provenance.registry_url.as_deref(),
+                    caps,
+                );
+            } else {
+                // Dev binary: no provenance on disk. The HELLO probe
+                // is what establishes the cartridge's identity at
+                // runtime; we register with the orchestrator's
+                // dev-fallback channel and a null registry_url
+                // (matching the cartridge's own HELLO, which emits
+                // `registry_url: null` for dev builds).
+                host.register_cartridge(path, dev_fallback_channel, None, caps);
+            }
         }
 
         let (host_read, host_write) = host_sock.into_split();
@@ -1373,10 +1477,12 @@ pub async fn execute_dag(
     let mut ctx = ExecutionContext::new(cap_registry).await?;
     tracing::debug!(target: "execute_dag", "Adding cartridge host...");
     // Channel is discovered per-cartridge from each cartridge.json
-    // inside add_cartridge_host; the scope-level `channel` parameter
-    // above only governs which channel's cartridges CartridgeManager
-    // resolves in the first place.
-    ctx.add_cartridge_host(cartridges).await?;
+    // inside add_cartridge_host. Dev binaries (no cartridge.json on
+    // disk) fall back to the scope-level `channel` here — that's
+    // also what `CartridgeManager` used when resolving them, so the
+    // host and the manager agree on the dev-binary's channel
+    // namespace.
+    ctx.add_cartridge_host(cartridges, channel).await?;
     tracing::debug!(target: "execute_dag", "Cartridge host added");
 
     // 3. Resolve initial inputs to raw bytes and set on nodes

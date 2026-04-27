@@ -110,6 +110,9 @@ pub use bifaci::cartridge_json::{
     hash_cartridge_directory, CartridgeInstallSource, CartridgeJson, CartridgeJsonError,
 };
 
+// Registry slug — deterministic on-disk folder name for a registry URL.
+pub use bifaci::cartridge_slug::{is_registry_slug, slug_for, DEV_SLUG, SLUG_HEX_LEN};
+
 // Relay exports
 pub use bifaci::in_process_host::{
     accumulate_input, FrameHandler, InProcessCartridgeHost, ResponseWriter,

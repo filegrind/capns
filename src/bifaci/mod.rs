@@ -7,6 +7,7 @@
 
 pub mod cartridge_json;
 pub mod cartridge_repo;
+pub mod cartridge_slug;
 pub mod cartridge_runtime;
 pub mod frame;
 pub mod host_runtime;

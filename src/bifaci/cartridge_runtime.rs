@@ -4522,6 +4522,7 @@ mod tests {
             name.to_string(),
             version.to_string(),
             crate::bifaci::cartridge_repo::CartridgeChannel::Release,
+            None,
             description.to_string(),
             vec![crate::CapGroup {
                 name: "default".to_string(),
@@ -4534,10 +4535,10 @@ mod tests {
     /// Test manifest JSON with identity and a test cap.
     /// Uses cap_groups format. The test cap URN "cap:op=test" has no in/out tags;
     /// CapUrn defaults both to media: (wildcard), which is valid.
-    const TEST_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}]}"#;
+    const TEST_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:op=test","title":"Test","command":"test"}]}]}"#;
 
     /// Valid manifest with proper in/out specs for tests that need parsed CapManifest
-    const VALID_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}],"adapter_urns":[]}]}"#;
+    const VALID_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:in=\"media:void\";op=test;out=\"media:void\"","title":"Test","command":"test"}],"adapter_urns":[]}]}"#;
 
     // TEST248: Test register_op and find_handler by exact cap URN
     #[test]
