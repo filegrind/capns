@@ -380,28 +380,32 @@ fn require_binaries(names: &[&str]) -> Vec<PathBuf> {
 // Test Data
 // =============================================================================
 
-/// Path to test data files (real files from automation/test_files).
+/// Path to the unified test-data store at <repo>/test_data/source_data.
+/// Single source of truth shared with automation, cartridge unit tests,
+/// and the test_data.parquet builder.
 fn test_data_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
+        .join("..")
+        .join("..")
+        .join("test_data")
+        .join("source_data")
 }
 
-/// Load a real multi-page PDF (chain_test_3page.pdf from automation test data).
+/// Load a real multi-page PDF (chain_test_3page.pdf from /test_data/source_data).
 fn load_test_pdf() -> Vec<u8> {
     let path = test_data_dir().join("chain_test_3page.pdf");
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("Failed to read test PDF {}: {}", path.display(), e))
 }
 
-/// Load a real PNG image (cat photo from automation vision datasets).
+/// Load a real PNG image (cat photo from /test_data/source_data).
 fn load_test_png() -> Vec<u8> {
     let path = test_data_dir().join("cat.png");
     std::fs::read(&path)
         .unwrap_or_else(|e| panic!("Failed to read test PNG {}: {}", path.display(), e))
 }
 
-/// Load a real WAV audio file (speech.wav from automation test data).
+/// Load a real WAV audio file (speech.wav from /test_data/source_data).
 fn load_test_wav() -> Vec<u8> {
     let path = test_data_dir().join("speech.wav");
     std::fs::read(&path)

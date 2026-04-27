@@ -915,7 +915,6 @@ impl ExecutionContext {
     /// * `cartridges` - Vec of (binary_path, cap_urns) to register with the host
     pub async fn add_cartridge_host(
         &mut self,
-        channel: crate::bifaci::cartridge_repo::CartridgeChannel,
         cartridges: Vec<(PathBuf, Vec<String>)>,
     ) -> Result<usize, ExecutionError> {
         // Create socket pairs:
@@ -925,9 +924,30 @@ impl ExecutionContext {
         let (slave_int_sock, host_sock) = UnixStream::pair().map_err(ExecutionError::IoError)?;
 
         // --- CartridgeHostRuntime (async, in tokio task) ---
+        // Channel is discovered from each cartridge's `cartridge.json`
+        // provenance file written by pkg.sh at install time. The binary
+        // sits at .../{channel}/{name}/{version}/{entry}; cartridge.json
+        // sits in the same {version} directory. No cartridge.json → not
+        // a properly-installed cartridge → refuse to register, rather
+        // than silently merging release/nightly under a guessed channel.
         let mut host = CartridgeHostRuntime::new();
         for (path, caps) in &cartridges {
-            host.register_cartridge(path, channel, caps);
+            let version_dir = path.parent().ok_or_else(|| {
+                ExecutionError::HostError(format!(
+                    "cartridge binary {} has no parent directory; cannot locate cartridge.json",
+                    path.display()
+                ))
+            })?;
+            let provenance =
+                crate::bifaci::cartridge_json::CartridgeJson::read_from_dir(version_dir)
+                    .map_err(|e| {
+                        ExecutionError::HostError(format!(
+                            "reading cartridge.json for {}: {}",
+                            path.display(),
+                            e
+                        ))
+                    })?;
+            host.register_cartridge(path, provenance.channel, caps);
         }
 
         let (host_read, host_write) = host_sock.into_split();
@@ -1352,7 +1372,11 @@ pub async fn execute_dag(
     tracing::debug!(target: "execute_dag", "Creating execution context...");
     let mut ctx = ExecutionContext::new(cap_registry).await?;
     tracing::debug!(target: "execute_dag", "Adding cartridge host...");
-    ctx.add_cartridge_host(channel, cartridges).await?;
+    // Channel is discovered per-cartridge from each cartridge.json
+    // inside add_cartridge_host; the scope-level `channel` parameter
+    // above only governs which channel's cartridges CartridgeManager
+    // resolves in the first place.
+    ctx.add_cartridge_host(cartridges).await?;
     tracing::debug!(target: "execute_dag", "Cartridge host added");
 
     // 3. Resolve initial inputs to raw bytes and set on nodes

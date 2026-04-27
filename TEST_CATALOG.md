@@ -1,4 +1,4 @@
-# CapDag (Rust) Test Catalog
+# Rust Test Catalog
 
 **Total Tests:** 1101
 
@@ -13,7 +13,7 @@
 **⚠ Duplicate test numbers detected: 1 number(s) used more than once.**
 Unique numbered tests are listed first. Duplicate-number entries are grouped after them and marked with ⚠. Unnumbered tests are listed in their own group.
 
-This catalog lists all tests in the CapDag (Rust) codebase.
+This catalog lists all tests in the Rust codebase.
 
 | Test # | Function Name | Description | File |
 |--------|---------------|-------------|------|
@@ -761,11 +761,11 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test859 | `test859_lub_valued_tags` | TEST859: LUB with valued tags (non-marker) that differ | src/urn/media_urn.rs:1248 |
 | test860 | `test860_seq_assigner_same_rid_different_xids_independent` | TEST860: Same RID with different XIDs get independent seq counters | src/bifaci/frame.rs:1880 |
 | test880 | `test880_no_duplicates_with_unique_caps` | TEST880: Tests duplicate detection passes for caps with unique URN combinations Verifies that check_for_duplicate_caps() correctly accepts caps with different op/in/out combinations | src/planner/plan_builder.rs:816 |
-| test881 | `test881_pdf_full_intelligence_pipeline` | TEST881: PDF thumbnail to image embedding pipeline | cartridge-scenarios/tests/scenarios.rs:885 |
-| test882 | `test882_candle_describe_image` | TEST882: Generate image description with BLIP via candlecartridge | cartridge-scenarios/tests/scenarios.rs:1206 |
-| test883 | `test883_text_embedding` | TEST883: Generate text embedding with BERT via candlecartridge | cartridge-scenarios/tests/scenarios.rs:1152 |
-| test884 | `test884_model_availability_plus_status` | TEST884: Model spec fan-out to availability and status checks | cartridge-scenarios/tests/scenarios.rs:1108 |
-| test885 | `test885_model_plus_dimensions` | TEST885: Fan-out from model spec to availability check and embedding dimensions | cartridge-scenarios/tests/scenarios.rs:1050 |
+| test881 | `test881_pdf_full_intelligence_pipeline` | TEST881: PDF thumbnail to image embedding pipeline | cartridge-scenarios/tests/scenarios.rs:889 |
+| test882 | `test882_candle_describe_image` | TEST882: Generate image description with BLIP via candlecartridge | cartridge-scenarios/tests/scenarios.rs:1210 |
+| test883 | `test883_text_embedding` | TEST883: Generate text embedding with BERT via candlecartridge | cartridge-scenarios/tests/scenarios.rs:1156 |
+| test884 | `test884_model_availability_plus_status` | TEST884: Model spec fan-out to availability and status checks | cartridge-scenarios/tests/scenarios.rs:1112 |
+| test885 | `test885_model_plus_dimensions` | TEST885: Fan-out from model spec to availability check and embedding dimensions | cartridge-scenarios/tests/scenarios.rs:1054 |
 | test886 | `test886_optional_non_io_arg_with_default_has_default` | TEST886: Tests optional non-IO arguments with default values are marked as HasDefault Verifies that optional arguments with defaults behave the same as required ones with defaults | src/planner/plan_builder.rs:1080 |
 | test887 | `test887_execute_with_file_input` | TEST887: Execute with file-path input | tests/orchestrator_integration.rs:406 |
 | test888 | `test888_execute_edge1_to_edge2_chain` | TEST888: Execute two-edge chain (test-edge1 -> test-edge2) | tests/orchestrator_integration.rs:359 |
@@ -790,15 +790,15 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test907 | `test907_offline_blocks_fetch` | TEST907: Offline flag blocks fetch_from_registry without making HTTP request | src/cap/registry.rs:716 |
 | test908 | `test908_cached_caps_accessible_when_offline` | TEST908: Cached caps remain accessible when offline | src/cap/registry.rs:741 |
 | test909 | `test909_set_offline_false_restores_fetch` | TEST909: set_offline(false) restores fetch ability (would fail with HTTP error, not NetworkBlocked) | src/cap/registry.rs:765 |
-| test910 | `test910_map_progress_monotonic` | TEST910: map_progress output is monotonic for monotonically increasing input | src/orchestrator/executor.rs:1482 |
-| test911 | `test911_map_progress_bounded` | TEST911: map_progress output is bounded within [base, base+weight] | src/orchestrator/executor.rs:1500 |
-| test912 | `test912_progress_mapper_reports_through_parent` | TEST912: ProgressMapper correctly maps through a CapProgressFn | src/orchestrator/executor.rs:1521 |
-| test913 | `test913_progress_mapper_as_cap_progress_fn` | TEST913: ProgressMapper.as_cap_progress_fn produces same mapping | src/orchestrator/executor.rs:1545 |
-| test914 | `test914_progress_mapper_sub_mapper` | TEST914: ProgressMapper.sub_mapper chains correctly | src/orchestrator/executor.rs:1568 |
-| test915 | `test915_per_group_subdivision_monotonic_bounded` | TEST915: Per-group subdivision produces monotonic, bounded progress for N groups Uses pre-computed boundaries (same pattern as production code) to guarantee monotonicity regardless of f32 rounding. | src/orchestrator/executor.rs:1595 |
-| test916 | `test916_foreach_item_subdivision` | TEST916: ForEach item subdivision produces correct, monotonic ranges Mirrors the production code in interpreter.rs: pre-compute item boundaries from the same formula so the end of item N and the start of item N+1 are the same f32 value (no divergent accumulation paths). | src/orchestrator/executor.rs:1652 |
-| test917 | `test917_high_frequency_progress_bounded` | TEST917: High-frequency progress emission does not violate bounds (Regression test for the deadlock scenario — verifies computation stays bounded) | src/orchestrator/executor.rs:1716 |
-| test918 | `test918_activity_timeout_error_display` | TEST918: ActivityTimeout error formats correctly | src/orchestrator/executor.rs:1753 |
+| test910 | `test910_map_progress_monotonic` | TEST910: map_progress output is monotonic for monotonically increasing input | src/orchestrator/executor.rs:1506 |
+| test911 | `test911_map_progress_bounded` | TEST911: map_progress output is bounded within [base, base+weight] | src/orchestrator/executor.rs:1524 |
+| test912 | `test912_progress_mapper_reports_through_parent` | TEST912: ProgressMapper correctly maps through a CapProgressFn | src/orchestrator/executor.rs:1545 |
+| test913 | `test913_progress_mapper_as_cap_progress_fn` | TEST913: ProgressMapper.as_cap_progress_fn produces same mapping | src/orchestrator/executor.rs:1569 |
+| test914 | `test914_progress_mapper_sub_mapper` | TEST914: ProgressMapper.sub_mapper chains correctly | src/orchestrator/executor.rs:1592 |
+| test915 | `test915_per_group_subdivision_monotonic_bounded` | TEST915: Per-group subdivision produces monotonic, bounded progress for N groups Uses pre-computed boundaries (same pattern as production code) to guarantee monotonicity regardless of f32 rounding. | src/orchestrator/executor.rs:1619 |
+| test916 | `test916_foreach_item_subdivision` | TEST916: ForEach item subdivision produces correct, monotonic ranges Mirrors the production code in interpreter.rs: pre-compute item boundaries from the same formula so the end of item N and the start of item N+1 are the same f32 value (no divergent accumulation paths). | src/orchestrator/executor.rs:1676 |
+| test917 | `test917_high_frequency_progress_bounded` | TEST917: High-frequency progress emission does not violate bounds (Regression test for the deadlock scenario — verifies computation stays bounded) | src/orchestrator/executor.rs:1740 |
+| test918 | `test918_activity_timeout_error_display` | TEST918: ActivityTimeout error formats correctly | src/orchestrator/executor.rs:1777 |
 | test919 | `test919_parse_simple_testcartridge_graph` | TEST919: Parse simple machine notation graph with test-edge1 | tests/orchestrator_integration.rs:287 |
 | test920 | `test920_single_cap_plan` | TEST920: Tests creation of a simple execution plan with a single capability Verifies that single_cap() generates a valid plan with input_slot, cap node, and output node | src/planner/plan.rs:1035 |
 | test921 | `test921_linear_chain_plan` | TEST921: Tests creation of a linear chain of capabilities connected in sequence Verifies that linear_chain() correctly links multiple caps with proper edges and topological order | src/planner/plan.rs:1051 |
@@ -852,13 +852,13 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test974 | `test974_sequence_is_not_array` | TEST974: CBOR sequence is NOT a CBOR array — split_cbor_array rejects a sequence | src/orchestrator/cbor_util.rs:489 |
 | test975 | `test975_single_value_sequence` | TEST975: split_cbor_sequence works on data that is also a valid CBOR array (single top-level value) | src/orchestrator/cbor_util.rs:507 |
 | test977 | `test977_os_files_excluded_integration` | TEST977: OS files excluded in resolve_paths | src/input_resolver/resolver.rs:532 |
-| test984 | `test984_pdf_thumbnail_to_gguf_describe_fanin` | / TEST050: PDF thumbnail to GGUF describe with model_spec fan-in / Flow: CHAIN + FAN-IN (thumbnail and model_spec both feed into description) / Tests: Multiple inputs converging on single output node | cartridge-scenarios/tests/scenarios.rs:2841 |
-| test985 | `test985_audio_transcribe_to_embed` | / TEST051: Audio transcription (single cap test for whisper) / Flow: single cap / Tests: candlecartridge transcribe cap | cartridge-scenarios/tests/scenarios.rs:2892 |
-| test986 | `test986_pdf_fanout_with_chain` | / TEST052: PDF render_page_image chained to image embedding / Flow: CHAIN (thumbnail → img_embedding) / Tests: pdfcartridge thumbnail piped to candlecartridge image embedding | cartridge-scenarios/tests/scenarios.rs:2944 |
-| test987 | `test987_multi_format_parallel_chains` | / TEST053: Multi-format parallel chains: PDF + MD both get thumbnails and embeddings / Flow: PARALLEL CHAINS (2 independent chains running in parallel) / Tests: Parallel processing of different input formats | cartridge-scenarios/tests/scenarios.rs:2998 |
-| test988 | `test988_deep_chain_with_parallel` | / TEST054: Deep chain with parallel branches from intermediate node / Flow: thumbnail → FAN-OUT (describe_image + img_embedding) + CHAIN (description → desc_embedding) / Tests: Complex graph with branching at multiple levels | cartridge-scenarios/tests/scenarios.rs:3059 |
-| test989 | `test989_five_cartridge_chain` | / TEST055: Multi-cartridge stress test with parallel independent paths / Flow: Two independent FAN-OUT paths (model management + PDF processing) / Tests: 3 cartridges working in parallel on independent data | cartridge-scenarios/tests/scenarios.rs:3120 |
-| test990 | `test990_all_text_formats_to_image_embeds` | / TEST056: All text formats → thumbnails → parallel image embeddings (8 edges) / Flow: 4 PARALLEL CHAINS (one for each text format) / Tests: Maximum parallelism with 4 independent chains | cartridge-scenarios/tests/scenarios.rs:3178 |
+| test984 | `test984_pdf_thumbnail_to_gguf_describe_fanin` | / TEST050: PDF thumbnail to GGUF describe with model_spec fan-in / Flow: CHAIN + FAN-IN (thumbnail and model_spec both feed into description) / Tests: Multiple inputs converging on single output node | cartridge-scenarios/tests/scenarios.rs:2845 |
+| test985 | `test985_audio_transcribe_to_embed` | / TEST051: Audio transcription (single cap test for whisper) / Flow: single cap / Tests: candlecartridge transcribe cap | cartridge-scenarios/tests/scenarios.rs:2896 |
+| test986 | `test986_pdf_fanout_with_chain` | / TEST052: PDF render_page_image chained to image embedding / Flow: CHAIN (thumbnail → img_embedding) / Tests: pdfcartridge thumbnail piped to candlecartridge image embedding | cartridge-scenarios/tests/scenarios.rs:2948 |
+| test987 | `test987_multi_format_parallel_chains` | / TEST053: Multi-format parallel chains: PDF + MD both get thumbnails and embeddings / Flow: PARALLEL CHAINS (2 independent chains running in parallel) / Tests: Parallel processing of different input formats | cartridge-scenarios/tests/scenarios.rs:3002 |
+| test988 | `test988_deep_chain_with_parallel` | / TEST054: Deep chain with parallel branches from intermediate node / Flow: thumbnail → FAN-OUT (describe_image + img_embedding) + CHAIN (description → desc_embedding) / Tests: Complex graph with branching at multiple levels | cartridge-scenarios/tests/scenarios.rs:3063 |
+| test989 | `test989_five_cartridge_chain` | / TEST055: Multi-cartridge stress test with parallel independent paths / Flow: Two independent FAN-OUT paths (model management + PDF processing) / Tests: 3 cartridges working in parallel on independent data | cartridge-scenarios/tests/scenarios.rs:3124 |
+| test990 | `test990_all_text_formats_to_image_embeds` | / TEST056: All text formats → thumbnails → parallel image embeddings (8 edges) / Flow: 4 PARALLEL CHAINS (one for each text format) / Tests: Maximum parallelism with 4 independent chains | cartridge-scenarios/tests/scenarios.rs:3182 |
 | test991 | `test991_detects_duplicate_cap_urns` | TEST991: Tests duplicate detection identifies caps with identical URNs Verifies that check_for_duplicate_caps() returns an error when multiple caps share the same cap_urn | src/planner/plan_builder.rs:850 |
 | test992 | `test992_different_ops_same_types_not_duplicates` | TEST992: Tests caps with different operations but same input/output types are not duplicates Verifies that only the complete URN (including op) is used for duplicate detection | src/planner/plan_builder.rs:890 |
 | test993 | `test993_same_op_different_input_types_not_duplicates` | TEST993: Tests caps with same operation but different input types are not duplicates Verifies that input type differences distinguish caps with the same operation name | src/planner/plan_builder.rs:916 |
@@ -897,37 +897,37 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test1027 | `test1027_localized_excluded` | TEST1027: .localized is excluded | src/input_resolver/os_filter.rs:204 |
 | test1028 | `test1028_desktop_ini_excluded` | TEST1028: desktop.ini is excluded | src/input_resolver/os_filter.rs:210 |
 | test1029 | `test1029_normal_files_not_excluded` | TEST1029: Normal files are NOT excluded | src/input_resolver/os_filter.rs:216 |
-| test1032 | `test1032_audio_transcription` | TEST1032: Transcribe audio with Whisper via candlecartridge | cartridge-scenarios/tests/scenarios.rs:1254 |
-| test1034 | `test1034_pdf_complete_analysis` | TEST1034: pdfcartridge ops on a single PDF — thumbnail + disbind pipeline | cartridge-scenarios/tests/scenarios.rs:1306 |
-| test1035 | `test1035_model_full_inspection` | TEST1035: All 4 modelcartridge inspection ops on a single model spec | cartridge-scenarios/tests/scenarios.rs:1364 |
-| test1037 | `test1037_two_format_full_analysis` | TEST1037: 3-cap parallel analysis — pdf thumbnail + disbind + md thumbnail | cartridge-scenarios/tests/scenarios.rs:1441 |
-| test1038 | `test1038_model_plus_pdf_combined` | TEST1038: 3-cap cross-domain pipeline — model inspection + PDF thumbnail | cartridge-scenarios/tests/scenarios.rs:1509 |
-| test1040 | `test1040_three_cartridge_pipeline` | TEST1040: 4-cap three-cartridge pipeline — model availability/status + PDF + md thumbnails | cartridge-scenarios/tests/scenarios.rs:1576 |
-| test1041 | `test1041_txt_document_intelligence` | TEST1041: Plain text render_page_image produces thumbnail from txt input | cartridge-scenarios/tests/scenarios.rs:1711 |
-| test1042 | `test1042_rst_document_intelligence` | TEST1042: RST document render_page_image produces thumbnail | cartridge-scenarios/tests/scenarios.rs:1754 |
-| test1043 | `test1043_log_document_intelligence` | TEST1043: Log file render_page_image produces thumbnail from log input | cartridge-scenarios/tests/scenarios.rs:1796 |
-| test1044 | `test1044_all_text_formats_intelligence` | TEST1044: 4-cap DAG processing all four text formats simultaneously | cartridge-scenarios/tests/scenarios.rs:1839 |
-| test1046 | `test1046_model_list_models` | TEST1046: List all locally cached models via modelcartridge | cartridge-scenarios/tests/scenarios.rs:1913 |
-| test1048 | `test1048_gguf_embeddings_dimensions` | TEST1048: Query GGUF embedding model dimensions via ggufcartridge | cartridge-scenarios/tests/scenarios.rs:1959 |
-| test1049 | `test1049_gguf_llm_model_info` | TEST1049: Query GGUF model metadata via llm_model_info cap | cartridge-scenarios/tests/scenarios.rs:2014 |
-| test1050 | `test1050_gguf_llm_vocab` | TEST1050: Extract vocabulary tokens from a GGUF model via llm_vocab cap | cartridge-scenarios/tests/scenarios.rs:2065 |
-| test1051 | `test1051_gguf_model_info_plus_vocab` | TEST1051: Fan-out from one LLM request to both model_info and vocab outputs | cartridge-scenarios/tests/scenarios.rs:2119 |
-| test1052 | `test1052_gguf_llm_inference` | TEST1052: Generate text with a small GGUF LLM via llm_inference cap | cartridge-scenarios/tests/scenarios.rs:2179 |
-| test1053 | `test1053_gguf_llm_inference_constrained` | TEST1053: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap | cartridge-scenarios/tests/scenarios.rs:2234 |
-| test1054 | `test1054_gguf_generate_embeddings` | TEST1054: Generate GGUF text embeddings with fan-in of text and model-spec inputs | cartridge-scenarios/tests/scenarios.rs:2292 |
-| test1057 | `test1057_gguf_describe_image` | TEST1057: Describe image with GGUF vision model via fan-in of image and model-spec | cartridge-scenarios/tests/scenarios.rs:2348 |
-| test1058 | `test1058_pdf_thumbnail_to_gguf_vision` | TEST1058: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis | cartridge-scenarios/tests/scenarios.rs:2401 |
-| test1059 | `test1059_gguf_all_llm_ops` | TEST1059: Fan-out from one LLM request to all 4 ggufcartridge LLM operations | cartridge-scenarios/tests/scenarios.rs:2466 |
-| test1060 | `test1060_mlx_generate_text` | / TEST044: MLX text generation / Flow: single cap / Tests: mlxcartridge generate_text cap | cartridge-scenarios/tests/scenarios.rs:2552 |
-| test1061 | `test1061_mlx_describe_image` | / TEST045: MLX describe image / Flow: single cap / Tests: mlxcartridge describe_image cap (vision) | cartridge-scenarios/tests/scenarios.rs:2598 |
-| test1062 | `test1062_mlx_generate_embeddings` | / TEST046: MLX generate embeddings / Flow: single cap / Tests: mlxcartridge generate_embeddings cap | cartridge-scenarios/tests/scenarios.rs:2647 |
-| test1063 | `test1063_mlx_embeddings_dimensions` | / TEST047: MLX embeddings dimensions / Flow: single cap / Tests: mlxcartridge embeddings_dimensions cap | cartridge-scenarios/tests/scenarios.rs:2693 |
-| test1064 | `test1064_model_download` | / TEST048: Model download / Flow: single cap / Tests: modelcartridge download-model cap | cartridge-scenarios/tests/scenarios.rs:2741 |
-| test1066 | `test1066_pdf_to_thumbnail_to_describe_to_embed` | / TEST049: 3-step chain: PDF → thumbnail → candle describe → text embeddings / Flow: CHAIN (3 steps across 2 cartridges + ML inference) / Tests: Sequential data transformation across multiple cartridges | cartridge-scenarios/tests/scenarios.rs:2785 |
-| test1069 | `test1069_pdf_document_intelligence` | TEST1069: PDF render_page_image produces a thumbnail from a single PDF input | cartridge-scenarios/tests/scenarios.rs:784 |
-| test1070 | `test1070_pdf_thumbnail_to_image_embedding` | TEST1070: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding | cartridge-scenarios/tests/scenarios.rs:829 |
-| test1071 | `test1071_text_document_intelligence` | TEST1071: Markdown render_page_image produces thumbnail | cartridge-scenarios/tests/scenarios.rs:952 |
-| test1072 | `test1072_multi_format_document_processing` | TEST1072: Parallel processing of PDF and markdown through independent render_page_image | cartridge-scenarios/tests/scenarios.rs:995 |
+| test1032 | `test1032_audio_transcription` | TEST1032: Transcribe audio with Whisper via candlecartridge | cartridge-scenarios/tests/scenarios.rs:1258 |
+| test1034 | `test1034_pdf_complete_analysis` | TEST1034: pdfcartridge ops on a single PDF — thumbnail + disbind pipeline | cartridge-scenarios/tests/scenarios.rs:1310 |
+| test1035 | `test1035_model_full_inspection` | TEST1035: All 4 modelcartridge inspection ops on a single model spec | cartridge-scenarios/tests/scenarios.rs:1368 |
+| test1037 | `test1037_two_format_full_analysis` | TEST1037: 3-cap parallel analysis — pdf thumbnail + disbind + md thumbnail | cartridge-scenarios/tests/scenarios.rs:1445 |
+| test1038 | `test1038_model_plus_pdf_combined` | TEST1038: 3-cap cross-domain pipeline — model inspection + PDF thumbnail | cartridge-scenarios/tests/scenarios.rs:1513 |
+| test1040 | `test1040_three_cartridge_pipeline` | TEST1040: 4-cap three-cartridge pipeline — model availability/status + PDF + md thumbnails | cartridge-scenarios/tests/scenarios.rs:1580 |
+| test1041 | `test1041_txt_document_intelligence` | TEST1041: Plain text render_page_image produces thumbnail from txt input | cartridge-scenarios/tests/scenarios.rs:1715 |
+| test1042 | `test1042_rst_document_intelligence` | TEST1042: RST document render_page_image produces thumbnail | cartridge-scenarios/tests/scenarios.rs:1758 |
+| test1043 | `test1043_log_document_intelligence` | TEST1043: Log file render_page_image produces thumbnail from log input | cartridge-scenarios/tests/scenarios.rs:1800 |
+| test1044 | `test1044_all_text_formats_intelligence` | TEST1044: 4-cap DAG processing all four text formats simultaneously | cartridge-scenarios/tests/scenarios.rs:1843 |
+| test1046 | `test1046_model_list_models` | TEST1046: List all locally cached models via modelcartridge | cartridge-scenarios/tests/scenarios.rs:1917 |
+| test1048 | `test1048_gguf_embeddings_dimensions` | TEST1048: Query GGUF embedding model dimensions via ggufcartridge | cartridge-scenarios/tests/scenarios.rs:1963 |
+| test1049 | `test1049_gguf_llm_model_info` | TEST1049: Query GGUF model metadata via llm_model_info cap | cartridge-scenarios/tests/scenarios.rs:2018 |
+| test1050 | `test1050_gguf_llm_vocab` | TEST1050: Extract vocabulary tokens from a GGUF model via llm_vocab cap | cartridge-scenarios/tests/scenarios.rs:2069 |
+| test1051 | `test1051_gguf_model_info_plus_vocab` | TEST1051: Fan-out from one LLM request to both model_info and vocab outputs | cartridge-scenarios/tests/scenarios.rs:2123 |
+| test1052 | `test1052_gguf_llm_inference` | TEST1052: Generate text with a small GGUF LLM via llm_inference cap | cartridge-scenarios/tests/scenarios.rs:2183 |
+| test1053 | `test1053_gguf_llm_inference_constrained` | TEST1053: Generate JSON-constrained output with GGUF LLM via llm_inference_constrained cap | cartridge-scenarios/tests/scenarios.rs:2238 |
+| test1054 | `test1054_gguf_generate_embeddings` | TEST1054: Generate GGUF text embeddings with fan-in of text and model-spec inputs | cartridge-scenarios/tests/scenarios.rs:2296 |
+| test1057 | `test1057_gguf_describe_image` | TEST1057: Describe image with GGUF vision model via fan-in of image and model-spec | cartridge-scenarios/tests/scenarios.rs:2352 |
+| test1058 | `test1058_pdf_thumbnail_to_gguf_vision` | TEST1058: Cross-cartridge chain: PDF thumbnail piped to GGUF vision analysis | cartridge-scenarios/tests/scenarios.rs:2405 |
+| test1059 | `test1059_gguf_all_llm_ops` | TEST1059: Fan-out from one LLM request to all 4 ggufcartridge LLM operations | cartridge-scenarios/tests/scenarios.rs:2470 |
+| test1060 | `test1060_mlx_generate_text` | / TEST044: MLX text generation / Flow: single cap / Tests: mlxcartridge generate_text cap | cartridge-scenarios/tests/scenarios.rs:2556 |
+| test1061 | `test1061_mlx_describe_image` | / TEST045: MLX describe image / Flow: single cap / Tests: mlxcartridge describe_image cap (vision) | cartridge-scenarios/tests/scenarios.rs:2602 |
+| test1062 | `test1062_mlx_generate_embeddings` | / TEST046: MLX generate embeddings / Flow: single cap / Tests: mlxcartridge generate_embeddings cap | cartridge-scenarios/tests/scenarios.rs:2651 |
+| test1063 | `test1063_mlx_embeddings_dimensions` | / TEST047: MLX embeddings dimensions / Flow: single cap / Tests: mlxcartridge embeddings_dimensions cap | cartridge-scenarios/tests/scenarios.rs:2697 |
+| test1064 | `test1064_model_download` | / TEST048: Model download / Flow: single cap / Tests: modelcartridge download-model cap | cartridge-scenarios/tests/scenarios.rs:2745 |
+| test1066 | `test1066_pdf_to_thumbnail_to_describe_to_embed` | / TEST049: 3-step chain: PDF → thumbnail → candle describe → text embeddings / Flow: CHAIN (3 steps across 2 cartridges + ML inference) / Tests: Sequential data transformation across multiple cartridges | cartridge-scenarios/tests/scenarios.rs:2789 |
+| test1069 | `test1069_pdf_document_intelligence` | TEST1069: PDF render_page_image produces a thumbnail from a single PDF input | cartridge-scenarios/tests/scenarios.rs:788 |
+| test1070 | `test1070_pdf_thumbnail_to_image_embedding` | TEST1070: Cross-cartridge chain: PDF thumbnail piped to CLIP image embedding | cartridge-scenarios/tests/scenarios.rs:833 |
+| test1071 | `test1071_text_document_intelligence` | TEST1071: Markdown render_page_image produces thumbnail | cartridge-scenarios/tests/scenarios.rs:956 |
+| test1072 | `test1072_multi_format_document_processing` | TEST1072: Parallel processing of PDF and markdown through independent render_page_image | cartridge-scenarios/tests/scenarios.rs:999 |
 | test1090 | `test1090_single_file_scalar` | TEST1090: 1 file → is_sequence=false | src/input_resolver/resolver.rs:481 |
 | test1092 | `test1092_two_files` | TEST1092: 2 files → is_sequence=true | src/input_resolver/resolver.rs:493 |
 | test1093 | `test1093_dir_single_file` | TEST1093: 1 dir with 1 file → is_sequence=false | src/input_resolver/resolver.rs:506 |
@@ -956,8 +956,8 @@ This catalog lists all tests in the CapDag (Rust) codebase.
 | test1122 | `test1122_full_path_engine_req_to_cartridge_response` | TEST1122: Full path: engine REQ → runtime → cartridge → response back through relay | src/bifaci/integration_tests.rs:209 |
 | test1123 | `test1123_cartridge_error_flows_to_engine` | TEST1123: Cartridge ERR frame flows back to engine through relay | src/bifaci/integration_tests.rs:328 |
 | test1124 | `test1124_cbor_rejects_stream_end_without_chunk_count` | TEST1124: CBOR decode REJECTS STREAM_END frame missing chunk_count field | src/bifaci/frame.rs:2369 |
-| test1125 | `test1125_map_progress_basic_mapping` | TEST1125: map_progress clamps child to [0.0, 1.0] and maps to [base, base+weight] | src/orchestrator/executor.rs:1453 |
-| test1126 | `test1126_map_progress_deterministic` | TEST1126: map_progress is deterministic — same inputs always produce same output | src/orchestrator/executor.rs:1471 |
+| test1125 | `test1125_map_progress_basic_mapping` | TEST1125: map_progress clamps child to [0.0, 1.0] and maps to [base, base+weight] | src/orchestrator/executor.rs:1477 |
+| test1126 | `test1126_map_progress_deterministic` | TEST1126: map_progress is deterministic — same inputs always produce same output | src/orchestrator/executor.rs:1495 |
 | test1127 | `test1127_cap_documentation_round_trip_with_markdown_body` | TEST1127: Documentation field round-trips through JSON serialize/deserialize. The documentation field carries an arbitrary markdown body authored in the source TOML via the triple-quoted literal string syntax. The round-trip must preserve every character — including newlines, backticks, double quotes, and Unicode — because consumers (info panels, capdag.com, etc.) render it directly. JSON.stringify on the capgraph side and the Rust serializer on this side must agree on escaping; this test fails hard if they don't. | src/cap/definition.rs:1412 |
 | test1128 | `test1128_cap_documentation_omitted_when_none` | TEST1128: When documentation is None, the serializer must skip the field entirely. This matches the behaviour of the JS toJSON, the ObjC toDictionary, and the schema's "if present" semantics — there is no null sentinel, only absence. A bug here would silently start emitting `"documentation":null` and break consumers that distinguish between absent and explicit null. | src/cap/definition.rs:1452 |
 | test1129 | `test1129_cap_documentation_parses_from_capgraph_json` | TEST1129: A JSON document produced by capgraph (the canonical source) with a `documentation` field must deserialize into a Cap with the body intact. Models the actual on-disk shape — not a synthetic round-trip — to catch a mismatch between the JSON schema and the Rust struct field naming. | src/cap/definition.rs:1479 |
@@ -1147,7 +1147,7 @@ The following tests are cataloged but do not currently participate in numeric te
 
 ---
 
-*Generated from CapDag (Rust) source tree*
+*Generated from Rust source tree*
 *Total tests: 1101*
 *Total numbered tests: 1097*
 *Total unnumbered tests: 4*
