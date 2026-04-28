@@ -56,7 +56,7 @@
 use crate::bifaci::frame::{FlowKey, Frame, FrameType, Limits, MessageId, SeqAssigner};
 use crate::bifaci::io::{identity_nonce, CborError, FrameReader, FrameWriter};
 use crate::cap::registry::CapRegistry;
-use crate::planner::live_cap_graph::{LiveCapFab, ReachableTargetInfo, Strand};
+use crate::planner::live_cap_fab::{LiveCapFab, ReachableTargetInfo, Strand};
 use crate::urn::media_urn::MediaUrn;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -353,7 +353,7 @@ pub struct RelaySwitch {
     /// RID → XID mapping for engine-initiated requests (so continuation frames can find their XID)
     rid_to_xid: RwLock<HashMap<MessageId, MessageId>>,
     /// Precomputed capability graph for path finding and reachability queries
-    live_cap_graph: RwLock<LiveCapFab>,
+    live_cap_fab: RwLock<LiveCapFab>,
     /// Cap registry for looking up Cap definitions
     cap_registry: Arc<CapRegistry>,
     /// Stop flag for the persistent background drain pump. Set by `Drop`
@@ -667,7 +667,7 @@ impl RelaySwitch {
             frame_tx,
             xid_counter,
             rid_to_xid: RwLock::new(HashMap::new()),
-            live_cap_graph: RwLock::new(LiveCapFab::new()),
+            live_cap_fab: RwLock::new(LiveCapFab::new()),
             cap_registry,
             background_pump_stop: Arc::new(AtomicBool::new(false)),
             background_pump_handle: std::sync::Mutex::new(None),
@@ -781,7 +781,7 @@ impl RelaySwitch {
         is_sequence: bool,
         max_depth: usize,
     ) -> Vec<ReachableTargetInfo> {
-        let graph = self.live_cap_graph.read().await;
+        let graph = self.live_cap_fab.read().await;
         graph.get_reachable_targets(source, is_sequence, max_depth)
     }
 
@@ -797,7 +797,7 @@ impl RelaySwitch {
         max_depth: usize,
         max_paths: usize,
     ) -> Vec<Strand> {
-        let graph = self.live_cap_graph.read().await;
+        let graph = self.live_cap_fab.read().await;
         graph.find_paths_to_exact_target(source, target, is_sequence, max_depth, max_paths)
     }
 
@@ -815,7 +815,7 @@ impl RelaySwitch {
     where
         F: FnMut(crate::planner::PathFindingEvent),
     {
-        let graph = self.live_cap_graph.read().await;
+        let graph = self.live_cap_fab.read().await;
         graph.find_paths_streaming(
             source,
             target,
@@ -2597,7 +2597,7 @@ impl RelaySwitch {
             }
 
             // Rebuild the LiveCapFab with the new set of available caps
-            let mut graph = self.live_cap_graph.write().await;
+            let mut graph = self.live_cap_fab.write().await;
             graph
                 .sync_from_cap_urns(&all_caps, &self.cap_registry)
                 .await;

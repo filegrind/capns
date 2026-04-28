@@ -24,7 +24,7 @@ pub mod argument_binding;
 pub mod cardinality;
 pub mod collection_input;
 pub mod executor;
-pub mod live_cap_graph;
+pub mod live_cap_fab;
 pub mod plan;
 pub mod plan_builder;
 
@@ -50,7 +50,7 @@ pub use cardinality::{
 };
 pub use collection_input::{CapInputCollection, CollectionFile};
 pub use executor::MachineExecutor;
-pub use live_cap_graph::{
+pub use live_cap_fab::{
     LiveCapFab, LiveMachinePlanEdge, LiveMachinePlanEdgeType, PathFindingEvent,
     ReachableTargetInfo, Strand, StrandStep, StrandStepType,
 };

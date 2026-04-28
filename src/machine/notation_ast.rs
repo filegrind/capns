@@ -804,7 +804,7 @@ pub fn build_editor_model(
             ParsedStatement::Wiring(wiring) => {
                 let color_index = wiring_index as i32;
                 let cap_token_id = new_token_id();
-                let cap_graph_id = format!("cap-{wiring_index}");
+                let cap_fab_id = format!("cap-{wiring_index}");
 
                 let linked_cap_urn = ast
                     .alias_map
@@ -934,7 +934,7 @@ pub fn build_editor_model(
                         linked_media_urn: None,
                         is_sequence: None,
                         source_graph_id: Some(source_graph_id.clone()),
-                        target_graph_id: Some(cap_graph_id.clone()),
+                        target_graph_id: Some(cap_fab_id.clone()),
                         color_index: Some(color_index),
                         is_loop: wiring.is_loop,
                     });
@@ -949,7 +949,7 @@ pub fn build_editor_model(
                     linked_cap_urn: linked_cap_urn.clone(),
                     linked_media_urn: None,
                     is_sequence: None,
-                    source_graph_id: Some(cap_graph_id.clone()),
+                    source_graph_id: Some(cap_fab_id.clone()),
                     target_graph_id: Some(target_graph_id),
                     color_index: Some(color_index),
                     is_loop: wiring.is_loop,
@@ -957,7 +957,7 @@ pub fn build_editor_model(
 
                 graph_elements.push(NotationGraphElementInfo {
                     token_id: cap_token_id,
-                    graph_id: cap_graph_id,
+                    graph_id: cap_fab_id,
                     kind: NotationGraphElementKind::Cap,
                     label: wiring.cap_alias.clone(),
                     detail: linked_cap_urn.clone(),
