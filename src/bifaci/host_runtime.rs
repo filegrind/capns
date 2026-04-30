@@ -47,6 +47,44 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10);
 
 // =============================================================================
+// CARTRIDGE HOST OBSERVER — Lifecycle callbacks for spawn/death
+// =============================================================================
+
+/// Lifecycle observer for `CartridgeHostRuntime`.
+///
+/// Mirrors the Swift `CartridgeHostObserver` protocol in
+/// `capdag-objc/Sources/Bifaci/CartridgeHost.swift`. The host invokes the
+/// registered observer when a cartridge becomes runnable (`cartridge_spawned`)
+/// or stops running (`cartridge_died`).
+///
+/// Implementations MUST NOT block or take long-held locks: the host's
+/// internal locks are not held during the call, but the call still runs on
+/// the run loop or the spawn caller's task.
+///
+/// Used by host-side bridges (e.g., a remote-IPC service that needs to push
+/// process lifecycle to a separate process); not used by the engine's
+/// in-process runtime, which leaves the observer unset.
+pub trait CartridgeHostObserver: Send + Sync {
+    /// A cartridge has just transitioned to running (handshake completed,
+    /// caps extracted, reader task started).
+    ///
+    /// `pid` is `None` for in-process cartridges that have no OS process.
+    /// `name` is the last path component of the cartridge binary path
+    /// (or empty for attached cartridges with no path).
+    fn cartridge_spawned(
+        &self,
+        cartridge_index: usize,
+        pid: Option<u32>,
+        name: &str,
+        caps: &[String],
+    );
+
+    /// A cartridge has just transitioned to not-running (reader task EOF,
+    /// process reaped, OOM kill, or clean shutdown).
+    fn cartridge_died(&self, cartridge_index: usize, pid: Option<u32>, name: &str);
+}
+
+// =============================================================================
 // CARTRIDGE PROCESS INFO — External visibility into managed cartridge processes
 // =============================================================================
 
@@ -618,6 +656,10 @@ pub struct CartridgeHostRuntime {
     command_tx: mpsc::UnboundedSender<HostCommand>,
     /// Receiver end — consumed by `run()`.
     command_rx: Option<mpsc::UnboundedReceiver<HostCommand>>,
+    /// Lifecycle observer. Set by callers that want to be notified when a
+    /// cartridge transitions in/out of the running state. Mirrors the Swift
+    /// `CartridgeHost.observer` field.
+    observer: Option<Arc<dyn CartridgeHostObserver>>,
 }
 
 impl CartridgeHostRuntime {
@@ -641,7 +683,15 @@ impl CartridgeHostRuntime {
             process_snapshot: Arc::new(RwLock::new(Vec::new())),
             command_tx,
             command_rx: Some(command_rx),
+            observer: None,
         }
+    }
+
+    /// Register a lifecycle observer that will be notified when cartridges
+    /// transition in/out of the running state. Replaces any previously set
+    /// observer. Pass `None` to clear.
+    pub fn set_observer(&mut self, observer: Option<Arc<dyn CartridgeHostObserver>>) {
+        self.observer = observer;
     }
 
     /// Get a handle for querying cartridge process info and sending commands.
@@ -1498,8 +1548,19 @@ impl CartridgeHostRuntime {
         let reason;
         let stderr_content;
         let exit_info: String;
+        // Capture observer payload before we mutate state and clear the
+        // process handle.
+        let observer_pid_at_death;
+        let observer_name;
         {
             let cartridge = &mut self.cartridges[cartridge_idx];
+            observer_pid_at_death = cartridge.process.as_ref().and_then(|c| c.id());
+            observer_name = cartridge
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
             cartridge.running = false;
             cartridge.writer_tx = None;
             // One completed death (any reason) counts as one restart cycle.
@@ -1707,6 +1768,11 @@ impl CartridgeHostRuntime {
         self.update_cap_table();
         self.rebuild_capabilities(Some(outbound_tx));
         self.update_process_snapshot();
+
+        // Notify lifecycle observer (e.g., XPC reverse-callback bridge).
+        if let Some(ref obs) = self.observer {
+            obs.cartridge_died(cartridge_idx, observer_pid_at_death, &observer_name);
+        }
 
         Ok(())
     }
@@ -1988,8 +2054,24 @@ impl CartridgeHostRuntime {
         cartridge.stderr_handle = stderr;
         cartridge.last_death_message = None; // Clear any previous death message
 
+        // Capture observer payload while we still have an exclusive borrow.
+        let observer_pid = cartridge.process.as_ref().and_then(|c| c.id());
+        let observer_name = cartridge
+            .path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let observer_caps: Vec<String> =
+            cartridge.caps.iter().map(|c| c.urn.to_string()).collect();
+
         self.update_cap_table();
         self.update_process_snapshot();
+
+        // Notify lifecycle observer (e.g., XPC reverse-callback bridge).
+        if let Some(ref obs) = self.observer {
+            obs.cartridge_spawned(cartridge_idx, observer_pid, &observer_name, &observer_caps);
+        }
 
         Ok(())
     }
@@ -2338,7 +2420,21 @@ impl CartridgeHostRuntime {
     /// open in a single-threaded runtime, deadlocking any sync thread that
     /// blocks on the cartridge's read().
     async fn kill_all_cartridges(&mut self) {
-        for cartridge in &mut self.cartridges {
+        // Collect death notifications under exclusive borrow; fire callbacks
+        // afterward to avoid borrow conflicts and to keep the observer call
+        // outside the kill path.
+        let mut death_notifications: Vec<(usize, Option<u32>, String)> = Vec::new();
+
+        for (idx, cartridge) in self.cartridges.iter_mut().enumerate() {
+            let was_running = cartridge.running;
+            let pid_at_death = cartridge.process.as_ref().and_then(|c| c.id());
+            let name = cartridge
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+
             cartridge.shutdown_reason = Some(ShutdownReason::AppExit);
             if let Some(ref mut child) = cartridge.process {
                 let _ = child.kill().await;
@@ -2358,6 +2454,17 @@ impl CartridgeHostRuntime {
             // Safe to abort the reader (it will exit on its own anyway).
             if let Some(handle) = cartridge.reader_handle.take() {
                 handle.abort();
+            }
+
+            if was_running {
+                death_notifications.push((idx, pid_at_death, name));
+            }
+        }
+
+        // Notify lifecycle observer for each cartridge that was running.
+        if let Some(ref obs) = self.observer {
+            for (idx, pid, name) in &death_notifications {
+                obs.cartridge_died(*idx, *pid, name);
             }
         }
     }
@@ -2534,8 +2641,89 @@ mod tests {
     use super::*;
     use crate::standard::caps::CAP_IDENTITY;
     use crate::CapUrn;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::{BufReader, BufWriter};
     use tokio::net::UnixStream;
+
+    /// Records spawn/death counts for `CartridgeHostObserver` contract
+    /// tests. Mirrors `RecordingObserver` in the Swift Bifaci tests.
+    struct RecordingObserver {
+        spawn_count: AtomicUsize,
+        death_count: AtomicUsize,
+    }
+
+    impl RecordingObserver {
+        fn new() -> Self {
+            Self {
+                spawn_count: AtomicUsize::new(0),
+                death_count: AtomicUsize::new(0),
+            }
+        }
+        fn spawns(&self) -> usize {
+            self.spawn_count.load(Ordering::Acquire)
+        }
+        fn deaths(&self) -> usize {
+            self.death_count.load(Ordering::Acquire)
+        }
+    }
+
+    impl CartridgeHostObserver for RecordingObserver {
+        fn cartridge_spawned(
+            &self,
+            _cartridge_index: usize,
+            _pid: Option<u32>,
+            _name: &str,
+            _caps: &[String],
+        ) {
+            self.spawn_count.fetch_add(1, Ordering::AcqRel);
+        }
+        fn cartridge_died(&self, _cartridge_index: usize, _pid: Option<u32>, _name: &str) {
+            self.death_count.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// Pins the optional-observer contract: a brand-new runtime with
+    /// no observer attached must close cleanly on an empty cartridge
+    /// list. A regression here would mean the observer-firing path
+    /// became non-optional and broke every call site that doesn't
+    /// register an observer (engine in-process runtime, in-process
+    /// host tests, integration tests).
+    #[tokio::test]
+    async fn observer_is_optional() {
+        let mut runtime = CartridgeHostRuntime::new();
+        // Ensure nothing fires when no observer is set and we
+        // immediately tear the runtime down.
+        runtime.kill_all_cartridges().await;
+    }
+
+    /// Pins the observer-clearing contract: a setObserver(None)
+    /// after a previous registration must drop the strong ref so a
+    /// subsequent lifecycle moment doesn't fire into a torn-down
+    /// bridge. Matches the Swift `setObserver(nil)` test.
+    #[tokio::test]
+    async fn set_observer_none_clears_previous() {
+        let observer = Arc::new(RecordingObserver::new());
+        let mut runtime = CartridgeHostRuntime::new();
+        runtime.set_observer(Some(observer.clone() as Arc<dyn CartridgeHostObserver>));
+        runtime.set_observer(None);
+        runtime.kill_all_cartridges().await;
+        assert_eq!(
+            observer.spawns(),
+            0,
+            "Observer was cleared via set_observer(None) before any \
+             spawn moment, yet recorded {} spawn events — the runtime is \
+             firing into a cleared observer slot.",
+            observer.spawns()
+        );
+        assert_eq!(
+            observer.deaths(),
+            0,
+            "Observer was cleared via set_observer(None) before any \
+             death moment, yet recorded {} death events — the runtime is \
+             firing into a cleared observer slot.",
+            observer.deaths()
+        );
+    }
 
     /// Helper: perform handshake_accept and handle the identity verification REQ.
     /// Returns (FrameReader, FrameWriter) ready for further communication.
