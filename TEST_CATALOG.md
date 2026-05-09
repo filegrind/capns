@@ -348,20 +348,20 @@ This catalog lists all tests in the Rust codebase.
 | test423 | `test423_multiple_cartridges_route_independently` | TEST423: Multiple cartridges registered with distinct caps route independently | src/bifaci/host_runtime.rs:4207 |
 | test424 | `test424_concurrent_requests_to_same_cartridge` | TEST424: Concurrent requests to the same cartridge are handled independently | src/bifaci/host_runtime.rs:4400 |
 | test425 | `test425_find_cartridge_for_cap_unknown` | TEST425: find_cartridge_for_cap returns None for unregistered cap | src/bifaci/host_runtime.rs:4560 |
-| test426 | `test426_single_master_req_response` | TEST426: Single master REQ/response routing | src/bifaci/relay_switch.rs:3459 |
-| test427 | `test427_multi_master_cap_routing` | TEST427: Multi-master cap routing | src/bifaci/relay_switch.rs:3523 |
-| test428 | `test428_unknown_cap_returns_error` | TEST428: Unknown cap returns error | src/bifaci/relay_switch.rs:3636 |
-| test429 | `test429_find_master_for_cap` | TEST429: Cap routing logic (find_master_for_cap) | src/bifaci/relay_switch.rs:3400 |
-| test430 | `test430_tie_breaking_same_cap_multiple_masters` | TEST430: Tie-breaking (same cap on multiple masters - first match wins, routing is consistent) | src/bifaci/relay_switch.rs:3668 |
-| test431 | `test431_continuation_frame_routing` | TEST431: Continuation frame routing (CHUNK, END follow REQ) | src/bifaci/relay_switch.rs:3771 |
-| test432 | `test432_empty_masters_allowed` | TEST432: Empty masters list creates empty switch, add_master works | src/bifaci/relay_switch.rs:3855 |
-| test433 | `test433_capability_aggregation_deduplicates` | TEST433: Capability aggregation deduplicates caps | src/bifaci/relay_switch.rs:3873 |
-| test434 | `test434_limits_negotiation_minimum` | TEST434: Limits negotiation takes minimum | src/bifaci/relay_switch.rs:3920 |
-| test435 | `test435_urn_matching_exact_and_accepts` | TEST435: URN matching (exact vs accepts()) | src/bifaci/relay_switch.rs:3961 |
+| test426 | `test426_single_master_req_response` | TEST426: Single master REQ/response routing | src/bifaci/relay_switch.rs:3467 |
+| test427 | `test427_multi_master_cap_routing` | TEST427: Multi-master cap routing | src/bifaci/relay_switch.rs:3531 |
+| test428 | `test428_unknown_cap_returns_error` | TEST428: Unknown cap returns error | src/bifaci/relay_switch.rs:3644 |
+| test429 | `test429_find_master_for_cap` | TEST429: Cap routing logic (find_master_for_cap) | src/bifaci/relay_switch.rs:3408 |
+| test430 | `test430_tie_breaking_same_cap_multiple_masters` | TEST430: Tie-breaking (same cap on multiple masters - first match wins, routing is consistent) | src/bifaci/relay_switch.rs:3676 |
+| test431 | `test431_continuation_frame_routing` | TEST431: Continuation frame routing (CHUNK, END follow REQ) | src/bifaci/relay_switch.rs:3779 |
+| test432 | `test432_empty_masters_allowed` | TEST432: Empty masters list creates empty switch, add_master works | src/bifaci/relay_switch.rs:3863 |
+| test433 | `test433_capability_aggregation_deduplicates` | TEST433: Capability aggregation deduplicates caps | src/bifaci/relay_switch.rs:3881 |
+| test434 | `test434_limits_negotiation_minimum` | TEST434: Limits negotiation takes minimum | src/bifaci/relay_switch.rs:3928 |
+| test435 | `test435_urn_matching_exact_and_accepts` | TEST435: URN matching (exact vs accepts()) | src/bifaci/relay_switch.rs:3969 |
 | test436 | `test436_compute_checksum` | TEST436: Verify FNV-1a checksum function produces consistent results | src/bifaci/frame.rs:1687 |
-| test437 | `test437_preferred_cap_routes_to_generic` | TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates | src/bifaci/relay_switch.rs:4064 |
-| test438 | `test438_preferred_cap_falls_back_when_not_comparable` | TEST438: find_master_for_cap with preference falls back to closest-specificity when preferred cap is not in the comparable set | src/bifaci/relay_switch.rs:4120 |
-| test439 | `test439_generic_provider_can_dispatch_specific_request` | TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists) With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists. | src/bifaci/relay_switch.rs:4158 |
+| test437 | `test437_preferred_cap_routes_to_generic` | TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates | src/bifaci/relay_switch.rs:4072 |
+| test438 | `test438_preferred_cap_falls_back_when_not_comparable` | TEST438: find_master_for_cap with preference falls back to closest-specificity when preferred cap is not in the comparable set | src/bifaci/relay_switch.rs:4128 |
+| test439 | `test439_generic_provider_can_dispatch_specific_request` | TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists) With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists. | src/bifaci/relay_switch.rs:4166 |
 | test440 | `test440_chunk_index_checksum_roundtrip` | TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode | src/bifaci/io.rs:1862 |
 | test441 | `test441_stream_end_chunk_count_roundtrip` | TEST441: STREAM_END frame with chunk_count roundtrips through encode/decode | src/bifaci/io.rs:1891 |
 | test442 | `test442_seq_assigner_monotonic_same_rid` | TEST442: SeqAssigner assigns seq 0,1,2,3 for consecutive frames with same RID | src/bifaci/frame.rs:1763 |
@@ -397,8 +397,8 @@ This catalog lists all tests in the Rust codebase.
 | test483 | `test483_verify_identity_fails_on_close` | TEST483: verify_identity fails when connection closes before response | src/bifaci/io.rs:2131 |
 | test485 | `test485_attach_cartridge_identity_verification_succeeds` | TEST485: attach_cartridge completes identity verification with working cartridge | src/bifaci/host_runtime.rs:4584 |
 | test486 | `test486_attach_cartridge_identity_verification_fails` | TEST486: attach_cartridge rejects cartridge that fails identity verification | src/bifaci/host_runtime.rs:4627 |
-| test487 | `test487_relay_switch_identity_verification_succeeds` | TEST487: RelaySwitch construction verifies identity through relay chain | src/bifaci/relay_switch.rs:4200 |
-| test488 | `test488_relay_switch_identity_verification_fails` | TEST488: RelaySwitch construction fails when master's identity verification fails | src/bifaci/relay_switch.rs:4236 |
+| test487 | `test487_relay_switch_identity_verification_succeeds` | TEST487: RelaySwitch construction verifies identity through relay chain | src/bifaci/relay_switch.rs:4208 |
+| test488 | `test488_relay_switch_identity_verification_fails` | TEST488: RelaySwitch construction fails when master's identity verification fails | src/bifaci/relay_switch.rs:4244 |
 | test490 | `test490_identity_verification_multiple_cartridges` | TEST490: Identity verification with multiple cartridges through single relay Both cartridges must pass identity verification independently before any real requests are routed. | src/bifaci/integration_tests.rs:1497 |
 | test491 | `test491_chunk_requires_chunk_index_and_checksum` | TEST491: Frame::chunk constructor requires and sets chunk_index and checksum | src/bifaci/frame.rs:2242 |
 | test492 | `test492_stream_end_requires_chunk_count` | TEST492: Frame::stream_end constructor requires and sets chunk_count | src/bifaci/frame.rs:2264 |
@@ -554,7 +554,7 @@ This catalog lists all tests in the Rust codebase.
 | test663 | `test663_hello_failed_cartridge_removed_from_capabilities` | TEST663: Cartridge with hello_failed is permanently removed from capabilities | src/bifaci/host_runtime.rs:4786 |
 | test664 | `test664_running_cartridge_uses_manifest_caps` | TEST664: Attached cartridge replaces pre-registration caps with manifest caps. The pre-attach `cap_groups` (from probe-time discovery) get superseded by the post-HELLO `cap_groups` from the actual handshake. | src/bifaci/host_runtime.rs:4837 |
 | test665 | `test665_cap_table_mixed_running_and_non_running` | TEST665: Cap table aggregates caps from every healthy cartridge — attached/running cartridges contribute their post-HELLO cap_groups, registered-but-not-yet-spawned cartridges contribute their probe-time cap_groups. Both flow through the same `cap_urns()` view. | src/bifaci/host_runtime.rs:4905 |
-| test666 | `test666_preferred_cap_routing` | TEST666: Preferred cap routing - routes to exact equivalent when multiple masters match | src/bifaci/relay_switch.rs:4776 |
+| test666 | `test666_preferred_cap_routing` | TEST666: Preferred cap routing - routes to exact equivalent when multiple masters match | src/bifaci/relay_switch.rs:4784 |
 | test667 | `test667_verify_chunk_checksum_detects_corruption` | TEST667: verify_chunk_checksum detects corrupted payload | src/bifaci/frame.rs:3063 |
 | test668 | `test668_resolve_slot_with_populated_byte_slot_values` | TEST668: resolve_binding returns byte values when slot is populated with data | src/planner/argument_binding.rs:800 |
 | test669 | `test669_resolve_slot_falls_back_to_default` | TEST669: resolve_binding falls back to cap default value when slot has no data | src/planner/argument_binding.rs:836 |
@@ -745,7 +745,7 @@ This catalog lists all tests in the Rust codebase.
 | test902 | `test902_compute_checksum_empty` | TEST902: Verify FNV-1a checksum handles empty data | src/bifaci/frame.rs:1709 |
 | test903 | `test903_chunk_with_chunk_index_and_checksum` | TEST903: Verify CHUNK frame can store chunk_index and checksum fields | src/bifaci/frame.rs:1720 |
 | test904 | `test904_stream_end_with_chunk_count` | TEST904: Verify STREAM_END frame can store chunk_count field | src/bifaci/frame.rs:1745 |
-| test905 | `test905_send_to_master_build_request_frames_roundtrip` | TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessCartridgeHost roundtrip | src/bifaci/relay_switch.rs:4432 |
+| test905 | `test905_send_to_master_build_request_frames_roundtrip` | TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessCartridgeHost roundtrip | src/bifaci/relay_switch.rs:4440 |
 | test906 | `test906_full_path_identity_verification` | TEST906: Full path identity verification: engine → host (attach_cartridge) → cartridge This verifies that attach_cartridge completes identity verification end-to-end and the cartridge is ready to handle subsequent requests. | src/bifaci/integration_tests.rs:1351 |
 | test910 | `test910_map_progress_monotonic` | TEST910: map_progress output is monotonic for monotonically increasing input | src/orchestrator/executor.rs:1657 |
 | test911 | `test911_map_progress_bounded` | TEST911: map_progress output is bounded within [base, base+weight] | src/orchestrator/executor.rs:1675 |
@@ -891,7 +891,7 @@ This catalog lists all tests in the Rust codebase.
 | test1133 | `test1133_media_spec_def_documentation_lifecycle` | TEST1133: MediaSpecDef set/clear lifecycle for documentation. Catches a regression where the setter or clearer accidentally writes to or reads from `description` (the short field) instead of `documentation` (the long markdown body). | src/media/spec.rs:1192 |
 | test1134 | `test1134_all_abstraction_error_variants_are_machine_abstraction_error` | TEST1134: All MachineAbstractionError variants are of type MachineAbstractionError and are convertible to MachineParseError::Resolution. This pins the error hierarchy so a refactor that accidentally changes the type relationship is caught immediately. | src/machine/error.rs:156 |
 | test1135 | `test1135_strand_node_urn_returns_media_urn_at_node_id` | TEST1135: MachineStrand::node_urn(id) returns the MediaUrn at that NodeId. For a single-cap strand (pdf → extract → txt), there are exactly two nodes and each returns a valid URN. | src/machine/graph.rs:649 |
-| test1136 | `test1136_parse_machine_undefined_alias_raises_syntax_error` | TEST1136: parse_machine with an undefined cap alias raises MachineParseError wrapping MachineSyntaxError::UndefinedAlias. This pins the error path so an alias lookup failure is always surfaced as a syntax error (not a resolution error or a panic). | src/machine/parser.rs:741 |
+| test1136 | `test1136_parse_machine_undefined_alias_raises_syntax_error` | TEST1136: parse_machine with an undefined cap alias raises MachineParseError wrapping MachineSyntaxError::UndefinedAlias. This pins the error path so an alias lookup failure is always surfaced as a syntax error (not a resolution error or a panic). | src/machine/parser.rs:831 |
 | test1137 | `test1137_two_strand_machine_serializes_to_notation_containing_both_ops` | TEST1137: A machine built from two independent strands serializes to a non-empty notation string that contains both op tags. Checks that multi-strand serialization doesn't lose or merge strands. | src/machine/serializer.rs:629 |
 | test1138 | `test1138_assignment_bindings_are_sorted_by_cap_arg_media_urn` | TEST1138: EdgeAssignmentBinding list is sorted by cap_arg_media_urn for canonical form. A two-source cap whose args are added in reverse-alphabetical order must still produce bindings sorted alphabetically by cap_arg_media_urn, enabling canonical comparison regardless of creation order. | src/machine/resolve.rs:1274 |
 | test1139 | `test1139_resolve_inputs_confirmed_delegates_to_detect_file_confirmed` | TEST1139: resolve_inputs_confirmed delegates to detect_file_confirmed and returns the resolved URN for each file. A mock invoker returning a single URN must propagate through to the ResolvedInputSet. | src/input_resolver/resolver.rs:749 |
@@ -918,15 +918,15 @@ This catalog lists all tests in the Rust codebase.
 | test1160 | `test1160_machine_run_new_stores_canonical_notation` | TEST1160: Creating a MachineRun stores the canonical notation and starts in the pending state. | src/machine/graph.rs:745 |
 | test1161 | `test1161_simple_linear_chain_conversion` | TEST1161: Converting a simple linear plan produces resolved edges for the cap-to-cap chain. | src/orchestrator/plan_converter.rs:236 |
 | test1162 | `test1162_heartbeat_frame_with_memory_meta` | TEST1162: Heartbeat frames preserve self-reported memory values stored in metadata. | src/bifaci/frame.rs:1338 |
-| test1163 | `test1163_parse_single_strand_two_caps_connected_via_shared_node` | TEST1163: Parsing one connected strand yields a single machine strand with both caps connected by the shared node. | src/machine/parser.rs:544 |
-| test1164 | `test1164_parse_two_disconnected_strands_yields_two_machine_strands` | TEST1164: Parsing two disconnected strand definitions yields two separate machine strands. | src/machine/parser.rs:566 |
-| test1165 | `test1165_parse_unknown_cap_in_registry_fails_hard` | TEST1165: Parsing fails hard when a referenced cap is missing from the registry cache. | src/machine/parser.rs:615 |
-| test1166 | `test1166_parse_duplicate_alias_is_syntax_error` | TEST1166: Duplicate header aliases are reported as syntax errors. | src/machine/parser.rs:631 |
-| test1167 | `test1167_parse_undefined_alias_is_syntax_error` | TEST1167: Wiring that references an undefined alias is reported as a syntax error. | src/machine/parser.rs:646 |
-| test1168 | `test1168_parse_node_alias_collision_with_header_alias_fails_hard` | TEST1168: Parsing rejects node names that collide with declared cap aliases. | src/machine/parser.rs:660 |
-| test1169 | `test1169_parse_loop_marker_sets_is_loop_on_resolved_edge` | TEST1169: Loop markers in notation set the resolved edge loop flag on the following cap step. | src/machine/parser.rs:678 |
-| test1170 | `test1170_parse_then_serialize_round_trips_to_canonical_form` | TEST1170: Parsing and then serializing machine notation round-trips to the canonical form. | src/machine/parser.rs:701 |
-| test1171 | `test1171_parse_empty_notation_is_syntax_error` | TEST1171: Empty machine notation is rejected as a syntax error. | src/machine/parser.rs:728 |
+| test1163 | `test1163_parse_single_strand_two_caps_connected_via_shared_node` | TEST1163: Parsing one connected strand yields a single machine strand with both caps connected by the shared node. | src/machine/parser.rs:634 |
+| test1164 | `test1164_parse_two_disconnected_strands_yields_two_machine_strands` | TEST1164: Parsing two disconnected strand definitions yields two separate machine strands. | src/machine/parser.rs:656 |
+| test1165 | `test1165_parse_unknown_cap_in_registry_fails_hard` | TEST1165: Parsing fails hard when a referenced cap is missing from the registry cache. | src/machine/parser.rs:705 |
+| test1166 | `test1166_parse_duplicate_alias_is_syntax_error` | TEST1166: Duplicate header aliases are reported as syntax errors. | src/machine/parser.rs:721 |
+| test1167 | `test1167_parse_undefined_alias_is_syntax_error` | TEST1167: Wiring that references an undefined alias is reported as a syntax error. | src/machine/parser.rs:736 |
+| test1168 | `test1168_parse_node_alias_collision_with_header_alias_fails_hard` | TEST1168: Parsing rejects node names that collide with declared cap aliases. | src/machine/parser.rs:750 |
+| test1169 | `test1169_parse_loop_marker_sets_is_loop_on_resolved_edge` | TEST1169: Loop markers in notation set the resolved edge loop flag on the following cap step. | src/machine/parser.rs:768 |
+| test1170 | `test1170_parse_then_serialize_round_trips_to_canonical_form` | TEST1170: Parsing and then serializing machine notation round-trips to the canonical form. | src/machine/parser.rs:791 |
+| test1171 | `test1171_parse_empty_notation_is_syntax_error` | TEST1171: Empty machine notation is rejected as a syntax error. | src/machine/parser.rs:818 |
 | test1172 | `test1172_serialize_two_step_strand_emits_global_aliases_and_node_names` | TEST1172: Serializing a two-step strand emits the expected aliases and node names. | src/machine/serializer.rs:515 |
 | test1173 | `test1173_serialize_then_parse_round_trip_preserves_strict_equivalence` | TEST1173: Serializing and reparsing a machine preserves strict machine equivalence. | src/machine/serializer.rs:538 |
 | test1174 | `test1174_line_based_format_round_trips_to_same_machine` | TEST1174: The line-based notation format round-trips back to the same machine. | src/machine/serializer.rs:558 |
@@ -1001,20 +1001,20 @@ This catalog lists all tests in the Rust codebase.
 | test1253 | `test1253_process_handle_kill_unknown_pid_is_noop` | TEST1253: Killing an unknown PID is accepted as an asynchronous no-op command. | src/bifaci/host_runtime.rs:5037 |
 | test1254 | `test1254_oom_kill_sends_err_with_oom_killed_code` | TEST1254: OOM shutdowns emit OOM_KILLED ERR frames for in-flight requests. | src/bifaci/host_runtime.rs:5054 |
 | test1255 | `test1255_app_exit_suppresses_err_frames` | TEST1255: App-exit shutdowns suppress ERR frames and close cleanly without noise. | src/bifaci/host_runtime.rs:5181 |
-| test1256 | `test1256_parse_simple_machine` | TEST1256: A single declared cap and one wiring parse into a two-node one-edge DAG. | src/orchestrator/parser.rs:304 |
-| test1257 | `test1257_parse_two_step_chain` | TEST1257: Two sequential wirings preserve the intermediate node media type. | src/orchestrator/parser.rs:343 |
-| test1258 | `test1258_parse_fan_out` | TEST1258: One source node can fan out into multiple caps and target nodes. | src/orchestrator/parser.rs:387 |
-| test1259 | `test1259_parse_fan_in` | TEST1259: Fan-in wiring resolves multiple upstream outputs into one multi-arg cap. | src/orchestrator/parser.rs:429 |
-| test1260 | `test1260_parse_loop_wiring` | TEST1260: LOOP wiring parses as a single edge while preserving the loop marker semantics. | src/orchestrator/parser.rs:476 |
-| test1261 | `test1261_cap_not_found_in_registry` | TEST1261: Parsing fails with CapNotFound when a declared cap is absent from the registry. | src/orchestrator/parser.rs:502 |
-| test1262 | `test1262_invalid_machine_notation` | TEST1262: Non-machine text fails with a machine syntax parse error. | src/orchestrator/parser.rs:523 |
-| test1263 | `test1263_cycle_detection` | TEST1263: Cyclic wirings are rejected as non-DAG orchestrations. | src/orchestrator/parser.rs:542 |
-| test1264 | `test1264_incompatible_media_types_at_shared_node` | TEST1264: Shared nodes with incompatible upstream and downstream media fail during parsing. | src/orchestrator/parser.rs:573 |
-| test1265 | `test1265_compatible_media_urns_at_shared_node` | TEST1265: Shared nodes accept compatible media URNs when one is a more specific form of the other. | src/orchestrator/parser.rs:615 |
-| test1266 | `test1266_structure_mismatch_record_to_opaque` | TEST1266: Record-to-opaque structure mismatches are rejected once structure checking is enabled. | src/orchestrator/parser.rs:657 |
-| test1267 | `test1267_structure_match_both_record` | TEST1267: Record-shaped outputs can feed record-shaped inputs without error. | src/orchestrator/parser.rs:703 |
-| test1268 | `test1268_structure_match_both_opaque` | TEST1268: Opaque outputs can feed opaque inputs without triggering structure conflicts. | src/orchestrator/parser.rs:738 |
-| test1269 | `test1269_parse_multiline_machine` | TEST1269: Multi-line machine notation parses successfully with the same semantics as inline notation. | src/orchestrator/parser.rs:773 |
+| test1256 | `test1256_parse_simple_machine` | TEST1256: A single declared cap and one wiring parse into a two-node one-edge DAG. | src/orchestrator/parser.rs:308 |
+| test1257 | `test1257_parse_two_step_chain` | TEST1257: Two sequential wirings preserve the intermediate node media type. | src/orchestrator/parser.rs:347 |
+| test1258 | `test1258_parse_fan_out` | TEST1258: One source node can fan out into multiple caps and target nodes. | src/orchestrator/parser.rs:391 |
+| test1259 | `test1259_parse_fan_in` | TEST1259: Fan-in wiring resolves multiple upstream outputs into one multi-arg cap. | src/orchestrator/parser.rs:433 |
+| test1260 | `test1260_parse_loop_wiring` | TEST1260: LOOP wiring parses as a single edge while preserving the loop marker semantics. | src/orchestrator/parser.rs:480 |
+| test1261 | `test1261_cap_not_found_in_registry` | TEST1261: Parsing fails with CapNotFound when a declared cap is absent from the registry. | src/orchestrator/parser.rs:506 |
+| test1262 | `test1262_invalid_machine_notation` | TEST1262: Non-machine text fails with a machine syntax parse error. | src/orchestrator/parser.rs:527 |
+| test1263 | `test1263_cycle_detection` | TEST1263: Cyclic wirings are rejected as non-DAG orchestrations. | src/orchestrator/parser.rs:546 |
+| test1264 | `test1264_incompatible_media_types_at_shared_node` | TEST1264: Shared nodes with incompatible upstream and downstream media fail during parsing. | src/orchestrator/parser.rs:577 |
+| test1265 | `test1265_compatible_media_urns_at_shared_node` | TEST1265: Shared nodes accept compatible media URNs when one is a more specific form of the other. | src/orchestrator/parser.rs:619 |
+| test1266 | `test1266_structure_mismatch_record_to_opaque` | TEST1266: Record-to-opaque structure mismatches are rejected once structure checking is enabled. | src/orchestrator/parser.rs:661 |
+| test1267 | `test1267_structure_match_both_record` | TEST1267: Record-shaped outputs can feed record-shaped inputs without error. | src/orchestrator/parser.rs:707 |
+| test1268 | `test1268_structure_match_both_opaque` | TEST1268: Opaque outputs can feed opaque inputs without triggering structure conflicts. | src/orchestrator/parser.rs:742 |
+| test1269 | `test1269_parse_multiline_machine` | TEST1269: Multi-line machine notation parses successfully with the same semantics as inline notation. | src/orchestrator/parser.rs:777 |
 | test1270 | `test1270_get_own_memory_mb_returns_values` | TEST1270: Runtime memory inspection returns non-negative resident and virtual memory values. | src/bifaci/cartridge_runtime.rs:8476 |
 | test1271 | `test1271_media_adapter_selection_constant` | TEST1271: MEDIA_ADAPTER_SELECTION constant parses and has expected tags | src/urn/media_urn.rs:1375 |
 | test1272 | `test1272_adapter_cap_constant_parses` | TEST1272: CAP_ADAPTER_SELECTION constant parses as a valid CapUrn | src/standard/caps.rs:1348 |
@@ -1057,13 +1057,13 @@ This catalog lists all tests in the Rust codebase.
 | test1511 | `test1511_read_from_dir_rejects_registry_in_dev_folder` | TEST1511: Three-place rule — a registry cartridge.json under the dev folder is rejected. Equivalent to a published cartridge being dropped into the dev tree; the dev tree is explicitly the only place a null `registry_url` is allowed, so a non-null one here means the layout is corrupted. | src/bifaci/cartridge_json.rs:846 |
 | test1512 | `test1512_read_from_dir_accepts_dev_in_dev_folder` | TEST1512: A dev cartridge.json under the dev folder is accepted. This is the only path that ends with a successful dev install; together with 1510/1511 it pins the rule that dev provenance and the dev folder are an inseparable pair. | src/bifaci/cartridge_json.rs:879 |
 | test1513 | `test1513_installed_from_optional_round_trip` | TEST1513: `installed_from` is opaque optional metadata. A cartridge.json that omits the field MUST parse cleanly with `installed_from == None`, and a CartridgeJson with `installed_from == None` MUST NOT emit the key on serialize. Pins the new contract that nothing in the host or engine branches on this field — it's audit/telemetry hint only and the absence-vs-Some distinction must round-trip. | src/bifaci/cartridge_json.rs:625 |
-| test1720 | `test1720_kind_serde_renames_match_proto_snake_case` | / TEST1720: Every variant serializes to the snake_case / string the proto and the Swift / Go / Python ports use. / Adding a new variant requires an entry here AND a matching / CARTRIDGE_ATTACHMENT_ERROR_FOO entry in cartridge.proto; / the test fails with a clear "expected X for Y" message / when the two sides drift. | src/bifaci/relay_switch.rs:5169 |
-| test1721 | `test1721_kind_decodes_wire_format_into_expected_variants` | / TEST1721: Wire-format JSON deserializes into the right / variant. This is the engine-receives-from-XPC path: the / machfab-mac side emits `{"kind":"bad_installation",...}` / and the engine must resolve it to `BadInstallation`. / Asserts every variant explicitly so a single-variant typo / in the rename map can't hide behind a passing healthy-case. | src/bifaci/relay_switch.rs:5204 |
-| test1722 | `test1722_unknown_kind_fails_to_decode` | / TEST1722: An unknown wire kind FAILS to decode rather than / silently coercing to a default variant. Older capdag binaries / that don't know `bad_installation` or `disabled` will see / those strings on the wire from a newer Swift side; rejecting / the unknown variant is the correct behaviour because silently / coercing it would hide the version-skew bug. The engine's / per-master JSON parse failure path is what surfaces this to / the operator (the master's manifest fails to parse and the / master is held unhealthy until the version is patched). | src/bifaci/relay_switch.rs:5360 |
-| test1730 | `test1730_lifecycle_serde_renames_match_proto_snake_case` | / TEST1730: Every `CartridgeLifecycle` variant serializes to / its proto snake_case name byte-for-byte. Adding a variant / requires an entry here AND a `CARTRIDGE_LIFECYCLE_FOO` / constant in `cartridge.proto`. Cross-language drift on this / enum makes lifecycle states silently invisible to one side / of the wire. | src/bifaci/relay_switch.rs:5236 |
-| test1731 | `test1731_lifecycle_default_is_discovered` | / TEST1731: `CartridgeLifecycle` defaults to `Discovered` / (the safe sentinel) — never `Operational`. Pins the / safe-default rule the doc explicitly calls out: a / freshly-constructed record without an explicit lifecycle / MUST NOT silently expose an un-inspected cartridge for / dispatch. | src/bifaci/relay_switch.rs:5262 |
-| test1732 | `test1732_installed_cartridge_record_lifecycle_defaults_when_missing` | / TEST1732: An `InstalledCartridgeRecord` deserialized from a / JSON payload that omits the `lifecycle` field defaults to / `Discovered` — never `Operational`. The wire-shape contract / covered by the safe-default rule. | src/bifaci/relay_switch.rs:5276 |
-| test1733 | `test1733_registry_url_scheme_validator` | / TEST1733: `validate_registry_url_scheme` accepts https / unconditionally, rejects non-https in production builds, / and accepts non-https in dev mode. Pins the deepest layer / of the HTTPS rule. | src/bifaci/relay_switch.rs:5304 |
+| test1720 | `test1720_kind_serde_renames_match_proto_snake_case` | / TEST1720: Every variant serializes to the snake_case / string the proto and the Swift / Go / Python ports use. / Adding a new variant requires an entry here AND a matching / CARTRIDGE_ATTACHMENT_ERROR_FOO entry in cartridge.proto; / the test fails with a clear "expected X for Y" message / when the two sides drift. | src/bifaci/relay_switch.rs:5177 |
+| test1721 | `test1721_kind_decodes_wire_format_into_expected_variants` | / TEST1721: Wire-format JSON deserializes into the right / variant. This is the engine-receives-from-XPC path: the / machfab-mac side emits `{"kind":"bad_installation",...}` / and the engine must resolve it to `BadInstallation`. / Asserts every variant explicitly so a single-variant typo / in the rename map can't hide behind a passing healthy-case. | src/bifaci/relay_switch.rs:5212 |
+| test1722 | `test1722_unknown_kind_fails_to_decode` | / TEST1722: An unknown wire kind FAILS to decode rather than / silently coercing to a default variant. Older capdag binaries / that don't know `bad_installation` or `disabled` will see / those strings on the wire from a newer Swift side; rejecting / the unknown variant is the correct behaviour because silently / coercing it would hide the version-skew bug. The engine's / per-master JSON parse failure path is what surfaces this to / the operator (the master's manifest fails to parse and the / master is held unhealthy until the version is patched). | src/bifaci/relay_switch.rs:5368 |
+| test1730 | `test1730_lifecycle_serde_renames_match_proto_snake_case` | / TEST1730: Every `CartridgeLifecycle` variant serializes to / its proto snake_case name byte-for-byte. Adding a variant / requires an entry here AND a `CARTRIDGE_LIFECYCLE_FOO` / constant in `cartridge.proto`. Cross-language drift on this / enum makes lifecycle states silently invisible to one side / of the wire. | src/bifaci/relay_switch.rs:5244 |
+| test1731 | `test1731_lifecycle_default_is_discovered` | / TEST1731: `CartridgeLifecycle` defaults to `Discovered` / (the safe sentinel) — never `Operational`. Pins the / safe-default rule the doc explicitly calls out: a / freshly-constructed record without an explicit lifecycle / MUST NOT silently expose an un-inspected cartridge for / dispatch. | src/bifaci/relay_switch.rs:5270 |
+| test1732 | `test1732_installed_cartridge_record_lifecycle_defaults_when_missing` | / TEST1732: An `InstalledCartridgeRecord` deserialized from a / JSON payload that omits the `lifecycle` field defaults to / `Discovered` — never `Operational`. The wire-shape contract / covered by the safe-default rule. | src/bifaci/relay_switch.rs:5284 |
+| test1733 | `test1733_registry_url_scheme_validator` | / TEST1733: `validate_registry_url_scheme` accepts https / unconditionally, rejects non-https in production builds, / and accepts non-https in dev mode. Pins the deepest layer / of the HTTPS rule. | src/bifaci/relay_switch.rs:5312 |
 | test1800 | `test1800_kind_identity_only_for_bare_cap` | TEST1800: Identity classifier — and only the bare cap: form qualifies. `cap:` is the fully generic morphism on every axis; adding any tag (even one that doesn't constrain in/out) demotes the cap to Transform because the operation/metadata axis is no longer fully generic. | src/urn/cap_urn.rs:2919 |
 | test1801 | `test1801_kind_source_when_input_is_void` | TEST1801: Source classifier — in=media:void, out non-void. The y dimension may carry any tags; void on the input alone is what matters. | src/urn/cap_urn.rs:2952 |
 | test1802 | `test1802_kind_sink_when_output_is_void` | TEST1802: Sink classifier — out=media:void, in non-void. | src/urn/cap_urn.rs:2969 |
@@ -1088,14 +1088,14 @@ This catalog lists all tests in the Rust codebase.
 | test1845 | `test1845_axis_weighting_in_dominates_y` | TEST1845: With equal out-axis, in-axis dominates over y-axis. | src/urn/cap_urn.rs:3389 |
 | test1846 | `test1846_axis_weighting_decoded_layout` | TEST1846: Specificity composes uniformly across all three axes. For a fully-loaded cap with one of each form per axis, the total reads as out_score, in_score, y_score in distinct digit slots. | src/urn/cap_urn.rs:3408 |
 | | | | |
-| test489 ⚠ | `test489_add_master_dynamic` | TEST489: add_master dynamically connects new host to running switch | src/bifaci/relay_switch.rs:4602 |
-| test489 ⚠ | `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` | TEST489: When a master initially advertises empty caps (so `add_master` skips the identity probe) and later sends a RelayNotify update with non-empty caps, the relay must run an end-to-end identity probe before the new caps become routable. A master that fails to answer the runtime probe with the expected nonce echo must end up unhealthy with `last_error` populated, and its caps must NOT appear in the cap_table. This test guards the wire-protocol regression where the RelayNotify-update path published caps without re-verifying identity end-to-end. Removing the runtime probe re-introduces the hole; this test fails loudly when that happens. | src/bifaci/relay_switch.rs:4309 |
+| test489 ⚠ | `test489_add_master_dynamic` | TEST489: add_master dynamically connects new host to running switch | src/bifaci/relay_switch.rs:4610 |
+| test489 ⚠ | `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` | TEST489: When a master initially advertises empty caps (so `add_master` skips the identity probe) and later sends a RelayNotify update with non-empty caps, the relay must run an end-to-end identity probe before the new caps become routable. A master that fails to answer the runtime probe with the expected nonce echo must end up unhealthy with `last_error` populated, and its caps must NOT appear in the cap_table. This test guards the wire-protocol regression where the RelayNotify-update path published caps without re-verifying identity end-to-end. Removing the runtime probe re-introduces the hole; this test fails loudly when that happens. | src/bifaci/relay_switch.rs:4317 |
 | | | | |
-| unnumbered | `test_all_masters_ready_does_not_overshoot` |  | src/bifaci/relay_switch.rs:5128 |
-| unnumbered | `test_all_masters_ready_false_when_expected_count_unset` |  | src/bifaci/relay_switch.rs:5036 |
-| unnumbered | `test_all_masters_ready_false_when_partially_connected` |  | src/bifaci/relay_switch.rs:5053 |
-| unnumbered | `test_all_masters_ready_true_when_expectation_met` |  | src/bifaci/relay_switch.rs:5068 |
-| unnumbered | `test_all_masters_ready_true_when_masters_connected_but_capless` |  | src/bifaci/relay_switch.rs:5106 |
+| unnumbered | `test_all_masters_ready_does_not_overshoot` |  | src/bifaci/relay_switch.rs:5136 |
+| unnumbered | `test_all_masters_ready_false_when_expected_count_unset` |  | src/bifaci/relay_switch.rs:5044 |
+| unnumbered | `test_all_masters_ready_false_when_partially_connected` |  | src/bifaci/relay_switch.rs:5061 |
+| unnumbered | `test_all_masters_ready_true_when_expectation_met` |  | src/bifaci/relay_switch.rs:5076 |
+| unnumbered | `test_all_masters_ready_true_when_masters_connected_but_capless` |  | src/bifaci/relay_switch.rs:5114 |
 
 ---
 
@@ -1105,8 +1105,8 @@ The following test numbers are assigned to more than one function. Keep the firs
 
 ### test489 (2 occurrences)
 
-- `test489_add_master_dynamic` — src/bifaci/relay_switch.rs:4602
-- `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` — src/bifaci/relay_switch.rs:4309
+- `test489_add_master_dynamic` — src/bifaci/relay_switch.rs:4610
+- `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` — src/bifaci/relay_switch.rs:4317
 
 **Suggested free number(s):** test484
 
@@ -1116,11 +1116,11 @@ The following test numbers are assigned to more than one function. Keep the firs
 
 The following tests are cataloged but do not currently participate in numeric test indexing.
 
-- `test_all_masters_ready_does_not_overshoot` — src/bifaci/relay_switch.rs:5128
-- `test_all_masters_ready_false_when_expected_count_unset` — src/bifaci/relay_switch.rs:5036
-- `test_all_masters_ready_false_when_partially_connected` — src/bifaci/relay_switch.rs:5053
-- `test_all_masters_ready_true_when_expectation_met` — src/bifaci/relay_switch.rs:5068
-- `test_all_masters_ready_true_when_masters_connected_but_capless` — src/bifaci/relay_switch.rs:5106
+- `test_all_masters_ready_does_not_overshoot` — src/bifaci/relay_switch.rs:5136
+- `test_all_masters_ready_false_when_expected_count_unset` — src/bifaci/relay_switch.rs:5044
+- `test_all_masters_ready_false_when_partially_connected` — src/bifaci/relay_switch.rs:5061
+- `test_all_masters_ready_true_when_expectation_met` — src/bifaci/relay_switch.rs:5076
+- `test_all_masters_ready_true_when_masters_connected_but_capless` — src/bifaci/relay_switch.rs:5114
 
 ---
 
