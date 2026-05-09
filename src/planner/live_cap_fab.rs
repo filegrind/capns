@@ -485,14 +485,22 @@ impl LiveCapFab {
                 }
                 None => {
                     rejected_count += 1;
-                    tracing::error!(
+                    // Warn rather than error: this fires during the
+                    // narrow window where a cartridge advertises a
+                    // cap before the registry has finished hydrating
+                    // its in-memory cache from disk + R2. The cap
+                    // is dropped from THIS LiveCapFab pass but the
+                    // registry's background fetcher will pick it up
+                    // and the next refresh will land it. Keeping it
+                    // at warn keeps the diagnostic visible without
+                    // dirtying the engine's error stream during the
+                    // expected startup race.
+                    tracing::warn!(
                         cap_urn = %cap_urn,
                         cap_urn_raw = cap_urn_str,
-                        "[LiveCapFab] REJECTED: cartridge reported cap URN has no equivalent \
-                         in the registry. Every cap a cartridge provides must have a matching \
-                         registry definition. Either the cartridge is advertising an unknown \
-                         capability or the registry is missing a cap definition for this URN. \
-                         This cap will NOT be added to the graph."
+                        "[LiveCapFab] dropped: cartridge reported cap URN has no equivalent \
+                         in the registry yet. The registry's background fetcher will pull it \
+                         in; subsequent LiveCapFab refreshes will add it to the graph."
                     );
                 }
             }

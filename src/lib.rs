@@ -68,11 +68,10 @@ pub use standard::*;
 // Bifaci protocol — frames, I/O, runtimes
 pub use bifaci::cartridge_runtime::{
     find_stream, find_stream_meta, find_stream_str, require_stream, require_stream_str,
-    AdapterSelectionOp, CapacityHandle, CartridgeRuntime, CliStreamEmitter, DiscardOp, FrameSender,
-    IdentityOp,
-    InputPackage, InputStream, NoPeerInvoker, OpFactory, OutputStream, PeerCall, PeerInvoker,
-    PeerResponse, PeerResponseItem, ProgressSender, Request, RuntimeError, StreamError, StreamMeta,
-    StreamSender, WET_KEY_REQUEST,
+    AdapterSelectionOp, CapacityHandle, CartridgeRuntime, CliStreamEmitter, DiscardOp,
+    FrameSender, IdentityOp, InputPackage, InputStream, NoPeerInvoker, OpFactory,
+    OutputStream, PeerCall, PeerInvoker, PeerResponse, PeerResponseItem, ProgressSender,
+    Request, RuntimeError, StreamError, StreamMeta, StreamSender, WET_KEY_REQUEST,
 };
 pub use bifaci::decode_chunk_payload;
 pub use bifaci::frame::{
