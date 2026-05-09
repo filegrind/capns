@@ -187,7 +187,8 @@ pub use planner::{
 
 // Machine notation — typed DAG path identifiers
 pub use machine::{
-    parse_machine, parse_machine_with_node_names, Machine, MachineAbstractionError, MachineEdge,
+    parse_machine, parse_machine_async, parse_machine_with_node_names,
+    parse_machine_with_node_names_async, Machine, MachineAbstractionError, MachineEdge,
     MachineParseError, MachineRun, MachineRunStatus, MachineStrand, MachineSyntaxError,
     NotationFormat, StrandNodeNames,
 };

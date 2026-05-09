@@ -400,6 +400,96 @@ pub fn parse_machine_with_node_names(
     Ok((Machine::from_resolved_strands(strands), strand_node_names))
 }
 
+/// Run only the pest grammar parse over `input` and return the
+/// cap URN strings declared in `[alias cap:...]` headers, in
+/// textual order with duplicates suppressed.
+///
+/// This is a pure syntactic pass: it does not consult the
+/// registry, validate cap-URN structure beyond what pest's
+/// grammar enforces, or run any of the resolver phases. It
+/// exists so the async wrappers below can warm the cap cache
+/// before delegating to the existing sync resolver, without
+/// duplicating the resolver itself.
+fn extract_header_cap_urns(input: &str) -> Result<Vec<String>, MachineParseError> {
+    let pairs = MachineParser::parse(Rule::program, input.trim()).map_err(|e| {
+        MachineSyntaxError::ParseError {
+            details: format!("{}", e),
+        }
+    })?;
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut urns: Vec<String> = Vec::new();
+    let program = pairs
+        .into_iter()
+        .next()
+        .expect("pest produces a program rule");
+    for pair in program.into_inner() {
+        if pair.as_rule() != Rule::stmt {
+            continue;
+        }
+        let inner = pair.into_inner().next().expect("stmt wraps inner");
+        let content = inner
+            .into_inner()
+            .next()
+            .expect("inner wraps header or wiring");
+        if content.as_rule() != Rule::header {
+            continue;
+        }
+        let mut inner_pairs = content.into_inner();
+        let _alias = inner_pairs.next();
+        let cap_urn_str = inner_pairs
+            .next()
+            .expect("header has cap_urn")
+            .as_str()
+            .to_string();
+        if seen.insert(cap_urn_str.clone()) {
+            urns.push(cap_urn_str);
+        }
+    }
+    Ok(urns)
+}
+
+/// Async parallel of `parse_machine_with_node_names`.
+///
+/// Differs from the sync version only in that it pre-warms the
+/// `FabricRegistry`'s cap cache via `get_cap(...).await` for
+/// every cap URN declared in the notation's headers BEFORE
+/// running the existing sync resolver. After the warm-up the
+/// resolver's synchronous `get_cached_cap` lookups all hit cache,
+/// so the resolver code is unchanged.
+///
+/// Use this from any `async` context where the registry may
+/// need to fetch caps over the network — notably the scenarios
+/// integration tests, which run with internet access and do not
+/// pre-load any bundled catalog.
+pub async fn parse_machine_with_node_names_async(
+    input: &str,
+    registry: &FabricRegistry,
+) -> Result<(Machine, Vec<StrandNodeNames>), MachineParseError> {
+    let cap_urns = extract_header_cap_urns(input)?;
+    for urn in &cap_urns {
+        registry.get_cap(urn).await.map_err(|e| {
+            MachineSyntaxError::InvalidCapUrn {
+                alias: urn.clone(),
+                details: format!("registry could not resolve cap: {}", e),
+            }
+        })?;
+    }
+    parse_machine_with_node_names(input, registry)
+}
+
+/// Async parallel of `parse_machine`.
+///
+/// Wraps `parse_machine_with_node_names_async`, discarding the
+/// per-strand user node names.
+pub async fn parse_machine_async(
+    input: &str,
+    registry: &FabricRegistry,
+) -> Result<Machine, MachineParseError> {
+    let (machine, _names) = parse_machine_with_node_names_async(input, registry).await?;
+    Ok(machine)
+}
+
 impl Machine {
     /// Parse machine notation into a `Machine`.
     ///

@@ -2524,6 +2524,22 @@ impl RelaySwitch {
                     RelaySwitchError::Protocol("REQ frame missing cap URN".to_string())
                 })?;
 
+                // Validate XID-absence and assign XID FIRST, before any
+                // dispatch-failure paths: every frame the switch emits
+                // toward a master must carry an XID (the host_runtime's
+                // path-C invariant), including the synthetic ERR we may
+                // produce below for unhandled caps. Doing the assign
+                // up-front means the failure-path ERR can carry the same
+                // XID as the (failed) request would have, satisfying that
+                // invariant uniformly.
+                if frame.routing_id.is_some() {
+                    return Err(RelaySwitchError::Protocol(
+                        "REQ from cartridge should not have XID".to_string(),
+                    ));
+                }
+                let xid = MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
+                frame.routing_id = Some(xid.clone());
+
                 // Find destination master (no preference for peer requests)
                 let dest_idx_opt = self.find_master_for_cap(cap_urn, None).await;
                 if dest_idx_opt.is_none() {
@@ -2531,7 +2547,9 @@ impl RelaySwitch {
                     // Err(NoHandler) — which the pump logs and discards, leaving
                     // the caller hanging until the 120s activity timeout — send
                     // an ERR frame immediately back to the source master so the
-                    // peer call fails fast with a clear error.
+                    // peer call fails fast with a clear error. Stamp the
+                    // synthetic XID assigned above so the receiving cartridge
+                    // host runtime accepts it (path-C invariant).
                     tracing::warn!(
                         "[RelaySwitch] NO_HANDLER for peer REQ cap='{}' rid={:?} from_master={} — sending ERR to caller",
                         cap_urn, frame.id, source_idx
@@ -2541,21 +2559,11 @@ impl RelaySwitch {
                         "NO_HANDLER",
                         &format!("No handler found for cap: {}", cap_urn),
                     );
+                    err_frame.routing_id = Some(xid.clone());
                     let _ = self.write_to_master_idx_raw(source_idx, &mut err_frame).await;
                     return Ok(None);
                 }
                 let dest_idx = dest_idx_opt.unwrap();
-
-                // Assign XID if absent (first arrival at RelaySwitch)
-                // REQs from cartridges should NOT have XID (per spec)
-                if frame.routing_id.is_some() {
-                    return Err(RelaySwitchError::Protocol(
-                        "REQ from cartridge should not have XID".to_string(),
-                    ));
-                }
-
-                let xid = MessageId::Uint(self.xid_counter.fetch_add(1, Ordering::SeqCst) + 1);
-                frame.routing_id = Some(xid.clone());
 
                 let rid = frame.id.clone();
                 let key = (xid.clone(), rid.clone());

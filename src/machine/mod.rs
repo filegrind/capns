@@ -49,5 +49,8 @@ pub use notation_ast::{
     NotationGraphElementInfo, NotationGraphElementKind, NotationPosition, NotationSpan,
     ParsedHeader, ParsedStatement, ParsedWiring, SemanticTokenInfo, SemanticTokenType,
 };
-pub use parser::{parse_machine, parse_machine_with_node_names, StrandNodeNames};
+pub use parser::{
+    parse_machine, parse_machine_async, parse_machine_with_node_names,
+    parse_machine_with_node_names_async, StrandNodeNames,
+};
 pub use serializer::NotationFormat;

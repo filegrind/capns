@@ -11,7 +11,9 @@
 
 use super::types::{ParseOrchestrationError, ResolvedEdge, ResolvedGraph};
 use crate::cap::registry::FabricRegistry;
-use crate::machine::{parse_machine_with_node_names, MachineParseError, NodeId, StrandNodeNames};
+use crate::machine::{
+    parse_machine_with_node_names_async, MachineParseError, NodeId, StrandNodeNames,
+};
 use crate::{InputStructure, MediaUrn};
 use std::collections::HashMap;
 
@@ -87,7 +89,9 @@ pub async fn parse_machine_to_cap_dag(
     // and the structure-compatibility check (record vs
     // opaque).
     let (machine, strand_node_names) =
-        parse_machine_with_node_names(notation, registry).map_err(translate_machine_parse_error)?;
+        parse_machine_with_node_names_async(notation, registry)
+            .await
+            .map_err(translate_machine_parse_error)?;
 
     // Phase 2: For each strand, build a reverse `NodeId →
     // user node name` map so we can produce `ResolvedEdge`s
