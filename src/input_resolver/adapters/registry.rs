@@ -238,9 +238,25 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Build a `FabricRegistry` pre-seeded with a JSON media spec (the
+    /// only extension these tests reference). The registry hydrates
+    /// extensions from spec arrival; tests must seed explicitly.
     fn create_test_registry() -> (Arc<FabricRegistry>, TempDir) {
+        use crate::StoredMediaSpec;
         let temp_dir = TempDir::new().unwrap();
         let registry = FabricRegistry::new_for_test();
+        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+            urn: "media:json;record;textable".to_string(),
+            media_type: "application/json".to_string(),
+            title: "JSON".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: None,
+            validation: None,
+            metadata: None,
+            extensions: vec!["json".to_string()],
+        });
         (Arc::new(registry), temp_dir)
     }
 

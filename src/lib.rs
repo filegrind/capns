@@ -206,7 +206,7 @@ pub use orchestrator::{
 
 // InputResolver — unified input resolution with media detection
 pub use input_resolver::{
-    detect_file, detect_file_confirmed, detect_file_with_fabric_registry,
+    detect_file_confirmed, detect_file_with_fabric_registry,
     discriminate_candidates_by_validation, resolve_input, resolve_inputs,
     resolve_inputs_confirmed, resolve_paths, AdapterResult, CartridgeAdapterInvoker,
     ContentStructure, InputItem, InputResolverError, MediaAdapterRegistry,

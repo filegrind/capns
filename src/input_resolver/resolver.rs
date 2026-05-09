@@ -136,18 +136,26 @@ pub fn discriminate_candidates_by_validation(
 // SYNCHRONOUS EXTENSION-BASED DETECTION (preliminary, for UI queries)
 // =============================================================================
 
-/// Resolve a single input item (extension-based, no cartridge confirmation)
-pub fn resolve_input(item: InputItem) -> Result<ResolvedInputSet, InputResolverError> {
-    resolve_inputs(vec![item])
+/// Resolve a single input item using the supplied unified
+/// `FabricRegistry` for extension lookups.
+pub fn resolve_input(
+    item: InputItem,
+    fabric_registry: &FabricRegistry,
+) -> Result<ResolvedInputSet, InputResolverError> {
+    resolve_inputs(vec![item], fabric_registry)
 }
 
-/// Resolve multiple input items (extension-based, no cartridge confirmation)
-pub fn resolve_inputs(items: Vec<InputItem>) -> Result<ResolvedInputSet, InputResolverError> {
+/// Resolve multiple input items using the supplied unified
+/// `FabricRegistry` for extension lookups.
+pub fn resolve_inputs(
+    items: Vec<InputItem>,
+    fabric_registry: &FabricRegistry,
+) -> Result<ResolvedInputSet, InputResolverError> {
     let paths = path_resolver::resolve_items(&items)?;
 
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
-        let resolved = detect_file_by_extension(&path)?;
+        let resolved = detect_file_by_extension_with_registry(&path, fabric_registry)?;
         files.push(resolved);
     }
 
@@ -159,34 +167,21 @@ pub fn resolve_inputs(items: Vec<InputItem>) -> Result<ResolvedInputSet, InputRe
 }
 
 /// Convenience: resolve from string paths (auto-detect file/dir/glob)
-pub fn resolve_paths(paths: &[&str]) -> Result<ResolvedInputSet, InputResolverError> {
+/// using the supplied `FabricRegistry` for extension lookups.
+pub fn resolve_paths(
+    paths: &[&str],
+    fabric_registry: &FabricRegistry,
+) -> Result<ResolvedInputSet, InputResolverError> {
     let items: Vec<InputItem> = paths.iter().map(|s| InputItem::from_string(s)).collect();
-    resolve_inputs(items)
+    resolve_inputs(items, fabric_registry)
 }
 
-/// Detect media type for a single file using extension only (no content inspection).
-///
-/// Returns the most specific candidate URN from the media registry for the file's
-/// extension, with structure derived from marker tags. This is a preliminary result
-/// — it has NOT been confirmed by a cartridge adapter.
-pub fn detect_file(path: &Path) -> Result<ResolvedFile, InputResolverError> {
-    detect_file_by_extension(path)
-}
-
-/// Detect media type for a file using extension and a custom FabricRegistry.
+/// Detect media type for a file using extension and a `FabricRegistry`.
 pub fn detect_file_with_fabric_registry(
     path: &Path,
     fabric_registry: Arc<FabricRegistry>,
 ) -> Result<ResolvedFile, InputResolverError> {
     detect_file_by_extension_with_registry(path, &fabric_registry)
-}
-
-/// Extension-based detection using the global bundled registry.
-fn detect_file_by_extension(path: &Path) -> Result<ResolvedFile, InputResolverError> {
-    use std::sync::OnceLock;
-    static REGISTRY: OnceLock<FabricRegistry> = OnceLock::new();
-    let registry = REGISTRY.get_or_init(FabricRegistry::new_for_test);
-    detect_file_by_extension_with_registry(path, registry)
 }
 
 /// Extension-based detection using a specific FabricRegistry.
@@ -466,19 +461,98 @@ mod tests {
         path
     }
 
+    /// Build a `FabricRegistry` pre-seeded with the media specs the
+    /// resolver tests reference (`pdf`, `txt`, `json`, `model-spec`).
+    /// The registry hydrates extension lookups from spec arrival —
+    /// there is no compiled-in fallback table — so tests must seed
+    /// the specs they exercise explicitly.
     fn create_test_fabric_registry() -> (Arc<FabricRegistry>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let registry = FabricRegistry::new_for_test();
+        seed_resolver_test_specs(&registry);
         (Arc::new(registry), temp_dir)
+    }
+
+    fn seed_resolver_test_specs(registry: &FabricRegistry) {
+        use crate::StoredMediaSpec;
+
+        // PDF
+        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+            urn: "media:pdf".to_string(),
+            media_type: "application/pdf".to_string(),
+            title: "PDF".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: None,
+            validation: None,
+            metadata: None,
+            extensions: vec!["pdf".to_string()],
+        });
+
+        // JSON family
+        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+            urn: "media:json;record;textable".to_string(),
+            media_type: "application/json".to_string(),
+            title: "JSON".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: None,
+            validation: None,
+            metadata: None,
+            extensions: vec!["json".to_string()],
+        });
+
+        // Plain text
+        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+            urn: "media:list;textable;txt".to_string(),
+            media_type: "text/plain".to_string(),
+            title: "Text".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: None,
+            validation: None,
+            metadata: None,
+            extensions: vec!["txt".to_string()],
+        });
+
+        // Model-spec is a value-type URN with no file extension. The
+        // discrimination tests pass the bare `media:model-spec;textable`
+        // URN explicitly as a candidate; the validation pattern
+        // matches the canonical `family:model:variant` shape so plain
+        // prose is filtered out.
+        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+            urn: "media:model-spec;textable".to_string(),
+            media_type: "text/plain".to_string(),
+            title: "Model spec".to_string(),
+            profile_uri: None,
+            schema: None,
+            description: None,
+            documentation: None,
+            validation: Some(crate::media::spec::MediaValidation {
+                // `scheme:rest` where `rest` is any non-empty
+                // run of non-whitespace characters. Matches forms
+                // like `hf:user/repo`, `hf:user/repo:variant`, and
+                // `local:./path`. Rejects plain prose with internal
+                // whitespace.
+                pattern: Some(r"^[A-Za-z0-9._-]+:\S+$".to_string()),
+                ..Default::default()
+            }),
+            metadata: None,
+            extensions: Vec::new(),
+        });
     }
 
     // TEST1090: 1 file → is_sequence=false
     #[test]
     fn test1090_single_file_scalar() {
+        let (registry, _temp) = create_test_fabric_registry();
         let dir = create_test_dir();
         let path = create_file(&dir, "doc.pdf", b"%PDF-1.4");
 
-        let result = resolve_paths(&[path.to_str().unwrap()]).unwrap();
+        let result = resolve_paths(&[path.to_str().unwrap()], &registry).unwrap();
 
         assert_eq!(result.files.len(), 1);
         assert!(!result.is_sequence, "single file must be is_sequence=false");
@@ -487,11 +561,16 @@ mod tests {
     // TEST1092: 2 files → is_sequence=true
     #[test]
     fn test1092_two_files() {
+        let (registry, _temp) = create_test_fabric_registry();
         let dir = create_test_dir();
         let path1 = create_file(&dir, "a.pdf", b"%PDF-1.4");
         let path2 = create_file(&dir, "b.pdf", b"%PDF-1.5");
 
-        let result = resolve_paths(&[path1.to_str().unwrap(), path2.to_str().unwrap()]).unwrap();
+        let result = resolve_paths(
+            &[path1.to_str().unwrap(), path2.to_str().unwrap()],
+            &registry,
+        )
+        .unwrap();
 
         assert_eq!(result.files.len(), 2);
         assert!(result.is_sequence, "multiple files must be is_sequence=true");
@@ -500,10 +579,11 @@ mod tests {
     // TEST1093: 1 dir with 1 file → is_sequence=false
     #[test]
     fn test1093_dir_single_file() {
+        let (registry, _temp) = create_test_fabric_registry();
         let dir = create_test_dir();
         create_file(&dir, "only.pdf", b"%PDF-1.4");
 
-        let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
+        let result = resolve_paths(&[dir.path().to_str().unwrap()], &registry).unwrap();
 
         assert_eq!(result.files.len(), 1);
         assert!(!result.is_sequence, "directory with single file must be is_sequence=false");
@@ -512,12 +592,13 @@ mod tests {
     // TEST1094: 1 dir with 3 files → is_sequence=true
     #[test]
     fn test1094_dir_multiple_files() {
+        let (registry, _temp) = create_test_fabric_registry();
         let dir = create_test_dir();
         create_file(&dir, "a.txt", b"hello");
         create_file(&dir, "b.txt", b"world");
         create_file(&dir, "c.txt", b"test");
 
-        let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
+        let result = resolve_paths(&[dir.path().to_str().unwrap()], &registry).unwrap();
 
         assert_eq!(result.files.len(), 3);
         assert!(result.is_sequence, "directory with multiple files must be is_sequence=true");
@@ -526,11 +607,12 @@ mod tests {
     // TEST977: OS files excluded in resolve_paths
     #[test]
     fn test977_os_files_excluded_integration() {
+        let (registry, _temp) = create_test_fabric_registry();
         let dir = create_test_dir();
         create_file(&dir, ".DS_Store", b"");
         create_file(&dir, "real.txt", b"content");
 
-        let result = resolve_paths(&[dir.path().to_str().unwrap()]).unwrap();
+        let result = resolve_paths(&[dir.path().to_str().unwrap()], &registry).unwrap();
 
         assert_eq!(result.files.len(), 1);
         assert!(result.files[0].path.to_str().unwrap().contains("real.txt"));
@@ -539,10 +621,11 @@ mod tests {
     // TEST1098: Extension-based detection picks up pdf tag for .pdf files
     #[test]
     fn test1098_extension_based_pdf() {
+        let (registry, _temp) = create_test_fabric_registry();
         let dir = create_test_dir();
         let path = create_file(&dir, "doc.pdf", b"%PDF-1.4");
 
-        let resolved = detect_file(&path).unwrap();
+        let resolved = detect_file_by_extension_with_registry(&path, &registry).unwrap();
         let urn = MediaUrn::from_string(&resolved.media_urn).unwrap();
         assert!(
             urn.has_marker_tag("pdf"),
@@ -552,30 +635,14 @@ mod tests {
     }
 
     // Discrimination Tests (kept — they test validation logic, not adapter detection)
-
-    fn txt_extension_urns(registry: &FabricRegistry) -> Vec<String> {
-        registry.media_urns_for_extension("txt").unwrap()
-    }
-
-    // TEST1235: Plain text without model-spec syntax eliminates model-spec TXT candidates.
-    #[test]
-    fn test1235_disc_1_plain_text_eliminates_model_specs() {
-        let (registry, _temp) = create_test_fabric_registry();
-        let all_txt_urns = txt_extension_urns(&registry);
-
-        let content = b"Hello world\nThis is a plain text file\nNo colons here";
-        let baseline = "media:list;textable;txt";
-        let survivors =
-            discriminate_candidates_by_validation(content, &all_txt_urns, &registry, baseline);
-
-        for survivor in &survivors {
-            assert!(
-                !survivor.contains("model-spec"),
-                "model-spec URN '{}' should have been eliminated — content has no colon",
-                survivor
-            );
-        }
-    }
+    //
+    // TEST1235 was removed: it tried to assert that "model-spec URNs in
+    // the txt-extension list don't survive plain-text content". But
+    // `media:model-spec` is a value-type URN with no file extension —
+    // it's never in the txt extension list to begin with — so the
+    // assertion was vacuously true and the test had no signal.
+    // Test1236 carries the real discrimination assertion (explicit
+    // candidate list, validation regex eliminates prose).
 
     // TEST1236: Colon-delimited model spec text survives TXT candidate discrimination.
     // TEST1236: Discrimination matches a candidate's validation

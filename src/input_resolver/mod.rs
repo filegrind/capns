@@ -33,7 +33,7 @@ pub use types::{ContentStructure, InputItem, InputResolverError, ResolvedFile, R
 pub use adapter::{AdapterResult, CartridgeAdapterInvoker, MAX_CONTENT_INSPECTION_BYTES};
 
 pub use resolver::{
-    detect_file, detect_file_confirmed, detect_file_with_fabric_registry,
+    detect_file_confirmed, detect_file_with_fabric_registry,
     discriminate_candidates_by_validation, resolve_input, resolve_inputs,
     resolve_inputs_confirmed, resolve_paths,
 };
