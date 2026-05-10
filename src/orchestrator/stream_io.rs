@@ -43,15 +43,6 @@ pub enum StreamIoError {
     #[error("Cap '{cap_urn}' failed: {details}")]
     Terminal { cap_urn: String, details: String },
 
-    /// Cap did not produce any frames for longer than the configured activity
-    /// timeout. The request has been cancelled at the relay.
-    #[error("Cap '{cap_urn}' activity timeout ({idle_secs}s, limit {limit_secs}s)")]
-    ActivityTimeout {
-        cap_urn: String,
-        idle_secs: u64,
-        limit_secs: u64,
-    },
-
     /// Writer failure — the `IncrementalWriter` returned an error while
     /// persisting chunk data.
     #[error("Writer error: {0}")]
@@ -62,12 +53,21 @@ pub enum StreamIoError {
 // Activity tracking
 // =============================================================================
 
-/// Pipeline-level stall timeout in seconds.
+/// Pipeline-level stall warning threshold in seconds.
 ///
-/// If no progress LOG frame arrives from ANY body in the entire pipeline for
-/// this duration, the pipeline is considered stalled and all bodies are
-/// aborted. This catches the case where all bodies are "queued" but none is
-/// progressing.
+/// If no progress LOG frame arrives from ANY body in the entire pipeline
+/// for this duration, the runtime emits a one-shot warning ("no progress
+/// from any body for Ns — continuing to wait. Use Cancel to abort.")
+/// and keeps waiting. The pipeline is NOT aborted automatically —
+/// long-running caps (model loads, vision/LLM inference, large audio
+/// transcription) legitimately exceed this threshold, and aborting them
+/// produced false negatives on every honest long workload. Cancellation
+/// is the user's call, via the explicit cancel-task path.
+///
+/// The constant retains the historical "stall timeout" name (and
+/// duration) so existing telemetry and log-grep dashboards keyed on
+/// "120s" continue to land on the same event. Only the runtime's
+/// reaction changed (warn-once vs abort).
 pub const PIPELINE_STALL_TIMEOUT_SECS: u64 = 120;
 
 /// Per-cap activity timer used by `collect_terminal_output`.
@@ -417,14 +417,22 @@ pub async fn collect_terminal_output(
     stall_tracker: Option<&Arc<PipelineProgressTracker>>,
     writer: Option<&mut dyn IncrementalWriter>,
     activity_timeout_secs: u64,
-    switch: &Arc<RelaySwitch>,
-    rid: &MessageId,
 ) -> Result<(Vec<u8>, Option<bool>, TerminalMeta), StreamIoError> {
     let mut response_chunks: Vec<u8> = Vec::new();
     let mut is_sequence: Option<bool> = None;
     let mut timer = ActivityTimer::new(activity_timeout_secs);
     let has_writer = writer.is_some();
     let mut terminal_meta = TerminalMeta::default();
+    // Whether we've already emitted the per-cap activity-silence warning
+    // for the current quiet window. We do NOT abort on activity timeout:
+    // long-running terminal caps (vision/LLM inference, large transcription)
+    // legitimately sit silent for far longer than the threshold, and
+    // aborting them produced false negatives on every honest workload.
+    // The user cancels via the explicit cancel-task path; the timer's
+    // job is now to surface the silence as a one-shot warning so the
+    // operator knows the cap is alive-but-quiet, without log-spam every
+    // 500 ms. The flag resets to false the next time any frame arrives.
+    let mut activity_warning_logged = false;
 
     // Rebind writer as mutable — we pass it through as Option<&mut> but need
     // to call methods on it inside the loop.
@@ -439,6 +447,8 @@ pub async fn collect_terminal_output(
                 if let Some(tracker) = stall_tracker {
                     tracker.touch();
                 }
+                // Re-arm the warn-once gate for any subsequent silence.
+                activity_warning_logged = false;
                 match frame.frame_type {
                     FrameType::Chunk => {
                         timer.touch();
@@ -559,18 +569,28 @@ pub async fn collect_terminal_output(
                 });
             }
             Err(_timeout) => {
-                if timer.is_expired() {
-                    switch.cancel_request(rid, false).await;
-                    let details =
-                        format!("activity timeout ({}s)", activity_timeout_secs);
+                // Per-cap activity-silence observation, NOT an abort.
+                // Long-running terminal caps legitimately sit silent
+                // for far longer than the threshold; cancellation is
+                // the user's call via the explicit cancel-task path.
+                // The runtime keeps waiting and emits a one-shot
+                // warning at the threshold so the log shows "no
+                // activity for Ns from cap X" without log-spam every
+                // 500 ms.
+                if timer.is_expired() && !activity_warning_logged {
+                    let details = format!(
+                        "no activity for {}s — continuing to wait. Use Cancel to abort.",
+                        activity_timeout_secs
+                    );
                     if let Some(lfn) = &log_fn {
-                        lfn(cap_urn, "error", &details, body_index);
+                        lfn(cap_urn, "warn", &details, body_index);
                     }
-                    return Err(StreamIoError::ActivityTimeout {
-                        cap_urn: cap_urn.to_string(),
-                        idle_secs: activity_timeout_secs,
-                        limit_secs: activity_timeout_secs,
-                    });
+                    tracing::warn!(
+                        cap_urn = %cap_urn,
+                        "[cap] No activity for {}s; continuing to wait for completion or cancel",
+                        activity_timeout_secs
+                    );
+                    activity_warning_logged = true;
                 }
             }
         }

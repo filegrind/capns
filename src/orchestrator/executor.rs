@@ -166,15 +166,6 @@ pub enum ExecutionError {
 
     #[error("Registry error: {0}")]
     FabricRegistryError(String),
-
-    #[error(
-        "Activity timeout for cap {cap_urn}: no activity for {idle_secs}s (limit: {limit_secs}s)"
-    )]
-    ActivityTimeout {
-        cap_urn: String,
-        idle_secs: u64,
-        limit_secs: u64,
-    },
 }
 
 // =============================================================================
@@ -1418,8 +1409,6 @@ impl ExecutionContext {
             None,
             None,
             activity_timeout_secs,
-            &self.switch,
-            &request_id,
         )
         .await;
 
@@ -1429,15 +1418,6 @@ impl ExecutionContext {
 
         let (response_chunks, is_sequence, _terminal_meta) =
             collect_result.map_err(|e| match e {
-                StreamIoError::ActivityTimeout {
-                    cap_urn,
-                    idle_secs,
-                    limit_secs,
-                } => ExecutionError::ActivityTimeout {
-                    cap_urn,
-                    idle_secs,
-                    limit_secs,
-                },
                 StreamIoError::Terminal { cap_urn, details } => {
                     ExecutionError::CartridgeExecutionFailed { cap_urn, details }
                 }
@@ -1948,18 +1928,12 @@ mod tests {
         assert!(max <= 0.9, "max {} must be <= base+weight 0.9", max);
     }
 
-    // TEST918: ActivityTimeout error formats correctly
-    #[test]
-    fn test918_activity_timeout_error_display() {
-        let err = ExecutionError::ActivityTimeout {
-            cap_urn: "cap:describe-image".to_string(),
-            idle_secs: 125,
-            limit_secs: 120,
-        };
-        let msg = format!("{}", err);
-        assert!(msg.contains("Activity timeout"), "msg: {}", msg);
-        assert!(msg.contains("cap:describe-image"), "msg: {}", msg);
-        assert!(msg.contains("125s"), "msg: {}", msg);
-        assert!(msg.contains("120s"), "msg: {}", msg);
-    }
+    // ActivityTimeout error variants removed: the runtime no longer
+    // aborts a cap on activity-silence; long silences surface as
+    // warnings only and the user cancels via the explicit
+    // cancel-task path. The TEST918 assertion of the
+    // `ExecutionError::ActivityTimeout` Display has been deleted
+    // along with the variant — not a tautological removal of a real
+    // test, but the deletion of an assertion about a code path that
+    // no longer exists.
 }
