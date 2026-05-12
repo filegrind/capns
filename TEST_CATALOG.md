@@ -348,20 +348,20 @@ This catalog lists all tests in the Rust codebase.
 | test423 | `test423_multiple_cartridges_route_independently` | TEST423: Multiple cartridges registered with distinct caps route independently | src/bifaci/host_runtime.rs:4207 |
 | test424 | `test424_concurrent_requests_to_same_cartridge` | TEST424: Concurrent requests to the same cartridge are handled independently | src/bifaci/host_runtime.rs:4400 |
 | test425 | `test425_find_cartridge_for_cap_unknown` | TEST425: find_cartridge_for_cap returns None for unregistered cap | src/bifaci/host_runtime.rs:4560 |
-| test426 | `test426_single_master_req_response` | TEST426: Single master REQ/response routing | src/bifaci/relay_switch.rs:3724 |
-| test427 | `test427_multi_master_cap_routing` | TEST427: Multi-master cap routing | src/bifaci/relay_switch.rs:3788 |
-| test428 | `test428_unknown_cap_returns_error` | TEST428: Unknown cap returns error | src/bifaci/relay_switch.rs:3901 |
-| test429 | `test429_find_master_for_cap` | TEST429: Cap routing logic (find_master_for_cap) | src/bifaci/relay_switch.rs:3665 |
-| test430 | `test430_tie_breaking_same_cap_multiple_masters` | TEST430: Tie-breaking (same cap on multiple masters - first match wins, routing is consistent) | src/bifaci/relay_switch.rs:3933 |
-| test431 | `test431_continuation_frame_routing` | TEST431: Continuation frame routing (CHUNK, END follow REQ) | src/bifaci/relay_switch.rs:4036 |
-| test432 | `test432_empty_masters_allowed` | TEST432: Empty masters list creates empty switch, add_master works | src/bifaci/relay_switch.rs:4120 |
-| test433 | `test433_capability_aggregation_deduplicates` | TEST433: Capability aggregation deduplicates caps | src/bifaci/relay_switch.rs:4138 |
-| test434 | `test434_limits_negotiation_minimum` | TEST434: Limits negotiation takes minimum | src/bifaci/relay_switch.rs:4185 |
-| test435 | `test435_urn_matching_exact_and_accepts` | TEST435: URN matching (exact vs accepts()) | src/bifaci/relay_switch.rs:4226 |
+| test426 | `test426_single_master_req_response` | TEST426: Single master REQ/response routing | src/bifaci/relay_switch.rs:3685 |
+| test427 | `test427_multi_master_cap_routing` | TEST427: Multi-master cap routing | src/bifaci/relay_switch.rs:3749 |
+| test428 | `test428_unknown_cap_returns_error` | TEST428: Unknown cap returns error | src/bifaci/relay_switch.rs:3862 |
+| test429 | `test429_find_master_for_cap` | TEST429: Cap routing logic (find_master_for_cap) | src/bifaci/relay_switch.rs:3626 |
+| test430 | `test430_tie_breaking_same_cap_multiple_masters` | TEST430: Tie-breaking (same cap on multiple masters - first match wins, routing is consistent) | src/bifaci/relay_switch.rs:3894 |
+| test431 | `test431_continuation_frame_routing` | TEST431: Continuation frame routing (CHUNK, END follow REQ) | src/bifaci/relay_switch.rs:3997 |
+| test432 | `test432_empty_masters_allowed` | TEST432: Empty masters list creates empty switch, add_master works | src/bifaci/relay_switch.rs:4081 |
+| test433 | `test433_capability_aggregation_deduplicates` | TEST433: Capability aggregation deduplicates caps | src/bifaci/relay_switch.rs:4099 |
+| test434 | `test434_limits_negotiation_minimum` | TEST434: Limits negotiation takes minimum | src/bifaci/relay_switch.rs:4146 |
+| test435 | `test435_urn_matching_exact_and_accepts` | TEST435: URN matching (exact vs accepts()) | src/bifaci/relay_switch.rs:4187 |
 | test436 | `test436_compute_checksum` | TEST436: Verify FNV-1a checksum function produces consistent results | src/bifaci/frame.rs:1687 |
-| test437 | `test437_preferred_cap_routes_to_generic` | TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates | src/bifaci/relay_switch.rs:4329 |
-| test438 | `test438_preferred_cap_falls_back_when_not_comparable` | TEST438: find_master_for_cap with preference falls back to closest-specificity when preferred cap is not in the comparable set | src/bifaci/relay_switch.rs:4385 |
-| test439 | `test439_generic_provider_can_dispatch_specific_request` | TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists) With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists. | src/bifaci/relay_switch.rs:4423 |
+| test437 | `test437_preferred_cap_routes_to_generic` | TEST437: find_master_for_cap with preferred_cap routes to generic handler With is_dispatchable semantics: - Generic provider (in=media:) CAN dispatch specific request (in="media:pdf") because media: (wildcard) accepts any input type - Preference routes to preferred among dispatchable candidates | src/bifaci/relay_switch.rs:4290 |
+| test438 | `test438_preferred_cap_falls_back_when_not_comparable` | TEST438: find_master_for_cap with preference falls back to closest-specificity when preferred cap is not in the comparable set | src/bifaci/relay_switch.rs:4346 |
+| test439 | `test439_generic_provider_can_dispatch_specific_request` | TEST439: Generic provider CAN dispatch specific request (but only matches if no more specific provider exists) With is_dispatchable: generic provider (in=media:) CAN handle specific request (in="media:pdf") because media: accepts any input type. With preference, can route to generic even when more specific exists. | src/bifaci/relay_switch.rs:4384 |
 | test440 | `test440_chunk_index_checksum_roundtrip` | TEST440: CHUNK frame with chunk_index and checksum roundtrips through encode/decode | src/bifaci/io.rs:1862 |
 | test441 | `test441_stream_end_chunk_count_roundtrip` | TEST441: STREAM_END frame with chunk_count roundtrips through encode/decode | src/bifaci/io.rs:1891 |
 | test442 | `test442_seq_assigner_monotonic_same_rid` | TEST442: SeqAssigner assigns seq 0,1,2,3 for consecutive frames with same RID | src/bifaci/frame.rs:1763 |
@@ -397,8 +397,8 @@ This catalog lists all tests in the Rust codebase.
 | test483 | `test483_verify_identity_fails_on_close` | TEST483: verify_identity fails when connection closes before response | src/bifaci/io.rs:2131 |
 | test485 | `test485_attach_cartridge_identity_verification_succeeds` | TEST485: attach_cartridge completes identity verification with working cartridge | src/bifaci/host_runtime.rs:4584 |
 | test486 | `test486_attach_cartridge_identity_verification_fails` | TEST486: attach_cartridge rejects cartridge that fails identity verification | src/bifaci/host_runtime.rs:4627 |
-| test487 | `test487_relay_switch_identity_verification_succeeds` | TEST487: RelaySwitch construction verifies identity through relay chain | src/bifaci/relay_switch.rs:4465 |
-| test488 | `test488_relay_switch_identity_verification_fails` | TEST488: RelaySwitch construction fails when master's identity verification fails | src/bifaci/relay_switch.rs:4501 |
+| test487 | `test487_relay_switch_identity_verification_succeeds` | TEST487: RelaySwitch construction verifies identity through relay chain | src/bifaci/relay_switch.rs:4426 |
+| test488 | `test488_relay_switch_identity_verification_fails` | TEST488: RelaySwitch construction fails when master's identity verification fails | src/bifaci/relay_switch.rs:4462 |
 | test490 | `test490_identity_verification_multiple_cartridges` | TEST490: Identity verification with multiple cartridges through single relay Both cartridges must pass identity verification independently before any real requests are routed. | src/bifaci/integration_tests.rs:1497 |
 | test491 | `test491_chunk_requires_chunk_index_and_checksum` | TEST491: Frame::chunk constructor requires and sets chunk_index and checksum | src/bifaci/frame.rs:2242 |
 | test492 | `test492_stream_end_requires_chunk_count` | TEST492: Frame::stream_end constructor requires and sets chunk_count | src/bifaci/frame.rs:2264 |
@@ -554,7 +554,7 @@ This catalog lists all tests in the Rust codebase.
 | test663 | `test663_hello_failed_cartridge_removed_from_capabilities` | TEST663: Cartridge with hello_failed is permanently removed from capabilities | src/bifaci/host_runtime.rs:4786 |
 | test664 | `test664_running_cartridge_uses_manifest_caps` | TEST664: Attached cartridge replaces pre-registration caps with manifest caps. The pre-attach `cap_groups` (from probe-time discovery) get superseded by the post-HELLO `cap_groups` from the actual handshake. | src/bifaci/host_runtime.rs:4837 |
 | test665 | `test665_cap_table_mixed_running_and_non_running` | TEST665: Cap table aggregates caps from every healthy cartridge — attached/running cartridges contribute their post-HELLO cap_groups, registered-but-not-yet-spawned cartridges contribute their probe-time cap_groups. Both flow through the same `cap_urns()` view. | src/bifaci/host_runtime.rs:4905 |
-| test666 | `test666_preferred_cap_routing` | TEST666: Preferred cap routing - routes to exact equivalent when multiple masters match | src/bifaci/relay_switch.rs:5252 |
+| test666 | `test666_preferred_cap_routing` | TEST666: Preferred cap routing - routes to exact equivalent when multiple masters match | src/bifaci/relay_switch.rs:5213 |
 | test667 | `test667_verify_chunk_checksum_detects_corruption` | TEST667: verify_chunk_checksum detects corrupted payload | src/bifaci/frame.rs:3063 |
 | test668 | `test668_resolve_slot_with_populated_byte_slot_values` | TEST668: resolve_binding returns byte values when slot is populated with data | src/planner/argument_binding.rs:817 |
 | test669 | `test669_resolve_slot_falls_back_to_default` | TEST669: resolve_binding falls back to cap default value when slot has no data | src/planner/argument_binding.rs:853 |
@@ -745,7 +745,7 @@ This catalog lists all tests in the Rust codebase.
 | test902 | `test902_compute_checksum_empty` | TEST902: Verify FNV-1a checksum handles empty data | src/bifaci/frame.rs:1709 |
 | test903 | `test903_chunk_with_chunk_index_and_checksum` | TEST903: Verify CHUNK frame can store chunk_index and checksum fields | src/bifaci/frame.rs:1720 |
 | test904 | `test904_stream_end_with_chunk_count` | TEST904: Verify STREAM_END frame can store chunk_count field | src/bifaci/frame.rs:1745 |
-| test905 | `test905_send_to_master_build_request_frames_roundtrip` | TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessCartridgeHost roundtrip | src/bifaci/relay_switch.rs:4697 |
+| test905 | `test905_send_to_master_build_request_frames_roundtrip` | TEST905: send_to_master + build_request_frames through RelaySwitch → RelaySlave → InProcessCartridgeHost roundtrip | src/bifaci/relay_switch.rs:4658 |
 | test906 | `test906_full_path_identity_verification` | TEST906: Full path identity verification: engine → host (attach_cartridge) → cartridge This verifies that attach_cartridge completes identity verification end-to-end and the cartridge is ready to handle subsequent requests. | src/bifaci/integration_tests.rs:1351 |
 | test910 | `test910_map_progress_monotonic` | TEST910: map_progress output is monotonic for monotonically increasing input | src/orchestrator/executor.rs:1662 |
 | test911 | `test911_map_progress_bounded` | TEST911: map_progress output is bounded within [base, base+weight] | src/orchestrator/executor.rs:1680 |
@@ -1056,13 +1056,13 @@ This catalog lists all tests in the Rust codebase.
 | test1511 | `test1511_read_from_dir_rejects_registry_in_dev_folder` | TEST1511: Three-place rule — a registry cartridge.json under the dev folder is rejected. Equivalent to a published cartridge being dropped into the dev tree; the dev tree is explicitly the only place a null `registry_url` is allowed, so a non-null one here means the layout is corrupted. | src/bifaci/cartridge_json.rs:846 |
 | test1512 | `test1512_read_from_dir_accepts_dev_in_dev_folder` | TEST1512: A dev cartridge.json under the dev folder is accepted. This is the only path that ends with a successful dev install; together with 1510/1511 it pins the rule that dev provenance and the dev folder are an inseparable pair. | src/bifaci/cartridge_json.rs:879 |
 | test1513 | `test1513_installed_from_optional_round_trip` | TEST1513: `installed_from` is opaque optional metadata. A cartridge.json that omits the field MUST parse cleanly with `installed_from == None`, and a CartridgeJson with `installed_from == None` MUST NOT emit the key on serialize. Pins the new contract that nothing in the host or engine branches on this field — it's audit/telemetry hint only and the absence-vs-Some distinction must round-trip. | src/bifaci/cartridge_json.rs:625 |
-| test1720 | `test1720_kind_serde_renames_match_proto_snake_case` | / TEST1720: Every variant serializes to the snake_case / string the proto and the Swift / Go / Python ports use. / Adding a new variant requires an entry here AND a matching / CARTRIDGE_ATTACHMENT_ERROR_FOO entry in cartridge.proto; / the test fails with a clear "expected X for Y" message / when the two sides drift. | src/bifaci/relay_switch.rs:5645 |
-| test1721 | `test1721_kind_decodes_wire_format_into_expected_variants` | / TEST1721: Wire-format JSON deserializes into the right / variant. This is the engine-receives-from-XPC path: the / machfab-mac side emits `{"kind":"bad_installation",...}` / and the engine must resolve it to `BadInstallation`. / Asserts every variant explicitly so a single-variant typo / in the rename map can't hide behind a passing healthy-case. | src/bifaci/relay_switch.rs:5680 |
-| test1722 | `test1722_unknown_kind_fails_to_decode` | / TEST1722: An unknown wire kind FAILS to decode rather than / silently coercing to a default variant. Older capdag binaries / that don't know `bad_installation` or `disabled` will see / those strings on the wire from a newer Swift side; rejecting / the unknown variant is the correct behaviour because silently / coercing it would hide the version-skew bug. The engine's / per-master JSON parse failure path is what surfaces this to / the operator (the master's manifest fails to parse and the / master is held unhealthy until the version is patched). | src/bifaci/relay_switch.rs:5836 |
-| test1730 | `test1730_lifecycle_serde_renames_match_proto_snake_case` | / TEST1730: Every `CartridgeLifecycle` variant serializes to / its proto snake_case name byte-for-byte. Adding a variant / requires an entry here AND a `CARTRIDGE_LIFECYCLE_FOO` / constant in `cartridge.proto`. Cross-language drift on this / enum makes lifecycle states silently invisible to one side / of the wire. | src/bifaci/relay_switch.rs:5712 |
-| test1731 | `test1731_lifecycle_default_is_discovered` | / TEST1731: `CartridgeLifecycle` defaults to `Discovered` / (the safe sentinel) — never `Operational`. Pins the / safe-default rule the doc explicitly calls out: a / freshly-constructed record without an explicit lifecycle / MUST NOT silently expose an un-inspected cartridge for / dispatch. | src/bifaci/relay_switch.rs:5738 |
-| test1732 | `test1732_installed_cartridge_record_lifecycle_defaults_when_missing` | / TEST1732: An `InstalledCartridgeRecord` deserialized from a / JSON payload that omits the `lifecycle` field defaults to / `Discovered` — never `Operational`. The wire-shape contract / covered by the safe-default rule. | src/bifaci/relay_switch.rs:5752 |
-| test1733 | `test1733_registry_url_scheme_validator` | / TEST1733: `validate_registry_url_scheme` accepts https / unconditionally, rejects non-https in production builds, / and accepts non-https in dev mode. Pins the deepest layer / of the HTTPS rule. | src/bifaci/relay_switch.rs:5780 |
+| test1720 | `test1720_kind_serde_renames_match_proto_snake_case` | / TEST1720: Every variant serializes to the snake_case / string the proto and the Swift / Go / Python ports use. / Adding a new variant requires an entry here AND a matching / CARTRIDGE_ATTACHMENT_ERROR_FOO entry in cartridge.proto; / the test fails with a clear "expected X for Y" message / when the two sides drift. | src/bifaci/relay_switch.rs:5606 |
+| test1721 | `test1721_kind_decodes_wire_format_into_expected_variants` | / TEST1721: Wire-format JSON deserializes into the right / variant. This is the engine-receives-from-XPC path: the / machfab-mac side emits `{"kind":"bad_installation",...}` / and the engine must resolve it to `BadInstallation`. / Asserts every variant explicitly so a single-variant typo / in the rename map can't hide behind a passing healthy-case. | src/bifaci/relay_switch.rs:5641 |
+| test1722 | `test1722_unknown_kind_fails_to_decode` | / TEST1722: An unknown wire kind FAILS to decode rather than / silently coercing to a default variant. Older capdag binaries / that don't know `bad_installation` or `disabled` will see / those strings on the wire from a newer Swift side; rejecting / the unknown variant is the correct behaviour because silently / coercing it would hide the version-skew bug. The engine's / per-master JSON parse failure path is what surfaces this to / the operator (the master's manifest fails to parse and the / master is held unhealthy until the version is patched). | src/bifaci/relay_switch.rs:5797 |
+| test1730 | `test1730_lifecycle_serde_renames_match_proto_snake_case` | / TEST1730: Every `CartridgeLifecycle` variant serializes to / its proto snake_case name byte-for-byte. Adding a variant / requires an entry here AND a `CARTRIDGE_LIFECYCLE_FOO` / constant in `cartridge.proto`. Cross-language drift on this / enum makes lifecycle states silently invisible to one side / of the wire. | src/bifaci/relay_switch.rs:5673 |
+| test1731 | `test1731_lifecycle_default_is_discovered` | / TEST1731: `CartridgeLifecycle` defaults to `Discovered` / (the safe sentinel) — never `Operational`. Pins the / safe-default rule the doc explicitly calls out: a / freshly-constructed record without an explicit lifecycle / MUST NOT silently expose an un-inspected cartridge for / dispatch. | src/bifaci/relay_switch.rs:5699 |
+| test1732 | `test1732_installed_cartridge_record_lifecycle_defaults_when_missing` | / TEST1732: An `InstalledCartridgeRecord` deserialized from a / JSON payload that omits the `lifecycle` field defaults to / `Discovered` — never `Operational`. The wire-shape contract / covered by the safe-default rule. | src/bifaci/relay_switch.rs:5713 |
+| test1733 | `test1733_registry_url_scheme_validator` | / TEST1733: `validate_registry_url_scheme` accepts https / unconditionally, rejects non-https in production builds, / and accepts non-https in dev mode. Pins the deepest layer / of the HTTPS rule. | src/bifaci/relay_switch.rs:5741 |
 | test1800 | `test1800_kind_identity_only_for_bare_cap` | TEST1800: Identity classifier — and only the bare cap: form qualifies. `cap:` is the fully generic morphism on every axis; adding any tag (even one that doesn't constrain in/out) demotes the cap to Transform because the operation/metadata axis is no longer fully generic. | src/urn/cap_urn.rs:2957 |
 | test1801 | `test1801_kind_source_when_input_is_void` | TEST1801: Source classifier — in=media:void, out non-void. The y dimension may carry any tags; void on the input alone is what matters. | src/urn/cap_urn.rs:2990 |
 | test1802 | `test1802_kind_sink_when_output_is_void` | TEST1802: Sink classifier — out=media:void, in non-void. | src/urn/cap_urn.rs:3007 |
@@ -1087,8 +1087,8 @@ This catalog lists all tests in the Rust codebase.
 | test1845 | `test1845_axis_weighting_in_dominates_y` | TEST1845: With equal out-axis, in-axis dominates over y-axis. | src/urn/cap_urn.rs:3427 |
 | test1846 | `test1846_axis_weighting_decoded_layout` | TEST1846: Specificity composes uniformly across all three axes. For a fully-loaded cap with one of each form per axis, the total reads as out_score, in_score, y_score in distinct digit slots. | src/urn/cap_urn.rs:3446 |
 | | | | |
-| test489 ⚠ | `test489_add_master_dynamic` | TEST489: add_master dynamically connects new host to running switch | src/bifaci/relay_switch.rs:4867 |
-| test489 ⚠ | `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` | TEST489: When a master initially advertises empty caps (so `add_master` skips the identity probe) and later sends a RelayNotify update with non-empty caps, the relay must run an end-to-end identity probe before the new caps become routable. A master that fails to answer the runtime probe with the expected nonce echo must end up unhealthy with `last_error` populated, and its caps must NOT appear in the cap_table. This test guards the wire-protocol regression where the RelayNotify-update path published caps without re-verifying identity end-to-end. Removing the runtime probe re-introduces the hole; this test fails loudly when that happens. | src/bifaci/relay_switch.rs:4574 |
+| test489 ⚠ | `test489_add_master_dynamic` | TEST489: add_master dynamically connects new host to running switch | src/bifaci/relay_switch.rs:4828 |
+| test489 ⚠ | `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` | TEST489: When a master initially advertises empty caps (so `add_master` skips the identity probe) and later sends a RelayNotify update with non-empty caps, the relay must run an end-to-end identity probe before the new caps become routable. A master that fails to answer the runtime probe with the expected nonce echo must end up unhealthy with `last_error` populated, and its caps must NOT appear in the cap_table. This test guards the wire-protocol regression where the RelayNotify-update path published caps without re-verifying identity end-to-end. Removing the runtime probe re-introduces the hole; this test fails loudly when that happens. | src/bifaci/relay_switch.rs:4535 |
 | test999 ⚠ | `test999_all_rich_numeric_params_conform_to_their_bare_pattern` | / Symmetric: same shape for every numeric parameter the LLM caps / declare. Catching one but not the others would mean some params / land on the prompt path and others don't. | tests/cap_arg_stream_dispatch.rs:104 |
 | test999 ⚠ | `test999_bare_textable_does_not_conform_to_plain_text` | / **Core regression guard.** Bare `media:textable` does NOT conform / to `media:plain-text;textable;txt`. This is the relation that / keeps `cap:save-as-txt` from accidentally accepting every textable / cap's output as a feeder. If this assertion ever flips to `true`, / the wizard's recommended-paths surface will fill with bogus chains / where any textable producer reaches `.txt` persistence. | tests/plain_text_terminal_binding.rs:75 |
 | test999 ⚠ | `test999_disbind_page_refines_plain_text` | / Disbind-pdf emits `media:page;plain-text;textable;txt` per page. Each / page item must be persistable as `.txt` — that's the user-visible / reason for the marker (per-page save in the Finder). If a regression / drops the `plain-text` marker from the disbind output URN, this test / flips and the Finder loses its save-each-page-as-txt path. | tests/plain_text_terminal_binding.rs:151 |
@@ -1108,14 +1108,14 @@ This catalog lists all tests in the Rust codebase.
 | test999 ⚠ | `test999_textable_txt_without_plain_text_marker_does_not_satisfy` | / `media:textable;txt` (the dim-anchored composite without the / `plain-text` marker) is NOT a substitute for `media:plain-text;textable;txt`. / This catches a regression where a producer cap drops the / `plain-text` marker and only declares the file-type=txt narrowing / — that producer would suddenly satisfy save-as-txt's input / because the catalog defines `media:textable;txt`, but the / `plain-text` marker is what actually gates the persistence path. | tests/plain_text_terminal_binding.rs:120 |
 | test999 ⚠ | `test999_transcription_does_not_refine_plain_text` | / Transcription is a JSON record (`{text, segments, …}`), NOT finalised / plain prose despite carrying the `textable` coercion (the JSON is / representable as UTF-8). It must NOT refine plain-text — saving a / transcription record to a `.txt` file would dump JSON into a file / the user expects to be readable prose. The `record` marker is what / distinguishes structured-as-text from finalised-as-text. If this / test flips, transcription either acquired `plain-text` (a marker / bug) or the conformance relation regressed. | tests/plain_text_terminal_binding.rs:168 |
 | | | | |
-| unnumbered | `test_add_master_with_duplicate_healthy_id_errors` | / Adding a master with an id that matches an already-HEALTHY / slot is a wiring bug — the same master must not be / registered twice. The switch surfaces this as a hard / `Protocol` error rather than silently producing a duplicate / slot. | src/bifaci/relay_switch.rs:5170 |
-| unnumbered | `test_all_masters_ready_does_not_overshoot` |  | src/bifaci/relay_switch.rs:5604 |
-| unnumbered | `test_all_masters_ready_false_when_expected_count_unset` |  | src/bifaci/relay_switch.rs:5512 |
-| unnumbered | `test_all_masters_ready_false_when_partially_connected` |  | src/bifaci/relay_switch.rs:5529 |
-| unnumbered | `test_all_masters_ready_true_when_expectation_met` |  | src/bifaci/relay_switch.rs:5544 |
-| unnumbered | `test_all_masters_ready_true_when_masters_connected_but_capless` |  | src/bifaci/relay_switch.rs:5582 |
-| unnumbered | `test_reattach_by_id_preserves_slot_index` | / Reattach-by-id keeps the slot index stable. / / After a master at slot index 0 dies, a new socket added with / the same id MUST be placed into slot 0 (not appended at index 1). / Without this, request_routing entries keyed by `master_idx=0` / would dangle pointing at a permanently-unhealthy zombie slot / while the live caps came back at slot 1 — exactly the / observed bug. | src/bifaci/relay_switch.rs:5066 |
-| unnumbered | `test_relay_switch_new_rejects_duplicate_ids` | / `RelaySwitch::new` rejects duplicate ids in its cardinality / list. Without this guard the first reconnect would / reattach to whichever slot is found first by the linear / scan, leaving the other slot stuck unhealthy forever. | src/bifaci/relay_switch.rs:5228 |
+| unnumbered | `test_add_master_with_duplicate_healthy_id_errors` | / Adding a master with an id that matches an already-HEALTHY / slot is a wiring bug — the same master must not be / registered twice. The switch surfaces this as a hard / `Protocol` error rather than silently producing a duplicate / slot. | src/bifaci/relay_switch.rs:5131 |
+| unnumbered | `test_all_masters_ready_does_not_overshoot` |  | src/bifaci/relay_switch.rs:5565 |
+| unnumbered | `test_all_masters_ready_false_when_expected_count_unset` |  | src/bifaci/relay_switch.rs:5473 |
+| unnumbered | `test_all_masters_ready_false_when_partially_connected` |  | src/bifaci/relay_switch.rs:5490 |
+| unnumbered | `test_all_masters_ready_true_when_expectation_met` |  | src/bifaci/relay_switch.rs:5505 |
+| unnumbered | `test_all_masters_ready_true_when_masters_connected_but_capless` |  | src/bifaci/relay_switch.rs:5543 |
+| unnumbered | `test_reattach_by_id_preserves_slot_index` | / Reattach-by-id keeps the slot index stable. / / After a master at slot index 0 dies, a new socket added with / the same id MUST be placed into slot 0 (not appended at index 1). / Without this, request_routing entries keyed by `master_idx=0` / would dangle pointing at a permanently-unhealthy zombie slot / while the live caps came back at slot 1 — exactly the / observed bug. | src/bifaci/relay_switch.rs:5027 |
+| unnumbered | `test_relay_switch_new_rejects_duplicate_ids` | / `RelaySwitch::new` rejects duplicate ids in its cardinality / list. Without this guard the first reconnect would / reattach to whichever slot is found first by the linear / scan, leaving the other slot stuck unhealthy forever. | src/bifaci/relay_switch.rs:5189 |
 
 ---
 
@@ -1125,8 +1125,8 @@ The following test numbers are assigned to more than one function. Keep the firs
 
 ### test489 (2 occurrences)
 
-- `test489_add_master_dynamic` — src/bifaci/relay_switch.rs:4867
-- `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` — src/bifaci/relay_switch.rs:4574
+- `test489_add_master_dynamic` — src/bifaci/relay_switch.rs:4828
+- `test489_runtime_identity_probe_required_on_empty_to_nonempty_transition` — src/bifaci/relay_switch.rs:4535
 
 **Suggested free number(s):** test484
 
@@ -1159,14 +1159,14 @@ The following test numbers are assigned to more than one function. Keep the firs
 
 The following tests are cataloged but do not currently participate in numeric test indexing.
 
-- `test_add_master_with_duplicate_healthy_id_errors` — src/bifaci/relay_switch.rs:5170
-- `test_all_masters_ready_does_not_overshoot` — src/bifaci/relay_switch.rs:5604
-- `test_all_masters_ready_false_when_expected_count_unset` — src/bifaci/relay_switch.rs:5512
-- `test_all_masters_ready_false_when_partially_connected` — src/bifaci/relay_switch.rs:5529
-- `test_all_masters_ready_true_when_expectation_met` — src/bifaci/relay_switch.rs:5544
-- `test_all_masters_ready_true_when_masters_connected_but_capless` — src/bifaci/relay_switch.rs:5582
-- `test_reattach_by_id_preserves_slot_index` — src/bifaci/relay_switch.rs:5066
-- `test_relay_switch_new_rejects_duplicate_ids` — src/bifaci/relay_switch.rs:5228
+- `test_add_master_with_duplicate_healthy_id_errors` — src/bifaci/relay_switch.rs:5131
+- `test_all_masters_ready_does_not_overshoot` — src/bifaci/relay_switch.rs:5565
+- `test_all_masters_ready_false_when_expected_count_unset` — src/bifaci/relay_switch.rs:5473
+- `test_all_masters_ready_false_when_partially_connected` — src/bifaci/relay_switch.rs:5490
+- `test_all_masters_ready_true_when_expectation_met` — src/bifaci/relay_switch.rs:5505
+- `test_all_masters_ready_true_when_masters_connected_but_capless` — src/bifaci/relay_switch.rs:5543
+- `test_reattach_by_id_preserves_slot_index` — src/bifaci/relay_switch.rs:5027
+- `test_relay_switch_new_rejects_duplicate_ids` — src/bifaci/relay_switch.rs:5189
 
 ---
 
