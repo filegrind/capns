@@ -399,7 +399,7 @@ pub fn model_download_urn() -> CapUrn {
 }
 
 /// Build URN for model-list capability
-/// Input uses MEDIA_MODEL_REPO per CATALOG: media:model-repo;textable;record
+/// Input uses MEDIA_MODEL_REPO per CATALOG: media:model-repo;record;textable
 pub fn model_list_urn() -> CapUrn {
     CapUrnBuilder::new()
         .marker("list-models")

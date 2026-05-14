@@ -2694,11 +2694,11 @@ mod tier_tests {
     fn test568_dispatch_output_tag_order() {
         // Provider has: record;textable
         let provider = CapUrn::from_string(
-            r#"cap:download-model;in="media:model-spec;textable";out="media:download-result;record;textable""#
+            r#"cap:in="media:model-spec;textable";download-model;out="media:download-result;record;textable""#
         ).unwrap();
         // Request has: textable;record (same tags, different order)
         let request = CapUrn::from_string(
-            r#"cap:download-model;in="media:model-spec;textable";out="media:download-result;record;textable""#
+            r#"cap:in="media:model-spec;textable";download-model;out="media:download-result;record;textable""#
         ).unwrap();
 
         // After parsing, both should be normalized to same canonical form
