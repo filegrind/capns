@@ -23,8 +23,8 @@ The predicate is **kind-agnostic**. The
 derived from the URN; it does not appear in the dispatch rule.
 Whether a provider is a Source matching a request whose `in` happens
 to be `media:void`, or a Transform matching a request whose `in` is a
-concrete type, is the same matching rule applied to the same three
-axes. Dispatch is one rule; kind is a description of the result.
+concrete type, is the same matching rule applied to the same four
+structural coordinates. Dispatch is one rule; kind is a description of the result.
 
 ---
 
@@ -275,11 +275,12 @@ Result: NOT DISPATCHABLE (fails at first axis)
 
 Any capability can handle itself.
 
-**Proof**: For c = (i, o, y):
+**Proof**: For c = (i, o, y, e):
 - i ⪯ i (reflexivity of ⪯)
 - o ⪯ o (reflexivity of ⪯)
+- e = e
 - y ⪯ y (reflexivity of ⪯)
-- All three hold, so Dispatch(c, c) ✓
+- All four hold, so Dispatch(c, c) ✓
 
 ### 7.2 Transitivity
 
@@ -289,7 +290,7 @@ Dispatch(a, b) ∧ Dispatch(b, c) ⟹ Dispatch(a, c)
 
 If a can handle b's requests, and b can handle c's requests, then a can handle c's requests.
 
-**Proof**: By transitivity of ⪯ on each axis.
+**Proof**: By transitivity of ⪯ on the `in`, `out`, and `y` coordinates, plus equality transitivity on `effect`.
 
 ### 7.3 NOT Symmetric
 
@@ -361,6 +362,11 @@ fn is_dispatchable(&self, request: &CapUrn) -> bool {
         }
     }
 
+    // Effect axis: exact match unless the request explicitly uses ?effect
+    if request.effect != "?" && self.effect != request.effect {
+        return false;
+    }
+
     // Cap-tags axis: provider must satisfy request constraints
     if !self.cap_tags_dispatchable(request) {
         return false;
@@ -399,7 +405,7 @@ This also ignores mixed variance.
 if provider.op == request.op { /* dispatch */ }
 ```
 
-All three axes must be checked.
+All four structural coordinates must be checked.
 
 ---
 
@@ -408,7 +414,7 @@ All three axes must be checked.
 The dispatch predicate is:
 
 ```
-Dispatch(p, r)  ⟺  (i_r = ⊤ ∨ i_r ⪯ i_p)  ∧  (o_r = ⊤ ∨ o_p ⪯ o_r)  ∧  y_r ⪯ y_p
+Dispatch(p, r)  ⟺  (i_r = ⊤ ∨ i_r ⪯ i_p)  ∧  (o_r = ⊤ ∨ o_p ⪯ o_r)  ∧  (e_r = ? ∨ e_p = e_r)  ∧  y_r ⪯ y_p
 ```
 
 Where `⊤ = media:` (unconstrained).
@@ -417,6 +423,7 @@ Where `⊤ = media:` (unconstrained).
 |----------|-------|
 | Input variance | Contravariant |
 | Output variance | Covariant |
+| Effect variance | Exact unless explicit wildcard |
 | Cap-tags variance | Invariant + Refinement |
 | Symmetric? | NO |
 | Reflexive? | YES |

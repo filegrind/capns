@@ -99,7 +99,7 @@ This specification defines the semantic foundations, runtime protocol, execution
 2. **03 Tagged URN Domain** — the base domain
 3. **04 Predicates** — the four derived predicates
 4. **05 Specificity** — scoring
-5. **06 Cap URN Structure** — how Cap URNs compose three dimensions
+5. **06 Cap URN Structure** — how Cap URNs compose four structural coordinates
 6. **07 Dispatch** — the central routing rule
 7. **08 Ranking** — selection among valid providers
 8. **09 Machine Notation** — wire multiple caps into a data-flow graph

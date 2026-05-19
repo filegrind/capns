@@ -82,10 +82,17 @@ media:pdf;v!=draft               → 2 + 3 = 5  # present and not draft
 spec_C : C → ℕ
 ```
 
-Cap URN specificity combines three components:
+Cap URNs have four structural coordinates `(in, out, y, effect)`, but
+the numeric specificity score is the weighted sum of the three
+tag-bearing coordinates:
 1. Input dimension specificity
 2. Output dimension specificity
 3. Non-direction tag specificity
+
+The `effect` coordinate is structural and participates in dispatch,
+conformance, and runtime output inference, but it is **not** part of
+the numeric specificity score. Effect differences are handled as exact
+structural distinctions, not as a stronger-or-weaker refinement ladder.
 
 ### 3.2 Formula
 
@@ -98,7 +105,7 @@ WEIGHT_OUT = 10_000
 WEIGHT_IN  =    100
 ```
 
-The three axes are not equally weighted. Two orders of magnitude
+The three weighted coordinates are not equally weighted. Two orders of magnitude
 separate each, producing a single integer whose digit slots
 encode `(out, in, y)` for visual decoding (`40205` reads as
 out=4, in=2, y=5). The lexicographic priority `(out, in, y)`
@@ -113,10 +120,15 @@ reflects routing intent:
    is descriptive, not structural.
 
 `spec_U` is the **same** Tagged URN specificity function from §2.1.
-All three axes — `in`, `out`, and `y` — go through identical per-tag
+All three weighted coordinates — `in`, `out`, and `y` — go through identical per-tag
 scoring; there is no cap-axis carve-out, no privileged tag key, no
 "y is just a count" simplification. The axis weights apply *after*
 the per-axis sums are computed.
+
+The `effect` coordinate is intentionally outside this arithmetic. A cap
+with `effect=none` is not "more specific" than the same `(in, out, y)`
+with `effect=declared`; it is a different structural promise about
+runtime media identity, and dispatch treats that difference exactly.
 
 ### 3.3 Direction Dimension Scoring
 
@@ -167,12 +179,13 @@ the same way `media:pdf;v=2.0` is more specific than `media:pdf;v=*`.
 
 ### 3.5 Examples
 
-Each example shows `(out, in, y)` per-axis sums, then the
+Each example shows the three weighted-coordinate sums `(out, in, y)`,
+then the
 weighted total `10000*out + 100*in + y`:
 
 ```
-cap:                                          → (0, 0, 0)         = 0
-# in=media: (0), out=media: (0), y empty (0)
+cap:effect=none                              → (0, 0, 0)         = 0
+# in=media: (0), out=media: (0), y empty (0); effect is structural, not scored
 
 cap:extract                                   → (0, 0, 2)         = 2
 # in=media: (0), out=media: (0), extract=* (must-have-any → 2)
@@ -220,7 +233,7 @@ compare there first, regardless of `in` and `y`.
 
 ```
 spec_U(media:) = 0
-spec_C(cap:) = 0
+spec_C(cap:effect=none) = 0
 ```
 
 ### 4.3 More Constraints = More Specific
@@ -266,13 +279,13 @@ dist(provider, request) = spec_C(provider) - spec_C(request)
 ```
 
 Interpretation:
-- `dist = 0`: Equivalent specificity (exact match)
+- `dist = 0`: Same numeric specificity score
 - `dist > 0`: Provider is more specific (refinement)
 - `dist < 0`: Provider is more generic (fallback)
 
 ### 5.2 Selection Priority
 
-1. **Exact match** (dist = 0) — most preferred
+1. **Exact score match** (dist = 0) — most preferred among equally scored dispatch-valid providers
 2. **Refinement** (dist > 0) — provider specializes request
 3. **Fallback** (dist < 0) — provider is generic, use as last resort
 
@@ -290,9 +303,8 @@ What differs between Tagged URN and Cap URN specificity is only the
 **axis weighting**:
 
 - Tagged URN: one axis (the URN's own tag set), weight 1.
-- Cap URN: three axes (`out`, `in`, `y`) with weights `(10000, 100, 1)`
-  to give `out` and `in` lexicographic priority over `y` while
-  collapsing into a single comparable integer.
+- Cap URN: four structural coordinates; specificity ranks the three weighted coordinates (`out`, `in`, `y`) with weights `(10000, 100, 1)`, while `effect` remains an exact structural gate outside the numeric score
+- This gives `out` and `in` lexicographic priority over `y` while collapsing ranking into a single comparable integer
 
 Same per-tag ladder. Same arithmetic. Just different axis weights.
 
@@ -304,11 +316,12 @@ Same per-tag ladder. Same arithmetic. Just different axis weights.
 
 ```
 spec_U(prefix:) = 0
-spec_C(cap:) = 0
+spec_C(cap:effect=none) = 0
 ```
 
-The identity has zero specificity. `cap:` is the canonical
-identity-cap form (in=media:, out=media:, no y-tags).
+The identity has zero specificity. `cap:effect=none` is the canonical
+identity-cap form. The bare declared top forms `cap:` and
+`cap:in=media:;out=media:` are illegal.
 
 ### 7.2 All Wildcards
 

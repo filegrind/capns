@@ -257,7 +257,7 @@ if urn_a.is_equivalent(&urn_b) {
 if registered.accepts(&request) { /* route here */ }
 ```
 
-**Problem**: A generic provider accepts a specific request, but may not meet the request's output requirements. Dispatch requires the 3-axis check (see [05-DISPATCH](/docs/07-dispatch)).
+**Problem**: A generic provider accepts a specific request, but may not meet the request's output requirements. Dispatch requires the full four-coordinate mixed-variance check over `(in, out, y, effect)` (see [07-DISPATCH](/docs/07-dispatch)).
 
 ### 5.2 Using `conforms_to` for dispatch
 

@@ -151,7 +151,7 @@ If this also holds, equivalence classes of U form a **partial order**.
 
 ## 8. Cap URNs as Product
 
-A Cap URN is a triple over the Tagged URN domain:
+A Cap URN is a four-coordinate product over the Tagged URN domain:
 
 ```
 C = U × U × U × E
@@ -508,13 +508,13 @@ The entire system is defined from a single semantic base:
 - A specificity relation ⪯
 - A specificity score spec_U
 
-Cap URNs are triples in U³.
+Cap URNs are four-coordinate product elements in `U × U × U × E`.
 
 Dispatch is the mixed-direction product relation:
 
 ```
-Dispatch((i_p, o_p, y_p), (i_r, o_r, y_r))
-  ⟺  i_r ⪯ i_p ∧ o_p ⪯ o_r ∧ y_r ⪯ y_p
+Dispatch((i_p, o_p, y_p, e_p), (i_r, o_r, y_r, e_r))
+  ⟺  i_r ⪯ i_p ∧ o_p ⪯ o_r ∧ (e_r = ? ∨ e_p = e_r) ∧ y_r ⪯ y_p
 ```
 
 This yields:

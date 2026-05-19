@@ -236,7 +236,7 @@ description of the result, not a routing dimension.
 
 This separation matters because:
 
-- The protocol stays simple (one matching rule, three axes).
+- The protocol stays simple (one matching rule over four structural coordinates).
 - Tools and humans can still reason about caps in plain terms
   ("this is a Source — it doesn't take input").
 - The kind cannot drift: it is always derivable from the URN. There
@@ -330,9 +330,11 @@ signal that something upstream is broken.
 ## 7. Specificity
 
 Cap URN specificity is defined in
-[05-SPECIFICITY](/docs/05-specificity). All three axes are scored by
+[05-SPECIFICITY](/docs/05-specificity). Cap URNs have four structural
+coordinates, but the numeric specificity score only ranks the three
+tag-bearing weighted coordinates `out`, `in`, and `y`. Those three use
 the same six-form per-tag ladder (`?x`:0, `x?=v`:1, `x` (=`x=*`):2,
-`x!=v`:3, `x=v`:4, `!x`:5), but the axes are *weighted*:
+`x!=v`:3, `x=v`:4, `!x`:5), with axis weights:
 
 ```
 spec_C(c) = 10_000 * spec_U(c.out)
@@ -348,16 +350,21 @@ per-axis sums up to ~99 stay in their own digit slot, making the
 integer both totally ordered and visually decodable (`40205` reads
 as out=4, in=2, y=5).
 
-Examples by kind, showing per-axis sums `(out, in, y)` and the
+The `effect` coordinate is structural but unscored. It changes
+dispatch/runtime behavior, but it is not treated as a graded
+refinement dimension for ranking.
+
+Examples by kind, showing the three weighted-coordinate sums
+`(out, in, y)` and the
 weighted total:
 
 | URN                                              | Kind      | (out, in, y) | spec_C |
 |--------------------------------------------------|-----------|:------------:|-------:|
 | `cap:?effect`                                   | Transform | (0, 0, 0)    |      0 |
-| `cap:extract`                                    | Effect    | (0, 0, 2)    |      2 |
+| `cap:extract`                                    | Transform | (0, 0, 2)    |      2 |
 | `cap:extract;in=media:pdf;out=media:textable`    | Transform | (2, 2, 2)    |  20202 |
 | `cap:in=media:void;out=media:void;ping`          | Effect    | (2, 2, 2)    |  20202 |
-| `cap:extract;target=metadata`                    | Effect    | (0, 0, 6)    |      6 |
+| `cap:extract;target=metadata`                    | Transform | (0, 0, 6)    |      6 |
 
 The fully unconstrained explicit request `cap:?effect` sits at
 specificity 0. Identity is explicit `cap:effect=none`; it is no
@@ -431,11 +438,11 @@ This section walks the five kinds with concrete, idiomatic examples.
 ### 11.1 Identity
 
 ```
-cap:
+cap:effect=none
 ```
 
-The identity morphism. Fully generic on every axis. Required in
-all capsets.
+The identity morphism. Fully generic on `in`, `out`, and `y`, with an
+explicit `effect=none` promise. Required in all capsets.
 
 ### 11.2 Transform — typed data processor
 
