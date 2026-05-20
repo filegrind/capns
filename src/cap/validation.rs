@@ -2,11 +2,11 @@
 //!
 //! This module provides strict validation of inputs and outputs against
 //! cap schemas, ensuring adherence to advertised specifications.
-//! Uses spec ID resolution to get media types and schemas from the media_specs table.
+//! Uses spec ID resolution to get media types and schemas from the media_defs table.
 //! Uses ProfileSchemaRegistry for JSON Schema-based validation of profiles.
 
 use crate::media::profile::ProfileSchemaRegistry;
-use crate::media::spec::{resolve_media_urn, MediaValidation, ResolvedMediaSpec};
+use crate::media::spec::{resolve_media_urn, MediaValidation, ResolvedMediaDef};
 use crate::{ArgSource, Cap, CapArg, CapOutput};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -32,12 +32,12 @@ pub enum ValidationError {
     InvalidArgumentType {
         cap_urn: String,
         argument_name: String,
-        expected_media_spec: String,
+        expected_media_def: String,
         actual_value: Value,
         schema_errors: Vec<String>,
     },
-    /// Media spec validation rule violation (inherent to the semantic type)
-    MediaSpecValidationFailed {
+    /// Media def validation rule violation (inherent to the semantic type)
+    MediaDefValidationFailed {
         cap_urn: String,
         argument_name: String,
         media_urn: String,
@@ -47,12 +47,12 @@ pub enum ValidationError {
     /// Invalid output type
     InvalidOutputType {
         cap_urn: String,
-        expected_media_spec: String,
+        expected_media_def: String,
         actual_value: Value,
         schema_errors: Vec<String>,
     },
-    /// Output media spec validation rule violation (inherent to the semantic type)
-    OutputMediaSpecValidationFailed {
+    /// Output media def validation rule violation (inherent to the semantic type)
+    OutputMediaDefValidationFailed {
         cap_urn: String,
         media_urn: String,
         validation_rule: String,
@@ -74,8 +74,8 @@ pub enum ValidationError {
         field_name: String,
         schema_errors: String,
     },
-    /// Invalid MediaSpec
-    InvalidMediaSpec {
+    /// Invalid MediaDef
+    InvalidMediaDef {
         cap_urn: String,
         field_name: String,
         error: String,
@@ -117,33 +117,33 @@ impl fmt::Display for ValidationError {
             ValidationError::InvalidArgumentType {
                 cap_urn,
                 argument_name,
-                expected_media_spec,
+                expected_media_def,
                 actual_value,
                 schema_errors,
             } => {
-                write!(f, "Cap '{}' argument '{}' expects media_spec '{}' but validation failed for value {}: {}",
-                       cap_urn, argument_name, expected_media_spec, actual_value, schema_errors.join(", "))
+                write!(f, "Cap '{}' argument '{}' expects media_def '{}' but validation failed for value {}: {}",
+                       cap_urn, argument_name, expected_media_def, actual_value, schema_errors.join(", "))
             }
-            ValidationError::MediaSpecValidationFailed {
+            ValidationError::MediaDefValidationFailed {
                 cap_urn,
                 argument_name,
                 media_urn,
                 validation_rule,
                 actual_value,
             } => {
-                write!(f, "Cap '{}' argument '{}' failed media spec '{}' validation rule '{}' with value: {}",
+                write!(f, "Cap '{}' argument '{}' failed media def '{}' validation rule '{}' with value: {}",
                        cap_urn, argument_name, media_urn, validation_rule, actual_value)
             }
             ValidationError::InvalidOutputType {
                 cap_urn,
-                expected_media_spec,
+                expected_media_def,
                 actual_value,
                 schema_errors,
             } => {
-                write!(f, "Cap '{}' output expects media_spec '{}' but validation failed for value {}: {}",
-                       cap_urn, expected_media_spec, actual_value, schema_errors.join(", "))
+                write!(f, "Cap '{}' output expects media_def '{}' but validation failed for value {}: {}",
+                       cap_urn, expected_media_def, actual_value, schema_errors.join(", "))
             }
-            ValidationError::OutputMediaSpecValidationFailed {
+            ValidationError::OutputMediaDefValidationFailed {
                 cap_urn,
                 media_urn,
                 validation_rule,
@@ -151,7 +151,7 @@ impl fmt::Display for ValidationError {
             } => {
                 write!(
                     f,
-                    "Cap '{}' output failed media spec '{}' validation rule '{}' with value: {}",
+                    "Cap '{}' output failed media def '{}' validation rule '{}' with value: {}",
                     cap_urn, media_urn, validation_rule, actual_value
                 )
             }
@@ -183,14 +183,14 @@ impl fmt::Display for ValidationError {
                     cap_urn, field_name, schema_errors
                 )
             }
-            ValidationError::InvalidMediaSpec {
+            ValidationError::InvalidMediaDef {
                 cap_urn,
                 field_name,
                 error,
             } => {
                 write!(
                     f,
-                    "Cap '{}' has invalid media_spec for '{}': {}",
+                    "Cap '{}' has invalid media_def for '{}': {}",
                     cap_urn, field_name, error
                 )
             }
@@ -359,12 +359,12 @@ impl InputValidator {
         value: &Value,
     ) -> Result<(), ValidationError> {
         // Type validation via resolved spec (includes local schema validation if present)
-        // Returns the resolved media spec so we can access its validation rules
+        // Returns the resolved media def so we can access its validation rules
         let resolved = self.validate_argument_type(cap, arg_def, value).await?;
 
-        // Media spec validation rules (inherent to the semantic type)
+        // Media def validation rules (inherent to the semantic type)
         if let Some(ref validation) = resolved.validation {
-            self.validate_media_spec_rules(cap, arg_def, &resolved, validation, value)?;
+            self.validate_media_def_rules(cap, arg_def, &resolved, validation, value)?;
         }
 
         Ok(())
@@ -375,18 +375,18 @@ impl InputValidator {
         cap: &Cap,
         arg_def: &CapArg,
         value: &Value,
-    ) -> Result<ResolvedMediaSpec, ValidationError> {
+    ) -> Result<ResolvedMediaDef, ValidationError> {
         let cap_urn = cap.urn_string();
 
         // Resolve the spec ID from the argument definition. Caps no
-        // longer carry inline media specs; the registry is the only source.
+        // longer carry inline media defs; the registry is the only source.
         let _ = cap;
         let resolved = resolve_media_urn(
             &arg_def.media_urn,
             &self.fabric_registry,
         )
         .await
-        .map_err(|e| ValidationError::InvalidMediaSpec {
+        .map_err(|e| ValidationError::InvalidMediaDef {
             cap_urn: cap_urn.clone(),
             field_name: arg_def.media_urn.clone(),
             error: e.to_string(),
@@ -398,7 +398,7 @@ impl InputValidator {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
                     argument_name: arg_def.media_urn.clone(),
-                    expected_media_spec: arg_def.media_urn.clone(),
+                    expected_media_def: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: vec![
                         "Expected base64-encoded string for binary type".to_string()
@@ -415,7 +415,7 @@ impl InputValidator {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
                     argument_name: arg_def.media_urn.clone(),
-                    expected_media_spec: arg_def.media_urn.clone(),
+                    expected_media_def: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -429,7 +429,7 @@ impl InputValidator {
                 return Err(ValidationError::InvalidArgumentType {
                     cap_urn,
                     argument_name: arg_def.media_urn.clone(),
-                    expected_media_spec: arg_def.media_urn.clone(),
+                    expected_media_def: arg_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -440,12 +440,12 @@ impl InputValidator {
         Ok(resolved)
     }
 
-    /// Validate value against media spec's inherent validation rules (first pass)
-    fn validate_media_spec_rules(
+    /// Validate value against media def's inherent validation rules (first pass)
+    fn validate_media_def_rules(
         &self,
         cap: &Cap,
         arg_def: &CapArg,
-        resolved: &ResolvedMediaSpec,
+        resolved: &ResolvedMediaDef,
         validation: &MediaValidation,
         value: &Value,
     ) -> Result<(), ValidationError> {
@@ -455,7 +455,7 @@ impl InputValidator {
         if let Some(min) = validation.min {
             if let Some(num) = value.as_f64() {
                 if num < min {
-                    return Err(ValidationError::MediaSpecValidationFailed {
+                    return Err(ValidationError::MediaDefValidationFailed {
                         cap_urn,
                         argument_name: arg_def.media_urn.clone(),
                         media_urn: resolved.media_urn.clone(),
@@ -469,7 +469,7 @@ impl InputValidator {
         if let Some(max) = validation.max {
             if let Some(num) = value.as_f64() {
                 if num > max {
-                    return Err(ValidationError::MediaSpecValidationFailed {
+                    return Err(ValidationError::MediaDefValidationFailed {
                         cap_urn,
                         argument_name: arg_def.media_urn.clone(),
                         media_urn: resolved.media_urn.clone(),
@@ -485,7 +485,7 @@ impl InputValidator {
             match (value.as_str(), value.as_array()) {
                 (Some(s), _) => {
                     if s.len() < min_length {
-                        return Err(ValidationError::MediaSpecValidationFailed {
+                        return Err(ValidationError::MediaDefValidationFailed {
                             cap_urn,
                             argument_name: arg_def.media_urn.clone(),
                             media_urn: resolved.media_urn.clone(),
@@ -496,7 +496,7 @@ impl InputValidator {
                 }
                 (_, Some(arr)) => {
                     if arr.len() < min_length {
-                        return Err(ValidationError::MediaSpecValidationFailed {
+                        return Err(ValidationError::MediaDefValidationFailed {
                             cap_urn,
                             argument_name: arg_def.media_urn.clone(),
                             media_urn: resolved.media_urn.clone(),
@@ -513,7 +513,7 @@ impl InputValidator {
             match (value.as_str(), value.as_array()) {
                 (Some(s), _) => {
                     if s.len() > max_length {
-                        return Err(ValidationError::MediaSpecValidationFailed {
+                        return Err(ValidationError::MediaDefValidationFailed {
                             cap_urn,
                             argument_name: arg_def.media_urn.clone(),
                             media_urn: resolved.media_urn.clone(),
@@ -524,7 +524,7 @@ impl InputValidator {
                 }
                 (_, Some(arr)) => {
                     if arr.len() > max_length {
-                        return Err(ValidationError::MediaSpecValidationFailed {
+                        return Err(ValidationError::MediaDefValidationFailed {
                             cap_urn,
                             argument_name: arg_def.media_urn.clone(),
                             media_urn: resolved.media_urn.clone(),
@@ -544,12 +544,12 @@ impl InputValidator {
                     regex::Regex::new(pattern).map_err(|e| ValidationError::InvalidCapSchema {
                         cap_urn: cap_urn.clone(),
                         issue: format!(
-                            "Invalid regex pattern '{}' in media spec '{}': {}",
+                            "Invalid regex pattern '{}' in media def '{}': {}",
                             pattern, resolved.media_urn, e
                         ),
                     })?;
                 if !regex.is_match(s) {
-                    return Err(ValidationError::MediaSpecValidationFailed {
+                    return Err(ValidationError::MediaDefValidationFailed {
                         cap_urn,
                         argument_name: arg_def.media_urn.clone(),
                         media_urn: resolved.media_urn.clone(),
@@ -564,7 +564,7 @@ impl InputValidator {
         if let Some(allowed_values) = &validation.allowed_values {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
-                    return Err(ValidationError::MediaSpecValidationFailed {
+                    return Err(ValidationError::MediaDefValidationFailed {
                         cap_urn,
                         argument_name: arg_def.media_urn.clone(),
                         media_urn: resolved.media_urn.clone(),
@@ -629,12 +629,12 @@ impl OutputValidator {
             })?;
 
         // Type validation via resolved spec (includes local schema validation if present)
-        // Returns the resolved media spec so we can access its validation rules
+        // Returns the resolved media def so we can access its validation rules
         let resolved = self.validate_output_type(cap, output_def, output).await?;
 
-        // Media spec validation rules (inherent to the semantic type)
+        // Media def validation rules (inherent to the semantic type)
         if let Some(ref validation) = resolved.validation {
-            self.validate_output_media_spec_rules(cap, &resolved, validation, output)?;
+            self.validate_output_media_def_rules(cap, &resolved, validation, output)?;
         }
 
         Ok(())
@@ -645,18 +645,18 @@ impl OutputValidator {
         cap: &Cap,
         output_def: &CapOutput,
         value: &Value,
-    ) -> Result<ResolvedMediaSpec, ValidationError> {
+    ) -> Result<ResolvedMediaDef, ValidationError> {
         let cap_urn = cap.urn_string();
 
         // Resolve the spec ID from the output definition. Caps no longer
-        // carry inline media specs; the registry is the only source.
+        // carry inline media defs; the registry is the only source.
         let _ = cap;
         let resolved = resolve_media_urn(
             &output_def.media_urn,
             &self.fabric_registry,
         )
         .await
-        .map_err(|e| ValidationError::InvalidMediaSpec {
+        .map_err(|e| ValidationError::InvalidMediaDef {
             cap_urn: cap_urn.clone(),
             field_name: "output".to_string(),
             error: e.to_string(),
@@ -667,7 +667,7 @@ impl OutputValidator {
             if !matches!(value, Value::String(_)) {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
-                    expected_media_spec: output_def.media_urn.clone(),
+                    expected_media_def: output_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: vec![
                         "Expected base64-encoded string for binary type".to_string()
@@ -683,7 +683,7 @@ impl OutputValidator {
             if let Err(errors) = self.validate_with_local_schema(schema, value) {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
-                    expected_media_spec: output_def.media_urn.clone(),
+                    expected_media_def: output_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -696,7 +696,7 @@ impl OutputValidator {
             if let Err(errors) = self.schema_registry.validate(profile, value).await {
                 return Err(ValidationError::InvalidOutputType {
                     cap_urn,
-                    expected_media_spec: output_def.media_urn.clone(),
+                    expected_media_def: output_def.media_urn.clone(),
                     actual_value: value.clone(),
                     schema_errors: errors,
                 });
@@ -707,11 +707,11 @@ impl OutputValidator {
         Ok(resolved)
     }
 
-    /// Validate output value against media spec's inherent validation rules (first pass)
-    fn validate_output_media_spec_rules(
+    /// Validate output value against media def's inherent validation rules (first pass)
+    fn validate_output_media_def_rules(
         &self,
         cap: &Cap,
-        resolved: &ResolvedMediaSpec,
+        resolved: &ResolvedMediaDef,
         validation: &MediaValidation,
         value: &Value,
     ) -> Result<(), ValidationError> {
@@ -721,7 +721,7 @@ impl OutputValidator {
         if let Some(min) = validation.min {
             if let Some(num) = value.as_f64() {
                 if num < min {
-                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                    return Err(ValidationError::OutputMediaDefValidationFailed {
                         cap_urn,
                         media_urn: resolved.media_urn.clone(),
                         validation_rule: format!("minimum value {}", min),
@@ -734,7 +734,7 @@ impl OutputValidator {
         if let Some(max) = validation.max {
             if let Some(num) = value.as_f64() {
                 if num > max {
-                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                    return Err(ValidationError::OutputMediaDefValidationFailed {
                         cap_urn,
                         media_urn: resolved.media_urn.clone(),
                         validation_rule: format!("maximum value {}", max),
@@ -748,7 +748,7 @@ impl OutputValidator {
         if let Some(min_length) = validation.min_length {
             if let Some(s) = value.as_str() {
                 if s.len() < min_length {
-                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                    return Err(ValidationError::OutputMediaDefValidationFailed {
                         cap_urn,
                         media_urn: resolved.media_urn.clone(),
                         validation_rule: format!("minimum length {}", min_length),
@@ -761,7 +761,7 @@ impl OutputValidator {
         if let Some(max_length) = validation.max_length {
             if let Some(s) = value.as_str() {
                 if s.len() > max_length {
-                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                    return Err(ValidationError::OutputMediaDefValidationFailed {
                         cap_urn,
                         media_urn: resolved.media_urn.clone(),
                         validation_rule: format!("maximum length {}", max_length),
@@ -778,12 +778,12 @@ impl OutputValidator {
                     regex::Regex::new(pattern).map_err(|e| ValidationError::InvalidCapSchema {
                         cap_urn: cap_urn.clone(),
                         issue: format!(
-                            "Invalid regex pattern '{}' in media spec '{}': {}",
+                            "Invalid regex pattern '{}' in media def '{}': {}",
                             pattern, resolved.media_urn, e
                         ),
                     })?;
                 if !regex.is_match(s) {
-                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                    return Err(ValidationError::OutputMediaDefValidationFailed {
                         cap_urn,
                         media_urn: resolved.media_urn.clone(),
                         validation_rule: format!("pattern '{}'", pattern),
@@ -797,7 +797,7 @@ impl OutputValidator {
         if let Some(allowed_values) = &validation.allowed_values {
             if let Some(s) = value.as_str() {
                 if !allowed_values.contains(&s.to_string()) {
-                    return Err(ValidationError::OutputMediaSpecValidationFailed {
+                    return Err(ValidationError::OutputMediaDefValidationFailed {
                         cap_urn,
                         media_urn: resolved.media_urn.clone(),
                         validation_rule: format!("allowed values: {:?}", allowed_values),
@@ -895,11 +895,11 @@ impl CapValidator {
         }
 
         // Validate that all media URN references can be resolved through
-        // the registry. Caps no longer carry inline media specs.
+        // the registry. Caps no longer carry inline media defs.
         for arg in args {
             resolve_media_urn(&arg.media_urn, registry)
                 .await
-                .map_err(|e| ValidationError::InvalidMediaSpec {
+                .map_err(|e| ValidationError::InvalidMediaDef {
                     cap_urn: cap_urn.clone(),
                     field_name: arg.media_urn.clone(),
                     error: e.to_string(),
@@ -909,7 +909,7 @@ impl CapValidator {
         if let Some(output) = cap.get_output() {
             resolve_media_urn(&output.media_urn, registry)
                 .await
-                .map_err(|e| ValidationError::InvalidMediaSpec {
+                .map_err(|e| ValidationError::InvalidMediaDef {
                     cap_urn: cap_urn.clone(),
                     field_name: "output".to_string(),
                     error: e.to_string(),
@@ -1308,9 +1308,9 @@ mod tests {
             "test-command".to_string(),
         );
 
-        // Seed the registry with the schema-bearing media spec; caps no
-        // longer carry inline media specs.
-        fabric_registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        // Seed the registry with the schema-bearing media def; caps no
+        // longer carry inline media defs.
+        fabric_registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: MEDIA_INTEGER.to_string(),
             media_type: "text/plain".to_string(),
             title: "Integer".to_string(),
@@ -1344,11 +1344,11 @@ mod tests {
         }
     }
 
-    // TEST054 / TEST055 / TEST056 (XV5: inline media spec redefinition)
-    // were deleted along with `cap.media_specs`. Caps no longer carry
-    // inline media specs, so the conditions those tests checked for can
+    // TEST054 / TEST055 / TEST056 (XV5: inline media def redefinition)
+    // were deleted along with `cap.media_defs`. Caps no longer carry
+    // inline media defs, so the conditions those tests checked for can
     // no longer be expressed in the type system. The single source of
-    // truth for media specs is now the registry.
+    // truth for media defs is now the registry.
 
     // =========================================================================
     // validate_cap_args RULE tests (TEST578-TEST590)
@@ -1809,7 +1809,7 @@ pub async fn validate_cap_canonical(
 /// - Every output's media_urn
 ///
 /// Resolution order:
-/// 1. Cap's local media_specs table (cap-specific overrides)
+/// 1. Cap's local media_defs table (cap-specific overrides)
 /// 2. Registry's in-memory + disk cache
 /// 3. Online registry fetch (blocked by the registry's offline flag if set)
 pub async fn validate_media_urn_references(

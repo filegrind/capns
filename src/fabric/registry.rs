@@ -1,8 +1,8 @@
-//! Unified fabric registry: caps + media specs.
+//! Unified fabric registry: caps + media defs.
 //!
 //! Two domain payload types:
 //! - `Cap` (cap definitions) at `<base>/caps/<sha256-of-canonical-urn>`
-//! - `StoredMediaSpec` (media specs) at `<base>/media/<sha256-of-canonical-urn>`
+//! - `StoredMediaDef` (media defs) at `<base>/media/<sha256-of-canonical-urn>`
 //!
 //! On disk:
 //! - `<cache_dir>/caps/<sha256>.json`
@@ -16,11 +16,11 @@
 //!
 //! The cap fetch is **atomic**: if any media URN referenced by a cap fails
 //! to fetch, the cap is NOT cached. This guarantees that any cap landing
-//! in the cap cache has every one of its referenced media specs already in
+//! in the cap cache has every one of its referenced media defs already in
 //! the media cache (and the extension index).
 
 use crate::cap::definition::ArgSource;
-use crate::media::spec::MediaSpecDef;
+use crate::media::spec::MediaDef;
 use crate::Cap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -37,7 +37,7 @@ const DEFAULT_REGISTRY_BASE_URL: &str = "https://fabric.capdag.com";
 const CACHE_DURATION_HOURS: u64 = 24;
 
 /// Hard wall-clock budget for the synchronous fetch attempt that
-/// `get_cached_cap` and `get_cached_media_spec` each make on a cache
+/// `get_cached_cap` and `get_cached_media_def` each make on a cache
 /// miss. Anything that doesn't return inside this window times out and
 /// falls through to the queue path; the next call hits warm cache.
 const SYNC_FETCH_DEADLINE: Duration = Duration::from_millis(500);
@@ -96,9 +96,9 @@ impl RegistryConfig {
 // PAYLOAD TYPES
 // =============================================================================
 
-/// Stored media spec format (matches registry API response)
+/// Stored media def format (matches registry API response)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StoredMediaSpec {
+pub struct StoredMediaDef {
     pub urn: String,
     pub media_type: String,
     pub title: String,
@@ -118,9 +118,9 @@ pub struct StoredMediaSpec {
     pub extensions: Vec<String>,
 }
 
-impl StoredMediaSpec {
-    pub fn to_media_spec_def(&self) -> MediaSpecDef {
-        MediaSpecDef {
+impl StoredMediaDef {
+    pub fn to_media_def_def(&self) -> MediaDef {
+        MediaDef {
             urn: self.urn.clone(),
             media_type: self.media_type.clone(),
             title: self.title.clone(),
@@ -144,7 +144,7 @@ struct CapCacheEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MediaCacheEntry {
-    spec: StoredMediaSpec,
+    spec: StoredMediaDef,
     cached_at: u64,
     ttl_hours: u64,
 }
@@ -201,12 +201,12 @@ enum FetchKey {
 #[derive(Debug)]
 pub struct FabricRegistry {
     client: reqwest::Client,
-    /// Root cache directory. Caps and media specs live in `caps/` and
+    /// Root cache directory. Caps and media defs live in `caps/` and
     /// `media/` subdirectories respectively, mirroring the registry's
     /// own URL layout.
     cache_dir: PathBuf,
     cached_caps: Arc<Mutex<HashMap<String, Cap>>>,
-    cached_media_specs: Arc<Mutex<HashMap<String, StoredMediaSpec>>>,
+    cached_media_defs: Arc<Mutex<HashMap<String, StoredMediaDef>>>,
     /// Lower-case extension → list of canonical media URNs.
     extension_index: Arc<Mutex<HashMap<String, Vec<String>>>>,
     config: RegistryConfig,
@@ -243,11 +243,11 @@ impl FabricRegistry {
             })?;
 
         let cached_caps_map = Self::load_all_cached_caps(&caps_dir)?;
-        let cached_specs_map = Self::load_all_cached_media_specs(&media_dir)?;
+        let cached_specs_map = Self::load_all_cached_media_defs(&media_dir)?;
         let extension_index_map = Self::build_extension_index(&cached_specs_map);
 
         let cached_caps = Arc::new(Mutex::new(cached_caps_map));
-        let cached_media_specs = Arc::new(Mutex::new(cached_specs_map));
+        let cached_media_defs = Arc::new(Mutex::new(cached_specs_map));
         let extension_index = Arc::new(Mutex::new(extension_index_map));
         let fetch_in_queue = Arc::new(Mutex::new(HashSet::new()));
         let offline_flag = Arc::new(AtomicBool::new(false));
@@ -260,7 +260,7 @@ impl FabricRegistry {
                     client.clone(),
                     cache_dir.clone(),
                     Arc::clone(&cached_caps),
-                    Arc::clone(&cached_media_specs),
+                    Arc::clone(&cached_media_defs),
                     Arc::clone(&extension_index),
                     Arc::clone(&fetch_in_queue),
                     Arc::clone(&offline_flag),
@@ -275,7 +275,7 @@ impl FabricRegistry {
             client,
             cache_dir,
             cached_caps,
-            cached_media_specs,
+            cached_media_defs,
             extension_index,
             config,
             offline_flag,
@@ -326,7 +326,7 @@ impl FabricRegistry {
     // -------------------------------------------------------------------------
 
     /// Get a cap from in-memory cache or fetch from registry. Atomic with
-    /// respect to referenced media specs: a cap whose media-spec footprint
+    /// respect to referenced media defs: a cap whose media-def footprint
     /// can't be fully fetched is not cached and the call returns `Err`.
     pub async fn get_cap(&self, urn: &str) -> Result<Cap, FabricRegistryError> {
         let normalized_urn = normalize_cap_urn(urn);
@@ -337,7 +337,7 @@ impl FabricRegistry {
             &self.client,
             &self.cache_dir,
             &self.cached_caps,
-            &self.cached_media_specs,
+            &self.cached_media_defs,
             &self.extension_index,
             &self.offline_flag,
             &self.config,
@@ -385,7 +385,7 @@ impl FabricRegistry {
                         &self.client,
                         &self.cache_dir,
                         &self.cached_caps,
-                        &self.cached_media_specs,
+                        &self.cached_media_defs,
                         &self.extension_index,
                         &self.offline_flag,
                         &self.config,
@@ -453,27 +453,27 @@ impl FabricRegistry {
     }
 
     // -------------------------------------------------------------------------
-    // MEDIA-SPEC API
+    // MEDIA-DEF API
     // -------------------------------------------------------------------------
 
-    /// Get a media spec from cache or fetch from registry.
-    pub async fn get_media_spec(
+    /// Get a media def from cache or fetch from registry.
+    pub async fn get_media_def(
         &self,
         urn: &str,
-    ) -> Result<StoredMediaSpec, FabricRegistryError> {
+    ) -> Result<StoredMediaDef, FabricRegistryError> {
         let normalized = normalize_media_urn(urn);
         if let Some(spec) = self
-            .cached_media_specs
+            .cached_media_defs
             .lock()
             .ok()
             .and_then(|m| m.get(&normalized).cloned())
         {
             return Ok(spec);
         }
-        fetch_one_media_spec(
+        fetch_one_media_def(
             &self.client,
             &self.cache_dir,
-            &self.cached_media_specs,
+            &self.cached_media_defs,
             &self.extension_index,
             &self.offline_flag,
             &self.config,
@@ -482,32 +482,32 @@ impl FabricRegistry {
         .await
     }
 
-    /// Get multiple media specs at once.
-    pub async fn get_media_specs(
+    /// Get multiple media defs at once.
+    pub async fn get_media_defs(
         &self,
         urns: &[&str],
-    ) -> Result<Vec<StoredMediaSpec>, FabricRegistryError> {
+    ) -> Result<Vec<StoredMediaDef>, FabricRegistryError> {
         let mut specs = Vec::new();
         for urn in urns {
-            specs.push(self.get_media_spec(urn).await?);
+            specs.push(self.get_media_def(urn).await?);
         }
         Ok(specs)
     }
 
-    /// Get all currently cached media specs.
-    pub async fn get_cached_media_specs(&self) -> Result<Vec<StoredMediaSpec>, FabricRegistryError> {
-        let cached_specs = self.cached_media_specs.lock().map_err(|e| {
-            FabricRegistryError::CacheError(format!("Failed to lock media-spec cache: {}", e))
+    /// Get all currently cached media defs.
+    pub async fn get_cached_media_defs(&self) -> Result<Vec<StoredMediaDef>, FabricRegistryError> {
+        let cached_specs = self.cached_media_defs.lock().map_err(|e| {
+            FabricRegistryError::CacheError(format!("Failed to lock media-def cache: {}", e))
         })?;
         Ok(cached_specs.values().cloned().collect())
     }
 
 
-    /// Synchronous media-spec lookup that warms its own cache.
-    pub fn get_cached_media_spec(&self, urn: &str) -> Option<StoredMediaSpec> {
+    /// Synchronous media-def lookup that warms its own cache.
+    pub fn get_cached_media_def(&self, urn: &str) -> Option<StoredMediaDef> {
         let normalized = normalize_media_urn(urn);
         if let Some(spec) = self
-            .cached_media_specs
+            .cached_media_defs
             .lock()
             .ok()
             .and_then(|m| m.get(&normalized).cloned())
@@ -526,10 +526,10 @@ impl FabricRegistry {
             runtime.block_on(async {
                 tokio::time::timeout(
                     SYNC_FETCH_DEADLINE,
-                    fetch_one_media_spec(
+                    fetch_one_media_def(
                         &self.client,
                         &self.cache_dir,
-                        &self.cached_media_specs,
+                        &self.cached_media_defs,
                         &self.extension_index,
                         &self.offline_flag,
                         &self.config,
@@ -545,14 +545,14 @@ impl FabricRegistry {
                 tracing::debug!(
                     target: "capdag::fabric::registry",
                     urn = %normalized, error = %e,
-                    "Synchronous media-spec fetch errored within deadline; enqueueing for background fetch."
+                    "Synchronous media-def fetch errored within deadline; enqueueing for background fetch."
                 );
             }
             Err(_elapsed) => {
                 tracing::debug!(
                     target: "capdag::fabric::registry",
                     urn = %normalized,
-                    "Synchronous media-spec fetch did not complete within deadline; enqueueing for background fetch."
+                    "Synchronous media-def fetch did not complete within deadline; enqueueing for background fetch."
                 );
             }
         }
@@ -563,7 +563,7 @@ impl FabricRegistry {
     /// Returns `true` if the URN is a bookend-eligible file format — its
     /// stored spec has at least one registered file extension.
     pub fn is_bookend(&self, urn: &str) -> bool {
-        match self.get_cached_media_spec(urn) {
+        match self.get_cached_media_def(urn) {
             Some(spec) => !spec.extensions.is_empty(),
             None => false,
         }
@@ -571,7 +571,7 @@ impl FabricRegistry {
 
     /// Snapshot of every bookend-eligible URN currently in the cache.
     pub fn bookend_urns(&self) -> std::collections::HashSet<crate::MediaUrn> {
-        let cached = match self.cached_media_specs.lock() {
+        let cached = match self.cached_media_defs.lock() {
             Ok(g) => g,
             Err(_) => return Default::default(),
         };
@@ -593,7 +593,7 @@ impl FabricRegistry {
         })?;
         index.get(&ext_lower).cloned().ok_or_else(|| {
             FabricRegistryError::ExtensionNotFound(format!(
-                "No media spec registered for extension '{}'",
+                "No media def registered for extension '{}'",
                 extension
             ))
         })
@@ -609,10 +609,10 @@ impl FabricRegistry {
         Ok(index.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
 
-    /// Insert a media spec into the in-memory cache. Test helper.
-    pub fn insert_cached_media_spec_for_test(&self, spec: StoredMediaSpec) {
+    /// Insert a media def into the in-memory cache. Test helper.
+    pub fn insert_cached_media_def_for_test(&self, spec: StoredMediaDef) {
         let normalized = normalize_media_urn(&spec.urn);
-        if let Ok(mut cache) = self.cached_media_specs.lock() {
+        if let Ok(mut cache) = self.cached_media_defs.lock() {
             cache.insert(normalized, spec.clone());
         }
         if let Ok(mut idx) = self.extension_index.lock() {
@@ -627,8 +627,8 @@ impl FabricRegistry {
     }
 
     /// Check if a media URN exists in registry (cached or online).
-    pub async fn media_spec_exists(&self, urn: &str) -> bool {
-        self.get_media_spec(urn).await.is_ok()
+    pub async fn media_def_exists(&self, urn: &str) -> bool {
+        self.get_media_def(urn).await.is_ok()
     }
 
     // -------------------------------------------------------------------------
@@ -640,7 +640,7 @@ impl FabricRegistry {
         if let Ok(mut g) = self.cached_caps.lock() {
             g.clear();
         }
-        if let Ok(mut g) = self.cached_media_specs.lock() {
+        if let Ok(mut g) = self.cached_media_defs.lock() {
             g.clear();
         }
         if let Ok(mut g) = self.extension_index.lock() {
@@ -735,9 +735,9 @@ impl FabricRegistry {
         Ok(caps)
     }
 
-    fn load_all_cached_media_specs(
+    fn load_all_cached_media_defs(
         media_dir: &Path,
-    ) -> Result<HashMap<String, StoredMediaSpec>, FabricRegistryError> {
+    ) -> Result<HashMap<String, StoredMediaDef>, FabricRegistryError> {
         let mut specs = HashMap::new();
         if !media_dir.exists() {
             return Ok(specs);
@@ -781,7 +781,7 @@ impl FabricRegistry {
     }
 
     fn build_extension_index(
-        specs: &HashMap<String, StoredMediaSpec>,
+        specs: &HashMap<String, StoredMediaDef>,
     ) -> HashMap<String, Vec<String>> {
         let mut index: HashMap<String, Vec<String>> = HashMap::new();
         for spec in specs.values() {
@@ -809,7 +809,7 @@ impl FabricRegistry {
         let _ = fs::create_dir_all(cache_dir.join("caps"));
         let _ = fs::create_dir_all(cache_dir.join("media"));
         let cached_caps = Arc::new(Mutex::new(HashMap::new()));
-        let cached_media_specs = Arc::new(Mutex::new(HashMap::new()));
+        let cached_media_defs = Arc::new(Mutex::new(HashMap::new()));
         let extension_index = Arc::new(Mutex::new(HashMap::new()));
         let fetch_in_queue = Arc::new(Mutex::new(HashSet::new()));
         let offline_flag = Arc::new(AtomicBool::new(false));
@@ -823,7 +823,7 @@ impl FabricRegistry {
                     client.clone(),
                     cache_dir.clone(),
                     Arc::clone(&cached_caps),
-                    Arc::clone(&cached_media_specs),
+                    Arc::clone(&cached_media_defs),
                     Arc::clone(&extension_index),
                     Arc::clone(&fetch_in_queue),
                     Arc::clone(&offline_flag),
@@ -838,7 +838,7 @@ impl FabricRegistry {
             client,
             cache_dir,
             cached_caps,
-            cached_media_specs,
+            cached_media_defs,
             extension_index,
             config,
             offline_flag,
@@ -861,7 +861,7 @@ async fn fetch_one_cap_atomic(
     client: &reqwest::Client,
     cache_dir: &Path,
     cached_caps: &Arc<Mutex<HashMap<String, Cap>>>,
-    cached_media_specs: &Arc<Mutex<HashMap<String, StoredMediaSpec>>>,
+    cached_media_defs: &Arc<Mutex<HashMap<String, StoredMediaDef>>>,
     extension_index: &Arc<Mutex<HashMap<String, Vec<String>>>>,
     offline_flag: &Arc<AtomicBool>,
     config: &RegistryConfig,
@@ -921,7 +921,7 @@ async fn fetch_one_cap_atomic(
     }
 
     for media_urn in &referenced {
-        let already_cached = cached_media_specs
+        let already_cached = cached_media_defs
             .lock()
             .ok()
             .map(|m| m.contains_key(media_urn))
@@ -929,10 +929,10 @@ async fn fetch_one_cap_atomic(
         if already_cached {
             continue;
         }
-        if let Err(e) = fetch_one_media_spec(
+        if let Err(e) = fetch_one_media_def(
             client,
             cache_dir,
-            cached_media_specs,
+            cached_media_defs,
             extension_index,
             offline_flag,
             config,
@@ -945,7 +945,7 @@ async fn fetch_one_cap_atomic(
                 cap_urn = %normalized_urn,
                 missing_media_urn = %media_urn,
                 error = %e,
-                "Aborting cap cache write: a referenced media spec could not be fetched. \
+                "Aborting cap cache write: a referenced media def could not be fetched. \
                  The cap is NOT cached so the next attempt re-tries cleanly."
             );
             return Err(FabricRegistryError::NotFound(format!(
@@ -955,7 +955,7 @@ async fn fetch_one_cap_atomic(
         }
     }
 
-    // All referenced media specs in cache. Write the cap.
+    // All referenced media defs in cache. Write the cap.
     let cache_entry = CapCacheEntry {
         definition: cap.clone(),
         cached_at: SystemTime::now()
@@ -979,19 +979,19 @@ async fn fetch_one_cap_atomic(
     Ok(cap)
 }
 
-/// Atomic media-spec fetcher.
-pub(crate) async fn fetch_one_media_spec(
+/// Atomic media-def fetcher.
+pub(crate) async fn fetch_one_media_def(
     client: &reqwest::Client,
     cache_dir: &Path,
-    cached_media_specs: &Arc<Mutex<HashMap<String, StoredMediaSpec>>>,
+    cached_media_defs: &Arc<Mutex<HashMap<String, StoredMediaDef>>>,
     extension_index: &Arc<Mutex<HashMap<String, Vec<String>>>>,
     offline_flag: &Arc<AtomicBool>,
     config: &RegistryConfig,
     normalized_urn: &str,
-) -> Result<StoredMediaSpec, FabricRegistryError> {
+) -> Result<StoredMediaDef, FabricRegistryError> {
     if offline_flag.load(Ordering::Relaxed) {
         return Err(FabricRegistryError::NetworkBlocked(format!(
-            "Network access blocked by policy — cannot fetch media spec '{}'",
+            "Network access blocked by policy — cannot fetch media def '{}'",
             normalized_urn
         )));
     }
@@ -1002,18 +1002,18 @@ pub(crate) async fn fetch_one_media_spec(
     let url = format!("{}/media/{}", config.registry_base_url, hash);
 
     let response = client.get(&url).send().await.map_err(|e| {
-        FabricRegistryError::HttpError(format!("Failed to fetch media spec: {}", e))
+        FabricRegistryError::HttpError(format!("Failed to fetch media def: {}", e))
     })?;
     if !response.status().is_success() {
         return Err(FabricRegistryError::NotFound(format!(
-            "Media spec '{}' not found in registry (HTTP {})",
+            "Media def '{}' not found in registry (HTTP {})",
             normalized_urn,
             response.status()
         )));
     }
-    let spec: StoredMediaSpec = response.json().await.map_err(|e| {
+    let spec: StoredMediaDef = response.json().await.map_err(|e| {
         FabricRegistryError::ParseError(format!(
-            "Failed to parse media spec '{}': {}",
+            "Failed to parse media def '{}': {}",
             normalized_urn, e
         ))
     })?;
@@ -1037,7 +1037,7 @@ pub(crate) async fn fetch_one_media_spec(
         FabricRegistryError::CacheError(format!("Failed to write media cache file: {}", e))
     })?;
 
-    if let Ok(mut cached) = cached_media_specs.lock() {
+    if let Ok(mut cached) = cached_media_defs.lock() {
         cached.insert(normalized_urn.to_string(), spec.clone());
     }
     if let Ok(mut idx) = extension_index.lock() {
@@ -1060,7 +1060,7 @@ async fn run_fetch_consumer(
     client: reqwest::Client,
     cache_dir: PathBuf,
     cached_caps: Arc<Mutex<HashMap<String, Cap>>>,
-    cached_media_specs: Arc<Mutex<HashMap<String, StoredMediaSpec>>>,
+    cached_media_defs: Arc<Mutex<HashMap<String, StoredMediaDef>>>,
     extension_index: Arc<Mutex<HashMap<String, Vec<String>>>>,
     fetch_in_queue: Arc<Mutex<HashSet<FetchKey>>>,
     offline_flag: Arc<AtomicBool>,
@@ -1079,7 +1079,7 @@ async fn run_fetch_consumer(
                         &client,
                         &cache_dir,
                         &cached_caps,
-                        &cached_media_specs,
+                        &cached_media_defs,
                         &extension_index,
                         &offline_flag,
                         &config,
@@ -1105,16 +1105,16 @@ async fn run_fetch_consumer(
                 }
             }
             FetchKey::Media(normalized_urn) => {
-                let already_cached = cached_media_specs
+                let already_cached = cached_media_defs
                     .lock()
                     .ok()
                     .map(|m| m.contains_key(normalized_urn))
                     .unwrap_or(false);
                 if !already_cached {
-                    match fetch_one_media_spec(
+                    match fetch_one_media_def(
                         &client,
                         &cache_dir,
-                        &cached_media_specs,
+                        &cached_media_defs,
                         &extension_index,
                         &offline_flag,
                         &config,
@@ -1126,14 +1126,14 @@ async fn run_fetch_consumer(
                             tracing::debug!(
                                 target: "capdag::fabric::registry::fetch_consumer",
                                 urn = %normalized_urn,
-                                "Background-fetched media spec; cache is now warm."
+                                "Background-fetched media def; cache is now warm."
                             );
                         }
                         Err(e) => {
                             tracing::warn!(
                                 target: "capdag::fabric::registry::fetch_consumer",
                                 urn = %normalized_urn, error = %e,
-                                "Background media-spec fetch failed; URN dropped from queue (no retry)."
+                                "Background media-def fetch failed; URN dropped from queue (no retry)."
                             );
                         }
                     }
@@ -1170,6 +1170,6 @@ pub enum FabricRegistryError {
     #[error("Network access blocked: {0}")]
     NetworkBlocked(String),
 
-    #[error("No media spec registered for extension: {0}")]
+    #[error("No media def registered for extension: {0}")]
     ExtensionNotFound(String),
 }

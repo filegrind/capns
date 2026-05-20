@@ -4680,7 +4680,7 @@ mod tests {
 
         let mut runtime = CartridgeHostRuntime::new();
         let cap_groups = cap_groups_from_urns(&[
-            "cap:", // identity
+            CAP_IDENTITY,
             "cap:in=\"media:pdf\";thumbnail;out=\"media:image;png\"",
         ]);
         runtime.register_cartridge(
@@ -4694,7 +4694,7 @@ mod tests {
 
         // cap_table is the routing source of truth.
         assert_eq!(runtime.cap_table.len(), 2);
-        assert_eq!(runtime.cap_table[0].0, "cap:");
+        assert_eq!(runtime.cap_table[0].0, CAP_IDENTITY);
         assert_eq!(
             runtime.cap_table[1].0,
             "cap:in=media:pdf;out=\"media:image;png\";thumbnail"
@@ -4709,7 +4709,7 @@ mod tests {
         // process has not been spawned (running == false).
         let advertised = host_advertised_cap_urns(&runtime);
         assert!(
-            advertised.contains(&"cap:".to_string()),
+            advertised.contains(&CAP_IDENTITY.to_string()),
             "Identity cap must be advertised, got {:?}",
             advertised
         );
@@ -4733,11 +4733,11 @@ mod tests {
 
         let mut runtime = CartridgeHostRuntime::new();
         let groups_1 = cap_groups_from_urns(&[
-            "cap:",
+            CAP_IDENTITY,
             "cap:in=\"media:pdf\";extract;out=\"media:text\"",
         ]);
         let groups_2 = cap_groups_from_urns(&[
-            "cap:",
+            CAP_IDENTITY,
             "cap:in=\"media:image\";ocr;out=\"media:text\"",
         ]);
 
@@ -4765,7 +4765,7 @@ mod tests {
         // contains identity + extract + ocr.
         let advertised = host_advertised_cap_urns(&runtime);
         assert!(
-            advertised.contains(&"cap:".to_string()),
+            advertised.contains(&CAP_IDENTITY.to_string()),
             "Identity cap must be advertised, got {:?}",
             advertised
         );
@@ -4790,7 +4790,7 @@ mod tests {
 
         let mut runtime = CartridgeHostRuntime::new();
         let cap_groups = cap_groups_from_urns(&[
-            "cap:",
+            CAP_IDENTITY,
             "cap:in=\"media:void\";broken;out=\"media:void\"",
         ]);
         runtime.register_cartridge(
@@ -4863,7 +4863,7 @@ mod tests {
         let bin_path = bin_dir.path().join("extractcartridge");
         std::fs::write(&bin_path, b"#!/bin/false\n").expect("write binary");
         let pre_attach_groups = cap_groups_from_urns(&[
-            "cap:",
+            CAP_IDENTITY,
             "cap:in=\"media:pdf\";extract;out=\"media:text\"",
         ]);
         runtime.register_cartridge(
@@ -4929,7 +4929,7 @@ mod tests {
 
         // Register a non-running cartridge with probe-time cap_groups
         let dormant_groups = cap_groups_from_urns(&[
-            "cap:",
+            CAP_IDENTITY,
             "cap:in=\"media:pdf\";not-running-op;out=\"media:text\"",
         ]);
         runtime.register_cartridge(

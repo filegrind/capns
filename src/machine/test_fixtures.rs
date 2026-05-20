@@ -89,9 +89,9 @@ pub(crate) fn registry_with(caps: Vec<Cap>) -> FabricRegistry {
 /// `"Title for <urn>"` — enough to let the render-payload serializer
 /// find a cached entry without depending on the online registry.
 pub(crate) fn seed_media_titles(registry: &FabricRegistry, urns: &[&str]) {
-    use crate::StoredMediaSpec;
+    use crate::StoredMediaDef;
     for urn in urns {
-        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(StoredMediaDef {
             urn: urn.to_string(),
             media_type: "application/octet-stream".to_string(),
             title: format!("Title for {urn}"),
@@ -140,7 +140,7 @@ pub(crate) fn cap_step(cap_urn_str: &str, title: &str, from: &str, to: &str) -> 
 pub(crate) fn for_each_step(media_urn: &str) -> StrandStep {
     StrandStep {
         step_type: StrandStepType::ForEach {
-            media_spec: media(media_urn),
+            media_def: media(media_urn),
         },
         from_spec: media(media_urn),
         to_spec: media(media_urn),
@@ -151,7 +151,7 @@ pub(crate) fn for_each_step(media_urn: &str) -> StrandStep {
 pub(crate) fn collect_step(media_urn: &str) -> StrandStep {
     StrandStep {
         step_type: StrandStepType::Collect {
-            media_spec: media(media_urn),
+            media_def: media(media_urn),
         },
         from_spec: media(media_urn),
         to_spec: media(media_urn),
@@ -164,12 +164,12 @@ pub(crate) fn collect_step(media_urn: &str) -> StrandStep {
 pub(crate) fn strand_from_steps(steps: Vec<StrandStep>, description: &str) -> Strand {
     let total_steps = steps.len() as i32;
     let cap_step_count = steps.iter().filter(|s| s.is_cap()).count() as i32;
-    let source_spec = steps.first().expect("non-empty").from_spec.clone();
-    let target_spec = steps.last().expect("non-empty").to_spec.clone();
+    let source_media_urn = steps.first().expect("non-empty").from_spec.clone();
+    let target_media_urn = steps.last().expect("non-empty").to_spec.clone();
     Strand {
         steps,
-        source_spec,
-        target_spec,
+        source_media_urn,
+        target_media_urn,
         total_steps,
         cap_step_count,
         description: description.to_string(),

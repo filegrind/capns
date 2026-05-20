@@ -4766,7 +4766,8 @@ mod tests {
     ) -> CapManifest {
         // Always append CAP_IDENTITY at the end - cartridges must declare it
         // (Appending instead of prepending to avoid breaking tests that reference caps[0])
-        let identity_urn = crate::CapUrn::from_string("cap:").unwrap();
+        let identity_urn =
+            crate::CapUrn::from_string(crate::standard::caps::CAP_IDENTITY).unwrap();
         let identity_cap = Cap::new(identity_urn, "Identity".to_string(), "identity".to_string());
         caps.push(identity_cap);
 
@@ -4785,12 +4786,11 @@ mod tests {
     }
 
     /// Test manifest JSON with identity and a test cap.
-    /// Uses cap_groups format. The test cap URN "cap:test" has no in/out tags;
-    /// CapUrn defaults both to media: (wildcard), which is valid.
-    const TEST_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:test","title":"Test","command":"test"}]}]}"#;
+    /// Uses cap_groups format. `cap:test` is a legal fully-generic declared transform.
+    const TEST_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:test","title":"Test","command":"test"}]}]}"#;
 
     /// Valid manifest with proper in/out specs for tests that need parsed CapManifest
-    const VALID_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:","title":"Identity","command":"identity"},{"urn":"cap:in=\"media:void\";test;out=\"media:void\"","title":"Test","command":"test"}],"adapter_urns":[]}]}"#;
+    const VALID_MANIFEST: &str = r#"{"name":"TestCartridge","version":"1.0.0","channel":"release","registry_url":null,"description":"Test cartridge","cap_groups":[{"name":"default","caps":[{"urn":"cap:effect=none","title":"Identity","command":"identity"},{"urn":"cap:in=\"media:void\";test;out=\"media:void\"","title":"Test","command":"test"}],"adapter_urns":[]}]}"#;
 
     // TEST248: Test register_op and find_handler by exact cap URN
     #[test]

@@ -11,7 +11,7 @@
 //!
 //! To resolve a media URN to its full spec, use `resolve_media_urn` with a `FabricRegistry`.
 //! The resolution order is:
-//! 1. Cap's local media_specs (cap-specific overrides)
+//! 1. Cap's local media_defs (cap-specific overrides)
 //! 2. Registry's in-memory + disk cache
 //! 3. Online registry fetch (blocked by the registry's offline flag if set)
 //!
@@ -98,17 +98,17 @@ pub use crate::urn::media_urn::{
     MEDIA_YAML,
 };
 
-// Re-export profile URLs from media_spec
+// Re-export profile URLs from media_def
 pub use crate::media::spec::{
     PROFILE_BOOL, PROFILE_BOOL_ARRAY, PROFILE_INT, PROFILE_INT_ARRAY, PROFILE_NUM,
     PROFILE_NUM_ARRAY, PROFILE_OBJ, PROFILE_OBJ_ARRAY, PROFILE_STR, PROFILE_STR_ARRAY,
     PROFILE_VOID, SCHEMA_BASE,
 };
 
-// Re-export types and resolution function from media_spec
+// Re-export types and resolution function from media_def
 pub use crate::media::spec::{
-    resolve_media_urn, validate_media_specs_no_duplicates, MediaSpecDef, MediaSpecError,
-    ResolvedMediaSpec,
+    resolve_media_urn, validate_media_defs_no_duplicates, MediaDef, MediaDefError,
+    ResolvedMediaDef,
 };
 
 #[cfg(test)]

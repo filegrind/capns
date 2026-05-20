@@ -2010,7 +2010,7 @@ impl RelaySwitch {
         let mut seq_assigner = SeqAssigner::new();
 
         // End-to-end identity verification. The engine sends a
-        // `cap:`/CAP_IDENTITY REQ through the relay and expects the nonce
+        // `cap:effect=none` / CAP_IDENTITY REQ through the relay and expects the nonce
         // echoed back via some cartridge on the host. This probe is only
         // meaningful when the host advertises at least one cap — an empty
         // cap set means "no cartridges attached successfully," so there is
@@ -2019,7 +2019,7 @@ impl RelaySwitch {
         // needs to surface.
         //
         // The probe is wrapped in a hard timeout. Cold-starting the
-        // first cartridge that handles `cap:` (identity) — typically
+        // first cartridge that handles `cap:effect=none` (identity) — typically
         // ~2-3s for a Rust binary, longer for Swift cartridges with
         // sandbox-deferred init — used to silently extend
         // `add_master` indefinitely, and during that window the
@@ -3433,7 +3433,7 @@ impl RelaySwitch {
             // URN whose stored spec carries at least one file extension.
             // The snapshot is taken once per sync and handed to
             // LiveCapFab, which stores per-node bookend bits; traversals
-            // never call into the registry. New media specs registered
+            // never call into the registry. New media defs registered
             // between syncs become bookends only after the next sync —
             // which is also when their owning caps appear in the graph.
             let bookend_urns = self.fabric_registry.bookend_urns();
@@ -3549,7 +3549,7 @@ mod tests {
 
     /// Create a test FabricRegistry for use in tests. Tests that need
     /// bookend-eligible URNs should populate via
-    /// `insert_cached_media_spec_for_test` after construction.
+    /// `insert_cached_media_def_for_test` after construction.
     fn test_fabric_registry() -> Arc<FabricRegistry> {
         Arc::new(FabricRegistry::new_for_test())
     }
@@ -4192,7 +4192,7 @@ mod tests {
 
         assert_eq!(cap_list.len(), 3);
         assert!(cap_list.contains(&"cap:double;in=media:void;out=media:void".to_string()));
-        assert!(cap_list.contains(&"cap:".to_string()));
+        assert!(cap_list.contains(&crate::standard::caps::CAP_IDENTITY.to_string()));
         assert!(cap_list.contains(&"cap:in=media:void;out=media:void;triple".to_string()));
     }
 

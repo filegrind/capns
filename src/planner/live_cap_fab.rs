@@ -141,7 +141,7 @@ pub struct LiveCapFab {
     /// Computed at sync time from the registry snapshot supplied to
     /// `sync_from_caps` / `sync_from_cap_urns`. The graph is rebuilt on
     /// every cap-set change, so the bookend set tracks the live registry
-    /// state exactly: new media specs with extensions added between
+    /// state exactly: new media defs with extensions added between
     /// syncs become bookends after the next sync; specs whose extensions
     /// are removed stop being bookends after the next sync.
     bookend_nodes: HashSet<MediaUrn>,
@@ -151,7 +151,7 @@ pub struct LiveCapFab {
 #[derive(Debug, Clone)]
 pub struct ReachableTargetInfo {
     /// The target media URN
-    pub media_spec: MediaUrn,
+    pub media_def: MediaUrn,
     /// Human-readable display name (from media registry)
     pub display_name: String,
     /// Minimum number of steps to reach this target
@@ -210,13 +210,13 @@ pub enum StrandStepType {
     /// The media URN does not change — ForEach is a shape transition, not a type transition.
     ForEach {
         /// The media type being iterated over
-        media_spec: MediaUrn,
+        media_def: MediaUrn,
     },
     /// Collect: gather items into a sequence (is_sequence flips false → true).
     /// The media URN does not change — Collect is a shape transition, not a type transition.
     Collect {
         /// The media type being collected
-        media_spec: MediaUrn,
+        media_def: MediaUrn,
     },
 }
 
@@ -269,9 +269,9 @@ pub struct Strand {
     /// Steps in the path, in order
     pub steps: Vec<StrandStep>,
     /// Source media URN
-    pub source_spec: MediaUrn,
+    pub source_media_urn: MediaUrn,
     /// Target media URN
-    pub target_spec: MediaUrn,
+    pub target_media_urn: MediaUrn,
     /// Total number of steps (including cardinality transitions)
     pub total_steps: i32,
     /// Number of cap steps only (excluding ForEach/Collect)
@@ -344,7 +344,7 @@ impl LiveCapFab {
     }
 
     /// Returns `true` if the given URN is a bookend-eligible node — a node
-    /// whose registered media spec has at least one file extension, so
+    /// whose registered media def has at least one file extension, so
     /// concrete file content of that type can exist on disk.
     ///
     /// Strand bookends (transmute source or target) MUST be bookend-eligible.
@@ -813,7 +813,7 @@ impl LiveCapFab {
                     results
                         .entry(edge.to_spec.clone())
                         .or_insert_with(|| ReachableTargetInfo {
-                            media_spec: edge.to_spec.clone(),
+                            media_def: edge.to_spec.clone(),
                             display_name: edge.to_spec.to_string(),
                             min_path_length: new_depth as i32,
                             path_count: 0,
@@ -838,7 +838,7 @@ impl LiveCapFab {
         // registry — no registry call here.
         let mut targets: Vec<_> = results
             .into_values()
-            .filter(|t| self.bookend_nodes.contains(&t.media_spec))
+            .filter(|t| self.bookend_nodes.contains(&t.media_def))
             .collect();
 
         // Sort by (min_path_length, display_name).
@@ -1118,8 +1118,8 @@ impl LiveCapFab {
 
                     let path = Strand {
                         steps: current_path.clone(),
-                        source_spec: source.clone(),
-                        target_spec: target.clone(),
+                        source_media_urn: source.clone(),
+                        target_media_urn: target.clone(),
                         total_steps: current_path.len() as i32,
                         cap_step_count,
                         description,
@@ -1168,10 +1168,10 @@ impl LiveCapFab {
                         output_is_sequence: *output_is_sequence,
                     },
                     LiveMachinePlanEdgeType::ForEach => StrandStepType::ForEach {
-                        media_spec: edge.from_spec.clone(),
+                        media_def: edge.from_spec.clone(),
                     },
                     LiveMachinePlanEdgeType::Collect => StrandStepType::Collect {
-                        media_spec: edge.from_spec.clone(),
+                        media_def: edge.from_spec.clone(),
                     },
                 };
 
@@ -1290,12 +1290,12 @@ impl LiveCapFab {
                 }
             }
             (
-                StrandStepType::ForEach { media_spec: ma },
-                StrandStepType::ForEach { media_spec: mb },
+                StrandStepType::ForEach { media_def: ma },
+                StrandStepType::ForEach { media_def: mb },
             )
             | (
-                StrandStepType::Collect { media_spec: ma },
-                StrandStepType::Collect { media_spec: mb },
+                StrandStepType::Collect { media_def: ma },
+                StrandStepType::Collect { media_def: mb },
             ) => match ma.cmp(mb) {
                 Ordering::Equal => {}
                 ord => return ord,
@@ -1438,7 +1438,7 @@ mod tests {
         let extracted_text = MediaUrn::from_string("media:extracted-text").unwrap();
         let cap_target = targets
             .iter()
-            .find(|t| t.media_spec.is_equivalent(&extracted_text).unwrap_or(false));
+            .find(|t| t.media_def.is_equivalent(&extracted_text).unwrap_or(false));
         assert!(cap_target.is_some(), "extracted-text should be reachable");
         assert_eq!(cap_target.unwrap().min_path_length, 1);
     }
@@ -1710,7 +1710,7 @@ mod tests {
         let reaches = |needle: &MediaUrn| -> bool {
             targets
                 .iter()
-                .any(|t| t.media_spec.is_equivalent(needle).unwrap_or(false))
+                .any(|t| t.media_def.is_equivalent(needle).unwrap_or(false))
         };
         assert!(reaches(&media_b), "B should be reachable");
         assert!(reaches(&media_d), "D should be reachable");
@@ -1795,7 +1795,7 @@ mod tests {
         let media_textable = MediaUrn::from_string("media:textable").unwrap();
         assert!(
             png_targets.iter().any(|t| t
-                .media_spec
+                .media_def
                 .is_equivalent(&media_thumbnail)
                 .unwrap_or(false)),
             "PNG should reach thumbnail"
@@ -1803,7 +1803,7 @@ mod tests {
         assert!(
             !png_targets
                 .iter()
-                .any(|t| t.media_spec.is_equivalent(&media_textable).unwrap_or(false)),
+                .any(|t| t.media_def.is_equivalent(&media_textable).unwrap_or(false)),
             "PNG should NOT reach textable"
         );
 
@@ -1813,12 +1813,12 @@ mod tests {
         assert!(
             pdf_targets
                 .iter()
-                .any(|t| t.media_spec.is_equivalent(&media_textable).unwrap_or(false)),
+                .any(|t| t.media_def.is_equivalent(&media_textable).unwrap_or(false)),
             "PDF should reach textable"
         );
         assert!(
             !pdf_targets.iter().any(|t| t
-                .media_spec
+                .media_def
                 .is_equivalent(&media_thumbnail)
                 .unwrap_or(false)),
             "PDF should NOT reach thumbnail"
@@ -2061,14 +2061,14 @@ mod tests {
                 },
                 StrandStep {
                     step_type: StrandStepType::ForEach {
-                        media_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+                        media_def: MediaUrn::from_string("media:page;textable").unwrap(),
                     },
                     from_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                     to_spec: MediaUrn::from_string("media:page;textable").unwrap(),
                 },
             ],
-            source_spec: MediaUrn::from_string("media:pdf").unwrap(),
-            target_spec: MediaUrn::from_string("media:page;textable").unwrap(),
+            source_media_urn: MediaUrn::from_string("media:pdf").unwrap(),
+            target_media_urn: MediaUrn::from_string("media:page;textable").unwrap(),
             total_steps: 2,
             cap_step_count: 1,
             description: "Transform PDF into text pages".to_string(),
@@ -2081,17 +2081,17 @@ mod tests {
         let expected_target = MediaUrn::from_string("media:page;textable").unwrap();
         assert!(
             recovered
-                .source_spec
+                .source_media_urn
                 .is_equivalent(&expected_source)
                 .expect("URN equivalence check"),
-            "source_spec must round-trip structurally as media:pdf"
+            "source_media_urn must round-trip structurally as media:pdf"
         );
         assert!(
             recovered
-                .target_spec
+                .target_media_urn
                 .is_equivalent(&expected_target)
                 .expect("URN equivalence check"),
-            "target_spec must round-trip structurally as media:page;textable"
+            "target_media_urn must round-trip structurally as media:page;textable"
         );
         assert_eq!(recovered.steps.len(), 2);
         assert!(matches!(
@@ -2149,11 +2149,11 @@ mod tests {
 
         let path = path.unwrap();
         // Verify the ForEach step correctly derives item type from list source
-        if let StrandStepType::ForEach { media_spec } = &path.steps[0].step_type {
+        if let StrandStepType::ForEach { media_def } = &path.steps[0].step_type {
             // ForEach doesn't change the media URN — same type, different shape (is_sequence)
             assert!(
-                media_spec.is_equivalent(&source).unwrap(),
-                "ForEach media_spec should be the same as source"
+                media_def.is_equivalent(&source).unwrap(),
+                "ForEach media_def should be the same as source"
             );
         }
     }
@@ -2379,8 +2379,8 @@ mod tests {
                 from_spec: MediaUrn::from_string("media:pdf").unwrap(),
                 to_spec: MediaUrn::from_string("media:txt;textable").unwrap(),
             }],
-            source_spec: MediaUrn::from_string("media:pdf").unwrap(),
-            target_spec: MediaUrn::from_string("media:txt;textable").unwrap(),
+            source_media_urn: MediaUrn::from_string("media:pdf").unwrap(),
+            target_media_urn: MediaUrn::from_string("media:txt;textable").unwrap(),
             total_steps: 1,
             cap_step_count: 1,
             description: "pdf to txt".to_string(),
@@ -2425,8 +2425,8 @@ mod tests {
                 from_spec: MediaUrn::from_string("media:pdf").unwrap(),
                 to_spec: MediaUrn::from_string("media:txt;textable").unwrap(),
             }],
-            source_spec: MediaUrn::from_string("media:pdf").unwrap(),
-            target_spec: MediaUrn::from_string("media:txt;textable").unwrap(),
+            source_media_urn: MediaUrn::from_string("media:pdf").unwrap(),
+            target_media_urn: MediaUrn::from_string("media:txt;textable").unwrap(),
             total_steps: 1,
             cap_step_count: 1,
             description: "ghost strand".to_string(),
@@ -2469,12 +2469,12 @@ mod tests {
 
         // Source should be reachable (via textable→integer→textable)
         let has_self = targets.iter().any(|t| {
-            t.media_spec.is_equivalent(&source).unwrap_or(false)
+            t.media_def.is_equivalent(&source).unwrap_or(false)
         });
         assert!(
             has_self,
             "BFS must find source as reachable target in round-trip graph. Found: {:?}",
-            targets.iter().map(|t| t.media_spec.to_string()).collect::<Vec<_>>()
+            targets.iter().map(|t| t.media_def.to_string()).collect::<Vec<_>>()
         );
     }
 
@@ -2578,7 +2578,7 @@ mod tests {
         // BFS should find source as reachable (via A→B→C→A)
         let bfs_targets = graph.get_reachable_targets(&source, false, 5);
         let bfs_has_self = bfs_targets.iter().any(|t| {
-            t.media_spec.is_equivalent(&source).unwrap_or(false)
+            t.media_def.is_equivalent(&source).unwrap_or(false)
         });
         assert!(bfs_has_self, "BFS must find A reachable from A in cyclic graph");
 

@@ -191,7 +191,7 @@ impl ResponseWrapper {
                         registry,
                     )
                     .await
-                    .map_err(|e| ValidationError::InvalidMediaSpec {
+                    .map_err(|e| ValidationError::InvalidMediaDef {
                         cap_urn: cap.urn_string(),
                         field_name: "output".to_string(),
                         error: e.to_string(),
@@ -200,7 +200,7 @@ impl ResponseWrapper {
                     if !is_binary {
                         return Err(ValidationError::InvalidOutputType {
                             cap_urn: cap.urn_string(),
-                            expected_media_spec: output_def.media_urn.clone(),
+                            expected_media_def: output_def.media_urn.clone(),
                             actual_value: JsonValue::String(format!(
                                 "{} bytes of binary data",
                                 self.raw_bytes.len()
@@ -227,7 +227,7 @@ impl ResponseWrapper {
         }
     }
 
-    /// Check if response matches expected output type based on media_spec
+    /// Check if response matches expected output type based on media_def
     ///
     /// # Errors
     /// Returns error if the output spec ID cannot be resolved
@@ -235,9 +235,9 @@ impl ResponseWrapper {
         &self,
         cap: &Cap,
         registry: &crate::media::registry::FabricRegistry,
-    ) -> Result<bool, crate::media::spec::MediaSpecError> {
+    ) -> Result<bool, crate::media::spec::MediaDefError> {
         let output_def = cap.get_output().ok_or_else(|| {
-            crate::media::spec::MediaSpecError::UnresolvableMediaUrn(
+            crate::media::spec::MediaDefError::UnresolvableMediaUrn(
                 "cap has no output definition".to_string(),
             )
         })?;

@@ -313,7 +313,7 @@ impl Machine {
     /// }
     /// ```
     ///
-    /// Each node carries the media-spec title and each edge the cap
+    /// Each node carries the media-def title and each edge the cap
     /// definition title from the unified `FabricRegistry`. Lookups are
     /// cache-only (no network). A missing cached entry is a hard
     /// failure — we never synthesize a title from a URN string.
@@ -360,9 +360,9 @@ fn emit_strand_json(
         }
         let urn_str = urn.to_string();
         let title = fabric_registry
-            .get_cached_media_spec(&urn_str)
+            .get_cached_media_def(&urn_str)
             .map(|spec| spec.title)
-            .ok_or_else(|| MachineAbstractionError::UncachedMediaSpec {
+            .ok_or_else(|| MachineAbstractionError::UncachedMediaDef {
                 media_urn: urn_str.clone(),
             })?;
         write!(

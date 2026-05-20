@@ -1,7 +1,7 @@
 //! JSON Schema validation for capability arguments and outputs
 //!
 //! Provides comprehensive validation of JSON data against JSON Schema Draft-07.
-//! Schemas are located in the `media_specs` table of the cap definition or in the registry.
+//! Schemas are located in the `media_defs` table of the cap definition or in the registry.
 
 use crate::media::registry::FabricRegistry;
 use crate::media::spec::resolve_media_urn;
@@ -30,7 +30,7 @@ pub enum SchemaValidationError {
     InvalidJson,
 }
 
-/// Schema validator that resolves schemas from media_specs and registry
+/// Schema validator that resolves schemas from media_defs and registry
 pub struct SchemaValidator {
     /// Cache of compiled schemas for performance
     schema_cache: HashMap<String, JSONSchema>,
@@ -246,9 +246,9 @@ mod tests {
             "required": ["name"]
         });
 
-        // Seed the registry with the schema-bearing media spec; caps no
-        // longer carry inline media specs.
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        // Seed the registry with the schema-bearing media def; caps no
+        // longer carry inline media defs.
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "my:user-data.v1".to_string(),
             media_type: "application/json".to_string(),
             title: "User Data".to_string(),
@@ -288,9 +288,9 @@ mod tests {
             "required": ["name"]
         });
 
-        // Seed the registry with the schema-bearing media spec; caps no
-        // longer carry inline media specs.
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        // Seed the registry with the schema-bearing media def; caps no
+        // longer carry inline media defs.
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "my:user-data.v1".to_string(),
             media_type: "application/json".to_string(),
             title: "User Data".to_string(),
@@ -331,9 +331,9 @@ mod tests {
             "required": ["result"]
         });
 
-        // Seed the registry with the schema-bearing media spec; caps no
-        // longer carry inline media specs.
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        // Seed the registry with the schema-bearing media def; caps no
+        // longer carry inline media defs.
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "my:query-result.v1".to_string(),
             media_type: "application/json".to_string(),
             title: "Query Result".to_string(),
@@ -355,7 +355,7 @@ mod tests {
             .is_ok());
     }
 
-    // TEST166: Test validation skipped when resolved media spec has no schema
+    // TEST166: Test validation skipped when resolved media def has no schema
     #[tokio::test]
     async fn test166_skip_validation_without_schema() {
         let registry = test_registry().await;
@@ -382,7 +382,7 @@ mod tests {
         let registry = test_registry().await;
         let mut validator = SchemaValidator::new();
 
-        // Argument with unknown media URN - not in media_specs and not in registry
+        // Argument with unknown media URN - not in media_defs and not in registry
         let arg = CapArg::new(
             "media:completely-unknown-urn-that-does-not-exist",
             true,

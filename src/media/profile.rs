@@ -1,7 +1,7 @@
 //! Profile Schema Registry
 //!
 //! Registry for JSON Schema profiles. Downloads and caches schemas from profile URLs
-//! for validating data against media spec type definitions.
+//! for validating data against media def type definitions.
 //! Uses a two-level cache: disk-based cached schemas and in-memory compiled schemas.
 
 use jsonschema::JSONSchema;

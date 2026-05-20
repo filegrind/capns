@@ -1,16 +1,16 @@
-//! MediaSpec parsing and media URN resolution
+//! MediaDef parsing and media URN resolution
 //!
 //! This module provides:
-//! - Media URN resolution (e.g., `media:string` → resolved media spec)
-//! - MediaSpec parsing (canonical form: `text/plain; profile=https://...`)
-//! - MediaSpecDef for defining specs in cap definitions
+//! - Media URN resolution (e.g., `media:string` → resolved media def)
+//! - MediaDef parsing (canonical form: `text/plain; profile=https://...`)
+//! - MediaDef for defining specs in cap definitions
 //! - MediaValidation for validation rules inherent to media types
 //!
 //! ## Media URN Format
 //! Media URNs are tagged URNs with "media" prefix, e.g., `media:string`
 //! Built-in primitives are available without explicit declaration.
 //!
-//! ## MediaSpec Format
+//! ## MediaDef Format
 //! Canonical form: `<media-type>; profile=<url>`
 //! Example: `text/plain; profile=https://capdag.com/schema/str`
 
@@ -138,13 +138,13 @@ pub const PROFILE_CAPDAG_GENERATE_OUTPUT: &str = "https://capdag.com/schema/embe
 pub const PROFILE_CAPDAG_QUESTIONS_ARRAY: &str = "https://capdag.com/schema/questions-array";
 
 // =============================================================================
-// MEDIA VALIDATION (for media spec definitions)
+// MEDIA VALIDATION (for media definitions)
 // =============================================================================
 
 /// Validation rules for media types
 ///
 /// These rules are inherent to the semantic media type and are defined
-/// in the media spec, not on individual arguments or outputs.
+/// in the media def, not on individual arguments or outputs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct MediaValidation {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,22 +227,22 @@ impl MediaValidation {
 }
 
 // =============================================================================
-// MEDIA SPEC DEFINITION (for cap definitions)
+// MEDIA DEFINITION DEFINITION (for cap definitions)
 // =============================================================================
 
-/// Media spec definition - can be string (compact) or object (rich)
+/// Media definition - can be string (compact) or object (rich)
 ///
-/// Used in the `media_specs` map of a cap definition.
+/// Used in the `media_defs` map of a cap definition.
 ///
 /// ## String Form (compact)
 /// ```json
 /// "media:string": "text/plain; profile=https://capdag.com/schema/str"
 /// ```
 ///
-/// Media spec definition for inline media_specs in cap definitions
+/// Media definition for inline media_defs in cap definitions
 ///
-/// This is the same structure as media spec JSON files in the registry.
-/// Each media spec has a unique URN that identifies it.
+/// This is the same structure as media def JSON files in the registry.
+/// Each media def has a unique URN that identifies it.
 ///
 /// ## Example
 /// ```json
@@ -255,7 +255,7 @@ impl MediaValidation {
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MediaSpecDef {
+pub struct MediaDef {
     /// The media URN identifier (e.g., "media:pdf;binary")
     pub urn: String,
     /// The MIME media type (e.g., "application/json", "text/plain")
@@ -275,7 +275,7 @@ pub struct MediaSpecDef {
     ///
     /// Rendered in media info panels, the cap navigator,
     /// capdag-dot-com, and anywhere else a rich-text explanation of
-    /// the media spec is useful. Authored in TOML sources as a
+    /// the media def is useful. Authored in TOML sources as a
     /// triple-quoted literal string (`'''...'''`) so markdown
     /// punctuation and newlines pass through unchanged; the JSON
     /// generator escapes newlines per JSON rules on output.
@@ -292,8 +292,8 @@ pub struct MediaSpecDef {
     pub extensions: Vec<String>,
 }
 
-impl MediaSpecDef {
-    /// Create a new media spec definition
+impl MediaDef {
+    /// Create a new media definition
     pub fn new(
         urn: impl Into<String>,
         media_type: impl Into<String>,
@@ -313,7 +313,7 @@ impl MediaSpecDef {
         }
     }
 
-    /// Create a media spec definition with profile URI
+    /// Create a media definition with profile URI
     pub fn with_profile(
         urn: impl Into<String>,
         media_type: impl Into<String>,
@@ -334,7 +334,7 @@ impl MediaSpecDef {
         }
     }
 
-    /// Create a media spec definition with schema
+    /// Create a media definition with schema
     pub fn with_schema(
         urn: impl Into<String>,
         media_type: impl Into<String>,
@@ -356,7 +356,7 @@ impl MediaSpecDef {
         }
     }
 
-    /// Create a media spec definition with validation rules
+    /// Create a media definition with validation rules
     pub fn with_validation(
         urn: impl Into<String>,
         media_type: impl Into<String>,
@@ -394,15 +394,15 @@ impl MediaSpecDef {
 }
 
 // =============================================================================
-// RESOLVED MEDIA SPEC
+// RESOLVED MEDIA DEFINITION
 // =============================================================================
 
-/// Fully resolved media spec with all fields populated
+/// Fully resolved media def with all fields populated
 ///
-/// This is the result of resolving a media URN through the media_specs table
+/// This is the result of resolving a media URN through the media_defs table
 /// or from a built-in definition.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ResolvedMediaSpec {
+pub struct ResolvedMediaDef {
     /// The media URN that was resolved
     pub media_urn: String,
     /// The MIME media type (e.g., "application/json", "text/plain")
@@ -419,9 +419,9 @@ pub struct ResolvedMediaSpec {
     ///
     /// Rendered in media info panels, the cap navigator,
     /// capdag-dot-com, and anywhere else a rich-text explanation of
-    /// the media spec is useful.
+    /// the media def is useful.
     pub documentation: Option<String>,
-    /// Optional validation rules from the media spec definition
+    /// Optional validation rules from the media definition
     pub validation: Option<MediaValidation>,
     /// Optional metadata (arbitrary key-value pairs for display/categorization)
     pub metadata: Option<serde_json::Value>,
@@ -429,11 +429,11 @@ pub struct ResolvedMediaSpec {
     pub extensions: Vec<String>,
 }
 
-impl ResolvedMediaSpec {
+impl ResolvedMediaDef {
     /// Parse the media URN, panicking if invalid (should never happen for resolved specs)
     fn parse_media_urn(&self) -> crate::MediaUrn {
         crate::MediaUrn::from_string(&self.media_urn)
-            .expect("ResolvedMediaSpec has invalid media_urn - this indicates a bug in resolution")
+            .expect("ResolvedMediaDef has invalid media_urn - this indicates a bug in resolution")
     }
 
     /// Check if this represents binary (non-text) data.
@@ -516,12 +516,12 @@ impl ResolvedMediaSpec {
 // MEDIA URN RESOLUTION
 // =============================================================================
 
-/// Resolve a media URN to a full media spec definition.
+/// Resolve a media URN to a full media definition.
 ///
 /// This is the SINGLE resolution path for all media URN lookups.
 ///
 /// Resolution order:
-/// 1. Cap's local `media_specs` array (HIGHEST - cap-specific definitions)
+/// 1. Cap's local `media_defs` array (HIGHEST - cap-specific definitions)
 /// 2. Registry's in-memory + disk cache
 /// 3. Online registry fetch (blocked by the registry's offline flag if set)
 /// 4. If none resolve → Error
@@ -531,13 +531,13 @@ impl ResolvedMediaSpec {
 /// * `registry` - The FabricRegistry for cache and remote lookups
 ///
 /// # Errors
-/// Returns `MediaSpecError::UnresolvableMediaUrn` if the media URN cannot be resolved.
+/// Returns `MediaDefError::UnresolvableMediaUrn` if the media URN cannot be resolved.
 pub async fn resolve_media_urn(
     media_urn: &str,
     registry: &crate::media::registry::FabricRegistry,
-) -> Result<ResolvedMediaSpec, MediaSpecError> {
-    match registry.get_media_spec(media_urn).await {
-        Ok(stored_spec) => Ok(ResolvedMediaSpec {
+) -> Result<ResolvedMediaDef, MediaDefError> {
+    match registry.get_media_def(media_urn).await {
+        Ok(stored_spec) => Ok(ResolvedMediaDef {
             media_urn: media_urn.to_string(),
             media_type: stored_spec.media_type,
             profile_uri: stored_spec.profile_uri,
@@ -549,27 +549,27 @@ pub async fn resolve_media_urn(
             metadata: stored_spec.metadata,
             extensions: stored_spec.extensions,
         }),
-        Err(e) => Err(MediaSpecError::UnresolvableMediaUrn(format!(
+        Err(e) => Err(MediaDefError::UnresolvableMediaUrn(format!(
             "cannot resolve media URN '{}' via registry: {}",
             media_urn, e
         ))),
     }
 }
 
-/// Validate that media_specs array has no duplicate URNs.
+/// Validate that media_defs array has no duplicate URNs.
 ///
 /// # Arguments
-/// * `media_specs` - The media_specs array to validate
+/// * `media_defs` - The media_defs array to validate
 ///
 /// # Errors
-/// Returns `MediaSpecError::DuplicateMediaUrn` if any URN appears more than once.
-pub fn validate_media_specs_no_duplicates(
-    media_specs: &[MediaSpecDef],
-) -> Result<(), MediaSpecError> {
+/// Returns `MediaDefError::DuplicateMediaUrn` if any URN appears more than once.
+pub fn validate_media_defs_no_duplicates(
+    media_defs: &[MediaDef],
+) -> Result<(), MediaDefError> {
     let mut seen = std::collections::HashSet::new();
-    for spec in media_specs {
+    for spec in media_defs {
         if !seen.insert(&spec.urn) {
-            return Err(MediaSpecError::DuplicateMediaUrn(spec.urn.clone()));
+            return Err(MediaDefError::DuplicateMediaUrn(spec.urn.clone()));
         }
     }
     Ok(())
@@ -579,29 +579,29 @@ pub fn validate_media_specs_no_duplicates(
 // ERRORS
 // =============================================================================
 
-/// Errors that can occur when resolving media specs
+/// Errors that can occur when resolving media defs
 #[derive(Debug, Clone, PartialEq)]
-pub enum MediaSpecError {
-    /// Media URN cannot be resolved (not in media_specs and not in registry)
+pub enum MediaDefError {
+    /// Media URN cannot be resolved (not in media_defs and not in registry)
     UnresolvableMediaUrn(String),
-    /// Duplicate media URN in media_specs array
+    /// Duplicate media URN in media_defs array
     DuplicateMediaUrn(String),
 }
 
-impl fmt::Display for MediaSpecError {
+impl fmt::Display for MediaDefError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MediaSpecError::UnresolvableMediaUrn(urn) => {
+            MediaDefError::UnresolvableMediaUrn(urn) => {
                 write!(
                     f,
-                    "cannot resolve media URN '{}' - not found in media_specs or registry",
+                    "cannot resolve media URN '{}' - not found in media_defs or registry",
                     urn
                 )
             }
-            MediaSpecError::DuplicateMediaUrn(urn) => {
+            MediaDefError::DuplicateMediaUrn(urn) => {
                 write!(
                     f,
-                    "duplicate media URN '{}' in media_specs - each URN must be unique",
+                    "duplicate media URN '{}' in media_defs - each URN must be unique",
                     urn
                 )
             }
@@ -609,7 +609,7 @@ impl fmt::Display for MediaSpecError {
     }
 }
 
-impl std::error::Error for MediaSpecError {}
+impl std::error::Error for MediaDefError {}
 
 // =============================================================================
 // TESTS
@@ -624,8 +624,8 @@ mod tests {
     // -------------------------------------------------------------------------
 
     // Helper to create a test registry. Test specs are seeded directly
-    // through the registry's `insert_cached_media_spec_for_test` helper —
-    // there is no longer any cap-local media_specs override path.
+    // through the registry's `insert_cached_media_def_for_test` helper —
+    // there is no longer any cap-local media_defs override path.
     async fn test_registry() -> crate::media::registry::FabricRegistry {
         crate::media::registry::FabricRegistry::new()
             .await
@@ -639,7 +639,7 @@ mod tests {
     #[tokio::test]
     async fn test088_resolve_seeded_spec() {
         let registry = test_registry().await;
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:textable".to_string(),
             media_type: "text/plain".to_string(),
             title: "Textable".to_string(),
@@ -658,9 +658,9 @@ mod tests {
         assert!(resolved.profile_uri.is_none());
     }
 
-    // TEST089: A seeded record-shaped media spec carries its schema and
+    // TEST089: A seeded record-shaped media def carries its schema and
     // profile_uri intact through resolution. Catches a regression that
-    // dropped optional fields when copying into ResolvedMediaSpec.
+    // dropped optional fields when copying into ResolvedMediaDef.
     #[tokio::test]
     async fn test089_resolve_seeded_record_spec() {
         let registry = test_registry().await;
@@ -668,7 +668,7 @@ mod tests {
             "type": "object",
             "properties": { "name": { "type": "string" } }
         });
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:json;output-spec;record".to_string(),
             media_type: "application/json".to_string(),
             title: "Output Spec".to_string(),
@@ -693,7 +693,7 @@ mod tests {
 
     // TEST093: Resolving a URN that is neither in the registry cache nor
     // available online fails hard. A regression that made the fail path
-    // silently return a stub `ResolvedMediaSpec` would surface here as a
+    // silently return a stub `ResolvedMediaDef` would surface here as a
     // missing error.
     #[tokio::test]
     async fn test093_resolve_unresolvable_fails_hard() {
@@ -705,7 +705,7 @@ mod tests {
         )
         .await;
         assert!(result.is_err(), "unknown URN must produce an error");
-        if let Err(MediaSpecError::UnresolvableMediaUrn(msg)) = result {
+        if let Err(MediaDefError::UnresolvableMediaUrn(msg)) = result {
             assert!(
                 msg.contains("media:completely-unknown-urn-not-in-registry"),
                 "error must name the failing URN; got: {}",
@@ -717,13 +717,13 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // MediaSpecDef serialization tests
+    // MediaDef serialization tests
     // -------------------------------------------------------------------------
 
-    // TEST095: Test MediaSpecDef serializes with required fields and skips None fields
+    // TEST095: Test MediaDef serializes with required fields and skips None fields
     #[test]
-    fn test095_media_spec_def_serialize() {
-        let def = MediaSpecDef {
+    fn test095_media_def_def_serialize() {
+        let def = MediaDef {
             urn: "media:test;json".to_string(),
             media_type: "application/json".to_string(),
             title: "Test Media".to_string(),
@@ -746,11 +746,11 @@ mod tests {
         assert!(!json.contains("\"description\":"));
     }
 
-    // TEST096: Test deserializing MediaSpecDef from JSON object
+    // TEST096: Test deserializing MediaDef from JSON object
     #[test]
-    fn test096_media_spec_def_deserialize() {
+    fn test096_media_def_def_deserialize() {
         let json = r#"{"urn":"media:test;json","media_type":"application/json","title":"Test"}"#;
-        let def: MediaSpecDef = serde_json::from_str(json).unwrap();
+        let def: MediaDef = serde_json::from_str(json).unwrap();
         assert_eq!(def.urn, "media:test;json");
         assert_eq!(def.media_type, "application/json");
         assert_eq!(def.title, "Test");
@@ -764,13 +764,13 @@ mod tests {
     // TEST097: Test duplicate URN validation catches duplicates
     #[test]
     fn test097_validate_no_duplicate_urns_catches_duplicates() {
-        let media_specs = vec![
-            MediaSpecDef::new("media:dup;json", "application/json", "First"),
-            MediaSpecDef::new("media:dup;json", "application/json", "Second"), // duplicate
+        let media_defs = vec![
+            MediaDef::new("media:dup;json", "application/json", "First"),
+            MediaDef::new("media:dup;json", "application/json", "Second"), // duplicate
         ];
-        let result = validate_media_specs_no_duplicates(&media_specs);
+        let result = validate_media_defs_no_duplicates(&media_defs);
         assert!(result.is_err());
-        if let Err(MediaSpecError::DuplicateMediaUrn(urn)) = result {
+        if let Err(MediaDefError::DuplicateMediaUrn(urn)) = result {
             assert_eq!(urn, "media:dup;json");
         } else {
             panic!("Expected DuplicateMediaUrn error");
@@ -780,22 +780,22 @@ mod tests {
     // TEST098: Test duplicate URN validation passes for unique URNs
     #[test]
     fn test098_validate_no_duplicate_urns_passes_for_unique() {
-        let media_specs = vec![
-            MediaSpecDef::new("media:first;json", "application/json", "First"),
-            MediaSpecDef::new("media:second;json", "application/json", "Second"),
+        let media_defs = vec![
+            MediaDef::new("media:first;json", "application/json", "First"),
+            MediaDef::new("media:second;json", "application/json", "Second"),
         ];
-        let result = validate_media_specs_no_duplicates(&media_specs);
+        let result = validate_media_defs_no_duplicates(&media_defs);
         assert!(result.is_ok());
     }
 
     // -------------------------------------------------------------------------
-    // ResolvedMediaSpec tests
+    // ResolvedMediaDef tests
     // -------------------------------------------------------------------------
 
-    // TEST099: Test ResolvedMediaSpec is_binary returns true when textable tag is absent
+    // TEST099: Test ResolvedMediaDef is_binary returns true when textable tag is absent
     #[test]
     fn test099_resolved_is_binary() {
-        let resolved = ResolvedMediaSpec {
+        let resolved = ResolvedMediaDef {
             media_urn: "media:".to_string(),
             media_type: "application/octet-stream".to_string(),
             profile_uri: None,
@@ -812,10 +812,10 @@ mod tests {
         assert!(!resolved.is_json());
     }
 
-    // TEST100: Test ResolvedMediaSpec is_record returns true when record marker is present
+    // TEST100: Test ResolvedMediaDef is_record returns true when record marker is present
     #[test]
     fn test100_resolved_is_record() {
-        let resolved = ResolvedMediaSpec {
+        let resolved = ResolvedMediaDef {
             media_urn: "media:record;textable".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
@@ -833,10 +833,10 @@ mod tests {
         assert!(!resolved.is_list());
     }
 
-    // TEST101: Test ResolvedMediaSpec is_scalar returns true when list marker is absent
+    // TEST101: Test ResolvedMediaDef is_scalar returns true when list marker is absent
     #[test]
     fn test101_resolved_is_scalar() {
-        let resolved = ResolvedMediaSpec {
+        let resolved = ResolvedMediaDef {
             media_urn: "media:textable".to_string(),
             media_type: "text/plain".to_string(),
             profile_uri: None,
@@ -853,10 +853,10 @@ mod tests {
         assert!(!resolved.is_list());
     }
 
-    // TEST102: Test ResolvedMediaSpec is_list returns true when list marker is present
+    // TEST102: Test ResolvedMediaDef is_list returns true when list marker is present
     #[test]
     fn test102_resolved_is_list() {
-        let resolved = ResolvedMediaSpec {
+        let resolved = ResolvedMediaDef {
             media_urn: "media:list;textable".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
@@ -873,10 +873,10 @@ mod tests {
         assert!(!resolved.is_scalar());
     }
 
-    // TEST103: Test ResolvedMediaSpec is_json returns true when json tag is present
+    // TEST103: Test ResolvedMediaDef is_json returns true when json tag is present
     #[test]
     fn test103_resolved_is_json() {
-        let resolved = ResolvedMediaSpec {
+        let resolved = ResolvedMediaDef {
             media_urn: "media:json;record;textable".to_string(),
             media_type: "application/json".to_string(),
             profile_uri: None,
@@ -893,10 +893,10 @@ mod tests {
         assert!(!resolved.is_binary());
     }
 
-    // TEST104: Test ResolvedMediaSpec is_text returns true when textable tag is present
+    // TEST104: Test ResolvedMediaDef is_text returns true when textable tag is present
     #[test]
     fn test104_resolved_is_text() {
-        let resolved = ResolvedMediaSpec {
+        let resolved = ResolvedMediaDef {
             media_urn: "media:textable".to_string(),
             media_type: "text/plain".to_string(),
             profile_uri: None,
@@ -917,11 +917,11 @@ mod tests {
     // Metadata propagation tests
     // -------------------------------------------------------------------------
 
-    // TEST105: Test metadata propagates from media spec def to resolved media spec
+    // TEST105: Test metadata propagates from media def def to resolved media def
     #[tokio::test]
     async fn test105_metadata_propagation() {
         let registry = test_registry().await;
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:custom-setting".to_string(),
             media_type: "text/plain".to_string(),
             title: "Custom Setting".to_string(),
@@ -946,11 +946,11 @@ mod tests {
         assert_eq!(metadata.get("ui_type").unwrap(), "SETTING_UI_TYPE_CHECKBOX");
     }
 
-    // TEST106: Test metadata and validation can coexist in media spec definition
+    // TEST106: Test metadata and validation can coexist in media definition
     #[tokio::test]
     async fn test106_metadata_with_validation() {
         let registry = test_registry().await;
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:bounded-number;numeric".to_string(),
             media_type: "text/plain".to_string(),
             title: "Bounded Number".to_string(),
@@ -996,11 +996,11 @@ mod tests {
     // Extension field tests
     // -------------------------------------------------------------------------
 
-    // TEST107: Test extensions field propagates from media spec def to resolved
+    // TEST107: Test extensions field propagates from media def def to resolved
     #[tokio::test]
     async fn test107_extensions_propagation() {
         let registry = test_registry().await;
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:custom-pdf".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF Document".to_string(),
@@ -1019,10 +1019,10 @@ mod tests {
         assert_eq!(resolved.extensions, vec!["pdf".to_string()]);
     }
 
-    // TEST892: Test extensions serializes/deserializes correctly in MediaSpecDef
+    // TEST892: Test extensions serializes/deserializes correctly in MediaDef
     #[test]
     fn test892_extensions_serialization() {
-        let def = MediaSpecDef {
+        let def = MediaDef {
             urn: "media:json-data".to_string(),
             media_type: "application/json".to_string(),
             title: "JSON Data".to_string(),
@@ -1038,7 +1038,7 @@ mod tests {
         assert!(json.contains("\"extensions\":[\"json\"]"));
 
         // Deserialize and verify
-        let parsed: MediaSpecDef = serde_json::from_str(&json).unwrap();
+        let parsed: MediaDef = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.extensions, vec!["json".to_string()]);
     }
 
@@ -1046,7 +1046,7 @@ mod tests {
     #[tokio::test]
     async fn test893_extensions_with_metadata_and_validation() {
         let registry = test_registry().await;
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:custom-output;json".to_string(),
             media_type: "application/json".to_string(),
             title: "Custom Output".to_string(),
@@ -1078,11 +1078,11 @@ mod tests {
         assert_eq!(resolved.extensions, vec!["json".to_string()]);
     }
 
-    // TEST894: Test multiple extensions in a media spec
+    // TEST894: Test multiple extensions in a media def
     #[tokio::test]
     async fn test894_multiple_extensions() {
         let registry = test_registry().await;
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:image;jpeg".to_string(),
             media_type: "image/jpeg".to_string(),
             title: "JPEG Image".to_string(),
@@ -1105,17 +1105,17 @@ mod tests {
         assert_eq!(resolved.extensions.len(), 2);
     }
 
-    // TEST1131: Documentation propagates from MediaSpecDef through resolve_media_urn
-    // into ResolvedMediaSpec.
+    // TEST1131: Documentation propagates from MediaDef through resolve_media_urn
+    // into ResolvedMediaDef.
     //
     // This is the resolution path used by every consumer that asks the
-    // registry for a media spec — info panels, the cap navigator, the UI
+    // registry for a media def — info panels, the cap navigator, the UI
     // — so a regression here makes the new field invisible everywhere.
     #[tokio::test]
     async fn test1131_media_documentation_propagates_through_resolve() {
         let registry = test_registry().await;
         let body = "## Markdown body\n\nWith `code` and a [link](https://example.com).";
-        registry.insert_cached_media_spec_for_test(crate::StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(crate::StoredMediaDef {
             urn: "media:doc-test;textable".to_string(),
             media_type: "text/plain".to_string(),
             title: "Documented".to_string(),
@@ -1134,7 +1134,7 @@ mod tests {
         assert_eq!(
             resolved.documentation.as_deref(),
             Some(body),
-            "documentation must propagate from MediaSpecDef into ResolvedMediaSpec"
+            "documentation must propagate from MediaDef into ResolvedMediaDef"
         );
         // The short description must remain distinct from the long
         // documentation body — they are different fields with different
@@ -1142,12 +1142,12 @@ mod tests {
         assert_eq!(resolved.description.as_deref(), Some("short desc"));
     }
 
-    // TEST1132: MediaSpecDef serializes documentation only when present and
+    // TEST1132: MediaDef serializes documentation only when present and
     // round-trips losslessly. Mirrors TEST1127/1128 for the cap side.
     #[test]
-    fn test1132_media_spec_def_documentation_round_trip() {
+    fn test1132_media_def_def_documentation_round_trip() {
         let body = "Body with newline\nand backslash \\";
-        let with_doc = MediaSpecDef {
+        let with_doc = MediaDef {
             urn: "media:rt-test".to_string(),
             media_type: "text/plain".to_string(),
             title: "Round Trip".to_string(),
@@ -1161,10 +1161,10 @@ mod tests {
         };
         let json = serde_json::to_string(&with_doc).unwrap();
         assert!(json.contains("\"documentation\""));
-        let parsed: MediaSpecDef = serde_json::from_str(&json).unwrap();
+        let parsed: MediaDef = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.documentation.as_deref(), Some(body));
 
-        let without_doc = MediaSpecDef {
+        let without_doc = MediaDef {
             urn: "media:rt-test-2".to_string(),
             media_type: "text/plain".to_string(),
             title: "No Doc".to_string(),
@@ -1179,18 +1179,18 @@ mod tests {
         let json2 = serde_json::to_string(&without_doc).unwrap();
         assert!(
             !json2.contains("documentation"),
-            "documentation must be omitted from MediaSpecDef JSON when None, got: {}",
+            "documentation must be omitted from MediaDef JSON when None, got: {}",
             json2
         );
     }
 
-    // TEST1133: MediaSpecDef set/clear lifecycle for documentation. Catches a
+    // TEST1133: MediaDef set/clear lifecycle for documentation. Catches a
     // regression where the setter or clearer accidentally writes to or reads
     // from `description` (the short field) instead of `documentation` (the
     // long markdown body).
     #[test]
-    fn test1133_media_spec_def_documentation_lifecycle() {
-        let mut spec = MediaSpecDef {
+    fn test1133_media_def_def_documentation_lifecycle() {
+        let mut spec = MediaDef {
             urn: "media:doc-test".to_string(),
             media_type: "text/plain".to_string(),
             title: "Doc Test".to_string(),

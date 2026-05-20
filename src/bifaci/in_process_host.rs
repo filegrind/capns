@@ -767,7 +767,8 @@ impl InProcessCartridgeHost {
                         }
                     };
 
-                    // Identity cap is "cap:" — exact string match, NOT conforms_to.
+                    // Identity cap is CAP_IDENTITY / `cap:effect=none` —
+                    // exact string match, NOT conforms_to.
                     let is_identity = cap_urn == CAP_IDENTITY;
 
                     let handler: Arc<dyn FrameHandler> = if is_identity {

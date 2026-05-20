@@ -4,7 +4,7 @@
 //!
 //! - **URN system** (`urn`): Cap URNs, media URNs, cap matrix
 //! - **Cap definitions** (`cap`): Cap types, validation, registry, caller
-//! - **Media types** (`media`): Media spec resolution, registry, profile schemas
+//! - **Media types** (`media`): Media def resolution, registry, profile schemas
 //! - **Bifaci protocol** (`bifaci`): Binary Frame Cap Invocation — cartridge runtime,
 //!   host runtime, relay, relay switch, cartridge repo
 //! - **Standard** (`standard`): Standard cap and media URN constants
@@ -57,9 +57,9 @@ pub use cap::validation::*;
 pub use media::profile::{ProfileSchemaError, ProfileSchemaRegistry};
 pub use media::spec::*;
 
-// Unified fabric registry — caps + media specs in one type
+// Unified fabric registry — caps + media defs in one type
 pub use fabric::registry::{
-    FabricRegistry, FabricRegistryError, RegistryConfig, StoredMediaSpec,
+    FabricRegistry, FabricRegistryError, RegistryConfig, StoredMediaDef,
 };
 
 // Standard caps and media

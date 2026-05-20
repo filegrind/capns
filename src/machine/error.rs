@@ -61,7 +61,7 @@ pub enum MachineAbstractionError {
     /// emission must have a display title for every node and we
     /// never synthesize titles from URN strings.
     #[error("media URN '{media_urn}' has no cached spec — cannot emit a display title for render payload")]
-    UncachedMediaSpec { media_urn: String },
+    UncachedMediaDef { media_urn: String },
 
     /// A cap URN referenced by an edge has no cached entry in the
     /// cap registry. Render-payload emission must have a display

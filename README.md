@@ -194,7 +194,7 @@ let (provider, cap) = cube.find_best_match(&request)?;
 - [RULES.md](docs/RULES.md) - Cap URN specification (cap-specific rules)
 - [MATCHING.md](docs/MATCHING.md) - Matching semantics
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture
-- [MEDIA_SPEC_SYSTEM.md](docs/MEDIA_SPEC_SYSTEM.md) - Media specification system
+- [MEDIA_DEF_SYSTEM.md](docs/MEDIA_DEF_SYSTEM.md) - Media definition system
 - [PERFORMANCE.md](docs/PERFORMANCE.md) - Cross-language throughput measurements
 - [Tagged URN RULES.md](https://github.com/machinefabric/tagged-urn-rs/blob/main/docs/RULES.md) - Base URN format rules
 

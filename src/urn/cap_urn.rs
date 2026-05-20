@@ -1875,7 +1875,7 @@ mod tests {
         let identity =
             CapUrn::from_string("cap:effect=none").expect("identity cap must parse");
         assert_eq!(identity.to_string(), "cap:effect=none");
-        assert_ne!(identity.to_string(), generic_top.to_string());
+        assert_ne!(identity.to_string(), "cap:");
     }
 
     // TEST017: Test tag matching: exact match, subset match, wildcard match, value mismatch
@@ -2419,8 +2419,7 @@ mod tests {
     // TEST048: Matching semantics - wildcard direction matches anything
     #[test]
     fn test048_matching_semantics_test8_wildcard_direction_matches_anything() {
-        // Test 8: Wildcard direction matches anything
-        let cap = CapUrn::from_string("cap:in=*;out=*;op").unwrap();
+        let cap = CapUrn::from_string("cap:generate").unwrap();
         let request = CapUrn::from_string(&format!(
             "cap:ext=pdf;in=media:string;generate;out=\"{}\"",
             MEDIA_OBJECT
@@ -2428,7 +2427,7 @@ mod tests {
         .unwrap();
         assert!(
             cap.accepts(&request),
-            "Test 8: Wildcard direction should match any direction"
+            "Test 8: Generic declared directions should accept a more specific matching request"
         );
     }
 

@@ -252,7 +252,7 @@ fn all_scalar(inputs: &HashMap<String, NodeData>) -> HashMap<String, bool> {
 /// the full cap definition at runtime).
 /// Build a single unified `FabricRegistry` pre-loaded with the
 /// testcartridge synthetic caps the orchestrator integration tests
-/// depend on. The merged registry holds caps and media specs together,
+/// depend on. The merged registry holds caps and media defs together,
 /// so callers pass the same Arc to anything that previously took two
 /// separate registries.
 fn create_test_fabric_registry() -> Arc<FabricRegistry> {
@@ -660,10 +660,10 @@ async fn test947_cap_not_found() {
     assert!(result.is_err(), "Should fail when cap not found");
 
     match result.err() {
-        Some(ParseOrchestrationError::CapNotFound { .. }) => {
-            // Expected
+        Some(ParseOrchestrationError::MachineSyntaxParseFailed(_)) => {
+            // Expected: the parser resolves header caps and wraps lookup failure
         }
-        other => panic!("Expected CapNotFound, got: {:?}", other),
+        other => panic!("Expected MachineSyntaxParseFailed, got: {:?}", other),
     }
 }
 

@@ -24,7 +24,7 @@ use crate::urn::media_urn::{
     MEDIA_JSON_SCHEMA,
     // Format conversion types (JSON, YAML, CSV variants)
     MEDIA_JSON_VALUE,
-    MEDIA_MEDIA_SPEC_DEFINITION,
+    MEDIA_MEDIA_DEFINITION,
     MEDIA_MEDIA_URN,
     MEDIA_LIST_OUTPUT,
     MEDIA_LOG,
@@ -86,13 +86,13 @@ pub const CAP_ADAPTER_SELECTION: &str =
 pub const CAP_LOOKUP_CAP_FABRIC: &str =
     "cap:in=\"media:cap-urn;textable\";fabric;lookup-cap;out=\"media:cap-definition;json;record;textable\"";
 
-/// Cap that resolves a canonical media URN to its full media spec definition
+/// Cap that resolves a canonical media URN to its full media definition
 /// by fetching the registry-published entry. Implemented by the engine-bundled
 /// `fetchcartridge`. Sandboxed cartridges peer-invoke this when they need
-/// to read a media spec's title, MIME type, profile URI, or any other
+/// to read a media def's title, MIME type, profile URI, or any other
 /// registry-only field.
-pub const CAP_LOOKUP_MEDIA_SPEC_FABRIC: &str =
-    "cap:in=\"media:media-urn;textable\";fabric;lookup-media-spec;out=\"media:media-spec-definition;json;record;textable\"";
+pub const CAP_LOOKUP_MEDIA_DEF_FABRIC: &str =
+    "cap:in=\"media:media-urn;textable\";fabric;lookup-media-def;out=\"media:media-definition;json;record;textable\"";
 
 /// Parse and return the canonical `cap:lookup-cap;fabric` `CapUrn`.
 pub fn lookup_cap_fabric_urn() -> CapUrn {
@@ -100,10 +100,10 @@ pub fn lookup_cap_fabric_urn() -> CapUrn {
         .unwrap_or_else(|e| panic!("BUG: CAP_LOOKUP_CAP_FABRIC constant is invalid: {}", e))
 }
 
-/// Parse and return the canonical `cap:lookup-media-spec;fabric` `CapUrn`.
-pub fn lookup_media_spec_fabric_urn() -> CapUrn {
-    CapUrn::from_string(CAP_LOOKUP_MEDIA_SPEC_FABRIC)
-        .unwrap_or_else(|e| panic!("BUG: CAP_LOOKUP_MEDIA_SPEC_FABRIC constant is invalid: {}", e))
+/// Parse and return the canonical `cap:lookup-media-def;fabric` `CapUrn`.
+pub fn lookup_media_def_fabric_urn() -> CapUrn {
+    CapUrn::from_string(CAP_LOOKUP_MEDIA_DEF_FABRIC)
+        .unwrap_or_else(|e| panic!("BUG: CAP_LOOKUP_MEDIA_DEF_FABRIC constant is invalid: {}", e))
 }
 
 /// Construct the canonical `cap:lookup-cap;fabric` `Cap` definition.
@@ -139,16 +139,16 @@ pub fn lookup_cap_fabric_cap() -> Cap {
     cap
 }
 
-/// Construct the canonical `cap:lookup-media-spec;fabric` `Cap` definition.
+/// Construct the canonical `cap:lookup-media-def;fabric` `Cap` definition.
 ///
-/// Mirrors `fabric/caps/lookup-media-spec-fabric.toml`.
-pub fn lookup_media_spec_fabric_cap() -> Cap {
-    let urn = lookup_media_spec_fabric_urn();
+/// Mirrors `fabric/caps/lookup-media-def-fabric.toml`.
+pub fn lookup_media_def_fabric_cap() -> Cap {
+    let urn = lookup_media_def_fabric_urn();
     let mut cap = Cap::with_description(
         urn,
-        "Look Up Media Spec Definition (Fabric)".to_string(),
-        "lookup_media_spec".to_string(),
-        "Resolve a canonical media URN to its full registry-published media spec \
+        "Look Up Media Definition (Fabric)".to_string(),
+        "lookup_media_def".to_string(),
+        "Resolve a canonical media URN to its full registry-published media def \
          definition by fetching from the public fabric registry."
             .to_string(),
     );
@@ -164,8 +164,8 @@ pub fn lookup_media_spec_fabric_cap() -> Cap {
         "Canonical media URN to look up.".to_string(),
     ));
     cap.set_output(crate::cap::definition::CapOutput::new(
-        MEDIA_MEDIA_SPEC_DEFINITION,
-        "Full media spec definition as published in the registry.",
+        MEDIA_MEDIA_DEFINITION,
+        "Full media definition as published in the registry.",
     ));
     cap
 }
@@ -996,7 +996,7 @@ mod tests {
         MEDIA_AVAILABILITY_OUTPUT, MEDIA_MODEL_SPEC, MEDIA_PATH_OUTPUT,
     };
 
-    // TEST307: Test model_availability_urn builds valid cap URN with correct op and media specs
+    // TEST307: Test model_availability_urn builds valid cap URN with correct op and media defs
     #[test]
     fn test307_model_availability_urn() {
         let urn = model_availability_urn();
@@ -1012,7 +1012,7 @@ mod tests {
         );
     }
 
-    // TEST308: Test model_path_urn builds valid cap URN with correct op and media specs
+    // TEST308: Test model_path_urn builds valid cap URN with correct op and media defs
     #[test]
     fn test308_model_path_urn() {
         let urn = model_path_urn();

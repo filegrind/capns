@@ -22,7 +22,7 @@ use crate::urn::media_urn::MediaUrn;
 /// Discriminate candidate media URNs by validation rules in their specs.
 ///
 /// Given file content and a set of candidate URN strings (e.g. all URNs for
-/// a file extension), eliminates candidates whose media spec validation
+/// a file extension), eliminates candidates whose media def validation
 /// rules reject the content. Candidates with no validation rules survive
 /// (no rules = no basis for elimination).
 ///
@@ -50,7 +50,7 @@ pub fn discriminate_candidates_by_validation(
     candidate_urns
         .iter()
         .filter(|urn| {
-            let spec = match fabric_registry.get_cached_media_spec(urn) {
+            let spec = match fabric_registry.get_cached_media_def(urn) {
                 Some(spec) => spec,
                 None => return true, // No spec in cache → cannot eliminate
             };
@@ -84,7 +84,7 @@ pub fn discriminate_candidates_by_validation(
                                 // would block all candidates with that spec. Log and keep
                                 // the candidate (don't eliminate based on broken rule).
                                 tracing::error!(
-                                    "Media spec '{}' has invalid validation pattern '{}' — \
+                                    "Media def '{}' has invalid validation pattern '{}' — \
                                      fix the TOML definition in capfab/src/media",
                                     urn,
                                     pattern
@@ -461,7 +461,7 @@ mod tests {
         path
     }
 
-    /// Build a `FabricRegistry` pre-seeded with the media specs the
+    /// Build a `FabricRegistry` pre-seeded with the media defs the
     /// resolver tests reference (`pdf`, `txt`, `json`, `model-spec`).
     /// The registry hydrates extension lookups from spec arrival —
     /// there is no compiled-in fallback table — so tests must seed
@@ -474,10 +474,10 @@ mod tests {
     }
 
     fn seed_resolver_test_specs(registry: &FabricRegistry) {
-        use crate::StoredMediaSpec;
+        use crate::StoredMediaDef;
 
         // PDF
-        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(StoredMediaDef {
             urn: "media:pdf".to_string(),
             media_type: "application/pdf".to_string(),
             title: "PDF".to_string(),
@@ -491,7 +491,7 @@ mod tests {
         });
 
         // JSON family
-        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(StoredMediaDef {
             urn: "media:json;record;textable".to_string(),
             media_type: "application/json".to_string(),
             title: "JSON".to_string(),
@@ -505,7 +505,7 @@ mod tests {
         });
 
         // Plain text
-        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(StoredMediaDef {
             urn: "media:list;textable;txt".to_string(),
             media_type: "text/plain".to_string(),
             title: "Text".to_string(),
@@ -523,7 +523,7 @@ mod tests {
         // URN explicitly as a candidate; the validation pattern
         // matches the canonical `family:model:variant` shape so plain
         // prose is filtered out.
-        registry.insert_cached_media_spec_for_test(StoredMediaSpec {
+        registry.insert_cached_media_def_for_test(StoredMediaDef {
             urn: "media:model-spec;textable".to_string(),
             media_type: "text/plain".to_string(),
             title: "Model spec".to_string(),

@@ -501,7 +501,8 @@ mod tests {
     // Cap not found in registry
     // =========================================================================
 
-    // TEST1261: Parsing fails with CapNotFound when a declared cap is absent from the registry.
+    // TEST1261: A header cap whose definition cannot be resolved is reported as
+    // a machine-notation parse failure at the header site.
     #[tokio::test]
     async fn test1261_cap_not_found_in_registry() {
         let registry = build_test_registry(&[]);
@@ -512,8 +513,8 @@ mod tests {
 
         let result = parse_machine_to_cap_dag(notation, &registry).await;
         assert!(
-            matches!(result, Err(ParseOrchestrationError::CapNotFound { .. })),
-            "Expected CapNotFound, got {:?}",
+            matches!(result, Err(ParseOrchestrationError::MachineSyntaxParseFailed(_))),
+            "Expected MachineSyntaxParseFailed, got {:?}",
             result
         );
     }

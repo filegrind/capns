@@ -27,7 +27,7 @@ type PlannerResult<T> = Result<T, PlannerError>;
 /// NOTE: Path finding methods have been moved to `LiveCapFab`.
 /// This builder handles plan construction from pre-computed paths.
 pub struct MachinePlanBuilder {
-    /// Unified cap + media-spec registry.
+    /// Unified cap + media registry.
     fabric_registry: Arc<FabricRegistry>,
 }
 
@@ -121,14 +121,14 @@ impl MachinePlanBuilder {
             })
             .collect();
 
-        let source_spec_str = path.source_spec.to_string();
-        let target_spec_str = path.target_spec.to_string();
+        let source_media_urn_str = path.source_media_urn.to_string();
+        let target_media_urn_str = path.target_media_urn.to_string();
 
         let input_slot_id = "input_slot";
         plan.add_node(MachineNode::input_slot(
             input_slot_id,
             "input",
-            &source_spec_str,
+            &source_media_urn_str,
             input_cardinality,
         ));
 
@@ -285,7 +285,7 @@ impl MachinePlanBuilder {
                     continue;
                 }
 
-                StrandStepType::Collect { media_spec, .. } => {
+                StrandStepType::Collect { media_def, .. } => {
                     if let Some((foreach_idx, foreach_node_id)) = inside_foreach_body.take() {
                         // Collect after ForEach: close the iteration body
                         let entry = body_entry.take().unwrap_or_else(|| prev_node_id.clone());
@@ -322,7 +322,7 @@ impl MachinePlanBuilder {
                         // Set output_media_urn so plan_converter can register it
                         collect_node.node_type = ExecutionNodeType::Collect {
                             input_nodes: vec![prev_node_id.clone()],
-                            output_media_urn: Some(media_spec.to_string()),
+                            output_media_urn: Some(media_def.to_string()),
                         };
                         collect_node.description =
                             Some("Collect: scalar to list-of-one".to_string());
@@ -391,8 +391,8 @@ impl MachinePlanBuilder {
         plan.add_edge(MachinePlanEdge::direct(&prev_node_id, output_id));
 
         plan.metadata = Some(HashMap::from([
-            ("source_spec".to_string(), json!(source_spec_str)),
-            ("target_spec".to_string(), json!(target_spec_str)),
+            ("source_media_urn".to_string(), json!(source_media_urn_str)),
+            ("target_media_urn".to_string(), json!(target_media_urn_str)),
         ]));
 
         // Validate the plan is a DAG (no cycles) before returning.
@@ -523,10 +523,10 @@ pub struct StepArgumentRequirements {
 /// Argument requirements for an entire path
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathArgumentRequirements {
-    /// Source media spec
-    pub source_spec: String,
-    /// Target media spec
-    pub target_spec: String,
+    /// Source media URN
+    pub source_media_urn: String,
+    /// Target media URN
+    pub target_media_urn: String,
     /// Requirements for each step
     pub steps: Vec<StepArgumentRequirements>,
     /// Whether this path can execute without any user input
@@ -586,8 +586,8 @@ impl MachinePlanBuilder {
                     &arg.default_value,
                 );
 
-                // Resolve validation from media spec via the registry. There
-                // is no inline `cap.media_specs` override anymore — every
+                // Resolve validation from the media definition via the registry. There
+                // is no inline `cap.media_defs` override anymore — every
                 // media URN is resolved through the same path.
                 let resolved_spec = crate::media::spec::resolve_media_urn(
                     &arg.media_urn,
@@ -633,8 +633,8 @@ impl MachinePlanBuilder {
         let can_execute_without_input = step_requirements.iter().all(|s| s.slots.is_empty());
 
         Ok(PathArgumentRequirements {
-            source_spec: path.source_spec.to_string(),
-            target_spec: path.target_spec.to_string(),
+            source_media_urn: path.source_media_urn.to_string(),
+            target_media_urn: path.target_media_urn.to_string(),
             steps: step_requirements,
             can_execute_without_input,
         })
@@ -1117,8 +1117,8 @@ mod tests {
     #[test]
     fn test768_path_argument_requirements_structure() {
         let requirements = PathArgumentRequirements {
-            source_spec: "media:pdf".to_string(),
-            target_spec: "media:image;png".to_string(),
+            source_media_urn: "media:pdf".to_string(),
+            target_media_urn: "media:image;png".to_string(),
             steps: vec![StepArgumentRequirements {
                 cap_urn: "cap:generate-thumbnail;in=pdf;out=png".to_string(),
                 step_index: 0,
@@ -1154,8 +1154,8 @@ mod tests {
     #[test]
     fn test769_path_with_required_slot() {
         let requirements = PathArgumentRequirements {
-            source_spec: "media:text".to_string(),
-            target_spec: "media:translated".to_string(),
+            source_media_urn: "media:text".to_string(),
+            target_media_urn: "media:translated".to_string(),
             steps: vec![StepArgumentRequirements {
                 cap_urn: "cap:translate;in=text;out=translated".to_string(),
                 step_index: 0,

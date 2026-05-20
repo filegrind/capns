@@ -353,7 +353,7 @@ whether a media URN is a concrete type, the wildcard, or the unit
 without parsing strings.
 
 `is_binary()` is a helper some implementations expose, but it is not a
-first-class structural axis in the media spec system. The normative
+first-class structural axis in the media def system. The normative
 question is whether `textable` is present, not whether the URN belongs
 to a separate "binary" category.
 

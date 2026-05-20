@@ -15,7 +15,7 @@ This document specifies all validation rules for the capdag system. All implemen
 |----------|-------|-------|
 | Cap URN Rules | CU1-CU2 | URN structure |
 | Cap Definition Rules | RULE1-RULE12 | Capability arguments |
-| Media Spec Rules | MS1-MS3 | Media specifications |
+| Media Def Rules | MS1-MS3 | Media definitions |
 | Cross-Validation Rules | XV1-XV5 | Reference integrity |
 
 ### Validation Order
@@ -23,7 +23,7 @@ This document specifies all validation rules for the capdag system. All implemen
 1. Structural validation (JSON Schema)
 2. Cap URN validation (CU1, CU2)
 3. Cap definition rules (RULE1-RULE12)
-4. Media spec rules (MS1-MS3)
+4. Media def rules (MS1-MS3)
 5. Cross-validation (XV1-XV5)
 
 ---
@@ -177,31 +177,31 @@ These rules validate the `args` array in capability definitions.
 
 ---
 
-## 4. Media Spec Rules (MS1-MS3)
+## 4. Media Def Rules (MS1-MS3)
 
 ### MS1: Title Required
 
-**Rule**: Every media spec MUST have a `title` field.
+**Rule**: Every media def MUST have a `title` field.
 
 **Rationale**: Titles provide human-readable identification.
 
-**Error**: `Media spec '<urn>' has no title`
+**Error**: `Media def '<urn>' has no title`
 
 ### MS2: Valid URN Format
 
 **Rule**: Media URNs MUST start with `media:` prefix.
 
-**Rationale**: Distinguishes media specs from other URN types.
+**Rationale**: Distinguishes media defs from other URN types.
 
 **Error**: `Invalid media URN: expected 'media:' prefix`
 
 ### MS3: Media Type Required
 
-**Rule**: Every media spec MUST have a `media_type` field (MIME type).
+**Rule**: Every media def MUST have a `media_type` field (MIME type).
 
 **Rationale**: Specifies the content type for proper handling.
 
-**Error**: `Media spec '<urn>' has no media_type`
+**Error**: `Media def '<urn>' has no media_type`
 
 ---
 
@@ -217,19 +217,19 @@ These rules validate the `args` array in capability definitions.
 
 ### XV2: No Duplicate Media URNs (Global)
 
-**Rule**: No two standalone media spec definitions may have the same URN.
+**Rule**: No two standalone media definitions may have the same URN.
 
-**Rationale**: Media URNs uniquely identify media specs in the global registry.
+**Rationale**: Media URNs uniquely identify media defs in the global registry.
 
 **Error**: `Duplicate media URN: <urn>`
 
 ### XV3: Media URN Resolution Required
 
-**Rule**: All media URNs referenced in capabilities MUST resolve to a defined media spec.
+**Rule**: All media URNs referenced in capabilities MUST resolve to a defined media def.
 
 **Resolution Order**:
-1. Capability's local `media_specs` table (inline definitions)
-2. Standalone media spec files (global registry)
+1. Capability's local `media_defs` table (inline definitions)
+2. Standalone media def files (global registry)
 
 **No Fallbacks**: If a media URN cannot be resolved, validation FAILS. No auto-generation.
 
@@ -242,17 +242,17 @@ These rules validate the `args` array in capability definitions.
 
 **Error**: `Unresolved media URN '<urn>' referenced in <location>`
 
-### XV4: Inline Media Spec Title Required
+### XV4: Inline Media Def Title Required
 
-**Rule**: Media specs defined inline in capability `media_specs` tables MUST have a `title` field.
+**Rule**: Media defs defined inline in capability `media_defs` tables MUST have a `title` field.
 
-**Rationale**: Same as MS1 — all media specs need titles.
+**Rationale**: Same as MS1 — all media defs need titles.
 
-**Error**: `Inline media spec '<urn>' in <file> has no title`
+**Error**: `Inline media def '<urn>' in <file> has no title`
 
-### XV5: No Redefinition of Registry Media Specs
+### XV5: No Redefinition of Registry Media Defs
 
-**Rule**: Inline media specs MUST NOT redefine media specs that exist in the global registry.
+**Rule**: Inline media defs MUST NOT redefine media defs that exist in the global registry.
 
 **Rationale**: The global registry is the canonical source. Redefining creates conflicts.
 
@@ -260,7 +260,7 @@ These rules validate the `args` array in capability definitions.
 - **With network**: Strictly enforce. Any conflict with registry = FAIL.
 - **Without network**: Check cached specs only. Log warning if cannot verify.
 
-**Error**: `XV5: Inline media spec '<urn>' redefines existing registry spec`
+**Error**: `XV5: Inline media def '<urn>' redefines existing registry spec`
 
 **Warning (offline)**: `XV5: Could not verify inline spec '<urn>' against online registry (offline mode)`
 
@@ -285,7 +285,7 @@ All implementations (Rust, JavaScript, server functions) MUST enforce identical 
 |------------|----------|
 | CU1-CU2 | Cap URN Validation |
 | RULE1-RULE12 | Cap Args Validation |
-| MS1-MS3 | Media Spec Validation |
+| MS1-MS3 | Media Def Validation |
 | XV1-XV5 | Cross-Validation |
 
 ---

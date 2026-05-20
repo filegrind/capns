@@ -280,7 +280,7 @@ async fn main() {
     };
 
     // Create the unified FabricRegistry. Holds cap definitions and
-    // media specs together; consumed by both `parse_machine_to_cap_dag`
+    // media defs together; consumed by both `parse_machine_to_cap_dag`
     // (for resolution) and `execute_dag` (for runtime cap lookup and
     // adapter dispatch).
     let registry = match FabricRegistry::new().await {

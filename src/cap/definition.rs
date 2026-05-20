@@ -7,7 +7,7 @@
 //! ## Cap Definition Format
 //!
 //! Caps use media URNs in `media_urn` fields. Every media URN is looked up
-//! through the unified `FabricRegistry` — there is no inline media spec
+//! through the unified `FabricRegistry` — there is no inline media def
 //! storage on a cap.
 //!
 //! Example:
@@ -196,7 +196,7 @@ impl CapArg {
 /// the unified `FabricRegistry` resolves on demand.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CapOutput {
-    /// Media URN referencing a media spec definition
+    /// Media URN referencing a media definition
     /// e.g., "media:object" or a custom media URN like "media:my-output"
     pub media_urn: String,
 
@@ -953,7 +953,14 @@ mod tests {
         assert!(serialized.contains("\"cli_flag\":\"--name\""));
         assert!(serialized.contains("\"position\":0"));
         assert!(serialized.contains("\"default_value\":400"));
-        assert!(serialized.contains("\"metadata\":{\"kind\":\"example\",\"flags\":[true,false]}"));
+        let serialized_value: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(
+            serialized_value["metadata"],
+            serde_json::json!({
+                "kind": "example",
+                "flags": [true, false]
+            })
+        );
 
         let deserialized: CapArg = serde_json::from_str(&serialized).unwrap();
         assert_eq!(arg, deserialized);

@@ -75,7 +75,7 @@ pub const MEDIA_AUDIO: &str = "media:wav;audio";
 /// Media URN for video data (mp4, webm, mov, etc.)
 pub const MEDIA_VIDEO: &str = "media:video";
 
-// Image container formats. URN strings here match the canonical media-spec
+// Image container formats. URN strings here match the canonical media-def
 // URNs published to the registry. Tagged-URN normalization makes the
 // declared and normalized forms equivalent under the parser, but matching
 // the canonical form exactly avoids surprising any code that prints URNs.
@@ -370,8 +370,8 @@ pub const MEDIA_CAP_URN: &str = "media:cap-urn;textable";
 
 /// Media URN for a canonical media URN string.
 ///
-/// Carried as data when a cap takes "the URN of some media spec" as input —
-/// e.g. the input to `cap:lookup-media-spec;fabric`. The string value MUST
+/// Carried as data when a cap takes "the URN of some media def" as input —
+/// e.g. the input to `cap:lookup-media-def;fabric`. The string value MUST
 /// be the canonical (alphabetically normalised) serialisation produced by
 /// the `MediaUrn` parser; consumers re-parse it through
 /// `MediaUrn::from_string` before any comparison or dispatch decision.
@@ -383,11 +383,11 @@ pub const MEDIA_MEDIA_URN: &str = "media:media-urn;textable";
 /// `flattenCapability` output in the fabric build pipeline.
 pub const MEDIA_CAP_DEFINITION: &str = "media:cap-definition;json;record;textable";
 
-/// Media URN for the full media spec definition published by the registry.
+/// Media URN for the full media definition published by the registry.
 ///
-/// JSON record returned by `cap:lookup-media-spec;fabric`. Shape mirrors
-/// the media spec emitter output in the fabric build pipeline.
-pub const MEDIA_MEDIA_SPEC_DEFINITION: &str = "media:media-spec-definition;json;record;textable";
+/// JSON record returned by `cap:lookup-media-def;fabric`. Shape mirrors
+/// the media def emitter output in the fabric build pipeline.
+pub const MEDIA_MEDIA_DEFINITION: &str = "media:media-definition;json;record;textable";
 
 // =============================================================================
 // MEDIA URN TYPE
