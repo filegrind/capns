@@ -37,6 +37,7 @@ use crate::urn::media_urn::{
     MEDIA_MODEL_SPEC,
     MEDIA_OBJECT,
     MEDIA_PATH_OUTPUT,
+    MEDIA_PLAIN_TEXT,
     // Document types
     MEDIA_PDF,
     // Semantic media types
@@ -338,7 +339,7 @@ pub fn llm_generate_text_urn() -> CapUrn {
         .marker("llm")
         .marker("ml-model")
         .in_spec(MEDIA_STRING)
-        .out_spec(MEDIA_STRING)
+        .out_spec(MEDIA_PLAIN_TEXT)
         .build()
         .expect("Failed to build generate_text cap URN")
 }
@@ -1040,7 +1041,8 @@ mod tests {
         );
     }
 
-    // TEST310: llm_generate_text_urn() produces a valid cap URN with textable in/out specs
+    // TEST310: llm_generate_text_urn() produces a valid cap URN with a
+    // textable input and plain-text terminal output.
     #[test]
     fn test310_llm_generate_text_urn_shape() {
         use crate::urn::media_urn::MediaUrn;
@@ -1048,7 +1050,9 @@ mod tests {
 
         let in_spec = MediaUrn::from_string(urn.in_spec()).expect("in_spec must parse");
         let out_spec = MediaUrn::from_string(urn.out_spec()).expect("out_spec must parse");
-        let expected = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING must parse");
+        let expected_in = MediaUrn::from_string(MEDIA_STRING).expect("MEDIA_STRING must parse");
+        let expected_out =
+            MediaUrn::from_string(MEDIA_PLAIN_TEXT).expect("MEDIA_PLAIN_TEXT must parse");
 
         assert!(
             urn.has_marker_tag("generate-text"),
@@ -1057,16 +1061,16 @@ mod tests {
         assert!(urn.has_marker_tag("llm"), "must have llm tag");
         assert!(urn.has_marker_tag("ml-model"), "must have ml-model tag");
         assert!(
-            in_spec.conforms_to(&expected).unwrap(),
+            in_spec.conforms_to(&expected_in).unwrap(),
             "in_spec '{}' must match MEDIA_STRING '{}'",
             urn.in_spec(),
             MEDIA_STRING
         );
         assert!(
-            out_spec.conforms_to(&expected).unwrap(),
-            "out_spec '{}' must match MEDIA_STRING '{}'",
+            out_spec.conforms_to(&expected_out).unwrap(),
+            "out_spec '{}' must match MEDIA_PLAIN_TEXT '{}'",
             urn.out_spec(),
-            MEDIA_STRING
+            MEDIA_PLAIN_TEXT
         );
     }
 
